@@ -8,6 +8,7 @@ Useful for displaying progress, calculating estimated time, etc.
 import time
 import threading
 from datetime import datetime
+from tqdm import tqdm
 from celestron_nexstar import NexStarTelescope
 from celestron_nexstar.utils import angular_separation
 
@@ -73,79 +74,66 @@ class SlewMonitor:
 
     def _monitor_loop(self):
         """Background monitoring loop."""
-        update_count = 0
+        # Calculate initial distance for progress bar
+        initial_distance = angular_separation(
+            self.start_position.ra_hours, self.start_position.dec_degrees,
+            self.target_ra, self.target_dec
+        )
 
-        while self.running:
-            try:
-                # Get current position
-                pos = self.telescope.get_position_ra_dec()
-                self.current_position = pos
+        with tqdm(total=100, desc="Slewing to target", unit="%",
+                  bar_format='{desc}: {percentage:3.0f}%|{bar}| [{elapsed}<{remaining}, {postfix}]') as pbar:
 
-                # Calculate distances
-                distance_to_target = angular_separation(
-                    pos.ra_hours, pos.dec_degrees,
-                    self.target_ra, self.target_dec
-                )
+            while self.running:
+                try:
+                    # Get current position
+                    pos = self.telescope.get_position_ra_dec()
+                    self.current_position = pos
 
-                initial_distance = angular_separation(
-                    self.start_position.ra_hours, self.start_position.dec_degrees,
-                    self.target_ra, self.target_dec
-                )
+                    # Calculate distances
+                    distance_to_target = angular_separation(
+                        pos.ra_hours, pos.dec_degrees,
+                        self.target_ra, self.target_dec
+                    )
 
-                distance_traveled = angular_separation(
-                    self.start_position.ra_hours, self.start_position.dec_degrees,
-                    pos.ra_hours, pos.dec_degrees
-                )
+                    distance_traveled = angular_separation(
+                        self.start_position.ra_hours, self.start_position.dec_degrees,
+                        pos.ra_hours, pos.dec_degrees
+                    )
 
-                # Calculate progress
-                if initial_distance > 0:
-                    progress = (distance_traveled / initial_distance) * 100
-                else:
-                    progress = 100
+                    # Calculate progress
+                    if initial_distance > 0:
+                        progress = min(100, (distance_traveled / initial_distance) * 100)
+                    else:
+                        progress = 100
 
-                # Calculate time elapsed and estimate remaining
-                elapsed = (datetime.now() - self.start_time).total_seconds()
+                    # Update progress bar
+                    pbar.n = int(progress)
+                    pbar.set_postfix({
+                        'RA': f'{pos.ra_hours:.4f}h',
+                        'Dec': f'{pos.dec_degrees:+.3f}°',
+                        'Dist': f'{distance_to_target:.2f}°'
+                    })
+                    pbar.refresh()
 
-                if progress > 5:  # Need some progress to estimate
-                    total_estimated = (elapsed / progress) * 100
-                    remaining = max(0, total_estimated - elapsed)
-                else:
-                    remaining = 0
+                    # Check if slew is complete
+                    if not self.telescope.is_slewing():
+                        pbar.n = 100
+                        pbar.refresh()
+                        self._display_complete(
+                            (datetime.now() - self.start_time).total_seconds(),
+                            distance_to_target
+                        )
+                        self.running = False
+                        break
 
-                # Display update
-                update_count += 1
-                self._display_status(
-                    pos, distance_to_target, progress, elapsed, remaining, update_count
-                )
+                except Exception as e:
+                    tqdm.write(f"Error in monitor: {e}")
 
-                # Check if slew is complete
-                if not self.telescope.is_slewing():
-                    self._display_complete(elapsed, distance_to_target)
-                    self.running = False
-                    break
-
-            except Exception as e:
-                print(f"Error in monitor: {e}")
-
-            time.sleep(0.5)  # Update twice per second
-
-    def _display_status(self, pos, distance, progress, elapsed, remaining, count):
-        """Display current status."""
-        # Create progress bar
-        bar_length = 30
-        filled = int(bar_length * progress / 100)
-        bar = '█' * filled + '░' * (bar_length - filled)
-
-        print(f"\r[{count:3d}] "
-              f"RA: {pos.ra_hours:7.4f}h  "
-              f"Dec: {pos.dec_degrees:+7.3f}°  |  "
-              f"[{bar}] {progress:5.1f}%  |  "
-              f"Dist: {distance:5.2f}°  |  "
-              f"ETA: {remaining:4.0f}s", end='', flush=True)
+                time.sleep(0.5)  # Update twice per second
 
     def _display_complete(self, elapsed, final_distance):
         """Display completion message."""
-        print(f"\n\n{'='*70}")
+        print(f"\n{'='*70}")
         print(f"✓ Slew complete!")
         print(f"  Total time: {elapsed:.1f} seconds")
         print(f"  Final distance to target: {final_distance:.4f}°")
