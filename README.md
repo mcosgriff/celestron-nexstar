@@ -29,6 +29,8 @@ A comprehensive Python API for controlling the Celestron NexStar 6SE Computerize
   - [Equatorial (RA/Dec)](#equatorial-radec)
   - [Horizontal (Alt/Az)](#horizontal-altaz)
 - [Tracking Modes](#tracking-modes)
+- [Compatibility Notes](#compatibility-notes)
+  - [Celestron StarSense AutoAlign](#celestron-starsense-autoalign)
 - [Safety Notes](#safety-notes)
 - [Troubleshooting](#troubleshooting)
   - [Connection Issues](#connection-issues)
@@ -55,7 +57,7 @@ A comprehensive Python API for controlling the Celestron NexStar 6SE Computerize
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.9+ (tested up to Python 3.14)
 - PySerial library
 - Celestron NexStar 6SE telescope with USB connection
 
@@ -291,6 +293,24 @@ This API implements the Celestron NexStar serial protocol for communication. Com
 - `TrackingMode.ALT_AZ` - Alt-Az tracking for terrestrial observing
 - `TrackingMode.EQ_NORTH` - Equatorial tracking for Northern Hemisphere
 - `TrackingMode.EQ_SOUTH` - Equatorial tracking for Southern Hemisphere
+
+## Compatibility Notes
+
+### Celestron StarSense AutoAlign
+
+**This API does not support the Celestron StarSense AutoAlign accessory.** The StarSense AutoAlign system uses proprietary camera control commands and alignment protocols that are not part of the standard NexStar serial protocol documented by Celestron.
+
+**What is supported:**
+- Manual alignment via the `sync_ra_dec()` method
+- Traditional star alignment workflows (manually center a known star, then sync)
+- All standard telescope control functions (goto, tracking, positioning)
+
+**What is NOT supported:**
+- StarSense camera-based automatic alignment
+- StarSense-specific commands and protocols
+- Automated plate solving via StarSense hardware
+
+If you need to use StarSense AutoAlign, use the telescope's hand controller. This API is designed for manual control and traditional alignment methods. Users interested in automated alignment could implement custom plate-solving solutions using this API's positioning commands with third-party software.
 
 ## Safety Notes
 
