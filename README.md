@@ -54,11 +54,13 @@ A comprehensive Python API for controlling the Celestron NexStar 6SE Computerize
 - Alignment and sync capabilities
 - Coordinate conversion utilities
 - Astronomical calculations
+- Progress bars for long-running operations (using tqdm)
 
 ## Requirements
 
 - Python 3.9+ (tested up to Python 3.14)
-- PySerial library
+- PySerial library (for serial communication)
+- tqdm library (for progress bars in examples)
 - Celestron NexStar 6SE telescope with USB connection
 
 ## Installation

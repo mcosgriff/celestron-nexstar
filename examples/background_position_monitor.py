@@ -14,6 +14,7 @@ import asyncio
 from queue import Queue
 from datetime import datetime
 from typing import Callable, Optional
+from tqdm import tqdm
 from celestron_nexstar import NexStarTelescope, EquatorialCoordinates, HorizontalCoordinates
 
 
@@ -428,19 +429,22 @@ def example_threading():
     monitor.start()
 
     # Do other work while monitoring runs in background
-    for i in range(5):
-        time.sleep(1)
+    with tqdm(total=5, desc="Monitoring position", unit="sample") as pbar:
+        for i in range(5):
+            time.sleep(1)
 
-        # Get cached position (no delay!)
-        ra_dec = monitor.get_position_ra_dec()
-        alt_az = monitor.get_position_alt_az()
-        last_update = monitor.get_last_update()
+            # Get cached position (no delay!)
+            ra_dec = monitor.get_position_ra_dec()
+            alt_az = monitor.get_position_alt_az()
+            last_update = monitor.get_last_update()
 
-        if ra_dec and alt_az:
-            print(f"[{i+1}] RA: {ra_dec.ra_hours:.4f}h, "
-                  f"Dec: {ra_dec.dec_degrees:.4f}°, "
-                  f"Alt: {alt_az.altitude:.2f}° "
-                  f"(updated: {last_update.strftime('%H:%M:%S')})")
+            if ra_dec and alt_az:
+                pbar.set_postfix({
+                    'RA': f'{ra_dec.ra_hours:.4f}h',
+                    'Dec': f'{ra_dec.dec_degrees:+.3f}°',
+                    'Alt': f'{alt_az.altitude:.2f}°'
+                })
+            pbar.update(1)
 
     monitor.stop()
     telescope.disconnect()
@@ -488,16 +492,21 @@ def example_queue():
     monitor.start()
 
     # Consumer: process positions from queue
-    for i in range(5):
-        position_data = monitor.get_position(timeout=2.0)
+    with tqdm(total=5, desc="Processing queue", unit="pos") as pbar:
+        for i in range(5):
+            position_data = monitor.get_position(timeout=2.0)
 
-        if position_data:
-            ra_dec, alt_az, timestamp = position_data
-            print(f"[{i+1}] Received: RA {ra_dec.ra_hours:.4f}h, "
-                  f"Alt {alt_az.altitude:.2f}° at {timestamp.strftime('%H:%M:%S')}")
-            print(f"     Queue size: {monitor.queue_size()}")
-        else:
-            print(f"[{i+1}] Timeout waiting for position")
+            if position_data:
+                ra_dec, alt_az, timestamp = position_data
+                pbar.set_postfix({
+                    'RA': f'{ra_dec.ra_hours:.4f}h',
+                    'Alt': f'{alt_az.altitude:.2f}°',
+                    'Q': monitor.queue_size()
+                })
+            else:
+                pbar.set_postfix({'status': 'Timeout'})
+
+            pbar.update(1)
 
     monitor.stop()
     telescope.disconnect()
@@ -518,13 +527,17 @@ async def example_async():
     monitor_task = asyncio.create_task(monitor.run())
 
     # Do other async work
-    for i in range(5):
-        await asyncio.sleep(1)
+    with tqdm(total=5, desc="Async monitoring", unit="sample") as pbar:
+        for i in range(5):
+            await asyncio.sleep(1)
 
-        position = monitor.get_position_ra_dec()
-        if position:
-            print(f"[{i+1}] RA: {position.ra_hours:.4f}h, "
-                  f"Dec: {position.dec_degrees:.4f}°")
+            position = monitor.get_position_ra_dec()
+            if position:
+                pbar.set_postfix({
+                    'RA': f'{position.ra_hours:.4f}h',
+                    'Dec': f'{position.dec_degrees:.4f}°'
+                })
+            pbar.update(1)
 
     # Stop monitoring
     monitor.stop()

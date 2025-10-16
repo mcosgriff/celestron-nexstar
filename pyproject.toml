@@ -27,6 +27,7 @@ packages = [{include = "celestron_nexstar", from = "src"}]
 python = "^3.9"
 pyserial = "^3.5"
 deal = "^4.24.5"
+tqdm = "^4.66.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
