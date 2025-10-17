@@ -272,7 +272,7 @@ class TestNexStarProtocol(unittest.TestCase):
     @patch.object(NexStarProtocol, 'send_command')
     def test_echo_exception(self, mock_send):
         """Test echo command with exception"""
-        mock_send.side_effect = Exception("Connection error")
+        mock_send.side_effect = NotConnectedError("Connection error")
         result = self.protocol.echo('x')
         self.assertFalse(result)
 
