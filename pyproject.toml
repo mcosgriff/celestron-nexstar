@@ -2,7 +2,7 @@
 name = "celestron-nexstar"
 version = "0.1.0"
 description = "Python API for controlling Celestron NexStar 6SE telescopes via serial communication"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["matthew@cosgriff.io"]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/yourusername/celestron-nexstar"

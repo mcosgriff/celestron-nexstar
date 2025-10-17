@@ -24,8 +24,7 @@ import deal
 from .exceptions import (
     TelescopeConnectionError,
     TelescopeTimeoutError,
-    NotConnectedError,
-    CommandError
+    NotConnectedError
 )
 
 logger = logging.getLogger(__name__)
@@ -222,7 +221,7 @@ class NexStarProtocol:
         try:
             value1 = NexStarProtocol.hex_to_degrees(response[:8])
             value2 = NexStarProtocol.hex_to_degrees(response[9:17])
-            return (value1, value2)
+            return value1, value2
         except ValueError:
             return None
 
@@ -255,7 +254,7 @@ class NexStarProtocol:
         """
         response = self.send_command(command)
         if len(response) == 2:
-            return (ord(response[0]), ord(response[1]))
+            return ord(response[0]), ord(response[1])
         return None
 
     def send_empty_command(self, command: str) -> bool:
@@ -289,7 +288,7 @@ class NexStarProtocol:
         try:
             response = self.send_command(f'K{char}')
             return response == char
-        except Exception:
+        except (NotConnectedError, TelescopeTimeoutError, serial.SerialException):
             return False
 
     def get_version(self) -> Tuple[int, int]:
@@ -472,7 +471,7 @@ class NexStarProtocol:
             try:
                 lat = self.hex_to_degrees(response[:8])
                 lon = self.hex_to_degrees(response[8:16])
-                return (lat, lon)
+                return lat, lon
             except ValueError:
                 return None
         return None
