@@ -76,10 +76,10 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --locked --all-extras --dev
+        run: uv sync --locked --all-extras --dev --python ${{ matrix.python-version }}
 
       - name: Run tests with coverage
-        run: uv run pytest --cov=celestron_nexstar --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=100
+        run: uv run --python ${{ matrix.python-version }} pytest --cov=celestron_nexstar --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=100
 
       - name: Upload coverage reports to Codecov
         if: matrix.python-version == '3.14'
