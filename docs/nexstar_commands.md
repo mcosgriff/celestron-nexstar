@@ -3,6 +3,7 @@
 ## Protocol Specification
 
 ### Serial Communication Settings
+
 - **Baud Rate**: 9600
 - **Data Bits**: 8
 - **Parity**: None
@@ -11,7 +12,9 @@
 - **Terminator**: `#` (ASCII character 0x23)
 
 ### Command Format
+
 All commands follow this pattern:
+
 - Commands are ASCII strings
 - Each command must end with `#` character
 - Responses also end with `#` character
@@ -24,17 +27,20 @@ All commands follow this pattern:
 The NexStar protocol uses 32-bit hexadecimal encoding for all angular measurements.
 
 ### Encoding Formula
-```
+
+```text
 hex_value = int((degrees / 360.0) * 0x100000000)
 hex_string = format(hex_value, '08X')  # 8-character uppercase hex
 ```
 
 ### Decoding Formula
-```
+
+```text
 degrees = (hex_value / 0x100000000) * 360.0
 ```
 
 ### Range Mapping
+
 - `0x00000000` = 0°
 - `0x40000000` = 90°
 - `0x80000000` = 180°
@@ -42,15 +48,19 @@ degrees = (hex_value / 0x100000000) * 360.0
 - `0xFFFFFFFF` = 360° (wraps to 0°)
 
 ### Coordinate Pair Format
+
 When sending or receiving coordinate pairs (RA/Dec or Az/Alt):
-```
+
+```text
 Format: "XXXXXXXX,YYYYYYYY"
         ^8 chars ^8 chars
         Total: 17 characters (16 hex + 1 comma)
 ```
 
 ### Negative Angles
+
 For coordinates that can be negative (like Declination and Altitude):
+
 - Positive: Use direct value (0° to 180°)
 - Negative: Use 360° + value (e.g., -45° becomes 315°)
 
@@ -61,16 +71,20 @@ For coordinates that can be negative (like Declination and Altitude):
 ### 1. Connection Test Commands
 
 #### Echo Test
+
 **Purpose**: Test serial connection and verify communication
 
 **Command**: `K<char>#`
+
 - `<char>`: Any single ASCII character
 
 **Response**: `<char>#`
+
 - Returns the same character that was sent
 
 **Example**:
-```
+
+```text
 Send:    Kx#
 Receive: x#
 ```
@@ -82,16 +96,19 @@ Receive: x#
 ### 2. Information Query Commands
 
 #### Get Firmware Version
+
 **Purpose**: Retrieve telescope firmware version
 
 **Command**: `V#`
 
 **Response**: `<major><minor>#`
+
 - `<major>`: Major version number (1 byte)
 - `<minor>`: Minor version number (1 byte)
 
 **Example**:
-```
+
+```text
 Send:    V#
 Receive: \x04\x0E#  (Version 4.14)
 ```
@@ -101,18 +118,21 @@ Receive: \x04\x0E#  (Version 4.14)
 ---
 
 #### Get Telescope Model
+
 **Purpose**: Retrieve telescope model number
 
 **Command**: `m#`
 
 **Response**: `<model>#`
+
 - `<model>`: Model number (1 byte)
   - `6` = NexStar 6SE
   - `8` = NexStar 8SE
   - Other values for different models
 
 **Example**:
-```
+
+```text
 Send:    m#
 Receive: \x06#  (NexStar 6SE)
 ```
@@ -124,26 +144,31 @@ Receive: \x06#  (NexStar 6SE)
 ### 3. Position Query Commands
 
 #### Get Precise RA/Dec Position
+
 **Purpose**: Get current Right Ascension and Declination in precise format
 
 **Command**: `E#`
 
 **Response**: `RRRRRRR,DDDDDDDDD#`
+
 - `RRRRRRR`: RA in hex (8 chars)
 - `DDDDDDDDD`: Dec in hex (8 chars)
 - Total: 17 characters (excluding terminator)
 
 **Coordinate Interpretation**:
+
 - RA: 0x00000000 to 0xFFFFFFFF = 0° to 360° (or 0 to 24 hours)
 - Dec: Use signed conversion (0-180° positive, 180-360° represents negative)
 
 **Example**:
-```
+
+```text
 Send:    E#
 Receive: 12AB34CD,89EF0123#
 ```
 
 **Decoding**:
+
 ```python
 ra_hex = "12AB34CD"
 dec_hex = "89EF0123"
@@ -159,21 +184,25 @@ if dec_degrees > 180:
 ---
 
 #### Get Precise Alt/Az Position
+
 **Purpose**: Get current Azimuth and Altitude in precise format
 
 **Command**: `Z#`
 
 **Response**: `AAAAAAAA,EEEEEEEE#`
+
 - `AAAAAAAA`: Azimuth in hex (8 chars)
 - `EEEEEEEE`: Altitude in hex (8 chars)
 - Total: 17 characters (excluding terminator)
 
 **Coordinate Interpretation**:
+
 - Az: 0x00000000 to 0xFFFFFFFF = 0° to 360° (0° = North, 90° = East)
 - Alt: Use signed conversion (0-90° positive, >180° represents negative)
 
 **Example**:
-```
+
+```text
 Send:    Z#
 Receive: 40000000,20000000#
 ```
@@ -185,16 +214,19 @@ Receive: 40000000,20000000#
 ### 4. Slew Commands (Goto)
 
 #### Goto RA/Dec Precise
+
 **Purpose**: Slew telescope to specified RA/Dec coordinates
 
 **Command**: `R<RA>,<DEC>#`
+
 - `<RA>`: Right Ascension in hex (8 chars)
 - `<DEC>`: Declination in hex (8 chars)
 
 **Response**: `#` (empty response indicates success)
 
 **Example** (Goto RA=0°, Dec=45°):
-```
+
+```text
 RA:  0° → 0x00000000 → "00000000"
 Dec: 45° → 0x20000000 → "20000000"
 Send: R00000000,20000000#
@@ -202,7 +234,8 @@ Receive: #
 ```
 
 **Example** (Goto RA=180°, Dec=-30°):
-```
+
+```text
 RA:  180° → 0x80000000 → "80000000"
 Dec: -30° → 330° → 0xE8000000 → "E8000000"
 Send: R80000000,E8000000#
@@ -214,16 +247,19 @@ Receive: #
 ---
 
 #### Goto Alt/Az Precise
+
 **Purpose**: Slew telescope to specified Azimuth/Altitude coordinates
 
 **Command**: `B<AZ>,<ALT>#`
+
 - `<AZ>`: Azimuth in hex (8 chars)
 - `<ALT>`: Altitude in hex (8 chars)
 
 **Response**: `#` (empty response indicates success)
 
 **Example** (Goto Az=90° East, Alt=45°):
-```
+
+```text
 Az:  90° → 0x40000000 → "40000000"
 Alt: 45° → 0x20000000 → "20000000"
 Send: B40000000,20000000#
@@ -237,21 +273,25 @@ Receive: #
 ### 5. Alignment Commands
 
 #### Sync RA/Dec Precise
+
 **Purpose**: Synchronize telescope's current position to specified RA/Dec coordinates (for alignment)
 
 **Command**: `S<RA>,<DEC>#`
+
 - `<RA>`: Right Ascension in hex (8 chars)
 - `<DEC>`: Declination in hex (8 chars)
 
 **Response**: `#` (empty response indicates success)
 
 **Usage**:
+
 1. Manually center a known star
 2. Send sync command with the star's known coordinates
 3. Improves pointing accuracy
 
 **Example** (Sync to RA=6h, Dec=23.5°):
-```
+
+```text
 RA:  6h = 90° → 0x40000000 → "40000000"
 Dec: 23.5° → 0x0A666666 → "0A666666"
 Send: S40000000,0A666666#
@@ -265,21 +305,25 @@ Receive: #
 ### 6. Motion Control Commands
 
 #### Check Goto Status
+
 **Purpose**: Determine if a slew operation is in progress
 
 **Command**: `L#`
 
 **Response**:
+
 - `0#` - Telescope is stationary (goto complete)
 - `1#` - Telescope is slewing (goto in progress)
 
 **Example**:
-```
+
+```text
 Send:    L#
 Receive: 1#  (currently slewing)
 ```
 
 **Usage**: Poll this command to wait for slew completion
+
 ```python
 while send_command("L") == "1":
     time.sleep(0.5)  # Wait 500ms
@@ -291,6 +335,7 @@ while send_command("L") == "1":
 ---
 
 #### Cancel Goto
+
 **Purpose**: Immediately stop current slew operation
 
 **Command**: `M#`
@@ -298,7 +343,8 @@ while send_command("L") == "1":
 **Response**: `#` (empty response indicates success)
 
 **Example**:
-```
+
+```text
 Send:    M#
 Receive: #
 ```
@@ -308,11 +354,13 @@ Receive: #
 ---
 
 #### Variable Rate Motion
+
 **Purpose**: Move telescope at variable rates in azimuth or altitude
 
 **Command**: `P<axis><direction><rate><0><0><0>#`
 
 **Parameters** (all single bytes):
+
 - `<axis>`:
   - `\x01` (1) = Azimuth (horizontal)
   - `\x02` (2) = Altitude (vertical)
@@ -328,6 +376,7 @@ Receive: #
 **Response**: `#` (empty response indicates success)
 
 **Direction Mapping**:
+
 - Azimuth positive (17) = Counterclockwise (East)
 - Azimuth negative (18) = Clockwise (West)
 - Altitude positive (17) = Up
@@ -336,21 +385,24 @@ Receive: #
 **Examples**:
 
 Move up at medium speed (rate 5):
-```
+
+```text
 Send: P\x02\x11\x05\x00\x00\x00#
       (axis=2, dir=17, rate=5)
 Receive: #
 ```
 
 Move right (clockwise) at fast speed (rate 9):
-```
+
+```text
 Send: P\x01\x12\x09\x00\x00\x00#
       (axis=1, dir=18, rate=9)
 Receive: #
 ```
 
 Stop altitude motion:
-```
+
+```text
 Send: P\x02\x11\x00\x00\x00\x00#
       (axis=2, dir=17, rate=0)
 Receive: #
@@ -363,11 +415,13 @@ Receive: #
 ### 7. Tracking Mode Commands
 
 #### Get Tracking Mode
+
 **Purpose**: Retrieve current tracking mode setting
 
 **Command**: `t#`
 
 **Response**: `<mode>#`
+
 - `<mode>`: Single byte tracking mode value
   - `\x00` (0) = Tracking OFF
   - `\x01` (1) = Alt-Az tracking
@@ -375,7 +429,8 @@ Receive: #
   - `\x03` (3) = Equatorial tracking (Southern Hemisphere)
 
 **Example**:
-```
+
+```text
 Send:    t#
 Receive: \x01#  (Alt-Az tracking active)
 ```
@@ -385,9 +440,11 @@ Receive: \x01#  (Alt-Az tracking active)
 ---
 
 #### Set Tracking Mode
+
 **Purpose**: Configure telescope tracking mode
 
 **Command**: `T<mode>#`
+
 - `<mode>`: Single byte tracking mode value
   - `\x00` (0) = Turn tracking OFF
   - `\x01` (1) = Alt-Az tracking
@@ -399,19 +456,22 @@ Receive: \x01#  (Alt-Az tracking active)
 **Examples**:
 
 Enable Alt-Az tracking:
-```
+
+```text
 Send:    T\x01#
 Receive: #
 ```
 
 Disable tracking:
-```
+
+```text
 Send:    T\x00#
 Receive: #
 ```
 
 Enable equatorial tracking for Northern Hemisphere:
-```
+
+```text
 Send:    T\x02#
 Receive: #
 ```
@@ -423,22 +483,26 @@ Receive: #
 ### 8. Location Commands
 
 #### Get Observer Location
+
 **Purpose**: Retrieve configured observer latitude and longitude
 
 **Command**: `w#`
 
 **Response**: `<lat><lon>#`
+
 - `<lat>`: Latitude in hex (8 chars)
 - `<lon>`: Longitude in hex (8 chars)
 - Total: 16 characters (no comma separator)
 
 **Coordinate Interpretation**:
+
 - Both use same hex encoding (0-360°)
 - Latitude: 0-180° = 0° to 180° N, 180-360° = 0° to 180° S
 - Longitude: 0-180° = 0° to 180° E, 180-360° = 0° to 180° W
 
 **Example**:
-```
+
+```text
 Send:    w#
 Receive: 22B851EB851EB851#
          ^^^^^^^^ ^^^^^^^^
@@ -446,6 +510,7 @@ Receive: 22B851EB851EB851#
 ```
 
 **Decoding**:
+
 ```python
 lat_hex = "22B851EB"
 lon_hex = "851EB851"
@@ -463,9 +528,11 @@ if lon > 180:
 ---
 
 #### Set Observer Location
+
 **Purpose**: Configure observer latitude and longitude for calculations
 
 **Command**: `W<lat>,<lon>#`
+
 - `<lat>`: Latitude in hex (8 chars)
 - `<lon>`: Longitude in hex (8 chars)
 - Note: Comma separator (unlike get command)
@@ -473,7 +540,8 @@ if lon > 180:
 **Response**: `#` (empty response indicates success)
 
 **Example** (Set location to 40.7°N, 74.0°W):
-```
+
+```text
 Lat: 40.7° → 0x1C71C71C → "1C71C71C"
 Lon: -74° = 286° → 0xCCCCCCCC → "CCCCCCCC"
 Send: W1C71C71C,CCCCCCCC#
@@ -487,6 +555,7 @@ Receive: #
 ### 9. Date and Time Commands
 
 #### Get Date and Time
+
 **Purpose**: Retrieve telescope's configured date and time
 
 **Command**: `h#`
@@ -494,6 +563,7 @@ Receive: #
 **Response**: `<H><M><S><month><day><year><tz><dst>#`
 
 **Response Bytes** (8 bytes total):
+
 1. `<H>`: Hour (0-23)
 2. `<M>`: Minute (0-59)
 3. `<S>`: Second (0-59)
@@ -504,13 +574,15 @@ Receive: #
 8. `<dst>`: Daylight Saving Time (0 = standard time, 1 = DST active)
 
 **Example**:
-```
+
+```text
 Send:    h#
 Receive: \x0E\x1E\x00\x0A\x18\x19\xFB\x00#
          14:30:00 on October 24, 2025, GMT-5, no DST
 ```
 
 **Decoding**:
+
 ```python
 response = "\x0E\x1E\x00\x0A\x18\x19\xFB\x00"
 hour = ord(response[0])      # 14
@@ -528,11 +600,13 @@ dst = ord(response[7])       # 0
 ---
 
 #### Set Date and Time
+
 **Purpose**: Configure telescope's date and time for coordinate calculations
 
 **Command**: `H<H><M><S><month><day><year><tz><dst>#`
 
 **Parameters** (8 bytes):
+
 1. `<H>`: Hour (0-23)
 2. `<M>`: Minute (0-59)
 3. `<S>`: Second (0-59)
@@ -545,12 +619,14 @@ dst = ord(response[7])       # 0
 **Response**: `#` (empty response indicates success)
 
 **Example** (Set to 14:30:00 on October 24, 2025, GMT-5, no DST):
-```
+
+```text
 Send: H\x0E\x1E\x00\x0A\x18\x19\xFB\x00#
 Receive: #
 ```
 
 **Timezone Encoding** (for negative offsets):
+
 ```python
 # For GMT-5:
 if offset < 0:
@@ -592,14 +668,16 @@ else:
 ## Practical Examples
 
 ### Example 1: Simple Connection Test
-```
+
+```text
 1. Send: Kx#
 2. Receive: x#
 3. Success: Connection is working
 ```
 
 ### Example 2: Get Current Position
-```
+
+```text
 1. Send: E#
 2. Receive: 34B4C876,DE3A5678#
 3. Decode:
@@ -610,7 +688,8 @@ else:
 ```
 
 ### Example 3: Slew to Polaris
-```
+
+```text
 Polaris coordinates: RA = 2h 31m 49s, Dec = +89° 15' 51"
 
 1. Convert to degrees:
@@ -635,7 +714,8 @@ Polaris coordinates: RA = 2h 31m 49s, Dec = +89° 15' 51"
 ```
 
 ### Example 4: Manual Movement
-```
+
+```text
 Move telescope up at medium speed (rate 5):
 
 1. Parameters:
@@ -656,7 +736,8 @@ Move telescope up at medium speed (rate 5):
 ```
 
 ### Example 5: Enable Tracking
-```
+
+```text
 Enable Alt-Az tracking:
 
 1. Send: T\x01#
@@ -671,20 +752,26 @@ Enable Alt-Az tracking:
 ## Error Handling
 
 ### Timeout
+
 If no response is received within the timeout period (typically 2 seconds):
+
 - Check serial connection
 - Verify telescope is powered on
 - Ensure correct baud rate (9600)
 
 ### Invalid Response
+
 If response format is unexpected:
+
 - Response too short/long
 - Missing terminator
 - Invalid hex characters
 - Send command again or reconnect
 
 ### Command Fails
+
 If telescope doesn't respond to command:
+
 - Position may be at mechanical limit
 - Cables may be wrapped
 - Alignment may be needed
@@ -695,21 +782,25 @@ If telescope doesn't respond to command:
 ## Technical Notes
 
 ### Timing Considerations
+
 1. Allow 500ms after opening serial port for connection to stabilize
 2. Clear input/output buffers before sending each command
 3. Poll goto status every 500ms (not faster to avoid overwhelming controller)
 4. Wait for one command to complete before sending the next
 
 ### Precision
+
 - 32-bit hex encoding provides approximately 0.000000084° resolution
 - Practical accuracy limited by mechanical precision (~1-2 arcminutes)
 - Position queries are more accurate than movement commands
 
 ### Coordinate Conversions
+
 **RA Hours to Degrees**: `degrees = hours * 15`
 **Degrees to RA Hours**: `hours = degrees / 15`
 
 **Signed to Unsigned** (for Dec/Alt):
+
 ```python
 if angle < 0:
     unsigned = 360 + angle
@@ -718,6 +809,7 @@ else:
 ```
 
 **Unsigned to Signed** (for Dec/Alt):
+
 ```python
 if unsigned > 180:
     signed = unsigned - 360
@@ -730,11 +822,13 @@ else:
 ## Implementation References
 
 All command implementations can be found in:
+
 - **File**: `/src/celestron_nexstar/protocol.py`
 - **Class**: `NexStarProtocol`
 - **Lines**: 275-534
 
 High-level wrapper API available in:
+
 - **File**: `/src/celestron_nexstar/telescope.py`
 - **Class**: `NexStarTelescope`
 

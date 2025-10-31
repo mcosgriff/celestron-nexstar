@@ -35,15 +35,15 @@ COSMOS/OpenC3 is a suite of applications designed to control embedded systems. T
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    COSMOS/OpenC3                        │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Command   │  │  Telemetry   │  │   Scripts    │  │
-│  │   Sender    │  │   Monitor    │  │              │  │
-│  └──────┬──────┘  └──────▲───────┘  └──────────────┘  │
-│         │                │                              │
-│         ▼                │                              │
+```text
+┌────────────────────────────────────────────────────────┐
+│                    COSMOS/OpenC3                       │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│  │   Command   │  │  Telemetry   │  │   Scripts    │   │
+│  │   Sender    │  │   Monitor    │  │              │   │
+│  └──────┬──────┘  └──────▲───────┘  └──────────────┘   │
+│         │                │                             │
+│         ▼                │                             │
 │  ┌──────────────────────────────────┐                  │
 │  │  Serial/TCP Interface            │                  │
 │  └────────────┬──────────▲──────────┘                  │
@@ -73,7 +73,7 @@ COSMOS/OpenC3 is a suite of applications designed to control embedded systems. T
 
 Create a COSMOS plugin with this structure:
 
-```
+```text
 openc3-cosmos-celestron/
 ├── plugin.txt                      # Plugin definition
 ├── targets/
@@ -530,7 +530,7 @@ if __name__ == '__main__':
 
 ### 1. Install COSMOS/OpenC3
 
-Follow the official installation guide at https://docs.openc3.com/docs/getting-started/installation
+Follow the official installation guide at <https://docs.openc3.com/docs/getting-started/installation>
 
 ### 2. Install Python Dependencies
 
@@ -575,6 +575,7 @@ Open browser to `http://localhost:2900`
 ### 3. Send Commands
 
 Using Command Sender:
+
 1. Select target: `CELESTRON`
 2. Select command: `GOTO_RA_DEC`
 3. Enter parameters:
@@ -585,6 +586,7 @@ Using Command Sender:
 ### 4. Monitor Telemetry
 
 Using Telemetry Viewer:
+
 1. Select `CELESTRON POSITION_RA_DEC`
 2. Watch real-time position updates
 
@@ -672,6 +674,7 @@ end
 ### Telemetry Logging
 
 All telemetry is automatically logged by COSMOS and can be:
+
 - Viewed in Telemetry Grapher
 - Exported to CSV
 - Analyzed with Data Viewer

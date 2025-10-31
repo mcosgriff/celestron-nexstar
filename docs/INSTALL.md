@@ -102,12 +102,14 @@ uv run mypy src
 ### Finding Your Serial Port
 
 **macOS:**
+
 ```zsh
 ls /dev/tty.usbserial*
 # Usually: /dev/tty.usbserial-1420 or /dev/tty.usbserial-XXXXX
 ```
 
 **Linux:**
+
 ```zsh
 ls /dev/ttyUSB*
 # Usually: /dev/ttyUSB0
@@ -118,7 +120,8 @@ sudo usermod -a -G dialout $USER
 ```
 
 **Windows:**
-```
+
+```text
 Check Device Manager → Ports (COM & LPT)
 Usually: COM3, COM4, etc.
 ```
@@ -126,6 +129,7 @@ Usually: COM3, COM4, etc.
 ### Required Adapters for MacBook
 
 If your MacBook only has USB-C ports:
+
 - **USB-C to USB-A adapter** (~$19, Apple official or third-party)
 - Or **USB-C to USB-B cable** (direct connection, $10-15)
 

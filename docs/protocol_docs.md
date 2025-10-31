@@ -5,6 +5,7 @@
 This module provides a low-level implementation of the NexStar serial communication protocol used for controlling Celestron telescopes. It handles the core functionalities of serial communication, including command formatting, response parsing, and coordinate encoding/decoding.
 
 ### Protocol Specification
+
 - **Baud Rate**: 9600
 - **Data Bits**: 8
 - **Parity**: None
@@ -28,6 +29,7 @@ protocol = NexStarProtocol(port='/dev/tty.usbmodem14201')
 ```
 
 The constructor accepts the following arguments:
+
 - `port` (str): The serial port path for the telescope connection.
 - `baudrate` (int, optional): The communication speed. Defaults to `9600`.
 - `timeout` (float, optional): The serial timeout in seconds. Defaults to `2.0`.
@@ -35,6 +37,7 @@ The constructor accepts the following arguments:
 ### Connection Management
 
 #### `open()`
+
 Opens the serial connection to the telescope.
 
 - **Returns**: `True` if the connection is successful.
@@ -49,6 +52,7 @@ except TelescopeConnectionError as e:
 ```
 
 #### `close()`
+
 Closes the serial connection.
 
 ```python
@@ -56,6 +60,7 @@ protocol.close()
 ```
 
 #### `is_open()`
+
 Checks if the connection is currently open.
 
 - **Returns**: `True` if the connection is open, `False` otherwise.
@@ -63,6 +68,7 @@ Checks if the connection is currently open.
 ### Command Sending
 
 #### `send_command(command: str)`
+
 Sends a command to the telescope and waits for a response.
 
 - **Arguments**:

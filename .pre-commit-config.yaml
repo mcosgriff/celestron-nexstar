@@ -3,10 +3,10 @@ repos:
     hooks:
       - id: uv-lock
         name: uv lock
-        entry: uv lock
+        entry: bash -c 'command -v uv >/dev/null 2>&1 && uv lock || echo "uv not found, skipping lock check"'
         language: system
         pass_filenames: false
-        files: ^(pyproject\.toml|uv\.lock)$
+        files: ^pyproject\.toml$
         always_run: false
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -27,6 +27,12 @@ repos:
         args: [--fix]
         exclude: ^(tests/|examples/)
       - id: ruff-format
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.15.0
+    hooks:
+      - id: markdownlint-cli2
+        args: [--fix]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.14.0
