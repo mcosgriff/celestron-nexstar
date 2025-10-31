@@ -20,9 +20,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
 
       - name: Run ruff check
         run: uv run ruff check src
@@ -43,9 +45,11 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
 
       - name: Run mypy
         run: uv run mypy src/
@@ -68,15 +72,14 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          uv venv --python ${{ matrix.python-version }}
-          uv pip install -e ".[dev]"
+        run: uv sync --locked --all-extras --dev
 
       - name: Run tests with coverage
-        run: |
-          uv run --python ${{ matrix.python-version }} pytest --cov=celestron_nexstar --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=100
+        run: uv run pytest --cov=celestron_nexstar --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=100
 
       - name: Upload coverage reports to Codecov
         if: matrix.python-version == '3.14'
