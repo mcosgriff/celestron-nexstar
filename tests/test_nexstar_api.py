@@ -6,6 +6,7 @@ Provides comprehensive test coverage for the telescope module.
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 import serial
+from returns.result import Success, Failure
 
 from celestron_nexstar.telescope import NexStarTelescope
 from celestron_nexstar.protocol import NexStarProtocol
@@ -143,7 +144,7 @@ class TestNexStarTelescope(unittest.TestCase):
     def test_get_position_ra_dec(self):
         """Test getting RA/Dec position"""
         # Protocol returns degrees, telescope converts to hours for RA
-        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=(180.0, 45.0)):
+        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Success((180.0, 45.0))):
             position = self.telescope.get_position_ra_dec()
 
         self.assertIsInstance(position, EquatorialCoordinates)
@@ -153,7 +154,7 @@ class TestNexStarTelescope(unittest.TestCase):
 
     def test_get_position_ra_dec_invalid_response(self):
         """Test get_position_ra_dec with invalid response"""
-        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=None):
+        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Failure("Invalid response")):
             position = self.telescope.get_position_ra_dec()
 
         self.assertEqual(position.ra_hours, 0.0)
@@ -162,7 +163,7 @@ class TestNexStarTelescope(unittest.TestCase):
     def test_get_position_ra_dec_negative_dec(self):
         """Test RA/Dec with negative declination"""
         # Dec > 180 in unsigned format means negative
-        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=(90.0, 330.0)):
+        with patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Success((90.0, 330.0))):
             position = self.telescope.get_position_ra_dec()
 
         self.assertAlmostEqual(position.ra_hours, 6.0, places=2)
@@ -170,7 +171,7 @@ class TestNexStarTelescope(unittest.TestCase):
 
     def test_get_position_alt_az(self):
         """Test getting Alt/Az position"""
-        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=(180.0, 45.0)):
+        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Success((180.0, 45.0))):
             position = self.telescope.get_position_alt_az()
 
         self.assertIsInstance(position, HorizontalCoordinates)
@@ -180,7 +181,7 @@ class TestNexStarTelescope(unittest.TestCase):
     def test_get_position_alt_az_negative_altitude(self):
         """Test Alt/Az with negative altitude"""
         # Alt > 180 in unsigned format means negative
-        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=(90.0, 345.0)):
+        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Success((90.0, 345.0))):
             position = self.telescope.get_position_alt_az()
 
         self.assertEqual(position.azimuth, 90.0)
@@ -188,7 +189,7 @@ class TestNexStarTelescope(unittest.TestCase):
 
     def test_get_position_alt_az_invalid_response(self):
         """Test get_position_alt_az with invalid response"""
-        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=None):
+        with patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Failure("Invalid response")):
             position = self.telescope.get_position_alt_az()
 
         self.assertEqual(position.azimuth, 0.0)

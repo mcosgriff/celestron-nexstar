@@ -8,6 +8,7 @@ from unittest.mock import Mock, MagicMock, patch, call
 import serial
 import time
 import deal
+from returns.result import Success, Failure
 
 from celestron_nexstar.protocol import NexStarProtocol
 from celestron_nexstar.exceptions import (
@@ -190,23 +191,24 @@ class TestNexStarProtocol(unittest.TestCase):
         """Test decoding valid coordinate pair"""
         result = NexStarProtocol.decode_coordinate_pair("80000000,40000000")
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result[0], 180.0, places=2)
-        self.assertAlmostEqual(result[1], 90.0, places=2)
+        coords = result.unwrap()
+        self.assertAlmostEqual(coords[0], 180.0, places=2)
+        self.assertAlmostEqual(coords[1], 90.0, places=2)
 
     def test_decode_coordinate_pair_invalid_length(self):
         """Test decoding invalid coordinate pair (wrong length)"""
         result = NexStarProtocol.decode_coordinate_pair("12345")
-        self.assertIsNone(result)
+        self.assertIsInstance(result, Failure)
 
     def test_decode_coordinate_pair_invalid_format(self):
         """Test decoding invalid coordinate pair (missing comma)"""
         result = NexStarProtocol.decode_coordinate_pair("1234567812345678")
-        self.assertIsNone(result)
+        self.assertIsInstance(result, Failure)
 
     def test_decode_coordinate_pair_invalid_hex(self):
         """Test decoding coordinate pair with invalid hex"""
         result = NexStarProtocol.decode_coordinate_pair("XXXXXXXX,YYYYYYYY")
-        self.assertIsNone(result)
+        self.assertIsInstance(result, Failure)
 
     # ========== Common Command Pattern Tests ==========
 

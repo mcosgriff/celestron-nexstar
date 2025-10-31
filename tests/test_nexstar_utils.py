@@ -367,6 +367,22 @@ class TestEdgeCases(unittest.TestCase):
         self.assertGreaterEqual(ra2, 0.0)
         self.assertLess(ra2, 24.0)
 
+        # Test case that triggers ra_hours < 0 normalization
+        # Based on analysis: need small LST and large positive HA (eastern sky, low altitude)
+        # Example from search: LST=0.65, HA=12.00 => RA would be -11.35 before normalization
+        dt_early = datetime(2024, 6, 21, 0, 0, 0)
+        ra3, dec3 = alt_az_to_ra_dec(0.0, 5.0, 40.0, -180.0, dt_early)  # North, very low alt
+        self.assertGreaterEqual(ra3, 0.0)
+        self.assertLess(ra3, 24.0)
+
+        # Test case that triggers ra_hours >= 24 normalization
+        # Based on analysis: need large LST and large negative HA (western sky where sin(az) > 0)
+        # Month=12, Hour=18, Lon=0 gives LST=23.66h; Az=120 (ESE) gives HA=-4.39h => RA=28.05h
+        dt_late = datetime(2024, 12, 15, 18, 0, 0)
+        ra4, dec4 = alt_az_to_ra_dec(120.0, 5.0, 40.0, 0.0, dt_late)  # ESE, very low altitude
+        self.assertGreaterEqual(ra4, 0.0)
+        self.assertLess(ra4, 24.0)
+
 
 if __name__ == "__main__":
     unittest.main()
