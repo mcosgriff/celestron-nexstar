@@ -1,5 +1,13 @@
 # Celestron NexStar 6SE Python API
 
+[![CI](https://github.com/mcosgriff/celestron-nexstar/actions/workflows/ci.yml/badge.svg)](https://github.com/mcosgriff/celestron-nexstar/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mcosgriff/celestron-nexstar/branch/main/graph/badge.svg)](https://codecov.io/gh/mcosgriff/celestron-nexstar)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
+[![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+
 A comprehensive Python API for controlling the Celestron NexStar 6SE Computerized Telescope via serial communication.
 
 ## Table of Contents
