@@ -66,7 +66,6 @@ __email__ = "your.email@example.com"
 __all__ = [
     # Main telescope class
     "NexStarTelescope",
-
     # Type definitions
     "TrackingMode",
     "AlignmentMode",
@@ -76,7 +75,6 @@ __all__ = [
     "TelescopeInfo",
     "TelescopeTime",
     "TelescopeConfig",
-
     # Exceptions
     "NexStarError",
     "TelescopeConnectionError",
@@ -84,25 +82,21 @@ __all__ = [
     "InvalidCoordinateError",
     "CommandError",
     "NotConnectedError",
-
     # Coordinate conversions (from utils.py)
     "ra_to_hours",
     "dec_to_degrees",
     "hours_to_hms",
     "degrees_to_dms",
-
     # Astronomical calculations
     "calculate_lst",
     "calculate_julian_date",
     "alt_az_to_ra_dec",
     "ra_dec_to_alt_az",
     "angular_separation",
-
     # Formatting
     "format_ra",
     "format_dec",
     "format_position",
-
     # Coordinate converter class
     "CoordinateConverter",
 ]

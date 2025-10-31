@@ -13,6 +13,7 @@ class NexStarError(Exception):
     All custom exceptions in this library inherit from this base class,
     making it easy to catch all telescope-related errors.
     """
+
     pass
 
 
@@ -26,6 +27,7 @@ class TelescopeConnectionError(NexStarError):
     - Port is already in use by another application
     - USB cable is disconnected
     """
+
     pass
 
 
@@ -39,6 +41,7 @@ class TelescopeTimeoutError(NexStarError):
     - Communication cable is faulty
     - Telescope is busy with another operation
     """
+
     pass
 
 
@@ -52,6 +55,7 @@ class InvalidCoordinateError(NexStarError):
     - Azimuth outside 0-360 degrees range
     - Altitude outside -90 to +90 degrees range
     """
+
     pass
 
 
@@ -64,6 +68,7 @@ class CommandError(NexStarError):
     - Telescope reports an error condition
     - Response cannot be parsed
     """
+
     pass
 
 
@@ -74,4 +79,5 @@ class NotConnectedError(NexStarError):
     This occurs when trying to control the telescope before calling
     connect() or after disconnect().
     """
+
     pass
