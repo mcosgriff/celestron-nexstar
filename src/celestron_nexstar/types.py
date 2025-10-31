@@ -17,10 +17,11 @@ class TrackingMode(Enum):
     Tracking compensates for Earth's rotation to keep celestial objects
     in the field of view.
     """
-    OFF = 0        # No tracking
-    ALT_AZ = 1     # Alt-Az tracking (for terrestrial or casual observing)
-    EQ_NORTH = 2   # Equatorial tracking for Northern Hemisphere
-    EQ_SOUTH = 3   # Equatorial tracking for Southern Hemisphere
+
+    OFF = 0  # No tracking
+    ALT_AZ = 1  # Alt-Az tracking (for terrestrial or casual observing)
+    EQ_NORTH = 2  # Equatorial tracking for Northern Hemisphere
+    EQ_SOUTH = 3  # Equatorial tracking for Southern Hemisphere
 
 
 class AlignmentMode(Enum):
@@ -30,10 +31,11 @@ class AlignmentMode(Enum):
     Alignment calibrates the telescope's pointing model for accurate goto.
     More alignment stars generally result in better accuracy.
     """
+
     NO_ALIGNMENT = 0  # No alignment performed
-    ONE_STAR = 1      # One-star alignment (basic)
-    TWO_STAR = 2      # Two-star alignment (recommended)
-    THREE_STAR = 3    # Three-star alignment (best accuracy)
+    ONE_STAR = 1  # One-star alignment (basic)
+    TWO_STAR = 2  # Two-star alignment (recommended)
+    THREE_STAR = 3  # Three-star alignment (best accuracy)
 
 
 @dataclass
@@ -48,11 +50,12 @@ class EquatorialCoordinates:
         ra_hours: Right Ascension in hours (0-24)
         dec_degrees: Declination in degrees (-90 to +90)
     """
+
     ra_hours: float
     dec_degrees: float
 
     def __str__(self) -> str:
-        sign = '+' if self.dec_degrees >= 0 else '-'
+        sign = "+" if self.dec_degrees >= 0 else "-"
         return f"RA {self.ra_hours:.4f}h, Dec {sign}{abs(self.dec_degrees):.4f}°"
 
 
@@ -68,6 +71,7 @@ class HorizontalCoordinates:
         azimuth: Azimuth in degrees (0-360, where 0=North, 90=East, 180=South, 270=West)
         altitude: Altitude in degrees (-90 to +90, where 0=horizon, 90=zenith)
     """
+
     azimuth: float
     altitude: float
 
@@ -84,12 +88,13 @@ class GeographicLocation:
         latitude: Latitude in degrees (-90 to +90, positive=North, negative=South)
         longitude: Longitude in degrees (-180 to +180, positive=East, negative=West)
     """
+
     latitude: float
     longitude: float
 
     def __str__(self) -> str:
-        lat_dir = 'N' if self.latitude >= 0 else 'S'
-        lon_dir = 'E' if self.longitude >= 0 else 'W'
+        lat_dir = "N" if self.latitude >= 0 else "S"
+        lon_dir = "E" if self.longitude >= 0 else "W"
         return f"{abs(self.latitude):.4f}°{lat_dir}, {abs(self.longitude):.4f}°{lon_dir}"
 
 
@@ -103,6 +108,7 @@ class TelescopeInfo:
         firmware_major: Firmware major version
         firmware_minor: Firmware minor version
     """
+
     model: int
     firmware_major: int
     firmware_minor: int
@@ -126,6 +132,7 @@ class TelescopeTime:
         timezone: Timezone offset from GMT in hours
         daylight_savings: Daylight savings flag (0 or 1)
     """
+
     hour: int
     minute: int
     second: int
@@ -151,7 +158,8 @@ class TelescopeConfig:
         auto_connect: Automatically connect on initialization
         verbose: Enable verbose logging
     """
-    port: str = '/dev/ttyUSB0'
+
+    port: str = "/dev/ttyUSB0"
     baudrate: int = 9600
     timeout: float = 2.0
     auto_connect: bool = False

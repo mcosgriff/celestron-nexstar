@@ -20,12 +20,9 @@ import time
 from typing import Optional, Tuple
 
 import deal
+from returns.result import Result, Success, Failure
 
-from .exceptions import (
-    TelescopeConnectionError,
-    TelescopeTimeoutError,
-    NotConnectedError
-)
+from .exceptions import TelescopeConnectionError, TelescopeTimeoutError, NotConnectedError
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +39,7 @@ class NexStarProtocol:
     """
 
     # Protocol constants
-    TERMINATOR = '#'
+    TERMINATOR = "#"
     DEFAULT_BAUDRATE = 9600
     DEFAULT_TIMEOUT = 2.0
 
@@ -78,7 +75,7 @@ class NexStarProtocol:
                 timeout=self.timeout,
                 bytesize=serial.EIGHTBITS,
                 parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE
+                stopbits=serial.STOPBITS_ONE,
             )
             time.sleep(0.5)  # Allow connection to stabilize
             logger.info(f"Serial connection opened successfully on {self.port}")
@@ -128,10 +125,10 @@ class NexStarProtocol:
         # Send command with terminator
         full_command = command + self.TERMINATOR
         logger.debug(f"Sending command: {repr(command)}")
-        self.serial_conn.write(full_command.encode('ascii'))
+        self.serial_conn.write(full_command.encode("ascii"))
 
         # Read response until terminator
-        response = b''
+        response = b""
         start_time = time.time()
 
         while True:
@@ -142,11 +139,11 @@ class NexStarProtocol:
             if self.serial_conn.in_waiting > 0:
                 byte = self.serial_conn.read(1)
                 response += byte
-                if byte == self.TERMINATOR.encode('ascii'):
+                if byte == self.TERMINATOR.encode("ascii"):
                     break
 
         # Decode and remove terminator
-        response_str = response.decode('ascii').rstrip(self.TERMINATOR)
+        response_str = response.decode("ascii").rstrip(self.TERMINATOR)
         logger.debug(f"Received response: {repr(response_str)}")
         return response_str
 
@@ -208,7 +205,7 @@ class NexStarProtocol:
         return f"{hex1},{hex2}"
 
     @staticmethod
-    def decode_coordinate_pair(response: str) -> Optional[Tuple[float, float]]:
+    def decode_coordinate_pair(response: str) -> Result[Tuple[float, float], str]:
         """
         Decode a coordinate pair response from NexStar format.
 
@@ -216,17 +213,19 @@ class NexStarProtocol:
             response: Response string in format "XXXXXXXX,YYYYYYYY"
 
         Returns:
-            Tuple of (value1_degrees, value2_degrees) or None if invalid
+            Success with tuple of (value1_degrees, value2_degrees) or Failure with error message
         """
-        if len(response) != 17 or response[8] != ',':
-            return None
+        if len(response) != 17 or response[8] != ",":
+            return Failure(
+                f"Invalid coordinate response format: expected 17 chars with comma at position 8, got {len(response)} chars"
+            )
 
         try:
             value1 = NexStarProtocol.hex_to_degrees(response[:8])
             value2 = NexStarProtocol.hex_to_degrees(response[9:17])
-            return value1, value2
-        except ValueError:
-            return None
+            return Success((value1, value2))
+        except ValueError as e:
+            return Failure(f"Failed to decode coordinate values: {e}")
 
     # ========== Common Command Patterns ==========
 
@@ -271,12 +270,12 @@ class NexStarProtocol:
             True if response was empty (success)
         """
         response = self.send_command(command)
-        return response == ''
+        return response == ""
 
     # ========== Specific Protocol Commands ==========
 
     @deal.pre(lambda char: len(char) == 1)
-    def echo(self, char: str = 'x') -> bool:
+    def echo(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
         Command: K<char>#
@@ -289,7 +288,7 @@ class NexStarProtocol:
             True if echo successful
         """
         try:
-            response = self.send_command(f'K{char}')
+            response = self.send_command(f"K{char}")
             return response == char
         except (NotConnectedError, TelescopeTimeoutError, serial.SerialException):
             return False
@@ -303,7 +302,7 @@ class NexStarProtocol:
         Returns:
             Tuple of (major_version, minor_version)
         """
-        result = self.get_two_bytes('V')
+        result = self.get_two_bytes("V")
         return result if result else (0, 0)
 
     def get_model(self) -> int:
@@ -315,31 +314,31 @@ class NexStarProtocol:
         Returns:
             Model number (6 for NexStar 6SE)
         """
-        result = self.get_single_byte('m')
+        result = self.get_single_byte("m")
         return result if result is not None else 0
 
-    def get_ra_dec_precise(self) -> Optional[Tuple[float, float]]:
+    def get_ra_dec_precise(self) -> Result[Tuple[float, float], str]:
         """
         Get precise RA/Dec position.
         Command: E#
         Response: RRRRRRR,DDDDDDDDD#
 
         Returns:
-            Tuple of (RA_degrees, Dec_degrees) or None if invalid
+            Success with tuple of (RA_degrees, Dec_degrees) or Failure with error message
         """
-        response = self.send_command('E')
+        response = self.send_command("E")
         return self.decode_coordinate_pair(response)
 
-    def get_alt_az_precise(self) -> Optional[Tuple[float, float]]:
+    def get_alt_az_precise(self) -> Result[Tuple[float, float], str]:
         """
         Get precise Alt/Az position.
         Command: Z#
         Response: AAAAAAAA,EEEEEEEE#
 
         Returns:
-            Tuple of (Az_degrees, Alt_degrees) or None if invalid
+            Success with tuple of (Az_degrees, Alt_degrees) or Failure with error message
         """
-        response = self.send_command('Z')
+        response = self.send_command("Z")
         return self.decode_coordinate_pair(response)
 
     @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)
@@ -357,7 +356,7 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(ra_degrees, dec_degrees)
-        return self.send_empty_command(f'R{coords}')
+        return self.send_empty_command(f"R{coords}")
 
     @deal.pre(lambda az_degrees, alt_degrees: 0.0 <= az_degrees <= 360.0 and 0.0 <= alt_degrees <= 360.0)
     def goto_alt_az_precise(self, az_degrees: float, alt_degrees: float) -> bool:
@@ -374,7 +373,7 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(az_degrees, alt_degrees)
-        return self.send_empty_command(f'B{coords}')
+        return self.send_empty_command(f"B{coords}")
 
     @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)
     def sync_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
@@ -391,7 +390,7 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(ra_degrees, dec_degrees)
-        return self.send_empty_command(f'S{coords}')
+        return self.send_empty_command(f"S{coords}")
 
     def is_goto_in_progress(self) -> bool:
         """
@@ -402,8 +401,8 @@ class NexStarProtocol:
         Returns:
             True if slewing
         """
-        response = self.send_command('L')
-        return response == '1'
+        response = self.send_command("L")
+        return response == "1"
 
     def cancel_goto(self) -> bool:
         """
@@ -414,7 +413,7 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        return self.send_empty_command('M')
+        return self.send_empty_command("M")
 
     @deal.pre(lambda axis, direction, rate: axis in [1, 2] and direction in [17, 18] and 0 <= rate <= 9)
     def variable_rate_motion(self, axis: int, direction: int, rate: int) -> bool:
@@ -430,7 +429,7 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        command = f'P{chr(axis)}{chr(direction)}{chr(rate)}{chr(0)}{chr(0)}{chr(0)}'
+        command = f"P{chr(axis)}{chr(direction)}{chr(rate)}{chr(0)}{chr(0)}{chr(0)}"
         return self.send_empty_command(command)
 
     def get_tracking_mode(self) -> int:
@@ -442,7 +441,7 @@ class NexStarProtocol:
         Returns:
             Tracking mode (0=off, 1=alt-az, 2=eq-north, 3=eq-south)
         """
-        result = self.get_single_byte('t')
+        result = self.get_single_byte("t")
         return result if result is not None else 0
 
     @deal.pre(lambda mode: 0 <= mode <= 3)
@@ -458,7 +457,7 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        return self.send_empty_command(f'T{chr(mode)}')
+        return self.send_empty_command(f"T{chr(mode)}")
 
     def get_location(self) -> Optional[Tuple[float, float]]:
         """
@@ -469,7 +468,7 @@ class NexStarProtocol:
         Returns:
             Tuple of (latitude_degrees, longitude_degrees) or None
         """
-        response = self.send_command('w')
+        response = self.send_command("w")
         if len(response) == 16:
             try:
                 lat = self.hex_to_degrees(response[:8])
@@ -479,7 +478,10 @@ class NexStarProtocol:
                 return None
         return None
 
-    @deal.pre(lambda latitude_degrees, longitude_degrees: 0.0 <= latitude_degrees <= 360.0 and 0.0 <= longitude_degrees <= 360.0)
+    @deal.pre(
+        lambda latitude_degrees, longitude_degrees: 0.0 <= latitude_degrees <= 360.0
+        and 0.0 <= longitude_degrees <= 360.0
+    )
     def set_location(self, latitude_degrees: float, longitude_degrees: float) -> bool:
         """
         Set observer location.
@@ -494,7 +496,7 @@ class NexStarProtocol:
             True if successful
         """
         coords = self.encode_coordinate_pair(latitude_degrees, longitude_degrees)
-        return self.send_empty_command(f'W{coords}')
+        return self.send_empty_command(f"W{coords}")
 
     def get_time(self) -> Optional[Tuple[int, int, int, int, int, int, int, int]]:
         """
@@ -506,17 +508,25 @@ class NexStarProtocol:
             Tuple of (hour, minute, second, month, day, year_offset, timezone, dst)
             or None if invalid
         """
-        response = self.send_command('h')
+        response = self.send_command("h")
         if len(response) == 8:
             values = tuple(ord(c) for c in response)
             # Explicitly cast to the expected 8-tuple type
-            return (values[0], values[1], values[2], values[3],
-                    values[4], values[5], values[6], values[7])
+            return (values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7])
         return None
 
-    @deal.pre(lambda hour, minute, second, month, day, year_offset, timezone, dst: 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59 and 1 <= month <= 12 and 1 <= day <= 31 and year_offset >= 0 and dst in [0, 1])
-    def set_time(self, hour: int, minute: int, second: int, month: int,
-                 day: int, year_offset: int, timezone: int, dst: int) -> bool:
+    @deal.pre(
+        lambda hour, minute, second, month, day, year_offset, timezone, dst: 0 <= hour <= 23
+        and 0 <= minute <= 59
+        and 0 <= second <= 59
+        and 1 <= month <= 12
+        and 1 <= day <= 31
+        and year_offset >= 0
+        and dst in [0, 1]
+    )
+    def set_time(
+        self, hour: int, minute: int, second: int, month: int, day: int, year_offset: int, timezone: int, dst: int
+    ) -> bool:
         """
         Set date and time.
         Command: H<H><M><S><month><day><year><tz><dst>#
@@ -535,7 +545,7 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        command = (f'H{chr(hour)}{chr(minute)}{chr(second)}{chr(month)}'
-                   f'{chr(day)}{chr(year_offset)}{chr(timezone)}{chr(dst)}')
+        command = (
+            f"H{chr(hour)}{chr(minute)}{chr(second)}{chr(month)}{chr(day)}{chr(year_offset)}{chr(timezone)}{chr(dst)}"
+        )
         return self.send_empty_command(command)
-

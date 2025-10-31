@@ -39,7 +39,7 @@ def ra_to_hours(hours: float, minutes: float = 0, seconds: float = 0) -> float:
     return hours + minutes / 60.0 + seconds / 3600.0
 
 
-def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign: str = '+') -> float:
+def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign: str = "+") -> float:
     """
     Convert Declination from degrees/minutes/seconds to decimal degrees.
 
@@ -54,7 +54,7 @@ def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign:
     """
     total_degrees = abs(degrees) + minutes / 60.0 + seconds / 3600.0
 
-    if sign == '-':
+    if sign == "-":
         return -total_degrees
     return total_degrees
 
@@ -69,7 +69,7 @@ def degrees_to_dms(degrees: float) -> Tuple[int, int, float, str]:
     Returns:
         Tuple of (degrees, minutes, seconds, sign)
     """
-    sign = '+' if degrees >= 0 else '-'
+    sign = "+" if degrees >= 0 else "-"
     abs_degrees = abs(degrees)
 
     deg = int(abs_degrees)
@@ -98,8 +98,9 @@ def hours_to_hms(hours: float) -> Tuple[int, int, float]:
     return (h, minutes, seconds)
 
 
-def alt_az_to_ra_dec(azimuth: float, altitude: float, latitude: float,
-                      longitude: float, utc_time: datetime) -> Tuple[float, float]:
+def alt_az_to_ra_dec(
+    azimuth: float, altitude: float, latitude: float, longitude: float, utc_time: datetime
+) -> Tuple[float, float]:
     """
     Convert Alt/Az coordinates to RA/Dec coordinates.
 
@@ -123,14 +124,12 @@ def alt_az_to_ra_dec(azimuth: float, altitude: float, latitude: float,
     lst_rad = math.radians(lst_hours * 15.0)
 
     # Calculate declination
-    sin_dec = math.sin(alt_rad) * math.sin(lat_rad) + \
-              math.cos(alt_rad) * math.cos(lat_rad) * math.cos(az_rad)
+    sin_dec = math.sin(alt_rad) * math.sin(lat_rad) + math.cos(alt_rad) * math.cos(lat_rad) * math.cos(az_rad)
     dec_rad = math.asin(sin_dec)
     dec_deg = math.degrees(dec_rad)
 
     # Calculate hour angle
-    cos_ha = (math.sin(alt_rad) - math.sin(lat_rad) * math.sin(dec_rad)) / \
-             (math.cos(lat_rad) * math.cos(dec_rad))
+    cos_ha = (math.sin(alt_rad) - math.sin(lat_rad) * math.sin(dec_rad)) / (math.cos(lat_rad) * math.cos(dec_rad))
 
     # Clamp to valid range to avoid numerical errors
     cos_ha = max(-1.0, min(1.0, cos_ha))
@@ -154,8 +153,9 @@ def alt_az_to_ra_dec(azimuth: float, altitude: float, latitude: float,
     return (ra_hours, dec_deg)
 
 
-def ra_dec_to_alt_az(ra_hours: float, dec_degrees: float, latitude: float,
-                      longitude: float, utc_time: datetime) -> Tuple[float, float]:
+def ra_dec_to_alt_az(
+    ra_hours: float, dec_degrees: float, latitude: float, longitude: float, utc_time: datetime
+) -> Tuple[float, float]:
     """
     Convert RA/Dec coordinates to Alt/Az coordinates.
 
@@ -182,14 +182,12 @@ def ra_dec_to_alt_az(ra_hours: float, dec_degrees: float, latitude: float,
     ha_rad = lst_rad - ra_rad
 
     # Calculate altitude
-    sin_alt = math.sin(dec_rad) * math.sin(lat_rad) + \
-              math.cos(dec_rad) * math.cos(lat_rad) * math.cos(ha_rad)
+    sin_alt = math.sin(dec_rad) * math.sin(lat_rad) + math.cos(dec_rad) * math.cos(lat_rad) * math.cos(ha_rad)
     alt_rad = math.asin(sin_alt)
     altitude = math.degrees(alt_rad)
 
     # Calculate azimuth
-    cos_az = (math.sin(dec_rad) - math.sin(lat_rad) * math.sin(alt_rad)) / \
-             (math.cos(lat_rad) * math.cos(alt_rad))
+    cos_az = (math.sin(dec_rad) - math.sin(lat_rad) * math.sin(alt_rad)) / (math.cos(lat_rad) * math.cos(alt_rad))
 
     # Clamp to valid range
     cos_az = max(-1.0, min(1.0, cos_az))
@@ -278,8 +276,9 @@ def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> floa
     dec2_rad = math.radians(dec2)
 
     # Use spherical law of cosines
-    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + \
-              math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(ra1_rad - ra2_rad)
+    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(
+        ra1_rad - ra2_rad
+    )
 
     # Clamp to valid range
     cos_sep = max(-1.0, min(1.0, cos_sep))
@@ -300,7 +299,7 @@ def format_ra(hours: float, precision: int = 2) -> str:
         Formatted string (e.g., "12h 34m 56.78s")
     """
     h, m, s = hours_to_hms(hours)
-    return f"{h:02d}h {m:02d}m {s:0{precision+3}.{precision}f}s"
+    return f"{h:02d}h {m:02d}m {s:0{precision + 3}.{precision}f}s"
 
 
 def format_dec(degrees: float, precision: int = 1) -> str:
@@ -315,7 +314,7 @@ def format_dec(degrees: float, precision: int = 1) -> str:
         Formatted string (e.g., "+45° 12' 34.5\"")
     """
     d, m, s, sign = degrees_to_dms(degrees)
-    return f"{sign}{d:02d}° {m:02d}' {s:0{precision+3}.{precision}f}\""
+    return f"{sign}{d:02d}° {m:02d}' {s:0{precision + 3}.{precision}f}\""
 
 
 def format_position(ra_hours: float, dec_degrees: float) -> str:

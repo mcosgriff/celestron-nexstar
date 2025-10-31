@@ -11,6 +11,8 @@ import logging
 from typing import Union, Optional, Any, Tuple, Literal
 import serial
 
+from returns.result import Result, Success, Failure
+
 from .protocol import NexStarProtocol
 from .types import (
     TrackingMode,
@@ -76,9 +78,7 @@ class NexStarTelescope:
 
         # Create protocol instance
         self.protocol = NexStarProtocol(
-            port=self.config.port,
-            baudrate=self.config.baudrate,
-            timeout=self.config.timeout
+            port=self.config.port, baudrate=self.config.baudrate, timeout=self.config.timeout
         )
 
         # Keep for backward compatibility with tests
@@ -133,7 +133,7 @@ class NexStarTelescope:
         self.serial_conn = None
         logger.info("Disconnected from telescope")
 
-    def echo_test(self, char: str = 'x') -> bool:
+    def echo_test(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
 
@@ -206,19 +206,17 @@ class NexStarTelescope:
             >>> print(f"RA: {position.ra_hours}h, Dec: {position.dec_degrees}°")
         """
         result = self.protocol.get_ra_dec_precise()
-        if result is None:
-            logger.warning("Failed to get RA/Dec position")
-            return EquatorialCoordinates(ra_hours=0.0, dec_degrees=0.0)
 
-        ra_deg, dec_deg = result
-
-        # Convert RA from degrees to hours
-        ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_deg)
-
-        # Convert Dec from unsigned to signed format
-        dec_degrees = CoordinateConverter.dec_to_signed(dec_deg)
-
-        return EquatorialCoordinates(ra_hours=ra_hours, dec_degrees=dec_degrees)
+        # Handle Result type - unwrap or return default
+        return result.map(
+            lambda coords: EquatorialCoordinates(
+                ra_hours=CoordinateConverter.ra_degrees_to_hours(coords[0]),
+                dec_degrees=CoordinateConverter.dec_to_signed(coords[1]),
+            )
+        ).value_or(
+            # Default value on failure
+            EquatorialCoordinates(ra_hours=0.0, dec_degrees=0.0)
+        )
 
     def get_position_alt_az(self) -> HorizontalCoordinates:
         """
@@ -235,16 +233,16 @@ class NexStarTelescope:
             >>> print(f"Az: {position.azimuth}°, Alt: {position.altitude}°")
         """
         result = self.protocol.get_alt_az_precise()
-        if result is None:
-            logger.warning("Failed to get Alt/Az position")
-            return HorizontalCoordinates(azimuth=0.0, altitude=0.0)
 
-        azimuth, altitude = result
-
-        # Convert altitude from unsigned to signed format
-        altitude = CoordinateConverter.altitude_to_signed(altitude)
-
-        return HorizontalCoordinates(azimuth=azimuth, altitude=altitude)
+        # Handle Result type - unwrap or return default
+        return result.map(
+            lambda coords: HorizontalCoordinates(
+                azimuth=coords[0], altitude=CoordinateConverter.altitude_to_signed(coords[1])
+            )
+        ).value_or(
+            # Default value on failure
+            HorizontalCoordinates(azimuth=0.0, altitude=0.0)
+        )
 
     def goto_ra_dec(self, ra_hours: float, dec_degrees: float) -> bool:
         """
@@ -375,10 +373,10 @@ class NexStarTelescope:
         """
         # Map directions to axis and direction codes
         direction_map = {
-            'up': (2, 17),      # Altitude axis, positive
-            'down': (2, 18),    # Altitude axis, negative
-            'left': (1, 17),    # Azimuth axis, positive
-            'right': (1, 18)    # Azimuth axis, negative
+            "up": (2, 17),  # Altitude axis, positive
+            "down": (2, 18),  # Altitude axis, negative
+            "left": (1, 17),  # Azimuth axis, positive
+            "right": (1, 18),  # Azimuth axis, negative
         }
 
         if direction.lower() not in direction_map:
@@ -391,7 +389,7 @@ class NexStarTelescope:
         logger.debug(f"Moving {direction} at rate {rate}")
         return self.protocol.variable_rate_motion(axis, cmd_dir, rate)
 
-    def stop_motion(self, axis: str = 'both') -> bool:
+    def stop_motion(self, axis: str = "both") -> bool:
         """
         Stop telescope motion on specified axis.
 
@@ -407,11 +405,11 @@ class NexStarTelescope:
         """
         success = True
 
-        if axis in ['az', 'both']:
+        if axis in ["az", "both"]:
             # Stop azimuth axis by setting rate to 0
             success = success and self.protocol.variable_rate_motion(1, 17, 0)
 
-        if axis in ['alt', 'both']:
+        if axis in ["alt", "both"]:
             # Stop altitude axis by setting rate to 0
             success = success and self.protocol.variable_rate_motion(2, 17, 0)
 
@@ -527,11 +525,20 @@ class NexStarTelescope:
             day=day,
             year=year,
             timezone=timezone,
-            daylight_savings=daylight
+            daylight_savings=daylight,
         )
 
-    def set_time(self, hour: int, minute: int, second: int, month: int,
-                 day: int, year: int, timezone: int = 0, daylight_savings: int = 0) -> bool:
+    def set_time(
+        self,
+        hour: int,
+        minute: int,
+        second: int,
+        month: int,
+        day: int,
+        year: int,
+        timezone: int = 0,
+        daylight_savings: int = 0,
+    ) -> bool:
         """
         Set date and time on telescope.
 
