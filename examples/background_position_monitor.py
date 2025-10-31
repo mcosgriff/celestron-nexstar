@@ -8,14 +8,16 @@ Demonstrates different approaches to monitoring telescope position in the backgr
 4. Queue-based approach - Producer-consumer pattern
 """
 
-import time
-import threading
 import asyncio
-from queue import Queue
+import threading
+import time
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
+from queue import Queue
+
 from tqdm import tqdm
-from celestron_nexstar import NexStarTelescope, EquatorialCoordinates, HorizontalCoordinates
+
+from celestron_nexstar import EquatorialCoordinates, HorizontalCoordinates, NexStarTelescope
 
 
 # ============================================================================
@@ -55,14 +57,14 @@ class PositionMonitorThread:
         """
         self.telescope = telescope
         self.interval = interval
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
 
         # Cached positions
-        self._position_ra_dec: Optional[EquatorialCoordinates] = None
-        self._position_alt_az: Optional[HorizontalCoordinates] = None
-        self._last_update: Optional[datetime] = None
+        self._position_ra_dec: EquatorialCoordinates | None = None
+        self._position_alt_az: HorizontalCoordinates | None = None
+        self._last_update: datetime | None = None
 
     def start(self):
         """Start background monitoring."""
@@ -103,17 +105,17 @@ class PositionMonitorThread:
             # Wait for next update (allow early exit)
             self._stop_event.wait(self.interval)
 
-    def get_position_ra_dec(self) -> Optional[EquatorialCoordinates]:
+    def get_position_ra_dec(self) -> EquatorialCoordinates | None:
         """Get latest RA/Dec position (cached)."""
         with self._lock:
             return self._position_ra_dec
 
-    def get_position_alt_az(self) -> Optional[HorizontalCoordinates]:
+    def get_position_alt_az(self) -> HorizontalCoordinates | None:
         """Get latest Alt/Az position (cached)."""
         with self._lock:
             return self._position_alt_az
 
-    def get_last_update(self) -> Optional[datetime]:
+    def get_last_update(self) -> datetime | None:
         """Get timestamp of last successful update."""
         with self._lock:
             return self._last_update
@@ -173,9 +175,9 @@ class AsyncPositionMonitor:
         self._running = False
 
         # Cached positions
-        self._position_ra_dec: Optional[EquatorialCoordinates] = None
-        self._position_alt_az: Optional[HorizontalCoordinates] = None
-        self._last_update: Optional[datetime] = None
+        self._position_ra_dec: EquatorialCoordinates | None = None
+        self._position_alt_az: HorizontalCoordinates | None = None
+        self._last_update: datetime | None = None
 
     async def run(self):
         """Run async monitoring loop."""
@@ -206,15 +208,15 @@ class AsyncPositionMonitor:
         """Stop async monitoring."""
         self._running = False
 
-    def get_position_ra_dec(self) -> Optional[EquatorialCoordinates]:
+    def get_position_ra_dec(self) -> EquatorialCoordinates | None:
         """Get latest RA/Dec position."""
         return self._position_ra_dec
 
-    def get_position_alt_az(self) -> Optional[HorizontalCoordinates]:
+    def get_position_alt_az(self) -> HorizontalCoordinates | None:
         """Get latest Alt/Az position."""
         return self._position_alt_az
 
-    def get_last_update(self) -> Optional[datetime]:
+    def get_last_update(self) -> datetime | None:
         """Get timestamp of last update."""
         return self._last_update
 
@@ -267,7 +269,7 @@ class CallbackPositionMonitor:
         self.telescope = telescope
         self.callback = callback
         self.interval = interval
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
     def start(self):
@@ -345,7 +347,7 @@ class QueuePositionMonitor:
         self.telescope = telescope
         self.interval = interval
         self.queue = Queue(maxsize=maxsize)
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
     def start(self):
@@ -391,7 +393,7 @@ class QueuePositionMonitor:
 
             self._stop_event.wait(self.interval)
 
-    def get_position(self, timeout: Optional[float] = None) -> Optional[tuple]:
+    def get_position(self, timeout: float | None = None) -> tuple | None:
         """
         Consumer: get next position from queue.
 
@@ -431,13 +433,13 @@ def example_threading():
 
     # Do other work while monitoring runs in background
     with tqdm(total=5, desc="Monitoring position", unit="sample") as pbar:
-        for i in range(5):
+        for _i in range(5):
             time.sleep(1)
 
             # Get cached position (no delay!)
             ra_dec = monitor.get_position_ra_dec()
             alt_az = monitor.get_position_alt_az()
-            last_update = monitor.get_last_update()
+            monitor.get_last_update()
 
             if ra_dec and alt_az:
                 pbar.set_postfix(
@@ -490,11 +492,11 @@ def example_queue():
 
     # Consumer: process positions from queue
     with tqdm(total=5, desc="Processing queue", unit="pos") as pbar:
-        for i in range(5):
+        for _i in range(5):
             position_data = monitor.get_position(timeout=2.0)
 
             if position_data:
-                ra_dec, alt_az, timestamp = position_data
+                ra_dec, alt_az, _timestamp = position_data
                 pbar.set_postfix(
                     {"RA": f"{ra_dec.ra_hours:.4f}h", "Alt": f"{alt_az.altitude:.2f}°", "Q": monitor.queue_size()}
                 )
@@ -523,7 +525,7 @@ async def example_async():
 
     # Do other async work
     with tqdm(total=5, desc="Async monitoring", unit="sample") as pbar:
-        for i in range(5):
+        for _i in range(5):
             await asyncio.sleep(1)
 
             position = monitor.get_position_ra_dec()

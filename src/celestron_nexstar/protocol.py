@@ -15,14 +15,14 @@ Protocol Specification:
 """
 
 import logging
-import serial
 import time
-from typing import Optional, Tuple
 
 import deal
-from returns.result import Result, Success, Failure
+import serial
+from returns.result import Failure, Result, Success
 
-from .exceptions import TelescopeConnectionError, TelescopeTimeoutError, NotConnectedError
+from .exceptions import NotConnectedError, TelescopeConnectionError, TelescopeTimeoutError
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class NexStarProtocol:
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
-        self.serial_conn: Optional[serial.Serial] = None
+        self.serial_conn: serial.Serial | None = None
 
     def open(self) -> bool:
         """
@@ -124,7 +124,7 @@ class NexStarProtocol:
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
-        logger.debug(f"Sending command: {repr(command)}")
+        logger.debug(f"Sending command: {command!r}")
         self.serial_conn.write(full_command.encode("ascii"))
 
         # Read response until terminator
@@ -133,7 +133,7 @@ class NexStarProtocol:
 
         while True:
             if time.time() - start_time > self.timeout:
-                logger.error(f"Timeout waiting for response to command: {repr(command)}")
+                logger.error(f"Timeout waiting for response to command: {command!r}")
                 raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}")
 
             if self.serial_conn.in_waiting > 0:
@@ -144,7 +144,7 @@ class NexStarProtocol:
 
         # Decode and remove terminator
         response_str = response.decode("ascii").rstrip(self.TERMINATOR)
-        logger.debug(f"Received response: {repr(response_str)}")
+        logger.debug(f"Received response: {response_str!r}")
         return response_str
 
     # ========== Coordinate Encoding/Decoding ==========
@@ -205,7 +205,7 @@ class NexStarProtocol:
         return f"{hex1},{hex2}"
 
     @staticmethod
-    def decode_coordinate_pair(response: str) -> Result[Tuple[float, float], str]:
+    def decode_coordinate_pair(response: str) -> Result[tuple[float, float], str]:
         """
         Decode a coordinate pair response from NexStar format.
 
@@ -229,7 +229,7 @@ class NexStarProtocol:
 
     # ========== Common Command Patterns ==========
 
-    def get_single_byte(self, command: str) -> Optional[int]:
+    def get_single_byte(self, command: str) -> int | None:
         """
         Send command and receive single-byte response.
 
@@ -244,7 +244,7 @@ class NexStarProtocol:
             return ord(response[0])
         return None
 
-    def get_two_bytes(self, command: str) -> Optional[Tuple[int, int]]:
+    def get_two_bytes(self, command: str) -> tuple[int, int] | None:
         """
         Send command and receive two-byte response.
 
@@ -293,7 +293,7 @@ class NexStarProtocol:
         except (NotConnectedError, TelescopeTimeoutError, serial.SerialException):
             return False
 
-    def get_version(self) -> Tuple[int, int]:
+    def get_version(self) -> tuple[int, int]:
         """
         Get firmware version.
         Command: V#
@@ -317,7 +317,7 @@ class NexStarProtocol:
         result = self.get_single_byte("m")
         return result if result is not None else 0
 
-    def get_ra_dec_precise(self) -> Result[Tuple[float, float], str]:
+    def get_ra_dec_precise(self) -> Result[tuple[float, float], str]:
         """
         Get precise RA/Dec position.
         Command: E#
@@ -329,7 +329,7 @@ class NexStarProtocol:
         response = self.send_command("E")
         return self.decode_coordinate_pair(response)
 
-    def get_alt_az_precise(self) -> Result[Tuple[float, float], str]:
+    def get_alt_az_precise(self) -> Result[tuple[float, float], str]:
         """
         Get precise Alt/Az position.
         Command: Z#
@@ -459,7 +459,7 @@ class NexStarProtocol:
         """
         return self.send_empty_command(f"T{chr(mode)}")
 
-    def get_location(self) -> Optional[Tuple[float, float]]:
+    def get_location(self) -> tuple[float, float] | None:
         """
         Get observer location.
         Command: w#
@@ -498,7 +498,7 @@ class NexStarProtocol:
         coords = self.encode_coordinate_pair(latitude_degrees, longitude_degrees)
         return self.send_empty_command(f"W{coords}")
 
-    def get_time(self) -> Optional[Tuple[int, int, int, int, int, int, int, int]]:
+    def get_time(self) -> tuple[int, int, int, int, int, int, int, int] | None:
         """
         Get date and time.
         Command: h#

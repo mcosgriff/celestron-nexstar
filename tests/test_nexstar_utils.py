@@ -4,22 +4,22 @@ Tests coordinate conversions and astronomical calculations.
 """
 
 import unittest
-import math
 from datetime import datetime
+
 from celestron_nexstar.utils import (
-    ra_to_hours,
-    ra_to_degrees,
-    dec_to_degrees,
-    hours_to_hms,
-    degrees_to_dms,
-    calculate_lst,
-    calculate_julian_date,
     alt_az_to_ra_dec,
-    ra_dec_to_alt_az,
     angular_separation,
-    format_ra,
+    calculate_julian_date,
+    calculate_lst,
+    dec_to_degrees,
+    degrees_to_dms,
     format_dec,
     format_position,
+    format_ra,
+    hours_to_hms,
+    ra_dec_to_alt_az,
+    ra_to_degrees,
+    ra_to_hours,
 )
 
 
@@ -359,11 +359,11 @@ class TestEdgeCases(unittest.TestCase):
         dt = datetime(2024, 10, 14, 0, 0, 0)
 
         # Test with various azimuth values that may result in RA < 0 or RA >= 24
-        ra1, dec1 = alt_az_to_ra_dec(0.0, 45.0, 40.0, -74.0, dt)
+        ra1, _dec1 = alt_az_to_ra_dec(0.0, 45.0, 40.0, -74.0, dt)
         self.assertGreaterEqual(ra1, 0.0)
         self.assertLess(ra1, 24.0)
 
-        ra2, dec2 = alt_az_to_ra_dec(270.0, 30.0, 40.0, 150.0, dt)
+        ra2, _dec2 = alt_az_to_ra_dec(270.0, 30.0, 40.0, 150.0, dt)
         self.assertGreaterEqual(ra2, 0.0)
         self.assertLess(ra2, 24.0)
 
@@ -371,7 +371,7 @@ class TestEdgeCases(unittest.TestCase):
         # Based on analysis: need small LST and large positive HA (eastern sky, low altitude)
         # Example from search: LST=0.65, HA=12.00 => RA would be -11.35 before normalization
         dt_early = datetime(2024, 6, 21, 0, 0, 0)
-        ra3, dec3 = alt_az_to_ra_dec(0.0, 5.0, 40.0, -180.0, dt_early)  # North, very low alt
+        ra3, _dec3 = alt_az_to_ra_dec(0.0, 5.0, 40.0, -180.0, dt_early)  # North, very low alt
         self.assertGreaterEqual(ra3, 0.0)
         self.assertLess(ra3, 24.0)
 
@@ -379,7 +379,7 @@ class TestEdgeCases(unittest.TestCase):
         # Based on analysis: need large LST and large negative HA (western sky where sin(az) > 0)
         # Month=12, Hour=18, Lon=0 gives LST=23.66h; Az=120 (ESE) gives HA=-4.39h => RA=28.05h
         dt_late = datetime(2024, 12, 15, 18, 0, 0)
-        ra4, dec4 = alt_az_to_ra_dec(120.0, 5.0, 40.0, 0.0, dt_late)  # ESE, very low altitude
+        ra4, _dec4 = alt_az_to_ra_dec(120.0, 5.0, 40.0, 0.0, dt_late)  # ESE, very low altitude
         self.assertGreaterEqual(ra4, 0.0)
         self.assertLess(ra4, 24.0)
 

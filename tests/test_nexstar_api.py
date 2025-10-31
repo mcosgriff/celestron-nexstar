@@ -4,23 +4,22 @@ Provides comprehensive test coverage for the telescope module.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
-import serial
-from returns.result import Success, Failure
+from unittest.mock import patch
 
+from returns.result import Failure, Success
+
+from celestron_nexstar.exceptions import TelescopeConnectionError
 from celestron_nexstar.telescope import NexStarTelescope
-from celestron_nexstar.protocol import NexStarProtocol
 from celestron_nexstar.types import (
-    TrackingMode,
     AlignmentMode,
-    TelescopeConfig,
     EquatorialCoordinates,
-    HorizontalCoordinates,
     GeographicLocation,
+    HorizontalCoordinates,
+    TelescopeConfig,
     TelescopeInfo,
     TelescopeTime,
+    TrackingMode,
 )
-from celestron_nexstar.exceptions import TelescopeConnectionError
 
 
 class TestNexStarTelescope(unittest.TestCase):
@@ -60,7 +59,7 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test initialization with auto_connect enabled"""
         config = TelescopeConfig(port="/dev/ttyUSB0", auto_connect=True)
         with patch.object(NexStarTelescope, "connect", return_value=True) as mock_connect:
-            telescope = NexStarTelescope(config)
+            NexStarTelescope(config)
 
         # Auto-connect should have triggered the connect method
         mock_connect.assert_called_once()
