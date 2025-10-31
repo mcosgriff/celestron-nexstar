@@ -53,11 +53,12 @@ class SimplePositionTracker:
 # Quick Start Example
 # ============================================================================
 
+
 def main():
     """Simple example showing background tracking."""
 
     # Connect to telescope
-    telescope = NexStarTelescope('/dev/ttyUSB0')
+    telescope = NexStarTelescope("/dev/ttyUSB0")
     telescope.connect()
 
     # Start background tracking (updates every second)
@@ -68,8 +69,12 @@ def main():
     print("Doing other work while position updates automatically:\n")
 
     # Do your work here - position updates in background!
-    with tqdm(total=10, desc="Tracking position", unit="update",
-              bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+    with tqdm(
+        total=10,
+        desc="Tracking position",
+        unit="update",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+    ) as pbar:
         for i in range(10):
             # Simulate doing other work
             time.sleep(1)
@@ -78,12 +83,9 @@ def main():
             pos = tracker.get_position()
 
             if pos:
-                pbar.set_postfix({
-                    'RA': f'{pos.ra_hours:.4f}h',
-                    'Dec': f'{pos.dec_degrees:+.3f}°'
-                })
+                pbar.set_postfix({"RA": f"{pos.ra_hours:.4f}h", "Dec": f"{pos.dec_degrees:+.3f}°"})
             else:
-                pbar.set_postfix({'status': 'Waiting...'})
+                pbar.set_postfix({"status": "Waiting..."})
 
             pbar.update(1)
 
@@ -92,5 +94,5 @@ def main():
     telescope.disconnect()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

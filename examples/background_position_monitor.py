@@ -22,6 +22,7 @@ from celestron_nexstar import NexStarTelescope, EquatorialCoordinates, Horizonta
 # Approach 1: Threading - Simple Background Thread
 # ============================================================================
 
+
 class PositionMonitorThread:
     """
     Monitor telescope position in a background thread.
@@ -126,6 +127,7 @@ class PositionMonitorThread:
 # Approach 2: Asyncio - Asynchronous Monitoring
 # ============================================================================
 
+
 class AsyncPositionMonitor:
     """
     Asynchronous position monitoring using asyncio.
@@ -184,12 +186,8 @@ class AsyncPositionMonitor:
             try:
                 # Run blocking telescope calls in executor
                 loop = asyncio.get_event_loop()
-                ra_dec = await loop.run_in_executor(
-                    None, self.telescope.get_position_ra_dec
-                )
-                alt_az = await loop.run_in_executor(
-                    None, self.telescope.get_position_alt_az
-                )
+                ra_dec = await loop.run_in_executor(None, self.telescope.get_position_ra_dec)
+                alt_az = await loop.run_in_executor(None, self.telescope.get_position_alt_az)
 
                 # Update cached values
                 self._position_ra_dec = ra_dec
@@ -225,6 +223,7 @@ class AsyncPositionMonitor:
 # Approach 3: Callback-Based Monitoring
 # ============================================================================
 
+
 class CallbackPositionMonitor:
     """
     Position monitor with callback support.
@@ -255,7 +254,7 @@ class CallbackPositionMonitor:
         self,
         telescope: NexStarTelescope,
         callback: Callable[[EquatorialCoordinates, HorizontalCoordinates, datetime], None],
-        interval: float = 1.0
+        interval: float = 1.0,
     ):
         """
         Initialize callback-based monitor.
@@ -310,6 +309,7 @@ class CallbackPositionMonitor:
 # ============================================================================
 # Approach 4: Queue-Based Monitoring (Producer-Consumer)
 # ============================================================================
+
 
 class QueuePositionMonitor:
     """
@@ -415,13 +415,14 @@ class QueuePositionMonitor:
 # Example Usage
 # ============================================================================
 
+
 def example_threading():
     """Example using threading approach."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Example 1: Threading Approach")
-    print("="*70)
+    print("=" * 70)
 
-    telescope = NexStarTelescope('/dev/ttyUSB0')
+    telescope = NexStarTelescope("/dev/ttyUSB0")
     telescope.connect()
 
     # Start background monitoring
@@ -439,11 +440,13 @@ def example_threading():
             last_update = monitor.get_last_update()
 
             if ra_dec and alt_az:
-                pbar.set_postfix({
-                    'RA': f'{ra_dec.ra_hours:.4f}h',
-                    'Dec': f'{ra_dec.dec_degrees:+.3f}°',
-                    'Alt': f'{alt_az.altitude:.2f}°'
-                })
+                pbar.set_postfix(
+                    {
+                        "RA": f"{ra_dec.ra_hours:.4f}h",
+                        "Dec": f"{ra_dec.dec_degrees:+.3f}°",
+                        "Alt": f"{alt_az.altitude:.2f}°",
+                    }
+                )
             pbar.update(1)
 
     monitor.stop()
@@ -452,24 +455,18 @@ def example_threading():
 
 def example_callback():
     """Example using callback approach."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Example 2: Callback Approach")
-    print("="*70)
+    print("=" * 70)
 
     def position_callback(ra_dec, alt_az, timestamp):
         """Called automatically on each update."""
-        print(f"[{timestamp.strftime('%H:%M:%S')}] "
-              f"RA: {ra_dec.ra_hours:.4f}h, "
-              f"Az: {alt_az.azimuth:.2f}°")
+        print(f"[{timestamp.strftime('%H:%M:%S')}] RA: {ra_dec.ra_hours:.4f}h, Az: {alt_az.azimuth:.2f}°")
 
-    telescope = NexStarTelescope('/dev/ttyUSB0')
+    telescope = NexStarTelescope("/dev/ttyUSB0")
     telescope.connect()
 
-    monitor = CallbackPositionMonitor(
-        telescope,
-        callback=position_callback,
-        interval=1.0
-    )
+    monitor = CallbackPositionMonitor(telescope, callback=position_callback, interval=1.0)
     monitor.start()
 
     # Callbacks happen automatically
@@ -481,11 +478,11 @@ def example_callback():
 
 def example_queue():
     """Example using queue-based approach."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Example 3: Queue-Based Approach")
-    print("="*70)
+    print("=" * 70)
 
-    telescope = NexStarTelescope('/dev/ttyUSB0')
+    telescope = NexStarTelescope("/dev/ttyUSB0")
     telescope.connect()
 
     monitor = QueuePositionMonitor(telescope, interval=1.0, maxsize=5)
@@ -498,13 +495,11 @@ def example_queue():
 
             if position_data:
                 ra_dec, alt_az, timestamp = position_data
-                pbar.set_postfix({
-                    'RA': f'{ra_dec.ra_hours:.4f}h',
-                    'Alt': f'{alt_az.altitude:.2f}°',
-                    'Q': monitor.queue_size()
-                })
+                pbar.set_postfix(
+                    {"RA": f"{ra_dec.ra_hours:.4f}h", "Alt": f"{alt_az.altitude:.2f}°", "Q": monitor.queue_size()}
+                )
             else:
-                pbar.set_postfix({'status': 'Timeout'})
+                pbar.set_postfix({"status": "Timeout"})
 
             pbar.update(1)
 
@@ -514,11 +509,11 @@ def example_queue():
 
 async def example_async():
     """Example using asyncio approach."""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("Example 4: Asyncio Approach")
-    print("="*70)
+    print("=" * 70)
 
-    telescope = NexStarTelescope('/dev/ttyUSB0')
+    telescope = NexStarTelescope("/dev/ttyUSB0")
     telescope.connect()
 
     monitor = AsyncPositionMonitor(telescope, interval=1.0)
@@ -533,10 +528,7 @@ async def example_async():
 
             position = monitor.get_position_ra_dec()
             if position:
-                pbar.set_postfix({
-                    'RA': f'{position.ra_hours:.4f}h',
-                    'Dec': f'{position.dec_degrees:.4f}°'
-                })
+                pbar.set_postfix({"RA": f"{position.ra_hours:.4f}h", "Dec": f"{position.dec_degrees:.4f}°"})
             pbar.update(1)
 
     # Stop monitoring
@@ -546,7 +538,7 @@ async def example_async():
     telescope.disconnect()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Background Position Monitoring Examples")
     print("Choose an example to run:")
     print("1. Threading approach")
@@ -556,15 +548,15 @@ if __name__ == '__main__':
 
     choice = input("\nEnter choice (1-4) or 'all': ").strip()
 
-    if choice == '1':
+    if choice == "1":
         example_threading()
-    elif choice == '2':
+    elif choice == "2":
         example_callback()
-    elif choice == '3':
+    elif choice == "3":
         example_queue()
-    elif choice == '4':
+    elif choice == "4":
         asyncio.run(example_async())
-    elif choice.lower() == 'all':
+    elif choice.lower() == "all":
         example_threading()
         example_callback()
         example_queue()

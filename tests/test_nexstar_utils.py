@@ -7,9 +7,19 @@ import unittest
 import math
 from datetime import datetime
 from celestron_nexstar.utils import (
-    ra_to_hours, ra_to_degrees, dec_to_degrees, hours_to_hms, degrees_to_dms,
-    calculate_lst, calculate_julian_date, alt_az_to_ra_dec, ra_dec_to_alt_az,
-    angular_separation, format_ra, format_dec, format_position
+    ra_to_hours,
+    ra_to_degrees,
+    dec_to_degrees,
+    hours_to_hms,
+    degrees_to_dms,
+    calculate_lst,
+    calculate_julian_date,
+    alt_az_to_ra_dec,
+    ra_dec_to_alt_az,
+    angular_separation,
+    format_ra,
+    format_dec,
+    format_position,
 )
 
 
@@ -53,22 +63,22 @@ class TestCoordinateConversions(unittest.TestCase):
 
     def test_dec_to_degrees_positive(self):
         """Test declination conversion for positive values"""
-        result = dec_to_degrees(45, 30, 0, '+')
+        result = dec_to_degrees(45, 30, 0, "+")
         self.assertAlmostEqual(result, 45.5, places=6)
 
     def test_dec_to_degrees_negative(self):
         """Test declination conversion for negative values"""
-        result = dec_to_degrees(45, 30, 0, '-')
+        result = dec_to_degrees(45, 30, 0, "-")
         self.assertAlmostEqual(result, -45.5, places=6)
 
     def test_dec_to_degrees_with_seconds(self):
         """Test declination conversion with seconds"""
-        result = dec_to_degrees(45, 30, 30, '+')
+        result = dec_to_degrees(45, 30, 30, "+")
         self.assertAlmostEqual(result, 45.508333, places=6)
 
     def test_dec_to_degrees_zero(self):
         """Test declination conversion with zero"""
-        result = dec_to_degrees(0, 0, 0, '+')
+        result = dec_to_degrees(0, 0, 0, "+")
         self.assertEqual(result, 0.0)
 
     def test_hours_to_hms_basic(self):
@@ -98,7 +108,7 @@ class TestCoordinateConversions(unittest.TestCase):
         self.assertEqual(d, 45)
         self.assertEqual(m, 30)
         self.assertAlmostEqual(s, 0.0, places=1)
-        self.assertEqual(sign, '+')
+        self.assertEqual(sign, "+")
 
     def test_degrees_to_dms_negative(self):
         """Test degrees to DMS conversion for negative values"""
@@ -106,7 +116,7 @@ class TestCoordinateConversions(unittest.TestCase):
         self.assertEqual(d, 45)
         self.assertEqual(m, 30)
         self.assertAlmostEqual(s, 0.0, places=1)
-        self.assertEqual(sign, '-')
+        self.assertEqual(sign, "-")
 
     def test_degrees_to_dms_with_seconds(self):
         """Test degrees to DMS conversion with seconds"""
@@ -114,7 +124,7 @@ class TestCoordinateConversions(unittest.TestCase):
         self.assertEqual(d, 45)
         self.assertEqual(m, 30)
         self.assertAlmostEqual(s, 30.0, places=0)
-        self.assertEqual(sign, '+')
+        self.assertEqual(sign, "+")
 
     def test_degrees_to_dms_zero(self):
         """Test degrees to DMS conversion with zero"""
@@ -122,7 +132,7 @@ class TestCoordinateConversions(unittest.TestCase):
         self.assertEqual(d, 0)
         self.assertEqual(m, 0)
         self.assertAlmostEqual(s, 0.0, places=1)
-        self.assertEqual(sign, '+')
+        self.assertEqual(sign, "+")
 
 
 class TestAstronomicalCalculations(unittest.TestCase):
@@ -264,48 +274,48 @@ class TestFormatting(unittest.TestCase):
     def test_format_ra_basic(self):
         """Test RA formatting"""
         result = format_ra(12.5, 2)
-        self.assertIn('12h', result)
-        self.assertIn('30m', result)
-        self.assertIn('s', result)
+        self.assertIn("12h", result)
+        self.assertIn("30m", result)
+        self.assertIn("s", result)
 
     def test_format_ra_zero(self):
         """Test RA formatting with zero"""
         result = format_ra(0.0, 2)
-        self.assertIn('00h', result)
-        self.assertIn('00m', result)
+        self.assertIn("00h", result)
+        self.assertIn("00m", result)
 
     def test_format_ra_precision(self):
         """Test RA formatting precision"""
         result = format_ra(12.5125, 3)
         # Should have 3 decimal places for seconds
-        self.assertRegex(result, r'\d{2}h \d{2}m \d{2}\.\d{3}s')
+        self.assertRegex(result, r"\d{2}h \d{2}m \d{2}\.\d{3}s")
 
     def test_format_dec_positive(self):
         """Test Dec formatting for positive values"""
         result = format_dec(45.5, 1)
-        self.assertIn('+', result)
-        self.assertIn('45°', result)
-        self.assertIn('30\'', result)
+        self.assertIn("+", result)
+        self.assertIn("45°", result)
+        self.assertIn("30'", result)
 
     def test_format_dec_negative(self):
         """Test Dec formatting for negative values"""
         result = format_dec(-45.5, 1)
-        self.assertIn('-', result)
-        self.assertIn('45°', result)
-        self.assertIn('30\'', result)
+        self.assertIn("-", result)
+        self.assertIn("45°", result)
+        self.assertIn("30'", result)
 
     def test_format_dec_zero(self):
         """Test Dec formatting with zero"""
         result = format_dec(0.0, 1)
-        self.assertIn('+00°', result)
+        self.assertIn("+00°", result)
 
     def test_format_position(self):
         """Test position formatting"""
         result = format_position(12.5, 45.5)
-        self.assertIn('RA:', result)
-        self.assertIn('Dec:', result)
-        self.assertIn('12h', result)
-        self.assertIn('45°', result)
+        self.assertIn("RA:", result)
+        self.assertIn("Dec:", result)
+        self.assertIn("12h", result)
+        self.assertIn("45°", result)
 
 
 class TestEdgeCases(unittest.TestCase):
@@ -318,17 +328,17 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_dec_degrees_boundary_90(self):
         """Test Dec conversion at +90 degrees"""
-        result = dec_to_degrees(90, 0, 0, '+')
+        result = dec_to_degrees(90, 0, 0, "+")
         self.assertEqual(result, 90.0)
 
     def test_dec_degrees_boundary_neg_90(self):
         """Test Dec conversion at -90 degrees"""
-        result = dec_to_degrees(90, 0, 0, '-')
+        result = dec_to_degrees(90, 0, 0, "-")
         self.assertEqual(result, -90.0)
 
     def test_angular_separation_poles(self):
         """Test angular separation between north and south poles"""
-        ra1, dec1 = 0.0, 90.0   # North pole
+        ra1, dec1 = 0.0, 90.0  # North pole
         ra2, dec2 = 12.0, -90.0  # South pole
 
         separation = angular_separation(ra1, dec1, ra2, dec2)
@@ -358,5 +368,5 @@ class TestEdgeCases(unittest.TestCase):
         self.assertLess(ra2, 24.0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
