@@ -12,14 +12,11 @@ This script provides a basic demonstration of how to use the `celestron_nexstar`
     -   **Linux**: `/dev/ttyUSB0`
     -   **Windows**: `COM3`
 3.  **Update the script**: Open `basic_demo.py` and change the `port` argument in the `NexStarTelescope` constructor to match your serial port.
-4.  **Run from the command line**:
+4.  **Run from the command line** (if the script exists):
     ```bash
-    poetry run nexstar-demo
+    uv run python examples/simple_position_tracking.py
     ```
-    Alternatively, you can run the script directly:
-    ```bash
-    poetry run python src/celestron_nexstar/examples/basic_demo.py
-    ```
+    Note: The `nexstar-demo` script was removed. Use the example scripts in the `examples/` directory instead.
 
 ## Script Functionality
 

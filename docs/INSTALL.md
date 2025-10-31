@@ -2,20 +2,23 @@
 
 ## Prerequisites
 
-- Python 3.8 or later
-- Poetry (Python dependency manager)
+- Python 3.9 or later (tested up to Python 3.14)
+- uv (Python package manager)
 - USB connection to Celestron NexStar 6SE telescope
 
-## Installing Poetry
+## Installing uv
 
-If you don't have Poetry installed:
+If you don't have uv installed:
 
 ```zsh
-# Install Poetry
-curl -sSL https://install.python-poetry.org | python3 -
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Or using Homebrew on macOS
-brew install poetry
+brew install uv
+
+# Or using pip
+pip install uv
 ```
 
 ## Installation Methods
@@ -24,12 +27,12 @@ brew install poetry
 
 ```zsh
 # Clone or navigate to the project directory
-cd Celestron/python
+cd celestron-nexstar
 
 # Install dependencies and package in development mode
-poetry install
+uv sync --all-extras
 
-# This creates a virtual environment and installs:
+# This creates a virtual environment at .venv and installs:
 # - celestron-nexstar package (editable)
 # - All runtime dependencies
 # - All development dependencies (tests, linters, etc.)
@@ -39,43 +42,43 @@ poetry install
 
 ```zsh
 # Install only runtime dependencies
-poetry install --only main
+uv sync
 
 # Or build and install the wheel
-poetry build
+uv build
 pip install dist/celestron_nexstar-0.1.0-py3-none-any.whl
 ```
 
 ## Verifying Installation
 
 ```zsh
-# Activate the Poetry virtual environment
-poetry shell
+# Activate the virtual environment
+source .venv/bin/activate
 
 # Try importing the package
 python -c "from celestron_nexstar import NexStarTelescope; print('Success!')"
 
-# Run the demo script
-poetry run nexstar-demo
+# Or run directly with uv
+uv run python -c "from celestron_nexstar import NexStarTelescope; print('Success!')"
 
-# Or
-python -m celestron_nexstar.examples.basic_demo
+# Run an example script
+uv run python examples/simple_position_tracking.py
 ```
 
 ## Running Tests
 
 ```zsh
 # Run all tests with coverage
-poetry run pytest
+uv run pytest
 
 # Run specific test file
-poetry run pytest tests/test_nexstar_api.py
+uv run pytest tests/test_nexstar_api.py
 
 # Run with verbose output
-poetry run pytest -v
+uv run pytest -v
 
 # Generate HTML coverage report
-poetry run pytest --cov-report=html
+uv run pytest --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -85,16 +88,13 @@ For development work:
 
 ```zsh
 # Install with all dev dependencies
-poetry install
-
-# Install pre-commit hooks (if configured)
-poetry run pre-commit install
+uv sync --all-extras
 
 # Run linters
-poetry run black src tests
-poetry run isort src tests
-poetry run flake8 src tests
-poetry run mypy src
+uv run black src tests
+uv run isort src tests
+uv run flake8 src tests
+uv run mypy src
 ```
 
 ## Hardware Connection
@@ -166,26 +166,26 @@ with NexStarTelescope(port='/dev/tty.usbserial-1420') as telescope:
 
 ```zsh
 # Show installed packages
-poetry show
+uv pip list
 
 # Add a new dependency
-poetry add package-name
+uv add package-name
 
 # Add a development dependency
-poetry add --group dev package-name
+uv add --dev package-name
 
 # Update dependencies
-poetry update
+uv sync --upgrade
 
-# Export requirements.txt (for compatibility)
-poetry export -f requirements.txt --output requirements.txt
+# View dependency tree
+uv tree
 ```
 
 ## Building Distribution
 
 ```zsh
 # Build wheel and sdist
-poetry build
+uv build
 
 # Outputs created in dist/:
 # - celestron_nexstar-0.1.0-py3-none-any.whl
@@ -195,31 +195,28 @@ poetry build
 ## Publishing (Future)
 
 ```zsh
-# Configure PyPI credentials
-poetry config pypi-token.pypi <your-token>
-
-# Publish to PyPI
-poetry publish --build
+# Publish to PyPI (requires credentials)
+uv publish
 ```
 
 ## Troubleshooting
 
-### Poetry Not Found
+### uv Not Found
 
 ```zsh
-# Add Poetry to PATH
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+# Add uv to PATH (if installed via curl)
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 ### Import Errors
 
 ```zsh
-# Make sure you're in the Poetry environment
-poetry shell
+# Make sure you're in the virtual environment
+source .venv/bin/activate
 
-# Or run with poetry run
-poetry run python your_script.py
+# Or run with uv run
+uv run python your_script.py
 ```
 
 ### Serial Port Permission Denied (Linux)
@@ -233,27 +230,26 @@ sudo usermod -a -G dialout $USER
 
 ```zsh
 # Ensure all dev dependencies are installed
-poetry install
+uv sync --all-extras
 
 # Check Python version
-python --version  # Should be 3.8+
+python --version  # Should be 3.9+
 
 # Run tests with more verbosity
-poetry run pytest -vv
+uv run pytest -vv
 ```
 
 ## Uninstallation
 
 ```zsh
-# Remove the Poetry environment
-poetry env remove python
+# Remove the virtual environment
+rm -rf .venv
 
-# Or remove the entire virtual environment directory
-rm -rf $(poetry env info --path)
+# Remove the lock file
+rm uv.lock
 ```
 
 ## Additional Resources
 
-- [Poetry Documentation](https://python-poetry.org/docs/)
-- [Project README](README.md)
-- [API Documentation](https://your-docs-site.com)
+- [uv Documentation](https://docs.astral.sh/uv/)
+- [Project README](../README.md)

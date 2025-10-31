@@ -130,7 +130,7 @@ monitor.start_slew(target_ra=2.5303, target_dec=89.2641)
 
 1. Install the library:
 ```bash
-poetry install
+uv sync --all-extras
 ```
 
 2. Update the serial port in examples:
@@ -144,13 +144,13 @@ telescope = NexStarTelescope('/dev/ttyUSB0')  # Change to your port
 
 ```bash
 # Simple position tracking
-poetry run python examples/simple_position_tracking.py
+uv run python examples/simple_position_tracking.py
 
 # Advanced monitoring (choose approach)
-poetry run python examples/background_position_monitor.py
+uv run python examples/background_position_monitor.py
 
 # Monitor during slew
-poetry run python examples/track_during_slew.py
+uv run python examples/track_during_slew.py
 ```
 
 ## Tips
