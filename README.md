@@ -65,17 +65,17 @@ A comprehensive Python API for controlling the Celestron NexStar 6SE Computerize
 
 ## Installation
 
-### Using Poetry (Recommended)
+### Using uv (Recommended)
 
 ```zsh
-# Install Poetry if needed
-curl -sSL https://install.python-poetry.org | python3 -
+# Install uv if needed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install the package and dependencies
-poetry install
+uv sync --all-extras
 
-# Run the demo
-poetry run nexstar-demo
+# Run examples (no demo script currently)
+uv run python examples/simple_position_tracking.py
 ```
 
 ### Using pip
@@ -98,23 +98,23 @@ The project includes comprehensive unit tests with high code coverage.
 
 ```zsh
 # Run all tests with coverage report
-poetry run pytest
+uv run pytest
 
 # Run with verbose output
-poetry run pytest -v
+uv run pytest -v
 
 # Run specific test file
-poetry run pytest tests/test_nexstar_api.py
+uv run pytest tests/test_nexstar_api.py
 ```
 
 ### Code Coverage
 
 ```zsh
 # Generate coverage report in terminal
-poetry run pytest --cov=src/celestron_nexstar --cov-report=term-missing
+uv run pytest --cov=src/celestron_nexstar --cov-report=term-missing
 
 # Generate HTML coverage report
-poetry run pytest --cov=src/celestron_nexstar --cov-report=html
+uv run pytest --cov=src/celestron_nexstar --cov-report=html
 
 # Open HTML report (macOS)
 open htmlcov/index.html

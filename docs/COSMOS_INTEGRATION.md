@@ -537,10 +537,10 @@ Follow the official installation guide at https://docs.openc3.com/docs/getting-s
 ```bash
 # Install the Celestron library
 cd /path/to/celestron-nexstar
-poetry install
+uv sync --all-extras
 
 # Or using pip
-pip install celestron-nexstar
+pip install .
 ```
 
 ### 3. Create Plugin Package

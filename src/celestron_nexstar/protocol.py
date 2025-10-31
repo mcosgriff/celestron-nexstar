@@ -87,7 +87,7 @@ class NexStarProtocol:
             logger.error(f"Failed to open serial port {self.port}: {e}")
             raise TelescopeConnectionError(f"Failed to open port {self.port}: {e}") from e
 
-    def close(self):
+    def close(self) -> None:
         """Close serial connection."""
         if self.serial_conn and self.serial_conn.is_open:
             self.serial_conn.close()
@@ -117,6 +117,9 @@ class NexStarProtocol:
         if not self.is_open():
             logger.error("Attempted to send command while not connected")
             raise NotConnectedError("Serial port not open")
+
+        # Type guard to ensure serial_conn is not None
+        assert self.serial_conn is not None, "Serial connection should be open at this point"
 
         # Clear buffers to ensure clean communication
         self.serial_conn.reset_input_buffer()
@@ -505,7 +508,10 @@ class NexStarProtocol:
         """
         response = self.send_command('h')
         if len(response) == 8:
-            return tuple(ord(c) for c in response)
+            values = tuple(ord(c) for c in response)
+            # Explicitly cast to the expected 8-tuple type
+            return (values[0], values[1], values[2], values[3],
+                    values[4], values[5], values[6], values[7])
         return None
 
     @deal.pre(lambda hour, minute, second, month, day, year_offset, timezone, dst: 0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59 and 1 <= month <= 12 and 1 <= day <= 31 and year_offset >= 0 and dst in [0, 1])
