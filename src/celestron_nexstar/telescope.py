@@ -7,6 +7,8 @@ This module provides a user-friendly interface that wraps the low-level NexStarP
 for convenient telescope control operations.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Literal
 
