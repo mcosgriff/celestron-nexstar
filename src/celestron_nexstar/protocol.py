@@ -14,6 +14,8 @@ Protocol Specification:
 - Coordinate Format: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF = 0° to 360°)
 """
 
+from __future__ import annotations
+
 import logging
 import time
 
