@@ -1,0 +1,42 @@
+# Markdownlint configuration
+# See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+config:
+  # MD013: Line length - disable for flexibility
+  MD013: false
+
+  # MD033: Inline HTML - allow for flexibility in documentation
+  MD033: false
+
+  # MD041: First line in file should be a top level heading
+  # Disabled because some docs may start with frontmatter or descriptions
+  MD041: false
+
+  # MD024: Multiple headings with the same content
+  # Allow duplicate headings in different sections
+  MD024:
+    siblings_only: true
+
+  # MD025: Multiple top-level headings
+  # Allow multiple H1s (some docs may have title + main heading)
+  MD025: false
+
+  # MD034: Bare URL used - prefer proper markdown links
+  # Disabled for convenience in technical docs
+  MD034: false
+
+  # MD040: Fenced code blocks should have a language specified
+  # Keep this enabled but don't be too strict
+  MD040: true
+
+  # MD046: Code block style - prefer fenced code blocks
+  MD046:
+    style: "fenced"
+
+# Ignore patterns
+ignores:
+  - "node_modules/**"
+  - ".venv/**"
+  - "htmlcov/**"
+  - ".pytest_cache/**"
+  - "__pycache__/**"

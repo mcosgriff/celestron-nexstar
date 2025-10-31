@@ -126,6 +126,7 @@ xdg-open htmlcov/index.html
 ### Test Output
 
 The test suite includes 86 tests covering:
+
 - Connection management and serial communication
 - Telescope movement and positioning commands
 - Coordinate conversion and transformations
@@ -133,6 +134,7 @@ The test suite includes 86 tests covering:
 - Error handling and edge cases
 
 Current coverage statistics:
+
 - **telescope.py**: ~95% coverage (high-level API)
 - **utils.py**: ~96% coverage (coordinate conversions and calculations)
 - **Overall**: 71% coverage
@@ -140,6 +142,7 @@ Current coverage statistics:
 ## Hardware Setup
 
 Connect your telescope via USB cable and find your serial port:
+
 - **macOS**: `/dev/tty.usbserial-XXXXX` (check with `ls /dev/tty.usbserial*`)
 - **Linux**: `/dev/ttyUSB0` (may need: `sudo usermod -a -G dialout $USER`)
 - **Windows**: `COM3`, `COM4`, etc. (check Device Manager)
@@ -282,10 +285,12 @@ This API implements the Celestron NexStar serial protocol for communication. Com
 ## Coordinate Systems
 
 ### Equatorial (RA/Dec)
+
 - **Right Ascension (RA)**: 0-24 hours (0° to 360°)
 - **Declination (Dec)**: -90° to +90°
 
 ### Horizontal (Alt/Az)
+
 - **Azimuth (Az)**: 0-360° (0° = North, 90° = East, 180° = South, 270° = West)
 - **Altitude (Alt)**: -90° to +90° (0° = horizon, 90° = zenith)
 
@@ -303,11 +308,13 @@ This API implements the Celestron NexStar serial protocol for communication. Com
 **This API does not support the Celestron StarSense AutoAlign accessory.** The StarSense AutoAlign system uses proprietary camera control commands and alignment protocols that are not part of the standard NexStar serial protocol documented by Celestron.
 
 **What is supported:**
+
 - Manual alignment via the `sync_ra_dec()` method
 - Traditional star alignment workflows (manually center a known star, then sync)
 - All standard telescope control functions (goto, tracking, positioning)
 
 **What is NOT supported:**
+
 - StarSense camera-based automatic alignment
 - StarSense-specific commands and protocols
 - Automated plate solving via StarSense hardware

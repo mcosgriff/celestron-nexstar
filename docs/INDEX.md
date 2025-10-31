@@ -30,7 +30,7 @@ This directory contains detailed documentation for the Celestron NexStar Python 
 
 ## Documentation Organization
 
-```
+```text
 docs/
 ├── INDEX.md              # This file
 ├── INSTALL.md           # Installation instructions

@@ -5,6 +5,7 @@ This directory contains practical examples showing how to use the Celestron NexS
 ## Background Position Monitoring Examples
 
 ### Simple Position Tracking
+
 **File:** `simple_position_tracking.py`
 
 The easiest way to track telescope position in the background. Perfect for beginners!
@@ -21,6 +22,7 @@ for i in range(10):
 ```
 
 **Features:**
+
 - ✓ Minimal code (~50 lines)
 - ✓ Easy to understand
 - ✓ Automatic background updates
@@ -29,11 +31,13 @@ for i in range(10):
 ---
 
 ### Advanced Background Monitoring
+
 **File:** `background_position_monitor.py`
 
 Comprehensive examples showing 4 different approaches:
 
 #### 1. Threading Approach
+
 Simple background thread with cached positions.
 
 ```python
@@ -48,6 +52,7 @@ alt_az = monitor.get_position_alt_az()
 **Best for:** Simple background monitoring with cached access
 
 #### 2. Asyncio Approach
+
 Asynchronous monitoring using Python's asyncio.
 
 ```python
@@ -62,6 +67,7 @@ async def main():
 **Best for:** Integration with async applications
 
 #### 3. Callback Approach
+
 Event-driven updates with callbacks.
 
 ```python
@@ -75,6 +81,7 @@ monitor.start()
 **Best for:** Real-time notifications and event-driven apps
 
 #### 4. Queue-Based Approach
+
 Producer-consumer pattern with queues.
 
 ```python
@@ -90,6 +97,7 @@ position_data = monitor.get_position(timeout=2.0)
 ---
 
 ### Real-World Example: Monitor During Slew
+
 **File:** `track_during_slew.py`
 
 Monitor telescope position while it's slewing to a target. Shows real-time progress!
@@ -103,6 +111,7 @@ monitor.start_slew(target_ra=2.5303, target_dec=89.2641)
 ```
 
 **Features:**
+
 - ✓ Real-time progress bar
 - ✓ Distance to target
 - ✓ Estimated time remaining
@@ -129,16 +138,18 @@ monitor.start_slew(target_ra=2.5303, target_dec=89.2641)
 ### Prerequisites
 
 1. Install the library:
+
 ```bash
 uv sync --all-extras
 ```
 
-2. Update the serial port in examples:
+1. Update the serial port in examples:
+
 ```python
 telescope = NexStarTelescope('/dev/ttyUSB0')  # Change to your port
 ```
 
-3. Connect your telescope via USB
+1. Connect your telescope via USB
 
 ### Run Examples
 
@@ -156,27 +167,35 @@ uv run python examples/track_during_slew.py
 ## Tips
 
 ### Thread Safety
+
 When using threading approaches, the monitors handle thread safety for you:
+
 ```python
 # Safe to call from any thread
 position = monitor.get_position_ra_dec()
 ```
 
 ### Update Intervals
+
 Choose interval based on your needs:
+
 - **0.5s** - High-frequency updates, smooth tracking
 - **1.0s** - Standard, good balance
 - **2.0s** - Low-frequency, less CPU usage
 
 ### Error Handling
+
 All monitors catch exceptions internally:
+
 ```python
 # Monitors continue running even if telescope errors occur
 # Check logs for error messages
 ```
 
 ### Performance
+
 Background monitoring has minimal impact:
+
 - **CPU Usage:** < 1% per monitor
 - **Memory:** ~1-2 MB per monitor
 - **Network:** None (local serial only)
@@ -184,6 +203,7 @@ Background monitoring has minimal impact:
 ## Integration Examples
 
 ### With GUI Applications
+
 ```python
 # Update GUI in callback
 def update_gui(ra_dec, alt_az, timestamp):
@@ -193,6 +213,7 @@ monitor = CallbackPositionMonitor(telescope, callback=update_gui)
 ```
 
 ### With Web Applications
+
 ```python
 # Use asyncio approach with FastAPI/Flask
 async def websocket_handler():
@@ -205,6 +226,7 @@ async def websocket_handler():
 ```
 
 ### With Data Logging
+
 ```python
 # Log positions to file
 def log_position(ra_dec, alt_az, timestamp):
@@ -217,16 +239,19 @@ monitor = CallbackPositionMonitor(telescope, callback=log_position)
 ## Troubleshooting
 
 ### Monitor not starting
+
 - Check telescope is connected first
 - Verify serial port is correct
 - Ensure no other programs using the port
 
 ### Positions not updating
+
 - Check update interval isn't too long
 - Verify telescope is powered on
 - Check for error messages in console
 
 ### High CPU usage
+
 - Increase update interval
 - Use threading approach instead of polling
 - Check for exception loops

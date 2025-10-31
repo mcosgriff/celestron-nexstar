@@ -37,17 +37,20 @@ with NexStarTelescope('/dev/tty.usbmodem14201') as telescope:
 ```
 
 #### `connect()`
+
 Establishes a connection to the telescope.
 
 - **Returns**: `True` if the connection is successful.
 - **Raises**: `TelescopeConnectionError` if the connection fails.
 
 #### `disconnect()`
+
 Closes the connection to the telescope.
 
 ### Telescope Information
 
 #### `get_info()`
+
 Retrieves hardware information about the telescope.
 
 - **Returns**: A `TelescopeInfo` object containing the model and firmware version.
@@ -60,16 +63,19 @@ print(f"Model: {info.model}, Firmware: {info.firmware_major}.{info.firmware_mino
 ### Positioning and Slewing
 
 #### `get_position_ra_dec()`
+
 Gets the current Right Ascension (RA) and Declination (Dec) of the telescope.
 
 - **Returns**: An `EquatorialCoordinates` object with `ra_hours` and `dec_degrees`.
 
 #### `get_position_alt_az()`
+
 Gets the current Altitude (Alt) and Azimuth (Az) of the telescope.
 
 - **Returns**: A `HorizontalCoordinates` object with `azimuth` and `altitude` in degrees.
 
 #### `goto_ra_dec(ra_hours: float, dec_degrees: float)`
+
 Slews the telescope to the specified RA and Dec coordinates.
 
 - **Arguments**:
@@ -78,6 +84,7 @@ Slews the telescope to the specified RA and Dec coordinates.
 - **Returns**: `True` if the command is successful.
 
 #### `goto_alt_az(azimuth: float, altitude: float)`
+
 Slews the telescope to the specified Alt and Az coordinates.
 
 - **Arguments**:
@@ -86,16 +93,19 @@ Slews the telescope to the specified Alt and Az coordinates.
 - **Returns**: `True` if the command is successful.
 
 #### `sync_ra_dec(ra_hours: float, dec_degrees: float)`
+
 Syncs the telescope's internal position to the given RA and Dec. This is useful for alignment.
 
 - **Returns**: `True` if the command is successful.
 
 #### `is_slewing()`
+
 Checks if the telescope is currently moving to a target.
 
 - **Returns**: `True` if the telescope is slewing.
 
 #### `cancel_goto()`
+
 Stops the current slew operation.
 
 - **Returns**: `True` if the command is successful.
@@ -103,6 +113,7 @@ Stops the current slew operation.
 ### Manual Movement
 
 #### `move_fixed(direction: str, rate: int = 9)`
+
 Moves the telescope in a fixed direction at a specified rate.
 
 - **Arguments**:
@@ -111,6 +122,7 @@ Moves the telescope in a fixed direction at a specified rate.
 - **Returns**: `True` if the command is successful.
 
 #### `stop_motion(axis: str = 'both')`
+
 Stops the telescope's movement.
 
 - **Arguments**:
@@ -120,11 +132,13 @@ Stops the telescope's movement.
 ### Tracking
 
 #### `get_tracking_mode()`
+
 Gets the current tracking mode of the telescope.
 
 - **Returns**: A `TrackingMode` enum value (e.g., `TrackingMode.ALT_AZ`, `TrackingMode.EQ_NORTH`).
 
 #### `set_tracking_mode(mode: TrackingMode)`
+
 Sets the tracking mode.
 
 - **Arguments**:
@@ -134,11 +148,13 @@ Sets the tracking mode.
 ### Location and Time
 
 #### `get_location()`
+
 Gets the observer's geographical location from the telescope.
 
 - **Returns**: A `GeographicLocation` object.
 
 #### `set_location(latitude: float, longitude: float)`
+
 Sets the observer's location.
 
 - **Arguments**:
@@ -147,11 +163,13 @@ Sets the observer's location.
 - **Returns**: `True` if the command is successful.
 
 #### `get_time()`
+
 Gets the current time from the telescope.
 
 - **Returns**: A `TelescopeTime` object.
 
 #### `set_time(...)`
+
 Sets the time on the telescope.
 
 - **Returns**: `True` if the command is successful.
