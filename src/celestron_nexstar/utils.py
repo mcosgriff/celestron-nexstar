@@ -4,7 +4,6 @@ and astronomical calculations.
 """
 
 import math
-from typing import Tuple
 from datetime import datetime
 
 
@@ -59,7 +58,7 @@ def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign:
     return total_degrees
 
 
-def degrees_to_dms(degrees: float) -> Tuple[int, int, float, str]:
+def degrees_to_dms(degrees: float) -> tuple[int, int, float, str]:
     """
     Convert decimal degrees to degrees/minutes/seconds format.
 
@@ -77,10 +76,10 @@ def degrees_to_dms(degrees: float) -> Tuple[int, int, float, str]:
     minutes = int(min_decimal)
     seconds = (min_decimal - minutes) * 60
 
-    return (deg, minutes, seconds, sign)
+    return deg, minutes, seconds, sign
 
 
-def hours_to_hms(hours: float) -> Tuple[int, int, float]:
+def hours_to_hms(hours: float) -> tuple[int, int, float]:
     """
     Convert decimal hours to hours/minutes/seconds format.
 
@@ -100,7 +99,7 @@ def hours_to_hms(hours: float) -> Tuple[int, int, float]:
 
 def alt_az_to_ra_dec(
     azimuth: float, altitude: float, latitude: float, longitude: float, utc_time: datetime
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Convert Alt/Az coordinates to RA/Dec coordinates.
 
@@ -121,7 +120,6 @@ def alt_az_to_ra_dec(
 
     # Calculate Local Sidereal Time
     lst_hours = calculate_lst(longitude, utc_time)
-    lst_rad = math.radians(lst_hours * 15.0)
 
     # Calculate declination
     sin_dec = math.sin(alt_rad) * math.sin(lat_rad) + math.cos(alt_rad) * math.cos(lat_rad) * math.cos(az_rad)
@@ -155,7 +153,7 @@ def alt_az_to_ra_dec(
 
 def ra_dec_to_alt_az(
     ra_hours: float, dec_degrees: float, latitude: float, longitude: float, utc_time: datetime
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     Convert RA/Dec coordinates to Alt/Az coordinates.
 
@@ -194,12 +192,9 @@ def ra_dec_to_alt_az(
     az_rad = math.acos(cos_az)
 
     # Determine sign of azimuth
-    if math.sin(ha_rad) > 0:
-        azimuth = 360 - math.degrees(az_rad)
-    else:
-        azimuth = math.degrees(az_rad)
+    azimuth = 360 - math.degrees(az_rad) if math.sin(ha_rad) > 0 else math.degrees(az_rad)
 
-    return (azimuth, altitude)
+    return azimuth, altitude
 
 
 def calculate_lst(longitude: float, utc_time: datetime) -> float:

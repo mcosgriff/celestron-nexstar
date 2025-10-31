@@ -5,10 +5,12 @@ Shows how to track telescope position while it's slewing to a target.
 Useful for displaying progress, calculating estimated time, etc.
 """
 
-import time
 import threading
+import time
 from datetime import datetime
+
 from tqdm import tqdm
+
 from celestron_nexstar import NexStarTelescope
 from celestron_nexstar.utils import angular_separation
 
@@ -98,10 +100,7 @@ class SlewMonitor:
                     )
 
                     # Calculate progress
-                    if initial_distance > 0:
-                        progress = min(100, (distance_traveled / initial_distance) * 100)
-                    else:
-                        progress = 100
+                    progress = min(100, distance_traveled / initial_distance * 100) if initial_distance > 0 else 100
 
                     # Update progress bar
                     pbar.n = int(progress)
@@ -130,7 +129,7 @@ class SlewMonitor:
     def _display_complete(self, elapsed, final_distance):
         """Display completion message."""
         print(f"\n{'=' * 70}")
-        print(f"✓ Slew complete!")
+        print("✓ Slew complete!")
         print(f"  Total time: {elapsed:.1f} seconds")
         print(f"  Final distance to target: {final_distance:.4f}°")
         print(f"{'=' * 70}\n")

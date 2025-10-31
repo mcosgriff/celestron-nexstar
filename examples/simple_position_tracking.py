@@ -5,9 +5,11 @@ A minimal example showing the easiest way to track telescope position
 in the background while doing other work.
 """
 
-import time
 import threading
+import time
+
 from tqdm import tqdm
+
 from celestron_nexstar import NexStarTelescope
 
 
@@ -75,7 +77,7 @@ def main():
         unit="update",
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
     ) as pbar:
-        for i in range(10):
+        for _i in range(10):
             # Simulate doing other work
             time.sleep(1)
 

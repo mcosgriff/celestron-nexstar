@@ -3,19 +3,22 @@ Unit tests for NexStar Protocol Layer
 Provides comprehensive test coverage for the protocol module.
 """
 
+import builtins
+import contextlib
 import unittest
-from unittest.mock import Mock, MagicMock, patch, call
-import serial
-import time
-import deal
-from returns.result import Success, Failure
+from unittest.mock import MagicMock, patch
 
-from celestron_nexstar.protocol import NexStarProtocol
+import deal
+import serial
+from returns.result import Failure
+
 from celestron_nexstar.exceptions import (
+    NotConnectedError,
     TelescopeConnectionError,
     TelescopeTimeoutError,
-    NotConnectedError,
 )
+from celestron_nexstar.protocol import NexStarProtocol
+
 
 # Disable deal contracts during testing to avoid lambda signature issues
 deal.disable()
@@ -31,10 +34,8 @@ class TestNexStarProtocol(unittest.TestCase):
     def tearDown(self):
         """Clean up after each test"""
         if self.protocol.serial_conn:
-            try:
+            with contextlib.suppress(builtins.BaseException):
                 self.protocol.close()
-            except:
-                pass
 
     # ========== Connection Tests ==========
 

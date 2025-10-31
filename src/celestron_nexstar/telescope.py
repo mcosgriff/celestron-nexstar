@@ -8,24 +8,23 @@ for convenient telescope control operations.
 """
 
 import logging
-from typing import Union, Optional, Any, Tuple, Literal
+from typing import Any, Literal
+
 import serial
 
-from returns.result import Result, Success, Failure
-
+from .converters import CoordinateConverter
+from .exceptions import TelescopeConnectionError
 from .protocol import NexStarProtocol
 from .types import (
-    TrackingMode,
-    AlignmentMode,
     EquatorialCoordinates,
-    HorizontalCoordinates,
     GeographicLocation,
+    HorizontalCoordinates,
+    TelescopeConfig,
     TelescopeInfo,
     TelescopeTime,
-    TelescopeConfig,
+    TrackingMode,
 )
-from .converters import CoordinateConverter
-from .exceptions import TelescopeConnectionError, NotConnectedError
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ class NexStarTelescope:
         >>> telescope.disconnect()
     """
 
-    def __init__(self, config: Optional[Union[TelescopeConfig, str]] = None) -> None:
+    def __init__(self, config: TelescopeConfig | str | None = None) -> None:
         """
         Initialize telescope interface.
 
@@ -82,7 +81,7 @@ class NexStarTelescope:
         )
 
         # Keep for backward compatibility with tests
-        self.serial_conn: Optional[serial.Serial] = None
+        self.serial_conn: serial.Serial | None = None
 
         # Auto-connect if requested
         if self.config.auto_connect:
@@ -165,7 +164,7 @@ class NexStarTelescope:
         model = self.protocol.get_model()
         return TelescopeInfo(model=model, firmware_major=major, firmware_minor=minor)
 
-    def get_version(self) -> Tuple[int, int]:
+    def get_version(self) -> tuple[int, int]:
         """
         Get telescope firmware version (legacy method).
 
@@ -563,12 +562,12 @@ class NexStarTelescope:
         logger.info(f"Setting time to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
         return self.protocol.set_time(hour, minute, second, month, day, year_offset, timezone, daylight_savings)
 
-    def __enter__(self) -> "NexStarTelescope":
+    def __enter__(self) -> NexStarTelescope:
         """Context manager entry."""
         self.connect()
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Optional[Any]) -> Literal[False]:
+    def __exit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any | None) -> Literal[False]:
         """Context manager exit."""
         self.disconnect()
         return False
