@@ -56,6 +56,8 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+    env:
+      DEAL_ENABLE: 1
     steps:
       - uses: actions/checkout@v4
 
@@ -68,7 +70,8 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: |
+          uv sync --all-extras --dev --python ${{ matrix.python-version }}
 
       - name: Run tests with coverage
         run: |
