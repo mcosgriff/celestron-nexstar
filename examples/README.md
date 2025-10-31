@@ -124,6 +124,42 @@ monitor.start_slew(target_ra=2.5303, target_dec=89.2641)
 
 ## Quick Comparison
 
+```mermaid
+graph LR
+    subgraph Simple ["Simple Tracker ⭐"]
+        ST[Minimal code<br/>Easy to learn<br/>Good performance]
+    end
+
+    subgraph Thread ["Threading ⭐⭐"]
+        TH[General purpose<br/>Thread-safe caching<br/>Excellent performance]
+    end
+
+    subgraph Async ["Asyncio ⭐⭐⭐"]
+        AS[Async integration<br/>Non-blocking<br/>Excellent performance]
+    end
+
+    subgraph Callback ["Callbacks ⭐⭐"]
+        CB[Event-driven<br/>Real-time updates<br/>Excellent performance]
+    end
+
+    subgraph Queue ["Queue-Based ⭐⭐⭐"]
+        QB[Producer/consumer<br/>Buffering<br/>Good performance]
+    end
+
+    subgraph Slew ["Slew Monitor ⭐⭐"]
+        SM[Progress tracking<br/>User feedback<br/>Excellent performance]
+    end
+
+    style Simple fill:#e1f5ff
+    style Thread fill:#e1ffe1
+    style Async fill:#ffe1f5
+    style Callback fill:#fff4e1
+    style Queue fill:#f5e1ff
+    style Slew fill:#ffe1e1
+```
+
+### Feature Comparison Table
+
 | Approach | Complexity | Use Case | Performance |
 |----------|-----------|----------|-------------|
 | **Simple Tracker** | ⭐ Low | Quick scripts, learning | Good |

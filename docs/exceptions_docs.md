@@ -4,6 +4,52 @@
 
 This module defines a set of custom exception classes for handling errors that may occur during telescope operations. All custom exceptions inherit from the base `NexStarError` class, allowing for easy and specific error handling.
 
+## Exception Hierarchy
+
+```mermaid
+classDiagram
+    Exception <|-- NexStarError
+    NexStarError <|-- TelescopeConnectionError
+    NexStarError <|-- TelescopeTimeoutError
+    NexStarError <|-- InvalidCoordinateError
+    NexStarError <|-- CommandError
+    NexStarError <|-- NotConnectedError
+
+    class Exception {
+        <<built-in>>
+    }
+
+    class NexStarError {
+        <<base exception>>
+        +message: str
+    }
+
+    class TelescopeConnectionError {
+        Serial port errors
+        Connection failures
+    }
+
+    class TelescopeTimeoutError {
+        No response received
+        Timeout exceeded
+    }
+
+    class InvalidCoordinateError {
+        Out of range coordinates
+        Invalid values
+    }
+
+    class CommandError {
+        Command failed
+        Unexpected response
+    }
+
+    class NotConnectedError {
+        Not connected
+        Connection required
+    }
+```
+
 ## Exception Classes
 
 - **`NexStarError`**: The base exception class for all errors in this library. You can use this to catch any telescope-related error.

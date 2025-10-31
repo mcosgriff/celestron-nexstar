@@ -35,38 +35,31 @@ COSMOS/OpenC3 is a suite of applications designed to control embedded systems. T
 
 ## Architecture
 
-```text
-┌────────────────────────────────────────────────────────┐
-│                    COSMOS/OpenC3                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │   Command   │  │  Telemetry   │  │   Scripts    │   │
-│  │   Sender    │  │   Monitor    │  │              │   │
-│  └──────┬──────┘  └──────▲───────┘  └──────────────┘   │
-│         │                │                             │
-│         ▼                │                             │
-│  ┌──────────────────────────────────┐                  │
-│  │  Serial/TCP Interface            │                  │
-│  └────────────┬──────────▲──────────┘                  │
-└───────────────┼──────────┼─────────────────────────────┘
-                │          │
-                ▼          │
-         ┌──────────────────────────┐
-         │  Python Bridge Script    │
-         │  (celestron_interface.py)│
-         └──────────┬──────▲────────┘
-                    │      │
-                    ▼      │
-         ┌────────────────────────┐
-         │  Celestron NexStar     │
-         │  Python Library        │
-         └──────────┬──────▲──────┘
-                    │      │
-                    ▼      │
-              ┌──────────────────┐
-              │  NexStar 6SE     │
-              │  Telescope       │
-              │  (Serial/USB)    │
-              └──────────────────┘
+```mermaid
+graph TD
+    subgraph COSMOS["COSMOS/OpenC3"]
+        CS[Command Sender]
+        TM[Telemetry Monitor]
+        SC[Scripts]
+        SI[Serial/TCP Interface]
+
+        CS -->|Commands| SI
+        SI -->|Telemetry| TM
+        SC -.->|Automate| CS
+    end
+
+    PB[Python Bridge Script<br/>celestron_interface.py]
+    CL[Celestron NexStar<br/>Python Library]
+    TEL[NexStar 6SE<br/>Telescope<br/>Serial/USB]
+
+    SI <-->|JSON Protocol| PB
+    PB <-->|API Calls| CL
+    CL <-->|Serial Commands| TEL
+
+    style COSMOS fill:#e1f5ff
+    style PB fill:#fff4e1
+    style CL fill:#ffe1f5
+    style TEL fill:#e1ffe1
 ```
 
 ## Plugin Structure
