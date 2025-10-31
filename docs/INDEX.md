@@ -26,7 +26,7 @@ This directory contains detailed documentation for the Celestron NexStar Python 
 
 - [Main README](../README.md) - Project overview and quick start
 - [PyPI Package](https://pypi.org/project/celestron-nexstar/) - (when published)
-- [Source Code](https://github.com/yourusername/celestron-nexstar) - (update with your repo)
+- [Source Code](https://github.com/mcosgriff/celestron-nexstar) - (update with your repo)
 
 ## Documentation Organization
 
