@@ -13,6 +13,26 @@ This module provides a low-level implementation of the NexStar serial communicat
 - **Terminator**: `#` character
 - **Coordinate Format**: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF, representing 0° to 360°)
 
+## Protocol Communication Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Proto as NexStarProtocol
+    participant Serial as Serial Port
+    participant Tel as Telescope
+
+    App->>Proto: send_command("E")
+    Proto->>Serial: Write "E#"
+    Serial->>Tel: Serial bytes
+    Tel->>Serial: Response bytes
+    Serial->>Proto: Read response
+    Proto->>Proto: Strip '#' terminator
+    Proto->>App: Return "XXXXXXXX,YYYYYYYY"
+    App->>Proto: decode_coordinate_pair()
+    Proto->>App: (ra_degrees, dec_degrees)
+```
+
 ## `NexStarProtocol` Class
 
 This class encapsulates the low-level details of the NexStar protocol.

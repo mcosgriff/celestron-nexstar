@@ -8,6 +8,38 @@ This module provides a high-level, user-friendly interface for controlling Celes
 
 This is the main class for interacting with the telescope. It handles the connection, sends commands, and processes responses.
 
+### Telescope State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disconnected
+    Disconnected --> Connected: connect()
+    Connected --> Disconnected: disconnect()
+
+    Connected --> Idle: ready
+    Idle --> Slewing: goto_ra_dec() / goto_alt_az()
+    Slewing --> Idle: slew complete
+    Slewing --> Idle: cancel_goto()
+
+    Idle --> Moving: move_fixed()
+    Moving --> Idle: stop_motion()
+
+    Idle --> Tracking: set_tracking_mode()
+    Tracking --> Idle: set_tracking_mode(OFF)
+
+    Connected --> [*]: disconnect()
+
+    note right of Connected
+        Can query position
+        Can get info
+    end note
+
+    note right of Tracking
+        Telescope follows object
+        Compensates for rotation
+    end note
+```
+
 ### Initialization
 
 To begin, create an instance of the `NexStarTelescope` class. You can provide a configuration object or simply the serial port as a string.

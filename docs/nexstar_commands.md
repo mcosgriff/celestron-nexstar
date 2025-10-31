@@ -26,6 +26,28 @@ All commands follow this pattern:
 
 The NexStar protocol uses 32-bit hexadecimal encoding for all angular measurements.
 
+### Encoding/Decoding Flow
+
+```mermaid
+flowchart LR
+    subgraph Encoding
+        DEG1[Degrees<br/>0-360°] --> CALC1[degrees / 360.0<br/>× 0x100000000]
+        CALC1 --> HEX1[Hex Value<br/>32-bit integer]
+        HEX1 --> STR1[String<br/>8 hex chars]
+    end
+
+    subgraph Decoding
+        STR2[String<br/>8 hex chars] --> HEX2[Hex Value<br/>32-bit integer]
+        HEX2 --> CALC2[hex_value / 0x100000000<br/>× 360.0]
+        CALC2 --> DEG2[Degrees<br/>0-360°]
+    end
+
+    style DEG1 fill:#e1f5ff
+    style DEG2 fill:#e1f5ff
+    style STR1 fill:#ffe1f5
+    style STR2 fill:#ffe1f5
+```
+
 ### Encoding Formula
 
 ```text
@@ -688,6 +710,33 @@ else:
 ```
 
 ### Example 3: Slew to Polaris
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant App
+    participant Tel as Telescope
+
+    Note over User: Polaris: RA=2h 31m 49s, Dec=+89° 15' 51"
+
+    User->>App: goto_ra_dec(2.5303h, 89.2641°)
+    App->>App: Convert to degrees<br/>RA: 37.954°, Dec: 89.264°
+    App->>App: Encode to hex<br/>RA: 1A5E93E7, Dec: 3F23D70A
+    App->>Tel: R1A5E93E7,3F23D70A#
+    Tel-->>App: #
+
+    loop Poll until complete
+        App->>Tel: L#
+        Tel-->>App: 1# (slewing)
+        App->>App: wait 500ms
+    end
+
+    App->>Tel: L#
+    Tel-->>App: 0# (complete)
+    App->>User: Slew complete!
+```
+
+**Step-by-step breakdown:**
 
 ```text
 Polaris coordinates: RA = 2h 31m 49s, Dec = +89° 15' 51"
