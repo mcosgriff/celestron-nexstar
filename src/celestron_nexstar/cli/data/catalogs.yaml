@@ -1,0 +1,1173 @@
+# Celestial Object Catalogs for NexStar 6SE
+#
+# This file contains curated catalogs of celestial objects visible with
+# the Celestron NexStar 6SE telescope (6-inch aperture, ~13.3 mag limit).
+#
+# Object Types: star, planet, galaxy, nebula, cluster, double_star, asterism, constellation, moon
+
+# Bright Stars - Navigation and alignment stars including famous double stars
+bright_stars:
+  - name: Polaris
+    common_name: North Star
+    ra_hours: 2.53
+    dec_degrees: 89.3
+    magnitude: 2.0
+    type: star
+    description: North Star, Alpha Ursae Minoris
+
+  - name: Sirius
+    common_name: Dog Star
+    ra_hours: 6.75
+    dec_degrees: -16.7
+    magnitude: -1.5
+    type: star
+    description: Brightest star in night sky, Alpha Canis Majoris
+
+  - name: Canopus
+    common_name: null
+    ra_hours: 6.40
+    dec_degrees: -52.7
+    magnitude: -0.7
+    type: star
+    description: Second brightest star, in Carina (southern)
+
+  - name: Arcturus
+    common_name: null
+    ra_hours: 14.26
+    dec_degrees: 19.2
+    magnitude: -0.1
+    type: star
+    description: Fourth brightest star, orange giant in Boötes
+
+  - name: Vega
+    common_name: null
+    ra_hours: 18.62
+    dec_degrees: 38.8
+    magnitude: 0.0
+    type: star
+    description: Fifth brightest star, summer triangle star in Lyra
+
+  - name: Capella
+    common_name: null
+    ra_hours: 5.28
+    dec_degrees: 46.0
+    magnitude: 0.1
+    type: star
+    description: Sixth brightest star, in Auriga
+
+  - name: Rigel
+    common_name: null
+    ra_hours: 5.24
+    dec_degrees: -8.2
+    magnitude: 0.1
+    type: star
+    description: Orion's foot, blue supergiant, Beta Orionis
+
+  - name: Procyon
+    common_name: null
+    ra_hours: 7.66
+    dec_degrees: 5.2
+    magnitude: 0.4
+    type: star
+    description: Brightest star in Canis Minor, Alpha Canis Minoris
+
+  - name: Betelgeuse
+    common_name: null
+    ra_hours: 5.92
+    dec_degrees: 7.4
+    magnitude: 0.5
+    type: star
+    description: Red supergiant in Orion's shoulder, variable star
+
+  - name: Altair
+    common_name: null
+    ra_hours: 19.85
+    dec_degrees: 8.9
+    magnitude: 0.8
+    type: star
+    description: Summer triangle star in Aquila
+
+  - name: Aldebaran
+    common_name: null
+    ra_hours: 4.60
+    dec_degrees: 16.5
+    magnitude: 0.8
+    type: star
+    description: Orange giant, Taurus the Bull's eye, Alpha Tauri
+
+  - name: Spica
+    common_name: null
+    ra_hours: 13.42
+    dec_degrees: -11.2
+    magnitude: 1.0
+    type: star
+    description: Brightest star in Virgo, Alpha Virginis
+
+  - name: Antares
+    common_name: null
+    ra_hours: 16.49
+    dec_degrees: -26.4
+    magnitude: 1.1
+    type: star
+    description: Red supergiant in Scorpius, Alpha Scorpii
+
+  - name: Deneb
+    common_name: null
+    ra_hours: 20.69
+    dec_degrees: 45.3
+    magnitude: 1.2
+    type: star
+    description: Summer triangle star, Alpha Cygni
+
+  - name: Regulus
+    common_name: null
+    ra_hours: 10.14
+    dec_degrees: 12.0
+    magnitude: 1.4
+    type: star
+    description: Brightest star in Leo, Alpha Leonis
+
+  - name: Castor
+    common_name: null
+    ra_hours: 7.58
+    dec_degrees: 31.9
+    magnitude: 1.6
+    type: double_star
+    description: Famous sextuple star system, Alpha Geminorum
+
+  - name: Pollux
+    common_name: null
+    ra_hours: 7.76
+    dec_degrees: 28.0
+    magnitude: 1.2
+    type: star
+    description: Gemini twin, orange giant, Beta Geminorum
+
+  # Famous Double Stars
+  - name: Albireo
+    common_name: Beta Cygni
+    ra_hours: 19.51
+    dec_degrees: 27.9
+    magnitude: 3.1
+    type: double_star
+    description: Beautiful gold and blue double star, finest double in sky
+
+  - name: Epsilon Lyrae
+    common_name: Double Double
+    ra_hours: 18.74
+    dec_degrees: 39.7
+    magnitude: 4.7
+    type: double_star
+    description: Famous quadruple star system, Double Double
+
+  - name: Almach
+    common_name: Gamma Andromedae
+    ra_hours: 2.06
+    dec_degrees: 42.3
+    magnitude: 2.3
+    type: double_star
+    description: Beautiful orange and blue double star
+
+  - name: Rasalgethi
+    common_name: Alpha Herculis
+    ra_hours: 17.24
+    dec_degrees: 14.4
+    magnitude: 3.5
+    type: double_star
+    description: Red giant and companion, Alpha Herculis
+
+  # Big Dipper stars
+  - name: Alkaid
+    common_name: Eta Ursae Majoris
+    ra_hours: 13.79
+    dec_degrees: 49.3
+    magnitude: 1.9
+    type: star
+    description: End of Big Dipper handle
+
+  - name: Mizar
+    common_name: Zeta Ursae Majoris
+    ra_hours: 13.40
+    dec_degrees: 54.9
+    magnitude: 2.2
+    type: double_star
+    description: Famous double star with Alcor in Big Dipper handle
+
+  - name: Alioth
+    common_name: Epsilon Ursae Majoris
+    ra_hours: 12.90
+    dec_degrees: 55.9
+    magnitude: 1.8
+    type: star
+    description: Brightest star in Ursa Major, Big Dipper handle
+
+  - name: Megrez
+    common_name: Delta Ursae Majoris
+    ra_hours: 12.26
+    dec_degrees: 57.0
+    magnitude: 3.3
+    type: star
+    description: Where Big Dipper handle meets bowl
+
+  - name: Phecda
+    common_name: Gamma Ursae Majoris
+    ra_hours: 11.90
+    dec_degrees: 53.7
+    magnitude: 2.4
+    type: star
+    description: Lower rear corner of Big Dipper bowl
+
+  - name: Merak
+    common_name: Beta Ursae Majoris
+    ra_hours: 11.03
+    dec_degrees: 56.4
+    magnitude: 2.3
+    type: star
+    description: Pointer star in Big Dipper bowl
+
+  - name: Dubhe
+    common_name: Alpha Ursae Majoris
+    ra_hours: 11.06
+    dec_degrees: 61.8
+    magnitude: 1.8
+    type: star
+    description: Pointer star, brightest in Big Dipper
+
+  # Orion's Belt stars
+  - name: Alnitak
+    common_name: Zeta Orionis
+    ra_hours: 5.68
+    dec_degrees: -1.9
+    magnitude: 1.8
+    type: star
+    description: Leftmost star in Orion's Belt
+
+  - name: Alnilam
+    common_name: Epsilon Orionis
+    ra_hours: 5.60
+    dec_degrees: -1.2
+    magnitude: 1.7
+    type: star
+    description: Center star in Orion's Belt
+
+  - name: Mintaka
+    common_name: Delta Orionis
+    ra_hours: 5.53
+    dec_degrees: -0.3
+    magnitude: 2.2
+    type: star
+    description: Rightmost star in Orion's Belt
+
+  # Great Square of Pegasus stars
+  - name: Alpheratz
+    common_name: Alpha Andromedae
+    ra_hours: 0.14
+    dec_degrees: 29.1
+    magnitude: 2.1
+    type: star
+    description: Northeast corner of Great Square
+
+  - name: Scheat
+    common_name: Beta Pegasi
+    ra_hours: 23.06
+    dec_degrees: 28.1
+    magnitude: 2.4
+    type: star
+    description: Northwest corner of Great Square
+
+  - name: Markab
+    common_name: Alpha Pegasi
+    ra_hours: 23.08
+    dec_degrees: 15.2
+    magnitude: 2.5
+    type: star
+    description: Southwest corner of Great Square
+
+  - name: Algenib
+    common_name: Gamma Pegasi
+    ra_hours: 0.22
+    dec_degrees: 15.2
+    magnitude: 2.8
+    type: star
+    description: Southeast corner of Great Square
+
+# Messier Objects - Complete Messier catalog objects visible with 6SE
+messier:
+  # Galaxies
+  - name: M31
+    common_name: Andromeda Galaxy
+    ra_hours: 0.71
+    dec_degrees: 41.3
+    magnitude: 3.4
+    type: galaxy
+    description: Andromeda Galaxy, nearest major galaxy
+
+  - name: M32
+    common_name: null
+    ra_hours: 0.71
+    dec_degrees: 40.9
+    magnitude: 8.1
+    type: galaxy
+    description: Satellite galaxy of M31
+
+  - name: M33
+    common_name: Triangulum Galaxy
+    ra_hours: 1.56
+    dec_degrees: 30.7
+    magnitude: 5.7
+    type: galaxy
+    description: Triangulum Galaxy
+
+  - name: M51
+    common_name: Whirlpool Galaxy
+    ra_hours: 13.49
+    dec_degrees: 47.2
+    magnitude: 8.4
+    type: galaxy
+    description: Whirlpool Galaxy, classic spiral
+
+  - name: M63
+    common_name: Sunflower Galaxy
+    ra_hours: 13.26
+    dec_degrees: 42.0
+    magnitude: 8.6
+    type: galaxy
+    description: Sunflower Galaxy
+
+  - name: M64
+    common_name: Black Eye Galaxy
+    ra_hours: 12.95
+    dec_degrees: 21.7
+    magnitude: 8.5
+    type: galaxy
+    description: Black Eye Galaxy, dark dust lane
+
+  - name: M65
+    common_name: null
+    ra_hours: 11.31
+    dec_degrees: 13.1
+    magnitude: 9.3
+    type: galaxy
+    description: Member of Leo Triplet
+
+  - name: M66
+    common_name: null
+    ra_hours: 11.34
+    dec_degrees: 12.9
+    magnitude: 8.9
+    type: galaxy
+    description: Member of Leo Triplet
+
+  - name: M81
+    common_name: Bode's Galaxy
+    ra_hours: 9.93
+    dec_degrees: 69.1
+    magnitude: 6.9
+    type: galaxy
+    description: Bode's Galaxy
+
+  - name: M82
+    common_name: Cigar Galaxy
+    ra_hours: 9.93
+    dec_degrees: 69.7
+    magnitude: 8.4
+    type: galaxy
+    description: Cigar Galaxy, starburst galaxy
+
+  - name: M101
+    common_name: Pinwheel Galaxy
+    ra_hours: 14.05
+    dec_degrees: 54.3
+    magnitude: 7.9
+    type: galaxy
+    description: Pinwheel Galaxy, face-on spiral
+
+  - name: M104
+    common_name: Sombrero Galaxy
+    ra_hours: 12.67
+    dec_degrees: -11.6
+    magnitude: 8.0
+    type: galaxy
+    description: Sombrero Galaxy, edge-on with dust lane
+
+  - name: M110
+    common_name: null
+    ra_hours: 0.68
+    dec_degrees: 41.7
+    magnitude: 8.1
+    type: galaxy
+    description: Satellite galaxy of M31
+
+  # Nebulae
+  - name: M1
+    common_name: Crab Nebula
+    ra_hours: 5.58
+    dec_degrees: 22.0
+    magnitude: 8.4
+    type: nebula
+    description: Crab Nebula, supernova remnant
+
+  - name: M8
+    common_name: Lagoon Nebula
+    ra_hours: 18.06
+    dec_degrees: -24.4
+    magnitude: 6.0
+    type: nebula
+    description: Lagoon Nebula, emission nebula
+
+  - name: M16
+    common_name: Eagle Nebula
+    ra_hours: 18.31
+    dec_degrees: -13.8
+    magnitude: 6.0
+    type: nebula
+    description: Eagle Nebula, Pillars of Creation
+
+  - name: M17
+    common_name: Swan Nebula
+    ra_hours: 18.34
+    dec_degrees: -16.2
+    magnitude: 6.0
+    type: nebula
+    description: Swan Nebula, Omega Nebula
+
+  - name: M20
+    common_name: Trifid Nebula
+    ra_hours: 18.03
+    dec_degrees: -23.0
+    magnitude: 6.3
+    type: nebula
+    description: Trifid Nebula, emission and reflection
+
+  - name: M27
+    common_name: Dumbbell Nebula
+    ra_hours: 20.00
+    dec_degrees: 22.7
+    magnitude: 7.5
+    type: nebula
+    description: Dumbbell Nebula, planetary nebula
+
+  - name: M42
+    common_name: Orion Nebula
+    ra_hours: 5.58
+    dec_degrees: -5.4
+    magnitude: 4.0
+    type: nebula
+    description: Orion Nebula, finest nebula visible
+
+  - name: M43
+    common_name: null
+    ra_hours: 5.59
+    dec_degrees: -5.3
+    magnitude: 9.0
+    type: nebula
+    description: Part of Orion Nebula complex
+
+  - name: M57
+    common_name: Ring Nebula
+    ra_hours: 18.89
+    dec_degrees: 33.0
+    magnitude: 8.8
+    type: nebula
+    description: Ring Nebula, famous planetary nebula
+
+  - name: M76
+    common_name: Little Dumbbell
+    ra_hours: 1.70
+    dec_degrees: 51.6
+    magnitude: 10.1
+    type: nebula
+    description: Little Dumbbell Nebula, planetary nebula
+
+  - name: M78
+    common_name: null
+    ra_hours: 5.77
+    dec_degrees: 0.1
+    magnitude: 8.3
+    type: nebula
+    description: Reflection nebula in Orion
+
+  - name: M97
+    common_name: Owl Nebula
+    ra_hours: 11.25
+    dec_degrees: 55.0
+    magnitude: 9.9
+    type: nebula
+    description: Owl Nebula, planetary nebula
+
+  # Globular Clusters
+  - name: M2
+    common_name: null
+    ra_hours: 21.56
+    dec_degrees: -0.8
+    magnitude: 6.5
+    type: cluster
+    description: Bright globular cluster in Aquarius
+
+  - name: M3
+    common_name: null
+    ra_hours: 13.70
+    dec_degrees: 28.4
+    magnitude: 6.2
+    type: cluster
+    description: Bright globular cluster in Canes Venatici
+
+  - name: M4
+    common_name: null
+    ra_hours: 16.39
+    dec_degrees: -26.5
+    magnitude: 5.6
+    type: cluster
+    description: Closest globular cluster to Earth
+
+  - name: M5
+    common_name: null
+    ra_hours: 15.31
+    dec_degrees: 2.1
+    magnitude: 5.6
+    type: cluster
+    description: Globular cluster in Serpens
+
+  - name: M9
+    common_name: null
+    ra_hours: 17.32
+    dec_degrees: -18.5
+    magnitude: 7.7
+    type: cluster
+    description: Globular cluster near center of galaxy
+
+  - name: M10
+    common_name: null
+    ra_hours: 16.95
+    dec_degrees: -4.1
+    magnitude: 6.6
+    type: cluster
+    description: Globular cluster in Ophiuchus
+
+  - name: M12
+    common_name: null
+    ra_hours: 16.79
+    dec_degrees: -1.9
+    magnitude: 6.7
+    type: cluster
+    description: Loose globular cluster
+
+  - name: M13
+    common_name: Hercules Cluster
+    ra_hours: 16.70
+    dec_degrees: 36.5
+    magnitude: 5.8
+    type: cluster
+    description: Great Hercules Cluster, finest in north
+
+  - name: M14
+    common_name: null
+    ra_hours: 17.63
+    dec_degrees: -3.2
+    magnitude: 7.6
+    type: cluster
+    description: Globular cluster in Ophiuchus
+
+  - name: M15
+    common_name: null
+    ra_hours: 21.50
+    dec_degrees: 12.2
+    magnitude: 6.2
+    type: cluster
+    description: Dense globular cluster in Pegasus
+
+  - name: M22
+    common_name: null
+    ra_hours: 18.61
+    dec_degrees: -23.9
+    magnitude: 5.1
+    type: cluster
+    description: Bright globular cluster in Sagittarius
+
+  - name: M53
+    common_name: null
+    ra_hours: 13.22
+    dec_degrees: 18.2
+    magnitude: 7.6
+    type: cluster
+    description: Globular cluster in Coma Berenices
+
+  - name: M56
+    common_name: null
+    ra_hours: 19.28
+    dec_degrees: 30.2
+    magnitude: 8.3
+    type: cluster
+    description: Small globular cluster in Lyra
+
+  - name: M62
+    common_name: null
+    ra_hours: 17.02
+    dec_degrees: -30.1
+    magnitude: 6.5
+    type: cluster
+    description: Irregular globular cluster
+
+  - name: M68
+    common_name: null
+    ra_hours: 12.66
+    dec_degrees: -26.7
+    magnitude: 7.8
+    type: cluster
+    description: Globular cluster in Hydra
+
+  - name: M69
+    common_name: null
+    ra_hours: 18.52
+    dec_degrees: -32.3
+    magnitude: 7.6
+    type: cluster
+    description: Small globular cluster in Sagittarius
+
+  - name: M70
+    common_name: null
+    ra_hours: 18.72
+    dec_degrees: -32.3
+    magnitude: 7.9
+    type: cluster
+    description: Globular cluster near galactic center
+
+  - name: M71
+    common_name: null
+    ra_hours: 19.90
+    dec_degrees: 18.8
+    magnitude: 8.2
+    type: cluster
+    description: Loose globular cluster in Sagitta
+
+  - name: M72
+    common_name: null
+    ra_hours: 20.90
+    dec_degrees: -12.5
+    magnitude: 9.3
+    type: cluster
+    description: Distant globular cluster in Aquarius
+
+  - name: M79
+    common_name: null
+    ra_hours: 5.41
+    dec_degrees: -24.5
+    magnitude: 7.7
+    type: cluster
+    description: Globular cluster in Lepus
+
+  - name: M80
+    common_name: null
+    ra_hours: 16.28
+    dec_degrees: -22.9
+    magnitude: 7.3
+    type: cluster
+    description: Dense globular cluster in Scorpius
+
+  - name: M92
+    common_name: null
+    ra_hours: 17.28
+    dec_degrees: 43.1
+    magnitude: 6.4
+    type: cluster
+    description: Globular cluster in Hercules
+
+  - name: M107
+    common_name: null
+    ra_hours: 16.54
+    dec_degrees: -13.0
+    magnitude: 7.9
+    type: cluster
+    description: Loose globular cluster in Ophiuchus
+
+  # Open Clusters
+  - name: M6
+    common_name: Butterfly Cluster
+    ra_hours: 17.67
+    dec_degrees: -32.2
+    magnitude: 4.2
+    type: cluster
+    description: Butterfly Cluster, bright open cluster
+
+  - name: M7
+    common_name: Ptolemy Cluster
+    ra_hours: 17.90
+    dec_degrees: -34.8
+    magnitude: 3.3
+    type: cluster
+    description: Ptolemy's Cluster, bright and large
+
+  - name: M11
+    common_name: Wild Duck Cluster
+    ra_hours: 18.85
+    dec_degrees: -6.3
+    magnitude: 6.3
+    type: cluster
+    description: Wild Duck Cluster, rich open cluster
+
+  - name: M35
+    common_name: null
+    ra_hours: 6.15
+    dec_degrees: 24.3
+    magnitude: 5.3
+    type: cluster
+    description: Large open cluster in Gemini
+
+  - name: M36
+    common_name: null
+    ra_hours: 5.60
+    dec_degrees: 34.1
+    magnitude: 6.3
+    type: cluster
+    description: Open cluster in Auriga
+
+  - name: M37
+    common_name: null
+    ra_hours: 5.87
+    dec_degrees: 32.6
+    magnitude: 6.2
+    type: cluster
+    description: Richest open cluster in Auriga
+
+  - name: M38
+    common_name: null
+    ra_hours: 5.48
+    dec_degrees: 35.8
+    magnitude: 7.4
+    type: cluster
+    description: Cross-shaped open cluster in Auriga
+
+  - name: M41
+    common_name: null
+    ra_hours: 6.77
+    dec_degrees: -20.7
+    magnitude: 4.6
+    type: cluster
+    description: Bright open cluster near Sirius
+
+  - name: M44
+    common_name: Beehive Cluster
+    ra_hours: 8.67
+    dec_degrees: 20.0
+    magnitude: 3.7
+    type: cluster
+    description: Beehive Cluster (Praesepe), naked eye
+
+  - name: M45
+    common_name: Pleiades
+    ra_hours: 3.78
+    dec_degrees: 24.1
+    magnitude: 1.6
+    type: cluster
+    description: Pleiades (Seven Sisters), finest cluster
+
+  - name: M46
+    common_name: null
+    ra_hours: 7.70
+    dec_degrees: -14.8
+    magnitude: 6.0
+    type: cluster
+    description: Rich open cluster in Puppis
+
+  - name: M47
+    common_name: null
+    ra_hours: 7.61
+    dec_degrees: -14.5
+    magnitude: 5.2
+    type: cluster
+    description: Coarse open cluster near M46
+
+  - name: M48
+    common_name: null
+    ra_hours: 8.23
+    dec_degrees: -5.8
+    magnitude: 5.5
+    type: cluster
+    description: Large open cluster in Hydra
+
+  - name: M50
+    common_name: null
+    ra_hours: 7.05
+    dec_degrees: -8.3
+    magnitude: 6.3
+    type: cluster
+    description: Open cluster in Monoceros
+
+  - name: M52
+    common_name: null
+    ra_hours: 23.40
+    dec_degrees: 61.6
+    magnitude: 7.3
+    type: cluster
+    description: Rich open cluster in Cassiopeia
+
+  - name: M67
+    common_name: null
+    ra_hours: 8.85
+    dec_degrees: 11.8
+    magnitude: 6.1
+    type: cluster
+    description: Ancient open cluster in Cancer
+
+  - name: M93
+    common_name: null
+    ra_hours: 7.74
+    dec_degrees: -23.9
+    magnitude: 6.0
+    type: cluster
+    description: Bright open cluster in Puppis
+
+  - name: M103
+    common_name: null
+    ra_hours: 1.56
+    dec_degrees: 60.7
+    magnitude: 7.4
+    type: cluster
+    description: Open cluster in Cassiopeia
+
+# Asterisms - Star patterns with component stars
+asterisms:
+  - name: Big Dipper
+    common_name: Ursa Major
+    ra_hours: 11.0
+    dec_degrees: 55.0
+    magnitude: 2.0
+    type: asterism
+    description: Seven stars - Dubhe, Merak, Phecda, Megrez, Alioth, Mizar, Alkaid
+
+  - name: Little Dipper
+    common_name: Ursa Minor
+    ra_hours: 15.0
+    dec_degrees: 75.0
+    magnitude: 2.0
+    type: asterism
+    description: Seven stars including Polaris at end of handle
+
+  - name: Summer Triangle
+    common_name: null
+    ra_hours: 19.5
+    dec_degrees: 30.0
+    magnitude: null
+    type: asterism
+    description: Three bright stars - Vega (Lyra), Deneb (Cygnus), and Altair (Aquila)
+
+  - name: Winter Triangle
+    common_name: null
+    ra_hours: 6.5
+    dec_degrees: 5.0
+    magnitude: null
+    type: asterism
+    description: Three bright stars - Sirius (Canis Major), Procyon (Canis Minor), and Betelgeuse (Orion)
+
+  - name: Orion's Belt
+    common_name: null
+    ra_hours: 5.6
+    dec_degrees: -1.2
+    magnitude: 1.8
+    type: asterism
+    description: Three bright stars - Alnitak, Alnilam, and Mintaka
+
+  - name: Great Square of Pegasus
+    common_name: null
+    ra_hours: 23.0
+    dec_degrees: 20.0
+    magnitude: 2.5
+    type: asterism
+    description: Four stars - Alpheratz (Andromeda), Scheat, Markab, and Algenib (Pegasus)
+
+  - name: Northern Cross
+    common_name: Cygnus
+    ra_hours: 20.5
+    dec_degrees: 42.0
+    magnitude: 2.2
+    type: asterism
+    description: Five stars in Cygnus the Swan with Deneb at the head
+
+  - name: Sickle of Leo
+    common_name: null
+    ra_hours: 10.3
+    dec_degrees: 15.0
+    magnitude: 2.0
+    type: asterism
+    description: Six stars forming backward question mark with Regulus at the dot
+
+  - name: Teapot
+    common_name: null
+    ra_hours: 18.5
+    dec_degrees: -27.0
+    magnitude: 2.7
+    type: asterism
+    description: Eight stars in Sagittarius forming a teapot shape
+
+# NGC Objects - Selected NGC deep sky objects visible with 6SE
+ngc:
+  - name: NGC 7000
+    common_name: North America Nebula
+    ra_hours: 20.97
+    dec_degrees: 44.5
+    magnitude: 4.0
+    type: nebula
+    description: North America Nebula, large emission nebula
+
+  - name: NGC 869
+    common_name: Double Cluster
+    ra_hours: 2.32
+    dec_degrees: 57.1
+    magnitude: 4.3
+    type: cluster
+    description: Double Cluster with NGC 884, spectacular pair
+
+  - name: NGC 884
+    common_name: Double Cluster
+    ra_hours: 2.37
+    dec_degrees: 57.1
+    magnitude: 4.4
+    type: cluster
+    description: Double Cluster with NGC 869
+
+  - name: NGC 2244
+    common_name: Rosette Nebula Cluster
+    ra_hours: 6.53
+    dec_degrees: 4.9
+    magnitude: 4.8
+    type: cluster
+    description: Rosette Nebula Cluster
+
+  - name: NGC 4565
+    common_name: Needle Galaxy
+    ra_hours: 12.61
+    dec_degrees: 26.0
+    magnitude: 9.6
+    type: galaxy
+    description: Needle Galaxy, edge-on spiral
+
+  - name: NGC 6960
+    common_name: Veil Nebula
+    ra_hours: 20.76
+    dec_degrees: 30.7
+    magnitude: 7.0
+    type: nebula
+    description: Veil Nebula (Western portion), supernova remnant
+
+  - name: NGC 6992
+    common_name: Veil Nebula
+    ra_hours: 20.93
+    dec_degrees: 31.7
+    magnitude: 7.0
+    type: nebula
+    description: Veil Nebula (Eastern portion)
+
+  - name: NGC 7293
+    common_name: Helix Nebula
+    ra_hours: 22.49
+    dec_degrees: -20.8
+    magnitude: 7.6
+    type: nebula
+    description: Helix Nebula, large planetary nebula
+
+  - name: NGC 2392
+    common_name: Eskimo Nebula
+    ra_hours: 7.49
+    dec_degrees: 20.9
+    magnitude: 9.2
+    type: nebula
+    description: Eskimo Nebula, planetary nebula
+
+  - name: NGC 253
+    common_name: Sculptor Galaxy
+    ra_hours: 0.79
+    dec_degrees: -25.3
+    magnitude: 7.6
+    type: galaxy
+    description: Sculptor Galaxy, bright edge-on spiral
+
+  - name: NGC 5194
+    common_name: Whirlpool Galaxy
+    ra_hours: 13.49
+    dec_degrees: 47.2
+    magnitude: 8.4
+    type: galaxy
+    description: Whirlpool Galaxy (same as M51)
+
+  - name: NGC 6543
+    common_name: Cat's Eye Nebula
+    ra_hours: 17.97
+    dec_degrees: 66.6
+    magnitude: 8.1
+    type: nebula
+    description: Cat's Eye Nebula, planetary nebula
+
+# Caldwell Catalog - Selected Caldwell objects for 6SE
+caldwell:
+  - name: C14
+    common_name: Double Cluster
+    ra_hours: 2.32
+    dec_degrees: 57.1
+    magnitude: 4.3
+    type: cluster
+    description: Double Cluster (NGC 869), also in NGC catalog
+
+  - name: C41
+    common_name: Hyades
+    ra_hours: 4.45
+    dec_degrees: 16.0
+    magnitude: 0.5
+    type: cluster
+    description: Hyades, nearest open cluster, in Taurus
+
+  - name: C63
+    common_name: Helix Nebula
+    ra_hours: 22.49
+    dec_degrees: -20.8
+    magnitude: 7.6
+    type: nebula
+    description: Helix Nebula, NGC 7293
+
+  - name: C34
+    common_name: Veil Nebula
+    ra_hours: 20.76
+    dec_degrees: 30.7
+    magnitude: 7.0
+    type: nebula
+    description: Western Veil Nebula, NGC 6960
+
+# Planets and Moons - Solar system objects visible with NexStar 6SE
+# Note: Positions vary, coordinates are placeholders
+planets:
+  - name: Mercury
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: -0.4
+    type: planet
+    description: Innermost planet, challenging to observe near Sun
+
+  - name: Venus
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: -4.4
+    type: planet
+    description: Brightest planet, shows phases like Moon
+
+  - name: Mars
+    common_name: Red Planet
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: -2.9
+    type: planet
+    description: Red planet, polar ice caps visible with 6SE
+
+  - name: Jupiter
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: -2.9
+    type: planet
+    description: Largest planet, cloud bands and Great Red Spot visible
+
+  - name: Saturn
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 0.2
+    type: planet
+    description: Ringed planet, rings and Cassini Division visible with 6SE
+
+  - name: Uranus
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 5.7
+    type: planet
+    description: Ice giant, appears as small blue-green disk
+
+  - name: Neptune
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 7.8
+    type: planet
+    description: Ice giant, appears as small blue disk
+
+  - name: Moon
+    common_name: Luna
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: -12.6
+    type: moon
+    description: Earth's Moon, craters and maria visible
+
+  # Jupiter's Galilean Moons (visible with 6SE)
+  - name: Io
+    common_name: Jupiter I
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 5.0
+    type: moon
+    description: Innermost Galilean moon of Jupiter
+
+  - name: Europa
+    common_name: Jupiter II
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 5.3
+    type: moon
+    description: Second Galilean moon of Jupiter
+
+  - name: Ganymede
+    common_name: Jupiter III
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 4.6
+    type: moon
+    description: Largest moon in solar system, third Galilean moon
+
+  - name: Callisto
+    common_name: Jupiter IV
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 5.6
+    type: moon
+    description: Outermost Galilean moon of Jupiter
+
+  # Saturn's brightest moons (visible with 6SE)
+  - name: Titan
+    common_name: Saturn VI
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 8.4
+    type: moon
+    description: Largest moon of Saturn, has thick atmosphere
+
+  - name: Rhea
+    common_name: Saturn V
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 9.7
+    type: moon
+    description: Second-largest moon of Saturn
+
+  - name: Iapetus
+    common_name: Saturn VIII
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 10.2
+    type: moon
+    description: Third-largest moon of Saturn, varies in brightness
+
+  - name: Dione
+    common_name: Saturn IV
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 10.4
+    type: moon
+    description: Fourth-largest moon of Saturn
+
+  - name: Tethys
+    common_name: Saturn III
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 10.3
+    type: moon
+    description: Fifth-largest moon of Saturn
