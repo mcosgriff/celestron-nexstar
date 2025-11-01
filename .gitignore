@@ -253,3 +253,6 @@ Network Trash Folder
 Temporary Items
 .apdisk
 /.vscode/settings.json
+
+# Implementation Plans (work in progress)
+TYPER_CLI_IMPLEMENTATION_PLAN.md
