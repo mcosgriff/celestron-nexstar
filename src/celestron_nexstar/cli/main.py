@@ -85,8 +85,37 @@ def version() -> None:
     console.print(f"[bold]Celestron NexStar CLI[/bold] version [cyan]{__version__}[/cyan]")
 
 
-# Import and register subcommands (to be created in Phase 2)
-# from .commands import connect, position, goto, track, align, config, monitor, interactive
+# Import and register subcommands
+from .commands import connect, position, goto, move, track, align, location, time, catalog
+
+# Register command groups - Phase 2 (Core)
+app.add_typer(connect.app, name="connect", help="Connection commands (deprecated - use subcommands)")
+app.add_typer(position.app, name="position", help="Position query commands")
+app.add_typer(goto.app, name="goto", help="Slew (goto) commands")
+app.add_typer(move.app, name="move", help="Manual movement commands")
+app.add_typer(track.app, name="track", help="Tracking control commands")
+app.add_typer(align.app, name="align", help="Alignment commands")
+
+# Register command groups - Phase 3 (Advanced)
+app.add_typer(location.app, name="location", help="Observer location commands")
+app.add_typer(time.app, name="time", help="Time and date commands")
+app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
+
+# Also add connect commands directly to main app for convenience
+@app.command("conn")
+def conn(
+    port: str = typer.Argument(..., help="Serial port (e.g., /dev/ttyUSB0, COM3)"),
+    baudrate: int = typer.Option(9600, help="Baud rate"),
+    timeout: float = typer.Option(2.0, help="Connection timeout in seconds"),
+) -> None:
+    """Quick connect to telescope (shorthand for 'connect connect')."""
+    connect.connect(port, baudrate, timeout)
+
+
+@app.command("disc")
+def disc() -> None:
+    """Quick disconnect from telescope (shorthand for 'connect disconnect')."""
+    connect.disconnect()
 
 
 if __name__ == "__main__":
