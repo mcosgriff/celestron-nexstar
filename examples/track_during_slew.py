@@ -9,10 +9,10 @@ import threading
 import time
 from datetime import datetime
 
+from celestron_nexstar.utils import angular_separation
 from tqdm import tqdm
 
 from celestron_nexstar import NexStarTelescope
-from celestron_nexstar.utils import angular_separation
 
 
 class SlewMonitor:
