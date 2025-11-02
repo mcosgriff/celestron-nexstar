@@ -28,6 +28,9 @@ from .types import (
 )
 
 
+__all__ = ["NexStarTelescope"]
+
+
 logger = logging.getLogger(__name__)
 
 

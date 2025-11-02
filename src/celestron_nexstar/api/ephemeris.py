@@ -4,12 +4,26 @@ Ephemeris Calculations for Solar System Objects
 Uses Skyfield library to calculate real-time positions of planets and moons.
 """
 
+from __future__ import annotations
+
+import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
 from skyfield.api import Loader, load  # type: ignore[import-untyped]
 from skyfield.jpllib import SpiceKernel  # type: ignore[import-untyped]
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "PLANET_NAMES",
+    "get_ephemeris_data_dir",
+    "is_dynamic_object",
+    "get_planetary_position",
+]
 
 
 # Planet names mapping to Skyfield ephemeris names and required BSP files

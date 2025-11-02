@@ -64,6 +64,7 @@ package = true
 # Include data files in the package
 include = [
     "src/celestron_nexstar/cli/data/*.yaml",
+    "src/celestron_nexstar/py.typed",
 ]
 
 [tool.pytest.ini_options]

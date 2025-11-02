@@ -26,6 +26,9 @@ from returns.result import Failure, Result, Success
 from .exceptions import NotConnectedError, TelescopeConnectionError, TelescopeTimeoutError
 
 
+__all__ = ["NexStarProtocol"]
+
+
 logger = logging.getLogger(__name__)
 
 

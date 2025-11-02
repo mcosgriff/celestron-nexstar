@@ -5,6 +5,9 @@ Determines which celestial objects are visible based on telescope capabilities,
 sky conditions, altitude, and other observing factors.
 """
 
+from __future__ import annotations
+
+import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,6 +18,17 @@ from .ephemeris import get_planetary_position, is_dynamic_object
 from .observer import get_observer_location
 from .optics import OpticalConfiguration, calculate_limiting_magnitude, get_current_configuration
 from .utils import angular_separation, ra_dec_to_alt_az
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "VisibilityInfo",
+    "calculate_atmospheric_extinction",
+    "is_object_visible",
+    "filter_visible_objects",
+]
 
 
 @dataclass(frozen=True, slots=True)

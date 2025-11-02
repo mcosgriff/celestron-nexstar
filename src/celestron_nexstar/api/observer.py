@@ -5,12 +5,28 @@ Manages observer's geographic location for accurate ephemeris calculations.
 Includes geocoding support for city/address lookups.
 """
 
+from __future__ import annotations
+
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from geopy.exc import GeopyError  # type: ignore[import-untyped]
 from geopy.geocoders import Nominatim  # type: ignore[import-untyped]
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "ObserverLocation",
+    "DEFAULT_LOCATION",
+    "get_observer_location",
+    "set_observer_location",
+    "clear_observer_location",
+    "geocode_location",
+]
 
 
 @dataclass
@@ -51,6 +67,8 @@ def save_location(location: ObserverLocation) -> None:
         location: Observer location to save
     """
     config_path = get_config_path()
+    logger.info(f"Saving observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})")
+
     data = {
         "latitude": location.latitude,
         "longitude": location.longitude,
@@ -60,6 +78,8 @@ def save_location(location: ObserverLocation) -> None:
 
     with config_path.open("w") as f:
         json.dump(data, f, indent=2)
+
+    logger.debug(f"Location saved to {config_path}")
 
 
 def load_location() -> ObserverLocation:
@@ -72,20 +92,24 @@ def load_location() -> ObserverLocation:
     config_path = get_config_path()
 
     if not config_path.exists():
+        logger.debug(f"No saved location found at {config_path}, using default")
         return DEFAULT_LOCATION
 
     try:
         with config_path.open("r") as f:
             data = json.load(f)
 
-        return ObserverLocation(
+        location = ObserverLocation(
             latitude=data["latitude"],
             longitude=data["longitude"],
             elevation=data.get("elevation", 0.0),
             name=data.get("name"),
         )
-    except (json.JSONDecodeError, KeyError, ValueError):
+        logger.info(f"Loaded observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})")
+        return location
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         # If config is corrupted, return default
+        logger.warning(f"Failed to load location from {config_path}: {e}. Using default location.")
         return DEFAULT_LOCATION
 
 

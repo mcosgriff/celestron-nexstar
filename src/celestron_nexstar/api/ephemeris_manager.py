@@ -6,11 +6,28 @@ for offline field use. Provides a user-friendly interface to Skyfield's
 ephemeris file handling.
 """
 
+from __future__ import annotations
+
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from skyfield.api import Loader  # type: ignore[import-untyped]
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "EphemerisFileInfo",
+    "EPHEMERIS_FILES",
+    "get_ephemeris_info",
+    "get_set_info",
+    "download_ephemeris_files",
+    "get_downloaded_files",
+    "verify_ephemeris_file",
+]
 
 
 @dataclass(frozen=True, slots=True)

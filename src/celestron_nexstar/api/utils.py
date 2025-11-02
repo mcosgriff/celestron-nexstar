@@ -3,8 +3,29 @@ Utility functions for Celestron NexStar telescope coordinate conversions
 and astronomical calculations.
 """
 
+from __future__ import annotations
+
 import math
 from datetime import datetime
+
+from .constants import DEGREES_PER_HOUR_ANGLE
+
+
+__all__ = [
+    "ra_to_degrees",
+    "ra_to_hours",
+    "dec_to_degrees",
+    "degrees_to_dms",
+    "hours_to_hms",
+    "alt_az_to_ra_dec",
+    "ra_dec_to_alt_az",
+    "calculate_lst",
+    "calculate_julian_date",
+    "angular_separation",
+    "format_ra",
+    "format_dec",
+    "format_position",
+]
 
 
 def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -20,7 +41,7 @@ def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float
         RA in decimal degrees (0-360)
     """
     total_hours = hours + minutes / 60.0 + seconds / 3600.0
-    return total_hours * 15.0  # 15 degrees per hour
+    return total_hours * DEGREES_PER_HOUR_ANGLE
 
 
 def ra_to_hours(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -137,7 +158,7 @@ def alt_az_to_ra_dec(
     if math.sin(az_rad) > 0:
         ha_rad = -ha_rad
 
-    ha_hours = math.degrees(ha_rad) / 15.0
+    ha_hours = math.degrees(ha_rad) / DEGREES_PER_HOUR_ANGLE
 
     # Calculate RA
     ra_hours = lst_hours - ha_hours
@@ -168,13 +189,13 @@ def ra_dec_to_alt_az(
         Tuple of (Azimuth in degrees, Altitude in degrees)
     """
     # Convert to radians
-    ra_rad = math.radians(ra_hours * 15.0)
+    ra_rad = math.radians(ra_hours * DEGREES_PER_HOUR_ANGLE)
     dec_rad = math.radians(dec_degrees)
     lat_rad = math.radians(latitude)
 
     # Calculate Local Sidereal Time
     lst_hours = calculate_lst(longitude, utc_time)
-    lst_rad = math.radians(lst_hours * 15.0)
+    lst_rad = math.radians(lst_hours * DEGREES_PER_HOUR_ANGLE)
 
     # Calculate hour angle
     ha_rad = lst_rad - ra_rad
@@ -221,7 +242,7 @@ def calculate_lst(longitude: float, utc_time: datetime) -> float:
     gmst = gmst % 24
 
     # Local Sidereal Time
-    lst = gmst + longitude / 15.0
+    lst = gmst + longitude / DEGREES_PER_HOUR_ANGLE
 
     # Normalize to 0-24 hours
     lst = lst % 24
@@ -265,9 +286,9 @@ def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> floa
         Angular separation in degrees
     """
     # Convert to radians
-    ra1_rad = math.radians(ra1 * 15.0)
+    ra1_rad = math.radians(ra1 * DEGREES_PER_HOUR_ANGLE)
     dec1_rad = math.radians(dec1)
-    ra2_rad = math.radians(ra2 * 15.0)
+    ra2_rad = math.radians(ra2 * DEGREES_PER_HOUR_ANGLE)
     dec2_rad = math.radians(dec2)
 
     # Use spherical law of cosines
