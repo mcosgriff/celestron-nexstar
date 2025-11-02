@@ -4,11 +4,10 @@ Optics Commands
 Commands for managing telescope and eyepiece optical configuration.
 """
 
-from typing import Literal, cast
-
 import typer
 from rich.table import Table
 
+from celestron_nexstar.api.enums import SkyBrightness
 from celestron_nexstar.api.optics import (
     COMMON_EYEPIECES,
     EyepieceSpecs,
@@ -111,15 +110,15 @@ def show_config(
 
         if json_output:
             # Calculate limiting magnitude for different conditions
-            conditions: list[Literal["excellent", "good", "fair", "poor", "urban"]] = [
-                "excellent",
-                "good",
-                "fair",
-                "poor",
-                "urban",
+            conditions = [
+                SkyBrightness.EXCELLENT,
+                SkyBrightness.GOOD,
+                SkyBrightness.FAIR,
+                SkyBrightness.POOR,
+                SkyBrightness.URBAN,
             ]
             limiting_mags = {
-                condition: calculate_limiting_magnitude(
+                condition.value: calculate_limiting_magnitude(
                     config.telescope.effective_aperture_mm,
                     sky_brightness=condition,
                     exit_pupil_mm=config.exit_pupil_mm,
@@ -318,16 +317,12 @@ def show_limiting_magnitude(
     try:
         config = get_current_configuration()
 
-        # Validate sky quality
-        valid_conditions: list[Literal["excellent", "good", "fair", "poor", "urban"]] = [
-            "excellent",
-            "good",
-            "fair",
-            "poor",
-            "urban",
-        ]
-        if sky_quality not in valid_conditions:
-            print_error(f"Invalid sky quality. Must be one of: {', '.join(valid_conditions)}")
+        # Validate sky quality and convert to enum
+        try:
+            sky_enum = SkyBrightness(sky_quality)
+        except ValueError:
+            valid_values = [e.value for e in SkyBrightness]
+            print_error(f"Invalid sky quality. Must be one of: {', '.join(valid_values)}")
             raise typer.Exit(code=1) from None
 
         # Calculate for all conditions
@@ -341,14 +336,14 @@ def show_limiting_magnitude(
         table.add_column("Limiting Mag", style="green", width=15)
 
         conditions_info = {
-            "excellent": ("1-2", "Dark sky site"),
-            "good": ("3-4", "Rural sky"),
-            "fair": ("5-6", "Suburban"),
-            "poor": ("7-8", "Urban"),
-            "urban": ("9", "City center"),
+            SkyBrightness.EXCELLENT: ("1-2", "Dark sky site"),
+            SkyBrightness.GOOD: ("3-4", "Rural sky"),
+            SkyBrightness.FAIR: ("5-6", "Suburban"),
+            SkyBrightness.POOR: ("7-8", "Urban"),
+            SkyBrightness.URBAN: ("9", "City center"),
         }
 
-        for condition in valid_conditions:
+        for condition in SkyBrightness:
             limiting_mag = calculate_limiting_magnitude(
                 config.telescope.effective_aperture_mm,
                 sky_brightness=condition,
@@ -356,8 +351,8 @@ def show_limiting_magnitude(
             )
 
             bortle, desc = conditions_info[condition]
-            condition_display = f"{condition.title()} ({desc})"
-            if condition == sky_quality:
+            condition_display = f"{condition.value.title()} ({desc})"
+            if condition == sky_enum:
                 condition_display = f"[bold]{condition_display}[/bold]"
                 mag_display = f"[bold green]{limiting_mag:.1f}[/bold green]"
             else:
@@ -370,11 +365,11 @@ def show_limiting_magnitude(
         # Show comparison
         selected_mag = calculate_limiting_magnitude(
             config.telescope.effective_aperture_mm,
-            sky_brightness=cast(Literal["excellent", "good", "fair", "poor", "urban"], sky_quality),
+            sky_brightness=sky_enum,
             exit_pupil_mm=config.exit_pupil_mm,
         )
 
-        print_info(f"With {sky_quality} sky conditions, you can see objects down to magnitude {selected_mag:.1f}")
+        print_info(f"With {sky_enum.value} sky conditions, you can see objects down to magnitude {selected_mag:.1f}")
         print_info(f"Current magnification: {config.magnification:.0f}x, Exit pupil: {config.exit_pupil_mm:.1f}mm")
 
     except Exception as e:
@@ -430,7 +425,7 @@ def _display_configuration(config: OpticalConfiguration) -> None:
     # Add limiting magnitude for typical conditions
     good_sky_mag = calculate_limiting_magnitude(
         config.telescope.effective_aperture_mm,
-        sky_brightness="good",
+        sky_brightness=SkyBrightness.GOOD,
         exit_pupil_mm=config.exit_pupil_mm,
     )
     performance_table.add_row("Limiting Mag (good sky)", f"{good_sky_mag:.1f}")

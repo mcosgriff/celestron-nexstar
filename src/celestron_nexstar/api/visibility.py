@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from .catalogs import CelestialObject
+from .enums import SkyBrightness
 from .ephemeris import get_planetary_position, is_dynamic_object
 from .observer import get_observer_location
 from .optics import OpticalConfiguration, calculate_limiting_magnitude, get_current_configuration
@@ -183,7 +184,7 @@ def calculate_parent_separation(
 def assess_visibility(
     obj: CelestialObject,
     config: OpticalConfiguration | None = None,
-    sky_brightness: Literal["excellent", "good", "fair", "poor", "urban"] = "good",
+    sky_brightness: SkyBrightness = SkyBrightness.GOOD,
     min_altitude_deg: float = 20.0,
     observer_lat: float | None = None,
     observer_lon: float | None = None,
@@ -305,7 +306,7 @@ def assess_visibility(
 def filter_visible_objects(
     objects: list[CelestialObject],
     config: OpticalConfiguration | None = None,
-    sky_brightness: Literal["excellent", "good", "fair", "poor", "urban"] = "good",
+    sky_brightness: SkyBrightness = SkyBrightness.GOOD,
     min_altitude_deg: float = 20.0,
     min_observability_score: float = 0.3,
     observer_lat: float | None = None,
