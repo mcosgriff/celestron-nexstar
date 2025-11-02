@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
-from skyfield.api import Loader, load  # type: ignore[import-untyped]
-from skyfield.jpllib import SpiceKernel  # type: ignore[import-untyped]
+from skyfield.api import Loader, load  # type: ignore[import-not-found]
+from skyfield.jpllib import SpiceKernel  # type: ignore[import-not-found]
 
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "PLANET_NAMES",
-    "get_ephemeris_data_dir",
-    "is_dynamic_object",
+    "get_planet_magnitude",
     "get_planetary_position",
+    "is_dynamic_object",
 ]
 
 

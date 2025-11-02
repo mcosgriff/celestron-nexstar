@@ -8,13 +8,13 @@ from enum import StrEnum
 
 
 __all__ = [
-    "SkyBrightness",
-    "CelestialObjectType",
-    "EphemerisSet",
-    "Direction",
     "Axis",
-    "TrackingMode",
+    "CelestialObjectType",
+    "Direction",
+    "EphemerisSet",
     "OutputFormat",
+    "SkyBrightness",
+    "TrackingMode",
 ]
 
 

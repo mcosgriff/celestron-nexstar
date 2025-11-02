@@ -26,12 +26,7 @@ class TestObserverLocation(unittest.TestCase):
 
     def test_observer_location_creation(self):
         """Test creating an ObserverLocation."""
-        location = ObserverLocation(
-            latitude=40.7128,
-            longitude=-74.0060,
-            elevation=10.0,
-            name="New York City"
-        )
+        location = ObserverLocation(latitude=40.7128, longitude=-74.0060, elevation=10.0, name="New York City")
         self.assertEqual(location.latitude, 40.7128)
         self.assertEqual(location.longitude, -74.0060)
         self.assertEqual(location.elevation, 10.0)
@@ -71,10 +66,7 @@ class TestSaveLoadLocation(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.test_location = ObserverLocation(
-            latitude=34.0522,
-            longitude=-118.2437,
-            elevation=100.0,
-            name="Los Angeles"
+            latitude=34.0522, longitude=-118.2437, elevation=100.0, name="Los Angeles"
         )
 
     @patch("celestron_nexstar.api.observer.get_config_path")
@@ -89,7 +81,7 @@ class TestSaveLoadLocation(unittest.TestCase):
 
         mock_path.open.assert_called_once_with("w")
         # Verify json.dump was called
-        self.assertTrue(mock_file.write.called or hasattr(mock_file, '__enter__'))
+        self.assertTrue(mock_file.write.called or hasattr(mock_file, "__enter__"))
 
     @patch("celestron_nexstar.api.observer.get_config_path")
     def test_load_location_file_not_exists(self, mock_get_config_path):
@@ -108,12 +100,7 @@ class TestSaveLoadLocation(unittest.TestCase):
         mock_path = MagicMock()
         mock_path.exists.return_value = True
 
-        test_data = {
-            "latitude": 34.0522,
-            "longitude": -118.2437,
-            "elevation": 100.0,
-            "name": "Los Angeles"
-        }
+        test_data = {"latitude": 34.0522, "longitude": -118.2437, "elevation": 100.0, "name": "Los Angeles"}
 
         mock_file = MagicMock()
         mock_file.__enter__.return_value.read.return_value = json.dumps(test_data)
@@ -192,11 +179,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
     @patch("celestron_nexstar.api.observer.load_location")
     def test_get_observer_location_first_call(self, mock_load):
         """Test getting observer location on first call (loads from file)."""
-        test_location = ObserverLocation(
-            latitude=40.0,
-            longitude=-100.0,
-            name="Test Location"
-        )
+        test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
         mock_load.return_value = test_location
 
         location = get_observer_location()
@@ -207,11 +190,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
     @patch("celestron_nexstar.api.observer.load_location")
     def test_get_observer_location_cached(self, mock_load):
         """Test that subsequent calls use cached location."""
-        test_location = ObserverLocation(
-            latitude=40.0,
-            longitude=-100.0,
-            name="Test Location"
-        )
+        test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
         mock_load.return_value = test_location
 
         # First call
@@ -226,11 +205,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
     @patch("celestron_nexstar.api.observer.save_location")
     def test_set_observer_location_with_save(self, mock_save):
         """Test setting observer location with save=True."""
-        test_location = ObserverLocation(
-            latitude=45.0,
-            longitude=-90.0,
-            name="New Location"
-        )
+        test_location = ObserverLocation(latitude=45.0, longitude=-90.0, name="New Location")
 
         set_observer_location(test_location, save=True)
 
@@ -244,11 +219,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
     @patch("celestron_nexstar.api.observer.save_location")
     def test_set_observer_location_without_save(self, mock_save):
         """Test setting observer location with save=False."""
-        test_location = ObserverLocation(
-            latitude=45.0,
-            longitude=-90.0,
-            name="New Location"
-        )
+        test_location = ObserverLocation(latitude=45.0, longitude=-90.0, name="New Location")
 
         set_observer_location(test_location, save=False)
 
@@ -262,11 +233,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
     @patch("celestron_nexstar.api.observer.load_location")
     def test_clear_observer_location(self, mock_load):
         """Test clearing cached observer location."""
-        test_location = ObserverLocation(
-            latitude=40.0,
-            longitude=-100.0,
-            name="Test Location"
-        )
+        test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
         mock_load.return_value = test_location
 
         # Get location (caches it)

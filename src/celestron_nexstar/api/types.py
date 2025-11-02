@@ -12,14 +12,14 @@ from enum import Enum
 
 
 __all__ = [
-    "TrackingMode",
     "AlignmentMode",
     "EquatorialCoordinates",
-    "HorizontalCoordinates",
     "GeographicLocation",
+    "HorizontalCoordinates",
+    "TelescopeConfig",
     "TelescopeInfo",
     "TelescopeTime",
-    "TelescopeConfig",
+    "TrackingMode",
 ]
 
 

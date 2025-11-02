@@ -22,18 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    "TelescopeModel",
-    "TelescopeSpecs",
+    "COMMON_EYEPIECES",
     "EyepieceSpecs",
     "OpticalConfiguration",
-    "COMMON_EYEPIECES",
-    "get_telescope_specs",
-    "get_current_configuration",
-    "set_current_configuration",
+    "TelescopeModel",
+    "TelescopeSpecs",
+    "calculate_dawes_limit_arcsec",
     "calculate_limiting_magnitude",
     "calculate_rayleigh_criterion_arcsec",
-    "calculate_dawes_limit_arcsec",
+    "get_current_configuration",
+    "get_telescope_specs",
     "is_object_resolvable",
+    "set_current_configuration",
 ]
 
 
@@ -409,7 +409,9 @@ def save_configuration(config: OpticalConfiguration) -> None:
         config: Optical configuration to save
     """
     config_path = get_config_path()
-    logger.info(f"Saving optical configuration: {config.telescope.display_name} with {config.eyepiece.name or f'{config.eyepiece.focal_length_mm}mm eyepiece'}")
+    logger.info(
+        f"Saving optical configuration: {config.telescope.display_name} with {config.eyepiece.name or f'{config.eyepiece.focal_length_mm}mm eyepiece'}"
+    )
 
     data = {
         "telescope_model": config.telescope.model.value,  # Save enum value

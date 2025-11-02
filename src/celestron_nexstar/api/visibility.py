@@ -25,9 +25,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "VisibilityInfo",
+    "assess_visibility",
     "calculate_atmospheric_extinction",
-    "is_object_visible",
+    "calculate_parent_separation",
     "filter_visible_objects",
+    "get_object_altitude_azimuth",
 ]
 
 

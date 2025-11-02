@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - PEP 561 compliance with `py.typed` marker for type distribution
 - Comprehensive `__all__` exports in all public API modules for clear public interfaces
 - Logging infrastructure across all API modules (catalogs, observer, optics, ephemeris, ephemeris_manager, visibility)
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite with 157 passing tests
 
 ### Changed
+
 - Migrated all Literal types to proper StrEnum classes for better type safety
 - Replaced magic numbers with named constants in `constants.py` module
 - Added `from __future__ import annotations` to all modules for forward compatibility
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated imports in test files to reflect new package structure
 
 ### Fixed
+
 - All 22 mypy type errors resolved with 100% type hint coverage
 - Fixed coordinate conversion functions to use `DEGREES_PER_HOUR_ANGLE` constant
 - Corrected attribute access from `obj.type` to `obj.object_type` in visibility calculations
@@ -36,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated test mocks to use correct module paths
 
 ### Developer Experience
+
 - Achieved 100% type coverage with mypy strict mode
 - Added comprehensive logging for debugging file I/O and complex calculations
 - Improved code organization with explicit public API exports
@@ -44,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - Initial Development
 
 ### Added
+
 - Initial Python API for Celestron NexStar 6SE telescope control
 - Low-level serial protocol implementation
 - High-level telescope control interface
@@ -54,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive unit tests for protocol and API layers
 
 ### Technical Details
+
 - Python 3.14+ support
 - Type-safe implementation with full mypy compliance
 - Deal contracts for runtime verification

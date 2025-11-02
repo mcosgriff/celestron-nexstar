@@ -12,19 +12,19 @@ from .constants import DEGREES_PER_HOUR_ANGLE
 
 
 __all__ = [
-    "ra_to_degrees",
-    "ra_to_hours",
+    "alt_az_to_ra_dec",
+    "angular_separation",
+    "calculate_julian_date",
+    "calculate_lst",
     "dec_to_degrees",
     "degrees_to_dms",
-    "hours_to_hms",
-    "alt_az_to_ra_dec",
-    "ra_dec_to_alt_az",
-    "calculate_lst",
-    "calculate_julian_date",
-    "angular_separation",
-    "format_ra",
     "format_dec",
     "format_position",
+    "format_ra",
+    "hours_to_hms",
+    "ra_dec_to_alt_az",
+    "ra_to_degrees",
+    "ra_to_hours",
 ]
 
 
