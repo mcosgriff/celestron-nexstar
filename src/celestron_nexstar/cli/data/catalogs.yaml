@@ -1096,15 +1096,18 @@ planets:
     dec_degrees: 0.0
     magnitude: -12.6
     type: moon
+    parent_planet: Earth
     description: Earth's Moon, craters and maria visible
 
-  # Jupiter's Galilean Moons (visible with 6SE)
+# Jupiter's Galilean Moons (easily visible with 6SE)
+moons:
   - name: Io
     common_name: Jupiter I
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 5.0
     type: moon
+    parent_planet: Jupiter
     description: Innermost Galilean moon of Jupiter
 
   - name: Europa
@@ -1113,6 +1116,7 @@ planets:
     dec_degrees: 0.0
     magnitude: 5.3
     type: moon
+    parent_planet: Jupiter
     description: Second Galilean moon of Jupiter
 
   - name: Ganymede
@@ -1121,6 +1125,7 @@ planets:
     dec_degrees: 0.0
     magnitude: 4.6
     type: moon
+    parent_planet: Jupiter
     description: Largest moon in solar system, third Galilean moon
 
   - name: Callisto
@@ -1129,15 +1134,17 @@ planets:
     dec_degrees: 0.0
     magnitude: 5.6
     type: moon
+    parent_planet: Jupiter
     description: Outermost Galilean moon of Jupiter
 
-  # Saturn's brightest moons (visible with 6SE)
+  # Saturn's brightest moons (visible with 6SE under good conditions)
   - name: Titan
     common_name: Saturn VI
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 8.4
     type: moon
+    parent_planet: Saturn
     description: Largest moon of Saturn, has thick atmosphere
 
   - name: Rhea
@@ -1146,6 +1153,7 @@ planets:
     dec_degrees: 0.0
     magnitude: 9.7
     type: moon
+    parent_planet: Saturn
     description: Second-largest moon of Saturn
 
   - name: Iapetus
@@ -1154,6 +1162,7 @@ planets:
     dec_degrees: 0.0
     magnitude: 10.2
     type: moon
+    parent_planet: Saturn
     description: Third-largest moon of Saturn, varies in brightness
 
   - name: Dione
@@ -1162,6 +1171,7 @@ planets:
     dec_degrees: 0.0
     magnitude: 10.4
     type: moon
+    parent_planet: Saturn
     description: Fourth-largest moon of Saturn
 
   - name: Tethys
@@ -1170,4 +1180,89 @@ planets:
     dec_degrees: 0.0
     magnitude: 10.3
     type: moon
+    parent_planet: Saturn
     description: Fifth-largest moon of Saturn
+
+  - name: Enceladus
+    common_name: Saturn II
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 11.7
+    type: moon
+    parent_planet: Saturn
+    description: Small but geologically active moon of Saturn with water geysers
+
+  # Uranus moons (very challenging - need excellent conditions and dark sky)
+  - name: Titania
+    common_name: Uranus III
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 13.7
+    type: moon
+    parent_planet: Uranus
+    description: Largest moon of Uranus, challenging target
+
+  - name: Oberon
+    common_name: Uranus IV
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 13.9
+    type: moon
+    parent_planet: Uranus
+    description: Second-largest moon of Uranus
+
+  - name: Ariel
+    common_name: Uranus I
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 14.2
+    type: moon
+    parent_planet: Uranus
+    description: Third-largest moon of Uranus
+
+  - name: Umbriel
+    common_name: Uranus II
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 14.5
+    type: moon
+    parent_planet: Uranus
+    description: Fourth-largest moon of Uranus, darkest of the major Uranian moons
+
+  - name: Miranda
+    common_name: Uranus V
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 15.8
+    type: moon
+    parent_planet: Uranus
+    description: Smallest of Uranus's major moons, extremely challenging
+
+  # Neptune moon (extremely challenging)
+  - name: Triton
+    common_name: Neptune I
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 13.5
+    type: moon
+    parent_planet: Neptune
+    description: Largest moon of Neptune, retrograde orbit, very challenging target
+
+  # Mars moons (nearly impossible with amateur equipment due to Mars' glare)
+  - name: Phobos
+    common_name: Mars I
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 11.8
+    type: moon
+    parent_planet: Mars
+    description: Inner moon of Mars, extremely challenging due to proximity to Mars
+
+  - name: Deimos
+    common_name: Mars II
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 12.9
+    type: moon
+    parent_planet: Mars
+    description: Outer moon of Mars, extremely challenging due to Mars' glare

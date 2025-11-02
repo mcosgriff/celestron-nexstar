@@ -6,7 +6,7 @@ Commands for telescope alignment and sync.
 
 import typer
 
-from ..utils.output import print_error, print_success, print_info
+from ..utils.output import print_error, print_info, print_success
 from ..utils.state import ensure_connected
 
 
@@ -36,10 +36,10 @@ def sync(
     # Validate coordinates
     if not 0 <= ra <= 24:
         print_error("RA must be between 0 and 24 hours")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not -90 <= dec <= 90:
         print_error("Dec must be between -90 and +90 degrees")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         telescope = ensure_connected(port)
@@ -52,8 +52,8 @@ def sync(
             print_info("Alignment updated. You may want to sync on additional stars for better accuracy.")
         else:
             print_error("Failed to sync position")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Sync failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None

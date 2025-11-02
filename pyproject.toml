@@ -141,6 +141,9 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
 
+[tool.ruff.lint.per-file-ignores]
+"src/celestron_nexstar/cli/*" = ["B008"]
+
 [tool.mypy]
 python_version = "3.14"
 # Strict mode

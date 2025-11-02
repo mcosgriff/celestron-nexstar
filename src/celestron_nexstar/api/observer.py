@@ -9,8 +9,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from geopy.geocoders import Nominatim
 from geopy.exc import GeopyError
+from geopy.geocoders import Nominatim
 
 
 @dataclass
@@ -150,7 +150,7 @@ def geocode_location(query: str) -> ObserverLocation:
         location = geolocator.geocode(query, timeout=10)
 
         if location is None:
-            raise ValueError(f"Could not find location: '{query}'")
+            raise ValueError(f"Could not find location: '{query}'") from None
 
         return ObserverLocation(
             latitude=location.latitude,
@@ -160,6 +160,6 @@ def geocode_location(query: str) -> ObserverLocation:
         )
 
     except GeopyError as e:
-        raise ValueError(f"Geocoding error: {e}")
+        raise ValueError(f"Geocoding error: {e}") from None
     except Exception as e:
-        raise ValueError(f"Failed to geocode location: {e}")
+        raise ValueError(f"Failed to geocode location: {e}") from None

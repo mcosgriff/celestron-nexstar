@@ -7,9 +7,15 @@ Commands for managing observer location.
 import typer
 from rich.table import Table
 
-from ..utils.output import print_error, print_success, print_info, print_json, console
+from celestron_nexstar.api.observer import (
+    ObserverLocation,
+    geocode_location,
+    get_observer_location,
+    set_observer_location,
+)
+
+from ..utils.output import console, print_error, print_info, print_json, print_success
 from ..utils.state import ensure_connected
-from ..utils.observer import ObserverLocation, get_observer_location, set_observer_location, geocode_location
 
 
 app = typer.Typer(help="Observer location commands")
@@ -40,10 +46,10 @@ def set_location(
     # Validate coordinates
     if not -90 <= latitude <= 90:
         print_error("Latitude must be between -90 and +90 degrees")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not -180 <= longitude <= 180:
         print_error("Longitude must be between -180 and +180 degrees")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         telescope = ensure_connected(port)
@@ -55,16 +61,14 @@ def set_location(
             # Format location nicely
             lat_dir = "N" if latitude >= 0 else "S"
             lon_dir = "E" if longitude >= 0 else "W"
-            print_success(
-                f"Location set to {abs(latitude):.4f}°{lat_dir}, {abs(longitude):.4f}°{lon_dir}"
-            )
+            print_success(f"Location set to {abs(latitude):.4f}°{lat_dir}, {abs(longitude):.4f}°{lon_dir}")
         else:
             print_error("Failed to set location")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Failed to set location: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("get")
@@ -105,15 +109,13 @@ def get_location(
             lon_dir = "E" if location.longitude >= 0 else "W"
 
             table.add_row("Latitude", f"{abs(location.latitude):.4f}°{lat_dir} ({location.latitude:+.4f}°)")
-            table.add_row(
-                "Longitude", f"{abs(location.longitude):.4f}°{lon_dir} ({location.longitude:+.4f}°)"
-            )
+            table.add_row("Longitude", f"{abs(location.longitude):.4f}°{lon_dir} ({location.longitude:+.4f}°)")
 
             console.print(table)
 
     except Exception as e:
         print_error(f"Failed to get location: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("set-observer")
@@ -156,20 +158,18 @@ def set_observer(
         elif latitude is not None and longitude is not None:
             if not -90 <= latitude <= 90:
                 print_error("Latitude must be between -90 and +90 degrees")
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from None
             if not -180 <= longitude <= 180:
                 print_error("Longitude must be between -180 and +180 degrees")
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from None
 
-            observer_loc = ObserverLocation(
-                latitude=latitude, longitude=longitude, elevation=elevation, name=name
-            )
+            observer_loc = ObserverLocation(latitude=latitude, longitude=longitude, elevation=elevation, name=name)
         else:
             print_error("Must provide either a location query or --lat and --lon")
             print_info("Examples:")
             print_info('  nexstar location set-observer "New York, NY"')
             print_info("  nexstar location set-observer --lat 40.7128 --lon -74.0060")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # Save the location
         set_observer_location(observer_loc, save=True)
@@ -195,10 +195,10 @@ def set_observer(
 
     except ValueError as e:
         print_error(str(e))
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except Exception as e:
         print_error(f"Failed to set observer location: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("get-observer")
@@ -254,4 +254,4 @@ def get_observer(
 
     except Exception as e:
         print_error(f"Failed to get observer location: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

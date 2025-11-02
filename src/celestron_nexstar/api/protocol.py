@@ -115,7 +115,7 @@ class NexStarProtocol:
         """
         if not self.is_open():
             logger.error("Attempted to send command while not connected")
-            raise NotConnectedError("Serial port not open")
+            raise NotConnectedError("Serial port not open") from None
 
         # Type guard to ensure serial_conn is not None
         assert self.serial_conn is not None, "Serial connection should be open at this point"
@@ -136,7 +136,7 @@ class NexStarProtocol:
         while True:
             if time.time() - start_time > self.timeout:
                 logger.error(f"Timeout waiting for response to command: {command!r}")
-                raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}")
+                raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
             if self.serial_conn.in_waiting > 0:
                 byte = self.serial_conn.read(1)

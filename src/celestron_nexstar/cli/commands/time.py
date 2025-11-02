@@ -9,7 +9,7 @@ from datetime import datetime
 import typer
 from rich.table import Table
 
-from ..utils.output import print_error, print_success, print_info, print_json, console
+from ..utils.output import console, print_error, print_info, print_json, print_success
 from ..utils.state import ensure_connected
 
 
@@ -55,9 +55,7 @@ def get_time(
             table.add_column("Value", style="green")
 
             table.add_row("Date", f"{time_info.year}-{time_info.month:02d}-{time_info.day:02d}")
-            table.add_row(
-                "Time", f"{time_info.hour:02d}:{time_info.minute:02d}:{time_info.second:02d}"
-            )
+            table.add_row("Time", f"{time_info.hour:02d}:{time_info.minute:02d}:{time_info.second:02d}")
             table.add_row("Timezone Offset", f"{time_info.timezone:+d} hours from GMT")
             table.add_row("Daylight Savings", "Yes" if time_info.daylight_savings else "No")
 
@@ -65,7 +63,7 @@ def get_time(
 
     except Exception as e:
         print_error(f"Failed to get time: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("set")
@@ -90,46 +88,43 @@ def set_time(
     # Validate inputs
     if not 0 <= hour <= 23:
         print_error("Hour must be between 0 and 23")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not 0 <= minute <= 59:
         print_error("Minute must be between 0 and 59")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not 0 <= second <= 59:
         print_error("Second must be between 0 and 59")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not 1 <= month <= 12:
         print_error("Month must be between 1 and 12")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not 1 <= day <= 31:
         print_error("Day must be between 1 and 31")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if year < 2000:
         print_error("Year must be 2000 or later")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if daylight_savings not in [0, 1]:
         print_error("Daylight savings must be 0 or 1")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         telescope = ensure_connected(port)
 
-        print_info(
-            f"Setting time to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-        )
+        print_info(f"Setting time to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
 
         success = telescope.set_time(hour, minute, second, month, day, year, timezone, daylight_savings)
         if success:
             print_success(
-                f"Time set to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d} "
-                f"(GMT{timezone:+d})"
+                f"Time set to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d} (GMT{timezone:+d})"
             )
         else:
             print_error("Failed to set time")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Failed to set time: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command("sync")
@@ -157,10 +152,7 @@ def sync_time(
         if timezone is None:
             # Get UTC offset in hours
             utc_offset = datetime.now().astimezone().utcoffset()
-            if utc_offset is not None:
-                timezone = int(utc_offset.total_seconds() / 3600)
-            else:
-                timezone = 0
+            timezone = int(utc_offset.total_seconds() / 3600) if utc_offset is not None else 0
 
         # Determine if DST is in effect (simple heuristic)
         dst = 1 if now.dst() else 0
@@ -170,16 +162,14 @@ def sync_time(
             f"{now.hour:02d}:{now.minute:02d}:{now.second:02d} (GMT{timezone:+d})"
         )
 
-        success = telescope.set_time(
-            now.hour, now.minute, now.second, now.month, now.day, now.year, timezone, dst
-        )
+        success = telescope.set_time(now.hour, now.minute, now.second, now.month, now.day, now.year, timezone, dst)
 
         if success:
             print_success("Telescope time synced with system time")
         else:
             print_error("Failed to sync time")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Failed to sync time: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

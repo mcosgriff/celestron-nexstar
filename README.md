@@ -1,4 +1,4 @@
-# Celestron NexStar 6SE Python API
+# Celestron NexStar Telescope Control
 
 [![CI](https://github.com/mcosgriff/celestron-nexstar/actions/workflows/ci.yml/badge.svg)](https://github.com/mcosgriff/celestron-nexstar/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mcosgriff/celestron-nexstar/branch/main/graph/badge.svg)](https://codecov.io/gh/mcosgriff/celestron-nexstar)
@@ -8,7 +8,7 @@
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-A comprehensive Python API for controlling the Celestron NexStar 6SE Computerized Telescope via serial communication.
+A comprehensive command-line interface (CLI) and Python API for controlling Celestron NexStar telescopes with advanced features for planetary moon tracking, intelligent visibility filtering, and field-ready ephemeris management.
 
 ## Table of Contents
 
@@ -17,52 +17,48 @@ A comprehensive Python API for controlling the Celestron NexStar 6SE Computerize
 - [Installation](#installation)
 - [Running Tests](#running-tests)
 - [Hardware Setup](#hardware-setup)
-- [Quick Start](#quick-start)
-- [API Reference](#api-reference)
+- [Quick Start (CLI)](#quick-start-cli)
+- [CLI Reference](#cli-reference)
+  - [Configuration Commands](#configuration-commands)
+  - [Catalog Commands](#catalog-commands)
+  - [Ephemeris Management](#ephemeris-management)
+  - [Observer Location](#observer-location)
+  - [Telescope Control](#telescope-control)
+- [Python API Reference](#python-api-reference)
   - [NexStarTelescope Class](#nexstartelescope-class)
-    - [Connection Methods](#connection-methods)
-    - [Information Methods](#information-methods)
-    - [Movement Methods](#movement-methods)
-    - [Alignment Methods](#alignment-methods)
-    - [Tracking Methods](#tracking-methods)
-    - [Location and Time Methods](#location-and-time-methods)
-  - [Utility Functions](#utility-functions-nexstar_utilspy)
-    - [Coordinate Conversions](#coordinate-conversions)
-    - [Astronomical Calculations](#astronomical-calculations)
-    - [Formatting](#formatting)
-- [Examples](#examples)
-- [Context Manager Support](#context-manager-support)
-- [NexStar Protocol](#nexstar-protocol)
+  - [Utility Functions](#utility-functions)
 - [Coordinate Systems](#coordinate-systems)
-  - [Equatorial (RA/Dec)](#equatorial-radec)
-  - [Horizontal (Alt/Az)](#horizontal-altaz)
 - [Tracking Modes](#tracking-modes)
 - [Compatibility Notes](#compatibility-notes)
-  - [Celestron StarSense AutoAlign](#celestron-starsense-autoalign)
 - [Safety Notes](#safety-notes)
 - [Troubleshooting](#troubleshooting)
-  - [Connection Issues](#connection-issues)
-  - [Slew Issues](#slew-issues)
-  - [Accuracy Issues](#accuracy-issues)
 - [Documentation](#documentation)
 - [License](#license)
 - [Contributing](#contributing)
-- [Acknowledgments](#acknowledgments)
 - [Resources](#resources)
-- [Contact](#contact)
 
 ## Features
 
-- Full serial communication with NexStar telescopes
-- Position tracking (RA/Dec and Alt/Az)
-- Goto commands for automatic slewing
-- Manual movement controls
-- Tracking mode configuration
-- Location and time management
-- Alignment and sync capabilities
-- Coordinate conversion utilities
-- Astronomical calculations
-- Progress bars for long-running operations (using tqdm)
+### CLI Features
+
+- **Optical Configuration**: Configure telescope and eyepiece specs to calculate magnification, field of view, limiting magnitude, and resolution
+- **Celestial Object Catalogs**: Browse and search 100+ deep sky objects, planets, and 28 planetary moons (Galilean moons, Titan, Uranus moons, Triton, and more)
+- **Ephemeris Management**: Download JPL ephemeris files for offline field use with real-time planetary moon positions
+- **Intelligent Visibility Filtering**: Filter objects based on telescope capabilities, altitude, atmospheric conditions, and moon-planet separation
+- **Observer Location Management**: Save and geocode observer locations for accurate coordinate conversions
+- **Telescope Control**: Full serial communication for position tracking, goto commands, alignment, and tracking modes
+
+### Python API Features
+
+- Full NexStar serial protocol implementation
+- Position tracking (RA/Dec and Alt/Az) with coordinate conversions
+- Goto commands for automatic slewing to celestial coordinates
+- Manual movement controls with adjustable rates
+- Tracking mode configuration (Alt-Az, Equatorial North/South)
+- Location and time management for accurate calculations
+- Alignment and sync capabilities for improved accuracy
+- Comprehensive astronomical calculations (LST, angular separation, coordinate transforms)
+- Context manager support for automatic connection handling
 
 ## Requirements
 
@@ -155,38 +151,254 @@ Connect your telescope via USB cable and find your serial port:
 - **Linux**: `/dev/ttyUSB0` (may need: `sudo usermod -a -G dialout $USER`)
 - **Windows**: `COM3`, `COM4`, etc. (check Device Manager)
 
-## Quick Start
+## Quick Start (CLI)
 
-```python
-from celestron_nexstar import NexStarTelescope, TrackingMode
-from celestron_nexstar import ra_to_hours, dec_to_degrees
+The CLI is the recommended way to use the telescope control system. Here are common workflows:
 
-# Connect to telescope
-telescope = NexStarTelescope(port='/dev/ttyUSB0')
-telescope.connect()
+### Initial Setup (One-Time Configuration)
 
-# Get current position
-ra, dec = telescope.get_position_ra_dec()
-print(f"RA: {ra:.4f} hours, Dec: {dec:.4f}°")
+```bash
+# Configure your telescope and eyepiece
+uv run nexstar optics config --telescope nexstar_6se --eyepiece 25
 
-# Slew to coordinates (example: Polaris)
-polaris_ra = ra_to_hours(2, 31, 49)  # 2h 31m 49s
-polaris_dec = dec_to_degrees(89, 15, 51, '+')  # +89° 15' 51"
-telescope.goto_ra_dec(polaris_ra, polaris_dec)
+# Set your observing location (Los Angeles example)
+uv run nexstar location set --lat 34.05 --lon -118.24 --name "Los Angeles"
 
-# Wait for slew to complete
-while telescope.is_slewing():
-    print("Slewing...")
-    time.sleep(1)
+# Or use geocoding to find coordinates
+uv run nexstar location geocode "Griffith Observatory, Los Angeles"
 
-# Enable tracking
-telescope.set_tracking_mode(TrackingMode.ALT_AZ)
-
-# Disconnect
-telescope.disconnect()
+# Download ephemeris files for offline use (downloads ~20MB)
+uv run nexstar ephemeris download standard
 ```
 
-## API Reference
+### Exploring Celestial Objects
+
+```bash
+# List all available catalogs
+uv run nexstar catalog catalogs
+
+# View planets
+uv run nexstar catalog list --catalog planets
+
+# View Jupiter's moons
+uv run nexstar catalog list --catalog jupiter-moons
+
+# Search for specific objects
+uv run nexstar catalog search "andromeda"
+
+# Get detailed information about an object
+uv run nexstar catalog info "M31"
+```
+
+### Telescope Control
+
+```bash
+# Connect to telescope and get position
+uv run nexstar connect --port /dev/ttyUSB0
+
+# Get current telescope position
+uv run nexstar position
+
+# Slew to an object from the catalog
+uv run nexstar goto --object "Jupiter"
+
+# Or slew to specific coordinates
+uv run nexstar goto --ra 5.5 --dec 22.5
+
+# Set tracking mode
+uv run nexstar track --mode alt_az
+
+# Check telescope information
+uv run nexstar connect --info
+```
+
+### Managing Ephemeris Files
+
+```bash
+# List available ephemeris files
+uv run nexstar ephemeris list --all
+
+# Get information about a specific file
+uv run nexstar ephemeris info jup365
+
+# Download a specific ephemeris set
+uv run nexstar ephemeris download complete  # Planets + Jupiter/Saturn/Uranus moons
+
+# Verify downloaded files
+uv run nexstar ephemeris verify
+
+# View all available sets
+uv run nexstar ephemeris sets
+```
+
+For Python API usage, see the [Python API Reference](#python-api-reference) section below.
+
+## CLI Reference
+
+All CLI commands start with `nexstar` (or `uv run nexstar` in development). Use `--help` on any command to see detailed usage.
+
+### Configuration Commands
+
+#### Optics Configuration
+
+Configure telescope and eyepiece specifications for accurate calculations:
+
+```bash
+# Configure telescope and eyepiece together
+nexstar optics config --telescope nexstar_6se --eyepiece 25
+
+# Change just the eyepiece
+nexstar optics set-eyepiece 10
+
+# View current configuration
+nexstar optics show
+
+# List available telescopes
+nexstar optics telescopes
+
+# List common eyepieces
+nexstar optics eyepieces
+
+# Calculate limiting magnitude for sky conditions
+nexstar optics limiting-mag --sky excellent
+```
+
+### Catalog Commands
+
+Browse and search celestial object catalogs:
+
+```bash
+# List all available catalogs
+nexstar catalog catalogs
+
+# List objects in a specific catalog
+nexstar catalog list --catalog messier
+nexstar catalog list --catalog planets
+nexstar catalog list --catalog jupiter-moons
+nexstar catalog list --catalog saturn-moons
+
+# Search across all catalogs
+nexstar catalog search "nebula"
+nexstar catalog search "Titan"
+
+# Get detailed information about an object
+nexstar catalog info "M31"
+nexstar catalog info "Jupiter"
+```
+
+Available catalogs:
+- `messier`: Messier objects (M1-M110)
+- `ngc-popular`: Popular NGC objects
+- `caldwell`: Caldwell catalog
+- `planets`: Major planets (Mercury through Neptune)
+- `jupiter-moons`: Galilean moons (Io, Europa, Ganymede, Callisto)
+- `saturn-moons`: Saturn's moons (Titan, Rhea, Iapetus, Dione, Tethys, Enceladus, Mimas, Hyperion)
+- `uranus-moons`: Uranus moons (Titania, Oberon, Ariel, Umbriel, Miranda)
+- `neptune-moons`: Neptune's moon (Triton)
+- `mars-moons`: Mars moons (Phobos, Deimos - very challenging)
+
+### Ephemeris Management
+
+Download and manage JPL ephemeris files for offline planetary calculations:
+
+```bash
+# List available ephemeris files
+nexstar ephemeris list         # Show only installed files
+nexstar ephemeris list --all   # Show all available files
+
+# Get information about a specific file
+nexstar ephemeris info de440s
+nexstar ephemeris info jup365
+
+# Download individual files
+nexstar ephemeris download de421
+
+# Download pre-configured sets
+nexstar ephemeris download minimal    # DE421 + Jupiter moons (~25MB)
+nexstar ephemeris download standard   # DE440s + Jupiter/Saturn moons (~20MB)
+nexstar ephemeris download complete   # Adds Uranus/Neptune moons (~85MB)
+nexstar ephemeris download full       # All files including Mars moons (~3.2GB)
+
+# View available sets
+nexstar ephemeris sets
+
+# Verify downloaded files
+nexstar ephemeris verify
+
+# Delete files
+nexstar ephemeris delete de421
+```
+
+Ephemeris files are stored in `~/.skyfield/` directory.
+
+### Observer Location
+
+Manage observer location for accurate coordinate calculations:
+
+```bash
+# Set location manually
+nexstar location set --lat 34.05 --lon -118.24 --name "Los Angeles"
+
+# Geocode an address (requires internet)
+nexstar location geocode "Griffith Observatory, Los Angeles"
+nexstar location geocode "New York, NY"
+
+# View current location
+nexstar location show
+
+# Clear saved location
+nexstar location clear
+```
+
+Location is saved to `~/.config/celestron-nexstar/location.json`.
+
+### Telescope Control
+
+Connect to and control the physical telescope:
+
+```bash
+# Connect to telescope (test connection)
+nexstar connect --port /dev/ttyUSB0
+nexstar connect --port COM3  # Windows
+
+# Get telescope info
+nexstar connect --info
+
+# Get current position
+nexstar position
+
+# Slew to an object from catalog
+nexstar goto --object "M31"
+nexstar goto --object "Jupiter"
+
+# Slew to specific coordinates
+nexstar goto --ra 5.5 --dec 22.5
+
+# Slew to alt/az coordinates
+nexstar goto --alt 45 --az 180
+
+# Cancel goto operation
+nexstar goto --cancel
+
+# Manual movement
+nexstar move --direction north --rate 5
+nexstar move --direction east --rate 9
+nexstar move --stop
+
+# Set tracking mode
+nexstar track --mode off
+nexstar track --mode alt_az
+nexstar track --mode eq_north
+nexstar track --mode eq_south
+
+# Get current tracking mode
+nexstar track --get
+
+# Alignment
+nexstar align --ra 5.5 --dec 22.5  # Sync to known position
+```
+
+## Python API Reference
 
 ### NexStarTelescope Class
 
@@ -250,45 +462,30 @@ telescope.disconnect()
 - `format_dec(degrees)` - Format Dec as readable string
 - `format_position(ra_hours, dec_degrees)` - Format complete position
 
-## Examples
+### Python API Example
 
-See `example_usage.py` for comprehensive examples including:
-
-1. Basic connection and information retrieval
-2. Slewing to celestial objects
-3. Manual telescope movement
-4. Setting tracking modes
-5. Configuring location and time
-6. Performing alignment
-7. Alt/Az coordinate slewing
-8. Canceling goto operations
-
-To run examples:
-
-```bash
-python example_usage.py
-```
-
-Remember to update the serial port in the examples to match your system!
-
-## Context Manager Support
-
-The API supports Python's context manager protocol for automatic connection management:
+For those who want to use the Python API directly:
 
 ```python
+from celestron_nexstar import NexStarTelescope, TrackingMode
+from celestron_nexstar import ra_to_hours, dec_to_degrees
+
+# Context manager automatically connects and disconnects
 with NexStarTelescope(port='/dev/ttyUSB0') as telescope:
+    # Get current position
     ra, dec = telescope.get_position_ra_dec()
-    print(f"Position: {ra}, {dec}")
-# Automatically disconnects
+    print(f"RA: {ra:.4f} hours, Dec: {dec:.4f}°")
+
+    # Slew to coordinates (example: Polaris)
+    polaris_ra = ra_to_hours(2, 31, 49)  # 2h 31m 49s
+    polaris_dec = dec_to_degrees(89, 15, 51, '+')  # +89° 15' 51"
+    telescope.goto_ra_dec(polaris_ra, polaris_dec)
+
+    # Enable tracking
+    telescope.set_tracking_mode(TrackingMode.ALT_AZ)
 ```
 
-## NexStar Protocol
-
-This API implements the Celestron NexStar serial protocol for communication. Commands are sent as ASCII strings terminated with '#' character. The telescope uses a precise hexadecimal format for coordinates where:
-
-- 0x00000000 = 0°
-- 0x80000000 = 180°
-- 0xFFFFFFFF = 360° (wraps to 0°)
+See `examples/` directory for more comprehensive examples.
 
 ## Coordinate Systems
 

@@ -12,12 +12,12 @@ from rich.live import Live
 from rich.table import Table
 
 from ..utils.output import (
-    print_error,
-    print_position_table,
-    print_json,
-    format_ra,
-    format_dec,
     console,
+    format_dec,
+    format_ra,
+    print_error,
+    print_json,
+    print_position_table,
 )
 from ..utils.state import ensure_connected
 
@@ -55,9 +55,7 @@ def get_position(
                         altaz = telescope.get_position_alt_az()
 
                         # Create table for live display
-                        table = Table(
-                            title="Telescope Position (Live)", show_header=True, header_style="bold magenta"
-                        )
+                        table = Table(title="Telescope Position (Live)", show_header=True, header_style="bold magenta")
                         table.add_column("Coordinate System", style="cyan", width=20)
                         table.add_column("Value", style="green")
 
@@ -109,7 +107,7 @@ def get_position(
 
     except Exception as e:
         print_error(f"Failed to get position: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -142,7 +140,7 @@ def radec(
 
     except Exception as e:
         print_error(f"Failed to get RA/Dec: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -168,4 +166,4 @@ def altaz(
 
     except Exception as e:
         print_error(f"Failed to get Alt/Az: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

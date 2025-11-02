@@ -7,8 +7,8 @@ Rich console formatting utilities for beautiful CLI output.
 from typing import Any
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 
@@ -27,12 +27,12 @@ def print_error(message: str) -> None:
 
 def print_warning(message: str) -> None:
     """Print warning message in yellow."""
-    console.print(f"[yellow]⚠[/yellow] {message}", style="yellow")
+    console.print(f"[yellow]⚠[/yellow] {message}")
 
 
 def print_info(message: str) -> None:
     """Print info message in blue."""
-    console.print(f"[blue]ℹ[/blue] {message}")
+    console.print(f"[blue]\U0001f6c8[/blue] {message}")
 
 
 def print_position_table(
