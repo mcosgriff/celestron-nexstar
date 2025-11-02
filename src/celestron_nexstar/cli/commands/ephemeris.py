@@ -4,6 +4,8 @@ Ephemeris Commands
 Commands for managing JPL ephemeris files for offline field use.
 """
 
+from typing import Literal, cast
+
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -222,7 +224,7 @@ def download(
             )
 
             with console.status(f"[bold green]Downloading {file} set..."):
-                downloaded = download_set(file, force=force)
+                downloaded = download_set(cast(Literal["minimal", "standard", "complete", "full"], file), force=force)
 
             print_success(f"Downloaded {len(downloaded)} files")
             for path in downloaded:
@@ -290,12 +292,14 @@ def show_sets() -> None:
 
         for set_name in ["minimal", "standard", "complete", "full"]:
             info = get_set_info(set_name)
-            (info["installed_count"] / info["file_count"]) * 100
+            installed_count = cast(int, info["installed_count"])
+            file_count = cast(int, info["file_count"])
+            (installed_count / file_count) * 100
 
-            if info["installed_count"] == info["file_count"]:
+            if installed_count == file_count:
                 status = "[green]✓ Complete[/green]"
-            elif info["installed_count"] > 0:
-                status = f"[yellow]{info['installed_count']}/{info['file_count']}[/yellow]"
+            elif installed_count > 0:
+                status = f"[yellow]{installed_count}/{file_count}[/yellow]"
             else:
                 status = "[dim]Not installed[/dim]"
 

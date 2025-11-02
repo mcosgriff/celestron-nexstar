@@ -53,20 +53,22 @@ def search(
 
         if json_output:
             print_json(
-                [
-                    {
-                        "name": obj.name,
-                        "common_name": obj.common_name,
-                        "ra_hours": obj.ra_hours,
-                        "dec_degrees": obj.dec_degrees,
-                        "magnitude": obj.magnitude,
-                        "type": obj.object_type,
-                        "catalog": obj.catalog,
-                        "description": obj.description,
-                        "match_type": match_type,
-                    }
-                    for obj, match_type in results
-                ]
+                {
+                    "results": [
+                        {
+                            "name": obj.name,
+                            "common_name": obj.common_name,
+                            "ra_hours": obj.ra_hours,
+                            "dec_degrees": obj.dec_degrees,
+                            "magnitude": obj.magnitude,
+                            "type": obj.object_type,
+                            "catalog": obj.catalog,
+                            "description": obj.description,
+                            "match_type": match_type,
+                        }
+                        for obj, match_type in results
+                    ]
+                }
             )
         else:
             # Create results table
@@ -138,19 +140,21 @@ def list_catalog(
 
         if json_output:
             print_json(
-                [
-                    {
-                        "name": obj.name,
-                        "common_name": obj.common_name,
-                        "ra_hours": obj.ra_hours,
-                        "dec_degrees": obj.dec_degrees,
-                        "magnitude": obj.magnitude,
-                        "type": obj.object_type,
-                        "catalog": obj.catalog,
-                        "description": obj.description,
-                    }
-                    for obj in objects
-                ]
+                {
+                    "objects": [
+                        {
+                            "name": obj.name,
+                            "common_name": obj.common_name,
+                            "ra_hours": obj.ra_hours,
+                            "dec_degrees": obj.dec_degrees,
+                            "magnitude": obj.magnitude,
+                            "type": obj.object_type,
+                            "catalog": obj.catalog,
+                            "description": obj.description,
+                        }
+                        for obj in objects
+                    ]
+                }
             )
         else:
             # Create table

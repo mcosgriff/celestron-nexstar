@@ -5,14 +5,15 @@ Loads and caches celestial object catalogs from YAML data files.
 Dynamically calculates positions for solar system objects.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, List, Dict, Tuple
+from typing import Literal
 
 import yaml
 from cachetools import TTLCache, cached
-from fuzzysearch import find_near_matches
+from fuzzysearch import find_near_matches  # type: ignore[import-untyped]
 
 from .ephemeris import get_planetary_position, is_dynamic_object
 
@@ -36,7 +37,7 @@ class CelestialObject:
     def matches_search(self, query: str) -> bool:
         """Check if object matches search query."""
         query_lower = query.lower()
-        return (
+        return bool(
             query_lower in self.name.lower()
             or (self.common_name and query_lower in self.common_name.lower())
             or (self.description and query_lower in self.description.lower())
@@ -88,7 +89,7 @@ def _get_catalogs_path() -> Path:
 
     if hasattr(sys, "_MEIPASS"):
         # PyInstaller path
-        data_path = Path(sys._MEIPASS) / "celestron_nexstar" / "cli" / "data" / "catalogs.yaml"  # type: ignore[attr-defined]
+        data_path = Path(sys._MEIPASS) / "celestron_nexstar" / "cli" / "data" / "catalogs.yaml"
         if data_path.exists():
             return data_path
 
@@ -96,7 +97,7 @@ def _get_catalogs_path() -> Path:
 
 
 @cached(_catalog_cache)
-def _load_catalog_from_yaml(catalog_name: str) -> List[CelestialObject]:
+def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
     """
     Load a specific catalog from the YAML file.
 
@@ -116,7 +117,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> List[CelestialObject]:
     if catalog_name not in data:
         raise ValueError(f"Catalog '{catalog_name}' not found in {catalogs_path}")
 
-    objects: List[CelestialObject] = []
+    objects: list[CelestialObject] = []
     for obj_data in data[catalog_name]:
         obj = CelestialObject(
             name=obj_data["name"],
@@ -135,7 +136,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> List[CelestialObject]:
 
 
 @cached(_catalog_cache)
-def _load_all_catalogs() -> Dict[str, List[CelestialObject]]:
+def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
     """
     Load all catalogs from the YAML file.
 
@@ -149,9 +150,9 @@ def _load_all_catalogs() -> Dict[str, List[CelestialObject]]:
     with catalogs_path.open("r") as f:
         data = yaml.safe_load(f)
 
-    all_catalogs: Dict[str, List[CelestialObject]] = {}
+    all_catalogs: dict[str, list[CelestialObject]] = {}
     for catalog_name, objects_data in data.items():
-        objects: List[CelestialObject] = []
+        objects: list[CelestialObject] = []
         for obj_data in objects_data:
             obj = CelestialObject(
                 name=obj_data["name"],
@@ -171,7 +172,7 @@ def _load_all_catalogs() -> Dict[str, List[CelestialObject]]:
 
 
 # Public API - lazy-loaded catalogs dict
-def get_all_catalogs_dict() -> Dict[str, List[CelestialObject]]:
+def get_all_catalogs_dict() -> dict[str, list[CelestialObject]]:
     """
     Get all catalogs as a dictionary.
 
@@ -182,10 +183,10 @@ def get_all_catalogs_dict() -> Dict[str, List[CelestialObject]]:
 
 
 # Module-level cached reference for backwards compatibility
-_all_catalogs_cache: Dict[str, List[CelestialObject]] | None = None
+_all_catalogs_cache: dict[str, list[CelestialObject]] | None = None
 
 
-def _get_all_catalogs() -> Dict[str, List[CelestialObject]]:
+def _get_all_catalogs() -> dict[str, list[CelestialObject]]:
     """Lazy-load ALL_CATALOGS on first access."""
     global _all_catalogs_cache
     if _all_catalogs_cache is None:
@@ -197,15 +198,15 @@ def _get_all_catalogs() -> Dict[str, List[CelestialObject]]:
 class _AllCatalogsProxy:
     """Proxy object that provides dict-like access to catalogs."""
 
-    def items(self) -> List[Tuple[str, List[CelestialObject]]]:
+    def items(self) -> list[tuple[str, list[CelestialObject]]]:
         """Get catalog items."""
         return list(_get_all_catalogs().items())
 
-    def keys(self) -> List[str]:
+    def keys(self) -> list[str]:
         """Get catalog names."""
         return list(_get_all_catalogs().keys())
 
-    def values(self) -> List[List[CelestialObject]]:
+    def values(self) -> list[list[CelestialObject]]:
         """Get catalog object lists."""
         return list(_get_all_catalogs().values())
 
@@ -213,7 +214,7 @@ class _AllCatalogsProxy:
         """Get catalog by name."""
         return _get_all_catalogs()[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         """Iterate over catalog names."""
         return iter(_get_all_catalogs())
 
@@ -225,7 +226,7 @@ class _AllCatalogsProxy:
 ALL_CATALOGS = _AllCatalogsProxy()
 
 
-def get_catalog(catalog_name: str) -> List[CelestialObject]:
+def get_catalog(catalog_name: str) -> list[CelestialObject]:
     """
     Get objects from a specific catalog.
 
@@ -238,7 +239,7 @@ def get_catalog(catalog_name: str) -> List[CelestialObject]:
     return _load_catalog_from_yaml(catalog_name)
 
 
-def get_all_objects() -> List[CelestialObject]:
+def get_all_objects() -> list[CelestialObject]:
     """
     Get all objects from all catalogs.
 
@@ -252,7 +253,7 @@ def get_all_objects() -> List[CelestialObject]:
     return objects
 
 
-def get_available_catalogs() -> List[str]:
+def get_available_catalogs() -> list[str]:
     """
     Get list of available catalog names.
 
@@ -264,7 +265,7 @@ def get_available_catalogs() -> List[str]:
 
 def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
-) -> List[Tuple[CelestialObject, str]]:
+) -> list[tuple[CelestialObject, str]]:
     """
     Search for objects by name, common name, or description using fuzzy matching.
 
@@ -290,7 +291,7 @@ def search_objects(
         objects = [obj.with_current_position() for obj in objects]
 
     query_lower = query.lower()
-    results: List[Tuple[int, CelestialObject, str]] = []  # (score, object, match_type)
+    results: list[tuple[int, CelestialObject, str]] = []  # (score, object, match_type)
     exact_match = None
 
     for obj in objects:
