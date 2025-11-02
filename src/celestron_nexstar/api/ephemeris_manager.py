@@ -13,7 +13,7 @@ from typing import Literal
 from skyfield.api import Loader  # type: ignore[import-untyped]
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class EphemerisFileInfo:
     """Information about an ephemeris file."""
 
@@ -23,7 +23,7 @@ class EphemerisFileInfo:
     coverage_start: int  # Year
     coverage_end: int  # Year
     size_mb: float  # Approximate size in MB
-    contents: list[str]  # What celestial objects are included
+    contents: tuple[str, ...]  # What celestial objects are included
     use_case: str  # When to use this file
     url: str  # Download URL
 
@@ -37,7 +37,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1900,
         coverage_end=2050,
         size_mb=16.0,
-        contents=[
+        contents=(
             "Sun",
             "Moon",
             "Mercury",
@@ -48,7 +48,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
             "Uranus barycenter",
             "Neptune barycenter",
             "Pluto barycenter",
-        ],
+        ),
         use_case="Good general-purpose file for planets and Moon with reasonable size",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de421.bsp",
     ),
@@ -59,7 +59,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1849,
         coverage_end=2150,
         size_mb=115,
-        contents=[
+        contents=(
             "Sun",
             "Mercury",
             "Venus",
@@ -70,7 +70,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
             "Uranus barycenter",
             "Neptune barycenter",
             "Pluto barycenter",
-        ],
+        ),
         use_case="Best for planetary positions (current default), but lacks Moon",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp",
     ),
@@ -81,7 +81,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1550,
         coverage_end=2650,
         size_mb=114.2,
-        contents=[
+        contents=(
             "Sun",
             "Moon",
             "Mercury",
@@ -92,7 +92,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
             "Uranus barycenter",
             "Neptune barycenter",
             "Pluto barycenter",
-        ],
+        ),
         use_case="Maximum accuracy for planets and Moon, large file size",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp",
     ),
@@ -103,7 +103,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1900,
         coverage_end=2100,
         size_mb=1083.9,
-        contents=["Io", "Europa", "Ganymede", "Callisto"],
+        contents=("Io", "Europa", "Ganymede", "Callisto"),
         use_case="Required for Jupiter moon positions",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/jup365.bsp",
     ),
@@ -114,7 +114,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1900,
         coverage_end=2100,
         size_mb=630.9,
-        contents=[
+        contents=(
             "Titan",
             "Rhea",
             "Iapetus",
@@ -123,7 +123,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
             "Enceladus",
             "Mimas",
             "Hyperion",
-        ],
+        ),
         use_case="Required for Saturn moon positions",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/sat441.bsp",
     ),
@@ -134,7 +134,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1900,
         coverage_end=2100,
         size_mb=1967,
-        contents=["Ariel", "Umbriel", "Titania", "Oberon", "Miranda"],
+        contents=("Ariel", "Umbriel", "Titania", "Oberon", "Miranda"),
         use_case="Required for Uranus moon positions",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/ura184_part-1.bsp",
     ),
@@ -145,7 +145,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1600,
         coverage_end=2399,
         size_mb=100.4,
-        contents=["Triton"],
+        contents=("Triton",),
         use_case="Required for Neptune's moon Triton",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/nep097.bsp",
     ),
@@ -156,7 +156,7 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
         coverage_start=1995,
         coverage_end=2050,
         size_mb=64.5,
-        contents=["Phobos", "Deimos"],
+        contents=("Phobos", "Deimos"),
         use_case="Required for Mars moons (very challenging to observe)",
         url="https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/mar099s.bsp",
     ),

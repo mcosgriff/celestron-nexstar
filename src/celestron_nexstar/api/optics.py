@@ -34,7 +34,7 @@ class TelescopeModel(str, Enum):
         return names[self]
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class TelescopeSpecs:
     """Telescope optical specifications."""
 

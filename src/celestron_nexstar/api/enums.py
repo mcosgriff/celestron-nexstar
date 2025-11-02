@@ -4,10 +4,10 @@ Common Enums
 Enumerations used throughout the Celestron NexStar API.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class SkyBrightness(str, Enum):
+class SkyBrightness(StrEnum):
     """Sky brightness/quality conditions for astronomical observation."""
 
     EXCELLENT = "excellent"  # Dark sky site (Bortle 1-2)
@@ -17,7 +17,7 @@ class SkyBrightness(str, Enum):
     URBAN = "urban"  # City center (Bortle 9)
 
 
-class CelestialObjectType(str, Enum):
+class CelestialObjectType(StrEnum):
     """Types of celestial objects in catalogs."""
 
     STAR = "star"
@@ -31,7 +31,7 @@ class CelestialObjectType(str, Enum):
     MOON = "moon"
 
 
-class EphemerisSet(str, Enum):
+class EphemerisSet(StrEnum):
     """Predefined sets of ephemeris files."""
 
     MINIMAL = "minimal"  # Planets + Jupiter moons
@@ -40,7 +40,7 @@ class EphemerisSet(str, Enum):
     FULL = "full"  # Everything including Mars moons
 
 
-class Direction(str, Enum):
+class Direction(StrEnum):
     """Movement directions for telescope control."""
 
     UP = "up"
@@ -49,7 +49,7 @@ class Direction(str, Enum):
     RIGHT = "right"
 
 
-class Axis(str, Enum):
+class Axis(StrEnum):
     """Telescope axes for control operations."""
 
     AZ = "az"  # Azimuth
@@ -57,7 +57,7 @@ class Axis(str, Enum):
     BOTH = "both"  # Both axes
 
 
-class TrackingMode(str, Enum):
+class TrackingMode(StrEnum):
     """Telescope tracking modes."""
 
     ALT_AZ = "alt-az"  # Alt-azimuth mode
@@ -65,7 +65,7 @@ class TrackingMode(str, Enum):
     EQ_SOUTH = "eq-south"  # Equatorial mode (southern hemisphere)
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     """Output format options for CLI commands."""
 
     PRETTY = "pretty"  # Pretty-printed table

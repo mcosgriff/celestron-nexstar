@@ -17,7 +17,7 @@ from .optics import OpticalConfiguration, calculate_limiting_magnitude, get_curr
 from .utils import angular_separation, ra_dec_to_alt_az
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class VisibilityInfo:
     """Information about an object's visibility."""
 
@@ -27,7 +27,7 @@ class VisibilityInfo:
     altitude_deg: float | None  # Current altitude above horizon
     azimuth_deg: float | None  # Current azimuth
     limiting_magnitude: float  # Telescope's limiting magnitude
-    reasons: list[str]  # Reasons why visible or not visible
+    reasons: tuple[str, ...]  # Reasons why visible or not visible
     observability_score: float  # 0.0 to 1.0, higher is better
 
 
@@ -228,7 +228,7 @@ def assess_visibility(
             altitude_deg=None,
             azimuth_deg=None,
             limiting_magnitude=limiting_mag,
-            reasons=[f"Cannot calculate position: {e!s}"],
+            reasons=(f"Cannot calculate position: {e!s}",),
             observability_score=0.0,
         )
 
@@ -298,7 +298,7 @@ def assess_visibility(
         altitude_deg=altitude_deg,
         azimuth_deg=azimuth_deg,
         limiting_magnitude=limiting_mag,
-        reasons=reasons,
+        reasons=tuple(reasons),
         observability_score=observability_score,
     )
 
