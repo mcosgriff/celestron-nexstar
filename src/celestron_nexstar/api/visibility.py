@@ -8,7 +8,6 @@ sky conditions, altitude, and other observing factors.
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
 
 from .catalogs import CelestialObject
 from .ephemeris import get_planetary_position, is_dynamic_object
@@ -264,7 +263,7 @@ def assess_visibility(
                 reasons.append(f"Magnitude {apparent_mag:.1f} well within limit")
 
     # Check 3: For moons, check separation from parent planet
-    if obj.type == "moon" and obj.name.lower() != "moon":  # Not Earth's Moon
+    if obj.object_type == "moon" and obj.name.lower() != "moon":  # Not Earth's Moon
         separation_arcmin = calculate_parent_separation(obj.name, observer_lat, observer_lon, dt)
 
         if separation_arcmin is not None:

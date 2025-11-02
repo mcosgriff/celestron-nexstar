@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
-from skyfield.api import Loader, load
-from skyfield.jpllib import SpiceKernel
+from skyfield.api import Loader, load  # type: ignore[import-untyped]
+from skyfield.jpllib import SpiceKernel  # type: ignore[import-untyped]
 
 
 # Planet names mapping to Skyfield ephemeris names and required BSP files

@@ -186,5 +186,7 @@ plugins = [
 [dependency-groups]
 dev = [
     "ruff>=0.8.4",
+    "types-cachetools>=6.2.0.20251022",
     "types-pyserial>=3.5.0.20251001",
+    "types-pyyaml>=6.0.12.20250915",
 ]

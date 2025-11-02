@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from skyfield.api import Loader
+from skyfield.api import Loader  # type: ignore[import-untyped]
 
 
 @dataclass
@@ -362,7 +362,7 @@ def get_total_size(file_keys: list[str] | None = None) -> float:
     return total_mb
 
 
-def get_set_info(set_name: str) -> dict:
+def get_set_info(set_name: str) -> dict[str, str | int | float | list[EphemerisFileInfo]]:
     """
     Get information about a file set.
 

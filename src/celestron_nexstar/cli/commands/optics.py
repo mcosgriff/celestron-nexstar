@@ -4,8 +4,9 @@ Optics Commands
 Commands for managing telescope and eyepiece optical configuration.
 """
 
+from typing import Literal, cast
+
 import typer
-from typing import Literal, List
 from rich.table import Table
 
 from celestron_nexstar.api.optics import (
@@ -110,13 +111,20 @@ def show_config(
 
         if json_output:
             # Calculate limiting magnitude for different conditions
+            conditions: list[Literal["excellent", "good", "fair", "poor", "urban"]] = [
+                "excellent",
+                "good",
+                "fair",
+                "poor",
+                "urban",
+            ]
             limiting_mags = {
                 condition: calculate_limiting_magnitude(
                     config.telescope.effective_aperture_mm,
                     sky_brightness=condition,
                     exit_pupil_mm=config.exit_pupil_mm,
                 )
-                for condition in ["excellent", "good", "fair", "poor", "urban"]
+                for condition in conditions
             }
 
             print_json(
@@ -311,7 +319,7 @@ def show_limiting_magnitude(
         config = get_current_configuration()
 
         # Validate sky quality
-        valid_conditions: List[Literal["excellent", "good", "fair", "poor", "urban"]] = [
+        valid_conditions: list[Literal["excellent", "good", "fair", "poor", "urban"]] = [
             "excellent",
             "good",
             "fair",
@@ -362,7 +370,7 @@ def show_limiting_magnitude(
         # Show comparison
         selected_mag = calculate_limiting_magnitude(
             config.telescope.effective_aperture_mm,
-            sky_brightness=sky_quality,
+            sky_brightness=cast(Literal["excellent", "good", "fair", "poor", "urban"], sky_quality),
             exit_pupil_mm=config.exit_pupil_mm,
         )
 

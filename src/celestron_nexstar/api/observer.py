@@ -9,8 +9,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from geopy.exc import GeopyError
-from geopy.geocoders import Nominatim
+from geopy.exc import GeopyError  # type: ignore[import-untyped]
+from geopy.geocoders import Nominatim  # type: ignore[import-untyped]
 
 
 @dataclass
