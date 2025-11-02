@@ -4,6 +4,7 @@ CLI State Management
 Manages telescope connection state across CLI commands.
 """
 
+import contextlib
 from typing import Any
 
 from celestron_nexstar import NexStarTelescope, TelescopeConfig
@@ -29,10 +30,8 @@ def clear_telescope() -> None:
     """Clear the telescope instance."""
     global _telescope
     if _telescope is not None:
-        try:
+        with contextlib.suppress(Exception):
             _telescope.disconnect()
-        except Exception:
-            pass
     _telescope = None
 
 
@@ -56,8 +55,7 @@ def ensure_connected(port: str | None = None) -> NexStarTelescope:
 
     if port is None:
         raise RuntimeError(
-            "Not connected to telescope. Please specify a port with --port "
-            "or set NEXSTAR_PORT environment variable."
+            "Not connected to telescope. Please specify a port with --port or set NEXSTAR_PORT environment variable."
         )
 
     # Create and connect telescope

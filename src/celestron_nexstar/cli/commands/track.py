@@ -9,13 +9,13 @@ from typing import Literal
 import typer
 
 from celestron_nexstar import TrackingMode
+
 from ..utils.output import (
-    print_error,
-    print_success,
-    print_info,
-    print_json,
-    format_tracking_mode,
     console,
+    format_tracking_mode,
+    print_error,
+    print_json,
+    print_success,
 )
 from ..utils.state import ensure_connected
 
@@ -56,11 +56,11 @@ def start(
             print_success(f"Tracking started in {format_tracking_mode(tracking_mode.name)} mode")
         else:
             print_error("Failed to start tracking")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Failed to set tracking mode: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -81,11 +81,11 @@ def stop(
             print_success("Tracking stopped")
         else:
             print_error("Failed to stop tracking")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Failed to stop tracking: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -116,4 +116,4 @@ def status(
 
     except Exception as e:
         print_error(f"Failed to get tracking mode: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

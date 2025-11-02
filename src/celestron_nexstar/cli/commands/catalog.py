@@ -7,20 +7,21 @@ Commands for searching and managing celestial object catalogs.
 from typing import Literal
 
 import typer
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
-from ..utils.catalogs import (
+from celestron_nexstar.api.catalogs import (
+    ALL_CATALOGS,
     get_all_objects,
     get_catalog,
-    search_objects,
     get_object_by_name,
-    ALL_CATALOGS,
+    search_objects,
 )
-from ..utils.output import print_error, print_success, print_info, print_json, format_ra, format_dec, console
-from ..utils.state import ensure_connected
+
+from ..utils.output import console, format_dec, format_ra, print_error, print_info, print_json
 from ..utils.selection import select_object
+from ..utils.state import ensure_connected
 
 
 app = typer.Typer(help="Celestial object catalog commands")
@@ -91,19 +92,21 @@ def search(
                 table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, match_type, desc[:30])
 
             console.print(table)
-            print_info(f"Use 'nexstar catalog info <name>' for detailed information")
+            print_info("Use 'nexstar catalog info <name>' for detailed information")
 
     except Exception as e:
         print_error(f"Search failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("list")
 def list_catalog(
-    catalog: Literal["messier", "bright_stars", "asterisms", "ngc", "caldwell", "planets", "all"] = typer.Option(
-        "all", help="Catalog to list"
+    catalog: Literal[
+        "messier", "bright_stars", "asterisms", "ngc", "caldwell", "planets", "moons", "all"
+    ] = typer.Option("all", help="Catalog to list"),
+    object_type: str | None = typer.Option(
+        None, "--type", help="Filter by type (star, galaxy, nebula, asterism, etc.)"
     ),
-    object_type: str | None = typer.Option(None, "--type", help="Filter by type (star, galaxy, nebula, asterism, etc.)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """
@@ -117,14 +120,14 @@ def list_catalog(
     """
     try:
         # Get objects
-        if catalog == "all":
-            objects = get_all_objects()
-        else:
-            objects = get_catalog(catalog)
+        objects = get_all_objects() if catalog == "all" else get_catalog(catalog)
 
         # Filter by type if specified
         if object_type:
-            objects = [obj for obj in objects if obj.object_type == object_type.lower()]
+            # Ensure object_type is a string (handle Typer's OptionInfo edge case)
+            type_str = str(object_type).lower() if object_type else None
+            if type_str:
+                objects = [obj for obj in objects if obj.object_type == type_str]
 
         # Update planetary positions for dynamic objects
         objects = [obj.with_current_position() for obj in objects]
@@ -160,6 +163,8 @@ def list_catalog(
             )
             table.add_column("Name", style="cyan", width=15)
             table.add_column("Type", style="yellow", width=10)
+            if catalog == "moons":
+                table.add_column("Parent Planet", style="yellow", width=15)
             table.add_column("RA", style="green", width=12)
             table.add_column("Dec", style="green", width=12)
             table.add_column("Mag", style="blue", width=6)
@@ -171,13 +176,16 @@ def list_catalog(
                 mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
                 desc = obj.common_name or obj.description or ""
 
-                table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                if catalog == "moons":
+                    table.add_row(obj.name, obj.object_type, obj.parent_planet, ra_str, dec_str, mag_str, desc[:40])
+                else:
+                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
 
             console.print(table)
 
     except Exception as e:
         print_error(f"Failed to list catalog: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -204,12 +212,12 @@ def info(
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
             print_info("Try 'nexstar catalog search <query>' to find objects")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # If multiple matches, let user select
         obj = select_object(matches, object_name)
         if obj is None:
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         if json_output:
             print_json(
@@ -263,7 +271,7 @@ def info(
 
     except Exception as e:
         print_error(f"Failed to get object info: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -293,21 +301,19 @@ def goto(
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
             print_info("Try 'nexstar catalog search <query>' to find objects")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # If multiple matches, let user select
         obj = select_object(matches, object_name)
         if obj is None:
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # Get telescope
-        telescope = ensure_connected(port)
+        ensure_connected(port)
 
         # Display object info
         display_name = obj.common_name or obj.name
-        print_info(
-            f"Slewing to {display_name} (RA {obj.ra_hours:.4f}h, Dec {obj.dec_degrees:+.4f}°)"
-        )
+        print_info(f"Slewing to {display_name} (RA {obj.ra_hours:.4f}h, Dec {obj.dec_degrees:+.4f}°)")
 
         # Perform goto
         from .goto import radec as goto_radec
@@ -316,7 +322,7 @@ def goto(
 
     except Exception as e:
         print_error(f"Failed to goto object: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -360,4 +366,4 @@ def catalogs() -> None:
 
     except Exception as e:
         print_error(f"Failed to show catalogs: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

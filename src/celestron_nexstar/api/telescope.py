@@ -117,7 +117,7 @@ class NexStarTelescope:
                 logger.error("Echo test failed - telescope not responding properly")
                 self.protocol.close()
                 self.serial_conn = None
-                raise TelescopeConnectionError("Echo test failed")
+                raise TelescopeConnectionError("Echo test failed") from None
 
         except Exception as e:
             logger.error(f"Connection failed: {e}")
@@ -381,10 +381,10 @@ class NexStarTelescope:
         }
 
         if direction.lower() not in direction_map:
-            raise ValueError(f"Invalid direction: {direction}. Use 'up', 'down', 'left', or 'right'")
+            raise ValueError(f"Invalid direction: {direction}. Use 'up', 'down', 'left', or 'right'") from None
 
         if not 0 <= rate <= 9:
-            raise ValueError(f"Invalid rate: {rate}. Must be 0-9")
+            raise ValueError(f"Invalid rate: {rate}. Must be 0-9") from None
 
         axis, cmd_dir = direction_map[direction.lower()]
         logger.debug(f"Moving {direction} at rate {rate}")

@@ -8,8 +8,9 @@ import typer
 from rich.console import Console
 
 from celestron_nexstar import NexStarTelescope, TelescopeConfig
-from ..utils.output import print_error, print_success, print_telescope_info, print_json
-from ..utils.state import set_telescope, get_telescope, clear_telescope
+
+from ..utils.output import print_error, print_json, print_success, print_telescope_info
+from ..utils.state import clear_telescope, get_telescope, set_telescope
 
 
 app = typer.Typer(help="Telescope connection commands")
@@ -48,7 +49,7 @@ def connect(
 
     except Exception as e:
         print_error(f"Failed to connect: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -63,14 +64,14 @@ def disconnect() -> None:
 
     if telescope is None:
         print_error("Not connected to telescope")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         clear_telescope()
         print_success("Disconnected from telescope")
     except Exception as e:
         print_error(f"Error during disconnect: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -90,7 +91,7 @@ def test(
     """
     if len(char) != 1:
         print_error("Echo character must be a single character")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         with console.status(f"[bold blue]Testing connection on {port}...", spinner="dots"):
@@ -105,14 +106,14 @@ def test(
             print_success(f"Echo test passed on {port}")
         else:
             print_error(f"Echo test failed on {port}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         # Clean up
         telescope.disconnect()
 
     except Exception as e:
         print_error(f"Connection test failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -137,7 +138,7 @@ def info(
         if telescope is None:
             if port is None:
                 print_error("Not connected. Please specify --port or connect first.")
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from None
 
             config = TelescopeConfig(port=port)
             telescope = NexStarTelescope(config)
@@ -161,7 +162,7 @@ def info(
 
     except Exception as e:
         print_error(f"Failed to get telescope info: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     finally:
         # Clean up temporary connection

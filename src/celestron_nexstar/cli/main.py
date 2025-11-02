@@ -7,6 +7,9 @@ This is the main entry point for the Celestron NexStar command-line interface.
 import typer
 from rich.console import Console
 
+# Import and register subcommands
+from .commands import align, catalog, connect, ephemeris, goto, location, move, optics, position, time, track
+
 
 # Create main app
 app = typer.Typer(
@@ -85,9 +88,6 @@ def version() -> None:
     console.print(f"[bold]Celestron NexStar CLI[/bold] version [cyan]{__version__}[/cyan]")
 
 
-# Import and register subcommands
-from .commands import connect, position, goto, move, track, align, location, time, catalog
-
 # Register command groups - Phase 2 (Core)
 app.add_typer(connect.app, name="connect", help="Connection commands (deprecated - use subcommands)")
 app.add_typer(position.app, name="position", help="Position query commands")
@@ -100,6 +100,9 @@ app.add_typer(align.app, name="align", help="Alignment commands")
 app.add_typer(location.app, name="location", help="Observer location commands")
 app.add_typer(time.app, name="time", help="Time and date commands")
 app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
+app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configuration")
+app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
+
 
 # Also add connect commands directly to main app for convenience
 @app.command("conn")

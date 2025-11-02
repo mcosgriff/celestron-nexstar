@@ -7,9 +7,9 @@ Commands for slewing telescope to target coordinates.
 import time
 
 import typer
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from ..utils.output import print_error, print_success, print_info, console
+from ..utils.output import console, print_error, print_info, print_success
 from ..utils.state import ensure_connected
 
 
@@ -35,10 +35,10 @@ def radec(
     # Validate coordinates
     if not 0 <= ra <= 24:
         print_error("RA must be between 0 and 24 hours")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     if not -90 <= dec <= 90:
         print_error("Dec must be between -90 and +90 degrees")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         telescope = ensure_connected(port)
@@ -49,7 +49,7 @@ def radec(
         success = telescope.goto_ra_dec(ra, dec)
         if not success:
             print_error("Failed to initiate slew")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         if wait:
             if progress:
@@ -78,7 +78,7 @@ def radec(
 
     except Exception as e:
         print_error(f"Slew failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -143,7 +143,7 @@ def altaz(
 
     except Exception as e:
         print_error(f"Slew failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -172,7 +172,7 @@ def cancel(
 
     except Exception as e:
         print_error(f"Cancel failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -196,4 +196,4 @@ def status(
 
     except Exception as e:
         print_error(f"Failed to get status: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e

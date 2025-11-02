@@ -4,11 +4,11 @@ Interactive Selection Utilities
 Helper functions for prompting user to select from multiple options.
 """
 
-import typer
-from rich.table import Table
 from rich.prompt import Prompt
+from rich.table import Table
 
-from .catalogs import CelestialObject
+from celestron_nexstar.api.catalogs import CelestialObject
+
 from .output import console
 
 

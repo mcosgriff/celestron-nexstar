@@ -9,7 +9,7 @@ from typing import Literal
 
 import typer
 
-from ..utils.output import print_error, print_success, print_info
+from ..utils.output import print_error, print_info, print_success
 from ..utils.state import ensure_connected
 
 
@@ -36,7 +36,7 @@ def fixed(
     """
     if not 0 <= rate <= 9:
         print_error("Rate must be between 0 and 9")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     try:
         telescope = ensure_connected(port)
@@ -45,7 +45,7 @@ def fixed(
         success = telescope.move_fixed(direction, rate)
         if not success:
             print_error(f"Failed to start movement {direction}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
         print_info(f"Moving {direction} at rate {rate}")
 
@@ -63,7 +63,7 @@ def fixed(
 
     except Exception as e:
         print_error(f"Move failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -90,8 +90,8 @@ def stop(
                 print_success(f"Stopped {axis.upper()} axis")
         else:
             print_error(f"Failed to stop motion on {axis}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from None
 
     except Exception as e:
         print_error(f"Stop failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
