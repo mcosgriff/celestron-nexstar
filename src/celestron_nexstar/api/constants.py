@@ -8,11 +8,11 @@ from typing import Final
 
 
 __all__ = [
-    "MM_PER_INCH",
-    "HUMAN_EYE_PUPIL_MM",
-    "DEGREES_PER_HOUR_ANGLE",
-    "ARCSEC_PER_DEGREE",
     "ARCSEC_PER_ARCMIN",
+    "ARCSEC_PER_DEGREE",
+    "DEGREES_PER_HOUR_ANGLE",
+    "HUMAN_EYE_PUPIL_MM",
+    "MM_PER_INCH",
 ]
 
 

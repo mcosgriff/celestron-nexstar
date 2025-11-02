@@ -287,6 +287,7 @@ nexstar catalog info "Jupiter"
 ```
 
 Available catalogs:
+
 - `messier`: Messier objects (M1-M110)
 - `ngc-popular`: Popular NGC objects
 - `caldwell`: Caldwell catalog

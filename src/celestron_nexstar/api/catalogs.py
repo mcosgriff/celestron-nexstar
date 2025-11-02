@@ -26,10 +26,12 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "CelestialObject",
-    "ObjectCatalog",
+    "get_all_catalogs_dict",
+    "get_all_objects",
+    "get_available_catalogs",
     "get_catalog",
+    "get_object_by_name",
     "search_objects",
-    "fuzzy_search_objects",
 ]
 
 
@@ -56,7 +58,7 @@ class CelestialObject:
             or (self.description and query_lower in self.description.lower())
         )
 
-    def with_current_position(self, dt: datetime | None = None) -> "CelestialObject":
+    def with_current_position(self, dt: datetime | None = None) -> CelestialObject:
         """
         Return a copy of this object with current ephemeris position if applicable.
 
@@ -183,7 +185,9 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
         all_catalogs[catalog_name] = objects
         logger.debug(f"Loaded {len(objects)} objects from catalog '{catalog_name}'")
 
-    logger.info(f"Loaded {len(all_catalogs)} catalogs with {sum(len(objs) for objs in all_catalogs.values())} total objects")
+    logger.info(
+        f"Loaded {len(all_catalogs)} catalogs with {sum(len(objs) for objs in all_catalogs.values())} total objects"
+    )
     return all_catalogs
 
 

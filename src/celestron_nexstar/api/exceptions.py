@@ -9,12 +9,12 @@ from __future__ import annotations
 
 
 __all__ = [
+    "CommandError",
+    "InvalidCoordinateError",
     "NexStarError",
+    "NotConnectedError",
     "TelescopeConnectionError",
     "TelescopeTimeoutError",
-    "InvalidCoordinateError",
-    "CommandError",
-    "NotConnectedError",
 ]
 
 

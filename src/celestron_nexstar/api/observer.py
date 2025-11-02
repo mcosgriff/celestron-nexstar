@@ -12,20 +12,20 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from geopy.exc import GeopyError  # type: ignore[import-untyped]
-from geopy.geocoders import Nominatim  # type: ignore[import-untyped]
+from geopy.exc import GeopyError  # type: ignore[import-not-found]
+from geopy.geocoders import Nominatim  # type: ignore[import-not-found]
 
 
 logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    "ObserverLocation",
     "DEFAULT_LOCATION",
-    "get_observer_location",
-    "set_observer_location",
+    "ObserverLocation",
     "clear_observer_location",
     "geocode_location",
+    "get_observer_location",
+    "set_observer_location",
 ]
 
 
@@ -67,7 +67,9 @@ def save_location(location: ObserverLocation) -> None:
         location: Observer location to save
     """
     config_path = get_config_path()
-    logger.info(f"Saving observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})")
+    logger.info(
+        f"Saving observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})"
+    )
 
     data = {
         "latitude": location.latitude,
@@ -105,7 +107,9 @@ def load_location() -> ObserverLocation:
             elevation=data.get("elevation", 0.0),
             name=data.get("name"),
         )
-        logger.info(f"Loaded observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})")
+        logger.info(
+            f"Loaded observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})"
+        )
         return location
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         # If config is corrupted, return default

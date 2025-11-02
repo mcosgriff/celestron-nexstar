@@ -13,20 +13,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from skyfield.api import Loader  # type: ignore[import-untyped]
+from skyfield.api import Loader  # type: ignore[import-not-found]
 
 
 logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    "EphemerisFileInfo",
     "EPHEMERIS_FILES",
-    "get_ephemeris_info",
+    "EphemerisFileInfo",
+    "delete_file",
+    "download_file",
+    "download_set",
+    "get_ephemeris_directory",
+    "get_file_size",
+    "get_installed_files",
     "get_set_info",
-    "download_ephemeris_files",
-    "get_downloaded_files",
-    "verify_ephemeris_file",
+    "get_total_size",
+    "is_file_installed",
+    "verify_file",
 ]
 
 
