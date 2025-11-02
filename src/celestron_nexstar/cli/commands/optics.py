@@ -331,7 +331,7 @@ def show_limiting_magnitude(
             show_header=True,
             header_style="bold magenta",
         )
-        table.add_column("Sky Condition", style="cyan", width=20)
+        table.add_column("Sky Condition", style="cyan", width=25)
         table.add_column("Bortle Scale", style="yellow", width=15)
         table.add_column("Limiting Mag", style="green", width=15)
 
