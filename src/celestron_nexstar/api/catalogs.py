@@ -9,12 +9,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from cachetools import TTLCache, cached
 from fuzzysearch import find_near_matches  # type: ignore[import-untyped]
 
+from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
 
 
@@ -27,9 +27,7 @@ class CelestialObject:
     ra_hours: float
     dec_degrees: float
     magnitude: float | None
-    object_type: Literal[
-        "star", "planet", "galaxy", "nebula", "cluster", "double_star", "asterism", "constellation", "moon"
-    ]
+    object_type: CelestialObjectType
     catalog: str
     description: str | None = None
     parent_planet: str | None = None
@@ -125,7 +123,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
             ra_hours=obj_data["ra_hours"],
             dec_degrees=obj_data["dec_degrees"],
             magnitude=obj_data.get("magnitude"),
-            object_type=obj_data["type"],
+            object_type=CelestialObjectType(obj_data["type"]),
             catalog=catalog_name,
             description=obj_data.get("description"),
             parent_planet=obj_data.get("parent_planet"),
@@ -160,7 +158,7 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
                 ra_hours=obj_data["ra_hours"],
                 dec_degrees=obj_data["dec_degrees"],
                 magnitude=obj_data.get("magnitude"),
-                object_type=obj_data["type"],
+                object_type=CelestialObjectType(obj_data["type"]),
                 catalog=catalog_name,
                 description=obj_data.get("description"),
                 parent_planet=obj_data.get("parent_planet"),

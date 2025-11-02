@@ -10,7 +10,8 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+
+from .enums import SkyBrightness
 
 
 class TelescopeModel(str, Enum):
@@ -241,7 +242,7 @@ class OpticalConfiguration:
 
 def calculate_limiting_magnitude(
     aperture_mm: float,
-    sky_brightness: Literal["excellent", "good", "fair", "poor", "urban"] = "good",
+    sky_brightness: SkyBrightness = SkyBrightness.GOOD,
     exit_pupil_mm: float | None = None,
 ) -> float:
     """
@@ -265,11 +266,11 @@ def calculate_limiting_magnitude(
     """
     # Base formula constant varies with conditions
     base_constants = {
-        "excellent": 7.5,  # Perfect dark sky
-        "good": 7.0,  # Good rural sky
-        "fair": 6.5,  # Suburban
-        "poor": 6.0,  # Urban
-        "urban": 5.5,  # City
+        SkyBrightness.EXCELLENT: 7.5,  # Perfect dark sky
+        SkyBrightness.GOOD: 7.0,  # Good rural sky
+        SkyBrightness.FAIR: 6.5,  # Suburban
+        SkyBrightness.POOR: 6.0,  # Urban
+        SkyBrightness.URBAN: 5.5,  # City
     }
 
     k_base = base_constants[sky_brightness]
