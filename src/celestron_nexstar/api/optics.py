@@ -5,13 +5,36 @@ Manages telescope and eyepiece specifications, calculates limiting magnitudes,
 field of view, and object visibility based on optical parameters.
 """
 
+from __future__ import annotations
+
 import json
+import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from .constants import HUMAN_EYE_PUPIL_MM, MM_PER_INCH
 from .enums import SkyBrightness
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "TelescopeModel",
+    "TelescopeSpecs",
+    "EyepieceSpecs",
+    "OpticalConfiguration",
+    "COMMON_EYEPIECES",
+    "get_telescope_specs",
+    "get_current_configuration",
+    "set_current_configuration",
+    "calculate_limiting_magnitude",
+    "calculate_rayleigh_criterion_arcsec",
+    "calculate_dawes_limit_arcsec",
+    "is_object_resolvable",
+]
 
 
 class TelescopeModel(str, Enum):
@@ -47,7 +70,7 @@ class TelescopeSpecs:
     @property
     def aperture_inches(self) -> float:
         """Aperture in inches."""
-        return self.aperture_mm / 25.4
+        return self.aperture_mm / MM_PER_INCH
 
     @property
     def light_gathering_power(self) -> float:
@@ -57,7 +80,7 @@ class TelescopeSpecs:
         Returns:
             Factor by which telescope gathers more light than eye
         """
-        return (self.aperture_mm / 7.0) ** 2
+        return (self.aperture_mm / HUMAN_EYE_PUPIL_MM) ** 2
 
     @property
     def effective_aperture_mm(self) -> float:
@@ -386,6 +409,7 @@ def save_configuration(config: OpticalConfiguration) -> None:
         config: Optical configuration to save
     """
     config_path = get_config_path()
+    logger.info(f"Saving optical configuration: {config.telescope.display_name} with {config.eyepiece.name or f'{config.eyepiece.focal_length_mm}mm eyepiece'}")
 
     data = {
         "telescope_model": config.telescope.model.value,  # Save enum value
@@ -398,6 +422,8 @@ def save_configuration(config: OpticalConfiguration) -> None:
 
     with config_path.open("w") as f:
         json.dump(data, f, indent=2)
+
+    logger.debug(f"Configuration saved to {config_path}")
 
 
 def load_configuration() -> OpticalConfiguration | None:

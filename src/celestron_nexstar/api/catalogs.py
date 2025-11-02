@@ -5,6 +5,9 @@ Loads and caches celestial object catalogs from YAML data files.
 Dynamically calculates positions for solar system objects.
 """
 
+from __future__ import annotations
+
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -16,6 +19,18 @@ from fuzzysearch import find_near_matches  # type: ignore[import-untyped]
 
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "CelestialObject",
+    "ObjectCatalog",
+    "get_catalog",
+    "search_objects",
+    "fuzzy_search_objects",
+]
 
 
 @dataclass
@@ -144,6 +159,7 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
         Dictionary mapping catalog names to lists of CelestialObject instances
     """
     catalogs_path = _get_catalogs_path()
+    logger.debug(f"Loading catalogs from {catalogs_path}")
 
     with catalogs_path.open("r") as f:
         data = yaml.safe_load(f)
@@ -165,7 +181,9 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
             )
             objects.append(obj)
         all_catalogs[catalog_name] = objects
+        logger.debug(f"Loaded {len(objects)} objects from catalog '{catalog_name}'")
 
+    logger.info(f"Loaded {len(all_catalogs)} catalogs with {sum(len(objs) for objs in all_catalogs.values())} total objects")
     return all_catalogs
 
 

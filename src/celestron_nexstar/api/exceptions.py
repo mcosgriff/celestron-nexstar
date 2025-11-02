@@ -5,6 +5,18 @@ This module defines specific exceptions for different types of errors
 that can occur during telescope operations.
 """
 
+from __future__ import annotations
+
+
+__all__ = [
+    "NexStarError",
+    "TelescopeConnectionError",
+    "TelescopeTimeoutError",
+    "InvalidCoordinateError",
+    "CommandError",
+    "NotConnectedError",
+]
+
 
 class NexStarError(Exception):
     """

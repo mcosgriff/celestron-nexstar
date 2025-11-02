@@ -5,6 +5,13 @@ This module provides helper functions for converting between different
 coordinate representations used by the telescope API and protocol.
 """
 
+from __future__ import annotations
+
+from .constants import DEGREES_PER_HOUR_ANGLE
+
+
+__all__ = ["CoordinateConverter"]
+
 
 class CoordinateConverter:
     """Helper class for coordinate system conversions."""
@@ -24,7 +31,7 @@ class CoordinateConverter:
             >>> CoordinateConverter.ra_hours_to_degrees(12.0)
             180.0
         """
-        return ra_hours * 15.0  # 24 hours = 360 degrees
+        return ra_hours * DEGREES_PER_HOUR_ANGLE
 
     @staticmethod
     def ra_degrees_to_hours(ra_degrees: float) -> float:
@@ -41,7 +48,7 @@ class CoordinateConverter:
             >>> CoordinateConverter.ra_degrees_to_hours(180.0)
             12.0
         """
-        return ra_degrees / 15.0  # 360 degrees = 24 hours
+        return ra_degrees / DEGREES_PER_HOUR_ANGLE
 
     @staticmethod
     def dec_to_unsigned(dec_degrees: float) -> float:

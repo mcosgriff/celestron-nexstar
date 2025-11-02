@@ -5,8 +5,22 @@ This module contains enums, dataclasses, and type definitions used
 throughout the library.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
+
+
+__all__ = [
+    "TrackingMode",
+    "AlignmentMode",
+    "EquatorialCoordinates",
+    "HorizontalCoordinates",
+    "GeographicLocation",
+    "TelescopeInfo",
+    "TelescopeTime",
+    "TelescopeConfig",
+]
 
 
 class TrackingMode(Enum):

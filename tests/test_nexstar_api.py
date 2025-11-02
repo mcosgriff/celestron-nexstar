@@ -6,9 +6,9 @@ Provides comprehensive test coverage for the telescope module.
 import unittest
 from unittest.mock import patch
 
-from celestron_nexstar.exceptions import TelescopeConnectionError
-from celestron_nexstar.telescope import NexStarTelescope
-from celestron_nexstar.types import (
+from celestron_nexstar.api.exceptions import TelescopeConnectionError
+from celestron_nexstar.api.telescope import NexStarTelescope
+from celestron_nexstar.api.types import (
     AlignmentMode,
     EquatorialCoordinates,
     GeographicLocation,
