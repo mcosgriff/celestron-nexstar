@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from skyfield.api import Loader  # type: ignore[import-not-found]
+from skyfield.api import Loader
 
 
 logger = logging.getLogger(__name__)

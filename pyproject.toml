@@ -184,6 +184,29 @@ plugins = [
     "returns.contrib.mypy.returns_plugin",
 ]
 
+# Per-module overrides for libraries without type stubs
+[[tool.mypy.overrides]]
+module = [
+    "typer",
+    "typer.*",
+    "rich",
+    "rich.*",
+    "geopy",
+    "geopy.*",
+    "skyfield",
+    "skyfield.*",
+    "fuzzysearch",
+    "fuzzysearch.*",
+    "yaml",
+    "cachetools",
+]
+ignore_missing_imports = true
+
+# Allow untyped decorators in CLI code (typer decorators don't have stubs)
+[[tool.mypy.overrides]]
+module = "celestron_nexstar.cli.*"
+disallow_untyped_decorators = false
+
 [dependency-groups]
 dev = [
     "ruff>=0.8.4",

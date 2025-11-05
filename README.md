@@ -26,7 +26,7 @@ A comprehensive command-line interface (CLI) and Python API for controlling Cele
   - [Telescope Control](#telescope-control)
 - [Python API Reference](#python-api-reference)
   - [NexStarTelescope Class](#nexstartelescope-class)
-  - [Utility Functions](#utility-functions)
+  - [Utility Functions](#utility-functions-nexstar_utilspy)
 - [Coordinate Systems](#coordinate-systems)
 - [Tracking Modes](#tracking-modes)
 - [Compatibility Notes](#compatibility-notes)

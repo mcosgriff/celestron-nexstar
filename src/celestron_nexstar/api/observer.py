@@ -12,8 +12,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from geopy.exc import GeopyError  # type: ignore[import-not-found]
-from geopy.geocoders import Nominatim  # type: ignore[import-not-found]
+from geopy.exc import GeopyError
+from geopy.geocoders import Nominatim
 
 
 logger = logging.getLogger(__name__)

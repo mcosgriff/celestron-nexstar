@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 from cachetools import TTLCache, cached
-from fuzzysearch import find_near_matches  # type: ignore[import-untyped]
+from fuzzysearch import find_near_matches
 
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
@@ -111,7 +111,7 @@ def _get_catalogs_path() -> Path:
     raise FileNotFoundError(f"Could not find catalogs.yaml at {data_path}")
 
 
-@cached(_catalog_cache)
+@cached(_catalog_cache)  # type: ignore[misc]
 def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
     """
     Load a specific catalog from the YAML file.
@@ -150,7 +150,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
     return objects
 
 
-@cached(_catalog_cache)
+@cached(_catalog_cache)  # type: ignore[misc]
 def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
     """
     Load all catalogs from the YAML file.
@@ -199,7 +199,7 @@ def get_all_catalogs_dict() -> dict[str, list[CelestialObject]]:
     Returns:
         Dictionary mapping catalog names to lists of CelestialObject instances
     """
-    return _load_all_catalogs()
+    return _load_all_catalogs()  # type: ignore[no-any-return]
 
 
 # Module-level cached reference for backwards compatibility
@@ -256,7 +256,7 @@ def get_catalog(catalog_name: str) -> list[CelestialObject]:
     Returns:
         List of CelestialObject instances from the catalog
     """
-    return _load_catalog_from_yaml(catalog_name)
+    return _load_catalog_from_yaml(catalog_name)  # type: ignore[no-any-return]
 
 
 def get_all_objects() -> list[CelestialObject]:
