@@ -12,27 +12,40 @@ from rich.table import Table
 from rich.text import Text
 
 
+# Create console with unicode detection
+# If terminal doesn't support unicode properly, Rich will use ASCII alternatives
 console = Console()
+
+# Detect if we can safely use unicode symbols
+# Rich handles this internally, but we can check explicitly
+_use_unicode = console.is_terminal and not console.legacy_windows
 
 
 def print_success(message: str) -> None:
     """Print success message in green."""
+    # ✓ is widely supported (U+2713)
     console.print(f"[green]✓[/green] {message}")
 
 
 def print_error(message: str) -> None:
     """Print error message in red."""
+    # ✗ is widely supported (U+2717)
     console.print(f"[red]✗[/red] {message}", style="red")
 
 
 def print_warning(message: str) -> None:
     """Print warning message in yellow."""
+    # ⚠ is widely supported (U+26A0)
     console.print(f"[yellow]⚠[/yellow] {message}")
 
 
 def print_info(message: str) -> None:
     """Print info message in blue."""
-    console.print(f"[blue]\U0001f6c8[/blue] {message}")
+    # Use U+2139 (info symbol) instead of U+1F6C8 (circled info emoji)
+    # U+2139 is part of the Letterlike Symbols block and widely supported
+    # U+1F6C8 is a newer emoji that requires emoji font support
+    info_icon = "\u2139" if _use_unicode else "i"
+    console.print(f"[blue]{info_icon}[/blue] {message}")
 
 
 def print_position_table(

@@ -121,5 +121,370 @@ def disc() -> None:
     connect.disconnect()
 
 
+@app.command()
+def shell() -> None:
+    """
+    Enter interactive shell mode with autocomplete and command history.
+
+    In interactive mode, you can run commands without the 'nexstar' prefix.
+
+    [bold green]Examples:[/bold green]
+
+        nexstar> position get
+        nexstar> goto radec --ra 5.5 --dec 22.5
+        nexstar> catalog search "andromeda"
+        nexstar> exit
+
+    [bold blue]Features:[/bold blue]
+
+        - Tab completion for commands and subcommands
+        - Command history (use up/down arrows)
+        - Background position tracking (starts after alignment)
+        - Live position updates in status bar
+        - Ctrl+C to cancel current input
+        - Type 'exit' or 'quit' to leave shell
+        - Type 'help' to see available commands
+    """
+    import shlex
+    import sys
+    import threading
+    import time
+    from datetime import datetime
+    from typing import Any
+
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import NestedCompleter
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.styles import Style
+
+    # Background position tracking state
+    class PositionTracker:
+        """Background thread for tracking telescope position."""
+
+        def __init__(self) -> None:
+            self.enabled = False
+            self.running = False
+            self.thread: threading.Thread | None = None
+            self.lock = threading.Lock()
+            self.update_interval = 2.0  # seconds
+            self.last_position: dict[str, Any] = {}
+            self.last_update: datetime | None = None
+            self.error_count = 0
+
+        def start(self) -> None:
+            """Start background position tracking."""
+            with self.lock:
+                if self.running:
+                    return
+
+                self.enabled = True
+                self.running = True
+                self.error_count = 0
+                self.thread = threading.Thread(target=self._track_loop, daemon=True)
+                self.thread.start()
+
+        def stop(self) -> None:
+            """Stop background position tracking."""
+            with self.lock:
+                self.enabled = False
+                if self.thread:
+                    # Thread will exit on next iteration
+                    self.running = False
+
+        def _track_loop(self) -> None:
+            """Background tracking loop."""
+            while self.enabled:
+                try:
+                    # Import here to avoid circular dependencies
+                    from celestron_nexstar import NexStarTelescope
+
+                    # Check if we have a connection
+                    port = state.get("port")
+                    if not port:
+                        time.sleep(self.update_interval)
+                        continue
+
+                    # Get current position
+                    try:
+                        with NexStarTelescope(str(port)) as telescope:
+                            ra_hours, dec_degrees = telescope.get_position_ra_dec()
+                            alt_degrees, az_degrees = telescope.get_position_alt_az()
+
+                            with self.lock:
+                                self.last_position = {
+                                    "ra_hours": ra_hours,
+                                    "dec_degrees": dec_degrees,
+                                    "alt_degrees": alt_degrees,
+                                    "az_degrees": az_degrees,
+                                }
+                                self.last_update = datetime.now()
+                                self.error_count = 0
+
+                    except Exception:
+                        with self.lock:
+                            self.error_count += 1
+                            # Stop tracking after 3 consecutive errors
+                            if self.error_count >= 3:
+                                self.enabled = False
+                                self.running = False
+
+                    time.sleep(self.update_interval)
+
+                except Exception:
+                    # Fatal error in tracking loop
+                    with self.lock:
+                        self.enabled = False
+                        self.running = False
+                    break
+
+        def get_status_text(self) -> str:
+            """Get formatted status text for display."""
+            with self.lock:
+                if not self.enabled or not self.last_position:
+                    return ""
+
+                ra = self.last_position.get("ra_hours", 0)
+                dec = self.last_position.get("dec_degrees", 0)
+                alt = self.last_position.get("alt_degrees", 0)
+                az = self.last_position.get("az_degrees", 0)
+
+                # Format RA as hours:minutes:seconds
+                ra_h = int(ra)
+                ra_m = int((ra - ra_h) * 60)
+                ra_s = int(((ra - ra_h) * 60 - ra_m) * 60)
+
+                # Format Dec as degrees:arcminutes:arcseconds
+                dec_sign = "+" if dec >= 0 else "-"
+                dec_abs = abs(dec)
+                dec_d = int(dec_abs)
+                dec_m = int((dec_abs - dec_d) * 60)
+                dec_s = int(((dec_abs - dec_d) * 60 - dec_m) * 60)
+
+                age = ""
+                if self.last_update:
+                    seconds_ago = (datetime.now() - self.last_update).total_seconds()
+                    age = " [live]" if seconds_ago < 5 else f" [{int(seconds_ago)}s ago]"
+
+                return (
+                    f"RA: {ra_h:02d}h{ra_m:02d}m{ra_s:02d}s  "
+                    f"Dec: {dec_sign}{dec_d:02d}°{dec_m:02d}'{dec_s:02d}\"  "
+                    f"Alt: {alt:.1f}°  Az: {az:.1f}°{age}"
+                )
+
+    tracker = PositionTracker()
+
+    # Build nested completer from typer app structure
+    def build_completions() -> dict[str, dict[str, None] | None]:
+        """Build nested completion dictionary from registered commands."""
+        completions: dict[str, dict[str, None] | None] = {}
+
+        # Add top-level commands
+        for cmd in app.registered_commands:
+            if cmd.name:
+                completions[cmd.name] = None
+
+        # Add command groups with their subcommands
+        for group in app.registered_groups:
+            if group.typer_instance and group.name:
+                subcommands: dict[str, None] = {}
+                for subcmd in group.typer_instance.registered_commands:
+                    # Get command name: use explicit name or derive from callback function
+                    cmd_name = subcmd.name
+                    if not cmd_name and subcmd.callback:
+                        # Derive name from function name (like Typer does)
+                        cmd_name = subcmd.callback.__name__.replace("_", "-")
+
+                    if cmd_name:
+                        subcommands[cmd_name] = None
+
+                if subcommands:
+                    completions[group.name] = subcommands
+
+        # Add shell-specific commands
+        completions["exit"] = None
+        completions["quit"] = None
+        completions["help"] = None
+        completions["clear"] = None
+        completions["tracking"] = {
+            "start": None,
+            "stop": None,
+            "status": None,
+        }
+
+        return completions
+
+    def bottom_toolbar() -> HTML:
+        """Generate bottom toolbar with position tracking."""
+        status = tracker.get_status_text()
+        if status:
+            return HTML(f'<b><style bg="ansiblue" fg="ansiwhite"> Position: {status} </style></b>')
+        return HTML('')
+
+    # Custom style for prompt
+    style = Style.from_dict({
+        'prompt': 'ansicyan bold',
+    })
+
+    # Create session with history and completion
+    session = PromptSession(
+        history=InMemoryHistory(),
+        completer=NestedCompleter.from_nested_dict(build_completions()),
+        style=style,
+        enable_history_search=True,
+        bottom_toolbar=bottom_toolbar,
+        refresh_interval=0.5,  # Refresh toolbar every 0.5 seconds
+    )
+
+    # Welcome message
+    console.print("\n[bold green]╔═══════════════════════════════════════════════════╗[/bold green]")
+    console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Shell[/bold cyan]                   [bold green]║[/bold green]")
+    console.print("[bold green]╚═══════════════════════════════════════════════════╝[/bold green]\n")
+    console.print("[dim]Type 'help' for available commands, 'exit' to quit[/dim]\n")
+
+    # Command loop
+    while True:
+        try:
+            # Get input from user
+            text = session.prompt([('class:prompt', 'nexstar> ')])
+
+            # Skip empty input
+            if not text.strip():
+                continue
+
+            # Handle shell-specific commands
+            cmd_lower = text.strip().lower()
+
+            if cmd_lower in ['exit', 'quit']:
+                tracker.stop()
+                console.print("\n[bold]Goodbye![/bold]\n")
+                break
+
+            if cmd_lower == 'clear':
+                console.clear()
+                continue
+
+            if cmd_lower == 'help':
+                console.print("\n[bold]Available command groups:[/bold]")
+                console.print("  [cyan]connect[/cyan]    - Connection commands")
+                console.print("  [cyan]position[/cyan]   - Position query commands")
+                console.print("  [cyan]goto[/cyan]       - Slew (goto) commands")
+                console.print("  [cyan]move[/cyan]       - Manual movement commands")
+                console.print("  [cyan]track[/cyan]      - Tracking control commands")
+                console.print("  [cyan]align[/cyan]      - Alignment commands")
+                console.print("  [cyan]location[/cyan]   - Observer location commands")
+                console.print("  [cyan]time[/cyan]       - Time and date commands")
+                console.print("  [cyan]catalog[/cyan]    - Celestial object catalogs")
+                console.print("  [cyan]optics[/cyan]     - Telescope and eyepiece configuration")
+                console.print("  [cyan]ephemeris[/cyan]  - Ephemeris file management")
+                console.print("\n[bold]Shell-specific commands:[/bold]")
+                console.print("  [cyan]tracking start[/cyan]  - Start background position tracking")
+                console.print("  [cyan]tracking stop[/cyan]   - Stop background position tracking")
+                console.print("  [cyan]tracking status[/cyan] - Show tracking status")
+                console.print("\n[dim]Use '<command> --help' for detailed help on each command[/dim]\n")
+                continue
+
+            # Handle tracking commands
+            if text.strip().startswith("tracking "):
+                subcmd = text.strip().split()[1] if len(text.strip().split()) > 1 else ""
+
+                if subcmd == "start":
+                    if not state.get("port"):
+                        console.print("[yellow]Warning: No telescope port configured. Use --port or set NEXSTAR_PORT[/yellow]")
+                        console.print("[dim]Tracking will start once a connection is available[/dim]")
+                    tracker.start()
+                    console.print("[green]✓[/green] Background position tracking started")
+                    console.print("[dim]Position updates will appear in the status bar at the bottom[/dim]")
+
+                elif subcmd == "stop":
+                    tracker.stop()
+                    console.print("[green]✓[/green] Background position tracking stopped")
+
+                elif subcmd == "status":
+                    if tracker.enabled:
+                        status = tracker.get_status_text()
+                        if status:
+                            console.print(f"[green]●[/green] Tracking active: {status}")
+                        else:
+                            console.print("[yellow]○[/yellow] Tracking enabled but no data yet")
+                    else:
+                        console.print("[dim]○[/dim] Tracking disabled")
+                    console.print(f"[dim]Update interval: {tracker.update_interval}s[/dim]")
+
+                else:
+                    console.print(f"[red]Unknown tracking command: {subcmd}[/red]")
+                    console.print("[dim]Available: start, stop, status[/dim]")
+
+                continue
+
+            # Parse command with proper shell-like splitting (handles quotes)
+            try:
+                args = shlex.split(text)
+            except ValueError as e:
+                console.print(f"[red]Error parsing command: {e}[/red]")
+                continue
+
+            if not args:
+                continue
+
+            # Execute command through typer
+            old_argv = sys.argv
+            command_success = False
+            try:
+                # Construct argv as if called from command line
+                sys.argv = ['nexstar', *args]
+
+                # Call the app without exiting on error
+                app(standalone_mode=False)
+                command_success = True
+
+            except SystemExit as e:
+                # Typer may raise SystemExit on success (exit code 0) or errors
+                if e.code in (0, None):
+                    command_success = True
+                else:
+                    console.print(f"[yellow]Command exited with code: {e.code}[/yellow]")
+
+            except typer.Exit as e:
+                # Typer's Exit exception
+                if e.exit_code in (0, None):
+                    command_success = True
+                else:
+                    console.print(f"[yellow]Command exited with code: {e.exit_code}[/yellow]")
+
+            except typer.Abort:
+                console.print("[yellow]Command aborted[/yellow]")
+
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
+                if state.get("verbose"):
+                    import traceback
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+            finally:
+                # Restore original argv
+                sys.argv = old_argv
+
+                # Auto-start tracking after successful align command
+                if command_success and len(args) > 0 and args[0] == "align" and not tracker.enabled:
+                    tracker.start()
+                    console.print("\n[dim]→ Background position tracking started automatically[/dim]")
+                    console.print("[dim]  Position updates will appear in the status bar[/dim]")
+                    console.print("[dim]  Use 'tracking stop' to disable[/dim]\n")
+
+        except KeyboardInterrupt:
+            # Ctrl+C pressed - just show new prompt
+            console.print()
+            continue
+
+        except EOFError:
+            # Ctrl+D pressed - exit gracefully
+            console.print("\n[bold]Goodbye![/bold]\n")
+            break
+
+    # Clean up: stop tracking thread
+    tracker.stop()
+
+
 if __name__ == "__main__":
     app()
