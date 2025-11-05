@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
-from skyfield.api import Loader, load  # type: ignore[import-not-found]
-from skyfield.jpllib import SpiceKernel  # type: ignore[import-not-found]
+from skyfield.api import Loader, load
+from skyfield.jpllib import SpiceKernel
 
 
 logger = logging.getLogger(__name__)
@@ -93,17 +93,12 @@ def _get_ephemeris(bsp_file: str) -> SpiceKernel:
     if bsp_file in _ephemeris_cache:
         return _ephemeris_cache[bsp_file]
 
-    # Try to load from Skyfield directory first
+    # Use Skyfield directory for both loading and downloading
     skyfield_dir = _get_skyfield_directory()
-    bsp_path = skyfield_dir / bsp_file
+    loader = Loader(str(skyfield_dir))
 
-    if bsp_path.exists():
-        # Load from existing file
-        loader = Loader(str(skyfield_dir))
-        eph = loader(bsp_file)
-    else:
-        # File doesn't exist - load will try to download it
-        eph = load(bsp_file)
+    # Load file - will download to skyfield_dir if not present
+    eph = loader(bsp_file)
 
     _ephemeris_cache[bsp_file] = eph
     return eph
