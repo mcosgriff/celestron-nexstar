@@ -157,6 +157,7 @@ def shell() -> None:
 
     from .movement import MovementController
     from .tracking import PositionTracker
+    from .tutorial import TutorialSystem
 
     # Background position tracking state
     # Instantiate the tracker with a function to get the port
@@ -165,6 +166,9 @@ def shell() -> None:
     # Interactive movement control state
     # Instantiate the movement controller with a function to get the port
     movement = MovementController(lambda: state.get("port"))
+
+    # Tutorial system
+    tutorial_system = TutorialSystem(console)
 
     def build_completions() -> dict[str, dict[str, None] | None]:
         """Build nested completion dictionary from registered commands."""
@@ -197,6 +201,10 @@ def shell() -> None:
         completions["quit"] = None
         completions["help"] = None
         completions["clear"] = None
+        completions["tutorial"] = {
+            "all": None,
+            "demo": None,
+        }
         completions["tracking"] = {
             "start": None,
             "stop": None,
@@ -290,8 +298,11 @@ def shell() -> None:
     console.print("\n[bold green]╔═══════════════════════════════════════════════════╗[/bold green]")
     console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Shell[/bold cyan]                   [bold green]║[/bold green]")
     console.print("[bold green]╚═══════════════════════════════════════════════════╝[/bold green]\n")
-    console.print("[dim]Type 'help' for available commands, 'exit' to quit[/dim]")
-    console.print("[dim]Arrow keys: move telescope | +/-: adjust speed | ESC: stop[/dim]\n")
+    console.print("[bold]Quick Start:[/bold]")
+    console.print("  • Type [cyan]'tutorial'[/cyan] for an interactive guided tour")
+    console.print("  • Type [cyan]'help'[/cyan] to see all available commands")
+    console.print("  • Arrow keys: move telescope | +/-: speed | ESC: stop")
+    console.print("  • Type [cyan]'exit'[/cyan] to quit\n")
 
     # Command loop
     while True:
@@ -314,6 +325,28 @@ def shell() -> None:
 
             if cmd_lower == 'clear':
                 console.clear()
+                continue
+
+            if cmd_lower == 'tutorial' or text.strip().startswith("tutorial "):
+                parts = text.strip().split()
+                if len(parts) == 1:
+                    # Show tutorial menu
+                    tutorial_system.start()
+                elif parts[1] == 'all':
+                    # Run all lessons
+                    tutorial_system.run_all_lessons()
+                elif parts[1] == 'demo':
+                    # Run only demo lessons
+                    tutorial_system.run_all_lessons(demo_only=True)
+                elif parts[1].isdigit():
+                    # Run specific lesson (1-indexed)
+                    lesson_num = int(parts[1])
+                    if 1 <= lesson_num <= len(tutorial_system.lessons):
+                        tutorial_system.run_lesson(lesson_num - 1)
+                    else:
+                        console.print(f"[red]Invalid lesson number. Choose 1-{len(tutorial_system.lessons)}[/red]")
+                else:
+                    console.print("[red]Usage: tutorial [all|demo|<lesson_number>][/red]")
                 continue
 
             if cmd_lower == 'help':
@@ -345,7 +378,13 @@ def shell() -> None:
                 console.print("  [cyan]+ / -[/cyan]              - Increase/decrease slew speed (0-9)")
                 console.print("  [cyan]ESC[/cyan]                - Stop all movement")
                 console.print("  [dim]Current rate displayed in status bar (green when stopped, red when moving)[/dim]")
-                console.print("\n[dim]Use '<command> --help' for detailed help on each command[/dim]\n")
+                console.print("\n[bold]Tutorial System:[/bold]")
+                console.print("  [cyan]tutorial[/cyan]           - Show interactive tutorial menu")
+                console.print("  [cyan]tutorial <number>[/cyan]  - Run specific lesson (e.g., tutorial 1)")
+                console.print("  [cyan]tutorial demo[/cyan]      - Run demo lessons (no telescope needed)")
+                console.print("  [cyan]tutorial all[/cyan]       - Run all lessons in sequence")
+                console.print("\n[dim]Use '<command> --help' for detailed help on each command[/dim]")
+                console.print("[dim]New users: Type 'tutorial' to learn the shell interactively![/dim]\n")
                 continue
 
             # Handle tracking commands
