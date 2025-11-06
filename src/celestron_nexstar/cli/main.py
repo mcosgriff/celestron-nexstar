@@ -152,13 +152,19 @@ def shell() -> None:
     from prompt_toolkit.completion import NestedCompleter
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.styles import Style
 
+    from .movement import MovementController
     from .tracking import PositionTracker
 
     # Background position tracking state
     # Instantiate the tracker with a function to get the port
     tracker = PositionTracker(lambda: state.get("port"))
+
+    # Interactive movement control state
+    # Instantiate the movement controller with a function to get the port
+    movement = MovementController(lambda: state.get("port"))
 
     def build_completions() -> dict[str, dict[str, None] | None]:
         """Build nested completion dictionary from registered commands."""
@@ -207,11 +213,62 @@ def shell() -> None:
         return completions
 
     def bottom_toolbar() -> HTML:
-        """Generate bottom toolbar with position tracking."""
+        """Generate bottom toolbar with position tracking and movement status."""
+        parts = []
+
+        # Position tracking
         status = tracker.get_status_text()
         if status:
-            return HTML(f'<b><style bg="ansiblue" fg="ansiwhite"> Position: {status} </style></b>')
-        return HTML('')
+            parts.append(f'<b><style bg="ansiblue" fg="ansiwhite"> Position: {status} </style></b>')
+
+        # Movement control status
+        if movement.moving:
+            arrow = {"up": "↑", "down": "↓", "left": "←", "right": "→"}.get(movement.active_direction, "?")
+            parts.append(f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Rate:{movement.slew_rate} </style></b>')
+        else:
+            parts.append(f'<b><style bg="ansigreen" fg="ansiblack"> ▣ Rate:{movement.slew_rate} (arrows:move +/-:speed ESC:stop) </style></b>')
+
+        return HTML(" ".join(parts))
+
+    # Key bindings for interactive movement control
+    kb = KeyBindings()
+
+    @kb.add('up')
+    def _(event):
+        """Move telescope up when up arrow is pressed."""
+        movement.start_move("up")
+
+    @kb.add('down')
+    def _(event):
+        """Move telescope down when down arrow is pressed."""
+        movement.start_move("down")
+
+    @kb.add('left')
+    def _(event):
+        """Move telescope left when left arrow is pressed."""
+        movement.start_move("left")
+
+    @kb.add('right')
+    def _(event):
+        """Move telescope right when right arrow is pressed."""
+        movement.start_move("right")
+
+    @kb.add('escape')
+    def _(event):
+        """Stop telescope movement when ESC is pressed."""
+        movement.stop_move()
+
+    @kb.add('+')
+    @kb.add('=')  # Also works without shift
+    def _(event):
+        """Increase slew rate."""
+        movement.increase_rate()
+
+    @kb.add('-')
+    @kb.add('_')  # Also works with shift
+    def _(event):
+        """Decrease slew rate."""
+        movement.decrease_rate()
 
     # Custom style for prompt
     style = Style.from_dict({
@@ -222,6 +279,7 @@ def shell() -> None:
     session = PromptSession(
         history=InMemoryHistory(),
         completer=NestedCompleter.from_nested_dict(build_completions()),
+        key_bindings=kb,
         style=style,
         enable_history_search=True,
         bottom_toolbar=bottom_toolbar,
@@ -232,7 +290,8 @@ def shell() -> None:
     console.print("\n[bold green]╔═══════════════════════════════════════════════════╗[/bold green]")
     console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Shell[/bold cyan]                   [bold green]║[/bold green]")
     console.print("[bold green]╚═══════════════════════════════════════════════════╝[/bold green]\n")
-    console.print("[dim]Type 'help' for available commands, 'exit' to quit[/dim]\n")
+    console.print("[dim]Type 'help' for available commands, 'exit' to quit[/dim]")
+    console.print("[dim]Arrow keys: move telescope | +/-: adjust speed | ESC: stop[/dim]\n")
 
     # Command loop
     while True:
@@ -248,6 +307,7 @@ def shell() -> None:
             cmd_lower = text.strip().lower()
 
             if cmd_lower in ['exit', 'quit']:
+                movement.stop_move()  # Stop any active movement
                 tracker.stop()
                 console.print("\n[bold]Goodbye![/bold]\n")
                 break
@@ -280,6 +340,11 @@ def shell() -> None:
                 console.print("  [cyan]tracking export <file> [--format][/cyan]    - Export history (csv/json)")
                 console.print("  [cyan]tracking alert-threshold <deg/s>[/cyan]     - Set collision alert threshold")
                 console.print("  [cyan]tracking chart on|off[/cyan]                - Toggle ASCII star chart visualization")
+                console.print("\n[bold]Interactive Movement Control:[/bold]")
+                console.print("  [cyan]Arrow Keys (↑↓←→)[/cyan]   - Move telescope in any direction")
+                console.print("  [cyan]+ / -[/cyan]              - Increase/decrease slew speed (0-9)")
+                console.print("  [cyan]ESC[/cyan]                - Stop all movement")
+                console.print("  [dim]Current rate displayed in status bar (green when stopped, red when moving)[/dim]")
                 console.print("\n[dim]Use '<command> --help' for detailed help on each command[/dim]\n")
                 continue
 
