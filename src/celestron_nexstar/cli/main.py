@@ -184,6 +184,27 @@ def shell() -> None:
                 self.thread = threading.Thread(target=self._track_loop, daemon=True)
                 self.thread.start()
 
+        def set_interval(self, seconds: float) -> bool:
+            """Set the tracking update interval.
+
+            Args:
+                seconds: Update interval in seconds (0.5 to 30.0)
+
+            Returns:
+                True if interval was set, False if invalid
+            """
+            if not (0.5 <= seconds <= 30.0):
+                return False
+
+            with self.lock:
+                self.update_interval = seconds
+            return True
+
+        def get_interval(self) -> float:
+            """Get the current update interval."""
+            with self.lock:
+                return self.update_interval
+
         def stop(self) -> None:
             """Stop background position tracking."""
             with self.lock:
@@ -310,6 +331,7 @@ def shell() -> None:
             "start": None,
             "stop": None,
             "status": None,
+            "interval": None,
         }
 
         return completions
@@ -378,15 +400,17 @@ def shell() -> None:
                 console.print("  [cyan]optics[/cyan]     - Telescope and eyepiece configuration")
                 console.print("  [cyan]ephemeris[/cyan]  - Ephemeris file management")
                 console.print("\n[bold]Shell-specific commands:[/bold]")
-                console.print("  [cyan]tracking start[/cyan]  - Start background position tracking")
-                console.print("  [cyan]tracking stop[/cyan]   - Stop background position tracking")
-                console.print("  [cyan]tracking status[/cyan] - Show tracking status")
+                console.print("  [cyan]tracking start[/cyan]          - Start background position tracking")
+                console.print("  [cyan]tracking stop[/cyan]           - Stop background position tracking")
+                console.print("  [cyan]tracking status[/cyan]         - Show tracking status")
+                console.print("  [cyan]tracking interval <sec>[/cyan] - Set update interval (0.5-30.0s)")
                 console.print("\n[dim]Use '<command> --help' for detailed help on each command[/dim]\n")
                 continue
 
             # Handle tracking commands
             if text.strip().startswith("tracking "):
-                subcmd = text.strip().split()[1] if len(text.strip().split()) > 1 else ""
+                parts = text.strip().split()
+                subcmd = parts[1] if len(parts) > 1 else ""
 
                 if subcmd == "start":
                     if not state.get("port"):
@@ -409,11 +433,26 @@ def shell() -> None:
                             console.print("[yellow]○[/yellow] Tracking enabled but no data yet")
                     else:
                         console.print("[dim]○[/dim] Tracking disabled")
-                    console.print(f"[dim]Update interval: {tracker.update_interval}s[/dim]")
+                    console.print(f"[dim]Update interval: {tracker.get_interval()}s[/dim]")
+
+                elif subcmd == "interval":
+                    if len(parts) < 3:
+                        console.print(f"[yellow]Current update interval: {tracker.get_interval()}s[/yellow]")
+                        console.print("[dim]Usage: tracking interval <seconds>[/dim]")
+                        console.print("[dim]Valid range: 0.5 to 30.0 seconds[/dim]")
+                    else:
+                        try:
+                            interval = float(parts[2])
+                            if tracker.set_interval(interval):
+                                console.print(f"[green]✓[/green] Update interval set to {interval}s")
+                            else:
+                                console.print("[red]Invalid interval. Must be between 0.5 and 30.0 seconds[/red]")
+                        except ValueError:
+                            console.print(f"[red]Invalid number: {parts[2]}[/red]")
 
                 else:
                     console.print(f"[red]Unknown tracking command: {subcmd}[/red]")
-                    console.print("[dim]Available: start, stop, status[/dim]")
+                    console.print("[dim]Available: start, stop, status, interval[/dim]")
 
                 continue
 
