@@ -8,597 +8,373 @@
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-A comprehensive command-line interface (CLI) and Python API for controlling Celestron NexStar telescopes with advanced features for planetary moon tracking, intelligent visibility filtering, and field-ready ephemeris management.
+A modern, feature-rich **interactive shell** for controlling Celestron NexStar telescopes. Control your telescope with arrow keys, monitor position in real-time, and explore the night sky through an intuitive command-line interface.
 
-## Table of Contents
+## ✨ Why This Project?
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Running Tests](#running-tests)
-- [Hardware Setup](#hardware-setup)
-- [Quick Start (CLI)](#quick-start-cli)
-- [CLI Reference](#cli-reference)
-  - [Configuration Commands](#configuration-commands)
-  - [Catalog Commands](#catalog-commands)
-  - [Ephemeris Management](#ephemeris-management)
-  - [Observer Location](#observer-location)
-  - [Telescope Control](#telescope-control)
-- [Python API Reference](#python-api-reference)
-  - [NexStarTelescope Class](#nexstartelescope-class)
-  - [Utility Functions](#utility-functions-nexstar_utilspy)
-- [Coordinate Systems](#coordinate-systems)
-- [Tracking Modes](#tracking-modes)
-- [Compatibility Notes](#compatibility-notes)
-- [Safety Notes](#safety-notes)
-- [Troubleshooting](#troubleshooting)
-- [Documentation](#documentation)
-- [License](#license)
-- [Contributing](#contributing)
-- [Resources](#resources)
+This isn't just another telescope control library—it's a complete **interactive observing companion** designed for real-world stargazing sessions:
 
-## Features
+- **🎮 Video-game-like control**: Use arrow keys to move your telescope in real-time
+- **📊 Live position tracking**: See your telescope's position update every 0.5 seconds in the status bar
+- **🎓 Built-in tutorial**: Interactive lessons guide you from beginner to power user
+- **🗺️ Rich catalogs**: Explore 100+ deep sky objects and 28 planetary moons
+- **📈 Advanced tracking**: History logging, collision detection, velocity tracking, and CSV/JSON export
+- **⚙️ Smart configuration**: Save locations, telescope specs, and download ephemeris data offline
 
-### CLI Features
+## 🚀 Quick Start
 
-- **Optical Configuration**: Configure telescope and eyepiece specs to calculate magnification, field of view, limiting magnitude, and resolution
-- **Celestial Object Catalogs**: Browse and search 100+ deep sky objects, planets, and 28 planetary moons (Galilean moons, Titan, Uranus moons, Triton, and more)
-- **Ephemeris Management**: Download JPL ephemeris files for offline field use with real-time planetary moon positions
-- **Intelligent Visibility Filtering**: Filter objects based on telescope capabilities, altitude, atmospheric conditions, and moon-planet separation
-- **Observer Location Management**: Save and geocode observer locations for accurate coordinate conversions
-- **Telescope Control**: Full serial communication for position tracking, goto commands, alignment, and tracking modes
+### Installation
 
-### Python API Features
-
-- Full NexStar serial protocol implementation
-- Position tracking (RA/Dec and Alt/Az) with coordinate conversions
-- Goto commands for automatic slewing to celestial coordinates
-- Manual movement controls with adjustable rates
-- Tracking mode configuration (Alt-Az, Equatorial North/South)
-- Location and time management for accurate calculations
-- Alignment and sync capabilities for improved accuracy
-- Comprehensive astronomical calculations (LST, angular separation, coordinate transforms)
-- Context manager support for automatic connection handling
-
-## Requirements
-
-- Python 3.9+ (tested up to Python 3.14)
-- PySerial library (for serial communication)
-- tqdm library (for progress bars in examples)
-- Celestron NexStar 6SE telescope with USB connection
-
-## Installation
-
-### Using uv (Recommended)
-
-```zsh
+```bash
 # Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install the package and dependencies
+# Clone and install
+git clone https://github.com/mcosgriff/celestron-nexstar.git
+cd celestron-nexstar
 uv sync --all-extras
-
-# Run examples (no demo script currently)
-uv run python examples/simple_position_tracking.py
 ```
 
-### Using pip
+### Launch the Interactive Shell
 
-```zsh
-# Install from source
-pip install .
-
-# Or install in development mode
-pip install -e .
+```bash
+uv run nexstar shell
 ```
 
-For detailed installation instructions, see [INSTALL.md](docs/INSTALL.md).
+### Take the Tutorial
 
-## Running Tests
+New to the shell? Start with the interactive tutorial:
 
-The project includes comprehensive unit tests with high code coverage.
+```bash
+# In the shell, type:
+tutorial
 
-### Run All Tests
+# Or run a specific lesson:
+tutorial 1
 
-```zsh
-# Run all tests with coverage report
-uv run pytest
-
-# Run with verbose output
-uv run pytest -v
-
-# Run specific test file
-uv run pytest tests/test_nexstar_api.py
+# Demo mode (no telescope required):
+tutorial demo
 ```
 
-### Code Coverage
+The tutorial covers everything from basic navigation to advanced tracking features!
 
-```zsh
-# Generate coverage report in terminal
-uv run pytest --cov=src/celestron_nexstar --cov-report=term-missing
+## 🎯 Key Features
 
-# Generate HTML coverage report
-uv run pytest --cov=src/celestron_nexstar --cov-report=html
+### Interactive Shell Experience
 
-# Open HTML report (macOS)
-open htmlcov/index.html
+The shell is the heart of this project, designed for real observing sessions:
 
-# Open HTML report (Linux)
-xdg-open htmlcov/index.html
+**Real-Time Telescope Control**
+- **Arrow Keys** (↑↓←→): Move telescope in any direction
+- **+/-**: Adjust slew speed (0-9) on the fly
+- **ESC**: Emergency stop
+- **Visual feedback**: Status bar shows movement state and speed
+
+**Background Position Tracking**
+- Live position updates in status bar (RA/Dec/Alt/Az)
+- Automatic start after alignment
+- Configurable update intervals (0.5-30s)
+- Position history with 1000-entry circular buffer
+- Real-time velocity and slew speed calculation
+- Collision detection with configurable alerts
+- CSV/JSON export for analysis
+
+**Advanced Visualizations**
+- ASCII star chart showing compass direction and altitude
+- Multiple status indicators (position, movement, tracking)
+- Color-coded alerts (green=stopped, red=moving)
+- Freshness indicators ([live] vs [Ns ago])
+
+### Celestial Object Catalogs
+
+Browse and search extensive catalogs:
+- **Deep Sky**: Messier (110 objects), NGC popular objects, Caldwell catalog
+- **Planets**: All major planets with accurate positions
+- **Planetary Moons**: 28 moons including:
+  - Jupiter's Galilean moons (Io, Europa, Ganymede, Callisto)
+  - Saturn's moons (Titan, Rhea, Iapetus, Dione, Tethys, Enceladus, Mimas, Hyperion)
+  - Uranus moons (Titania, Oberon, Ariel, Umbriel, Miranda)
+  - Neptune's Triton
+  - Mars moons (Phobos, Deimos)
+
+### Intelligent Features
+
+- **Fuzzy search**: Find objects quickly (`catalog search andromeda`)
+- **Visibility filtering**: Filter by telescope capabilities and sky conditions
+- **Geocoding**: Set location by address (`location geocode "New York, NY"`)
+- **Offline ephemeris**: Download JPL data for field use without internet
+- **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
+
+## 📚 Interactive Shell Guide
+
+### Tutorial System
+
+The shell includes 10 comprehensive lessons:
+
+1. **Shell Basics**: Navigation, tab completion, command history
+2. **Movement Control**: Arrow keys, speed adjustment, emergency stop
+3. **Position Tracking**: Start/stop, intervals, statistics
+4. **Advanced Tracking**: Export, collision detection, visualization
+5. **Celestial Catalogs**: Browse, search, object information
+6. **Configuration**: Telescope setup, location management
+7. **Telescope Control**: Connect, position queries, goto commands
+8. **Alignment**: Calibration for improved accuracy
+9. **Ephemeris**: Download planetary data for offline use
+10. **Tips & Tricks**: Power user features and shortcuts
+
+**Tutorial Commands:**
+```bash
+tutorial          # Show lesson menu
+tutorial 5        # Run lesson 5 (Celestial Catalogs)
+tutorial demo     # Run demo lessons (no telescope needed)
+tutorial all      # Run all lessons in sequence
 ```
 
-### Test Output
+### Essential Commands
 
-The test suite includes 86 tests covering:
+**Movement & Control**
+```bash
+# Arrow keys move telescope in real-time (no typing needed!)
+# +/- adjusts speed, ESC stops
 
-- Connection management and serial communication
-- Telescope movement and positioning commands
-- Coordinate conversion and transformations
-- Astronomical calculations
-- Error handling and edge cases
+# Traditional commands also available:
+goto object --name Jupiter
+goto ra-dec --ra 5.5 --dec 22.5
+move fixed up --rate 5
+move stop
+```
 
-Current coverage statistics:
+**Position Tracking**
+```bash
+tracking start              # Start background tracking
+tracking interval 1.0       # Set update interval (seconds)
+tracking history --last 10  # View recent positions
+tracking stats              # Show statistics (drift, velocity)
+tracking export pos.csv     # Export to CSV
+tracking alert-threshold 5  # Set collision alert (deg/s)
+tracking chart on           # Enable ASCII star chart
+```
 
-- **telescope.py**: ~95% coverage (high-level API)
-- **utils.py**: ~96% coverage (coordinate conversions and calculations)
-- **Overall**: 71% coverage
+**Catalogs & Objects**
+```bash
+catalog catalogs                      # List all catalogs
+catalog list --catalog messier        # Browse Messier objects
+catalog search "ring nebula"          # Fuzzy search
+catalog info M57                      # Detailed information
+```
 
-## Hardware Setup
+**Configuration**
+```bash
+optics config --telescope nexstar_6se --eyepiece 25
+location set --lat 34.05 --lon -118.24 --name "LA"
+location geocode "Griffith Observatory, Los Angeles"
+ephemeris download standard  # ~20MB, includes planets + Jupiter/Saturn moons
+```
 
-Connect your telescope via USB cable and find your serial port:
+**Alignment & Tracking**
+```bash
+align sync --ra 5.5 --dec 22.5  # Sync to known position
+track set --mode alt_az          # Set tracking mode
+track get                        # Get current mode
+```
+
+### Shell Tips
+
+- **Tab Completion**: Press TAB to complete commands and see options
+- **Command History**: Use ↑/↓ arrows to navigate previous commands
+- **Help System**: Type `help` for full command reference
+- **Quick Exit**: Type `exit`, `quit`, or press Ctrl+D
+- **Clear Screen**: Type `clear`
+- **Status Bar**: Bottom toolbar shows real-time telescope state
+
+## 🔧 Hardware Setup
+
+### Connection
+
+Connect your Celestron NexStar telescope via USB:
 
 - **macOS**: `/dev/tty.usbserial-XXXXX` (check with `ls /dev/tty.usbserial*`)
 - **Linux**: `/dev/ttyUSB0` (may need: `sudo usermod -a -G dialout $USER`)
 - **Windows**: `COM3`, `COM4`, etc. (check Device Manager)
 
-## Quick Start (CLI)
-
-The CLI is the recommended way to use the telescope control system. Here are common workflows:
-
-### Initial Setup (One-Time Configuration)
+### First-Time Setup
 
 ```bash
-# Configure your telescope and eyepiece
-uv run nexstar optics config --telescope nexstar_6se --eyepiece 25
+# Start the shell
+uv run nexstar shell
 
-# Set your observing location (Los Angeles example)
-uv run nexstar location set --lat 34.05 --lon -118.24 --name "Los Angeles"
+# Follow the setup wizard or configure manually:
+optics config --telescope nexstar_6se --eyepiece 25
+location geocode "Your City, State"
+ephemeris download standard
 
-# Or use geocoding to find coordinates
-uv run nexstar location geocode "Griffith Observatory, Los Angeles"
-
-# Download ephemeris files for offline use (downloads ~20MB)
-uv run nexstar ephemeris download standard
+# Take the tutorial to learn all features
+tutorial
 ```
 
-### Exploring Celestial Objects
+## 📖 Documentation
 
+### Position Tracking Features
+
+The shell's background position tracking is a powerful observing companion:
+
+**Core Features:**
+- Runs in background thread (non-blocking)
+- Updates UI every 0.5s, polls telescope every 2s (configurable)
+- Automatic start after `align` commands
+- Thread-safe with proper locking
+- Smart error handling (auto-stop after 3 consecutive errors)
+
+**Position History:**
+- Circular buffer stores last 1000 positions
+- Each entry: timestamp, RA, Dec, Alt, Az
+- Filter by time or count
+- Statistics: duration, drift, velocity
+
+**Velocity Tracking:**
+- Real-time calculation of angular velocity
+- Components: RA (hours/s), Dec, Alt, Az (deg/s), Total (deg/s)
+- Slewing detection (>0.1°/s threshold)
+- Displayed in status bar during movement
+
+**Export Capabilities:**
+- CSV format: timestamp, coordinates (5 columns)
+- JSON format: structured data with metadata
+- Export count, time range, drift statistics
+- Continues tracking during export
+
+**Collision Detection:**
+- Configurable threshold (0.1-20.0°/s, default 5.0)
+- Visual alerts: ⚠ in status bar
+- Alert cooldown (5 seconds)
+- Logs unexpected movements in history
+
+**ASCII Star Chart:**
+- 16-point compass rose (N, NNE, NE, ENE, E, etc.)
+- Altitude bar graph using Unicode blocks (▁▂▃▄▅▆▇█)
+- Toggle on/off: `tracking chart on`
+- Compact display in status bar
+
+### Movement Control
+
+**Interactive Control (Preferred):**
+- Arrow keys provide intuitive, real-time control
+- No typing required—just press and hold
+- Rate adjustable on the fly with +/-
+- ESC for immediate stop
+- Status bar shows current state
+
+**Programmatic Control:**
 ```bash
-# List all available catalogs
-uv run nexstar catalog catalogs
-
-# View planets
-uv run nexstar catalog list --catalog planets
-
-# View Jupiter's moons
-uv run nexstar catalog list --catalog jupiter-moons
-
-# Search for specific objects
-uv run nexstar catalog search "andromeda"
-
-# Get detailed information about an object
-uv run nexstar catalog info "M31"
+move fixed up --rate 5 --duration 2.0    # Move for 2 seconds
+move fixed right --rate 7                 # Move until stopped
+move stop --axis both                     # Stop all motion
 ```
 
-### Telescope Control
+### Python API
 
-```bash
-# Connect to telescope and get position
-uv run nexstar connect --port /dev/ttyUSB0
-
-# Get current telescope position
-uv run nexstar position
-
-# Slew to an object from the catalog
-uv run nexstar goto --object "Jupiter"
-
-# Or slew to specific coordinates
-uv run nexstar goto --ra 5.5 --dec 22.5
-
-# Set tracking mode
-uv run nexstar track --mode alt_az
-
-# Check telescope information
-uv run nexstar connect --info
-```
-
-### Managing Ephemeris Files
-
-```bash
-# List available ephemeris files
-uv run nexstar ephemeris list --all
-
-# Get information about a specific file
-uv run nexstar ephemeris info jup365
-
-# Download a specific ephemeris set
-uv run nexstar ephemeris download complete  # Planets + Jupiter/Saturn/Uranus moons
-
-# Verify downloaded files
-uv run nexstar ephemeris verify
-
-# View all available sets
-uv run nexstar ephemeris sets
-```
-
-For Python API usage, see the [Python API Reference](#python-api-reference) section below.
-
-## CLI Reference
-
-All CLI commands start with `nexstar` (or `uv run nexstar` in development). Use `--help` on any command to see detailed usage.
-
-### Configuration Commands
-
-#### Optics Configuration
-
-Configure telescope and eyepiece specifications for accurate calculations:
-
-```bash
-# Configure telescope and eyepiece together
-nexstar optics config --telescope nexstar_6se --eyepiece 25
-
-# Change just the eyepiece
-nexstar optics set-eyepiece 10
-
-# View current configuration
-nexstar optics show
-
-# List available telescopes
-nexstar optics telescopes
-
-# List common eyepieces
-nexstar optics eyepieces
-
-# Calculate limiting magnitude for sky conditions
-nexstar optics limiting-mag --sky excellent
-```
-
-### Catalog Commands
-
-Browse and search celestial object catalogs:
-
-```bash
-# List all available catalogs
-nexstar catalog catalogs
-
-# List objects in a specific catalog
-nexstar catalog list --catalog messier
-nexstar catalog list --catalog planets
-nexstar catalog list --catalog jupiter-moons
-nexstar catalog list --catalog saturn-moons
-
-# Search across all catalogs
-nexstar catalog search "nebula"
-nexstar catalog search "Titan"
-
-# Get detailed information about an object
-nexstar catalog info "M31"
-nexstar catalog info "Jupiter"
-```
-
-Available catalogs:
-
-- `messier`: Messier objects (M1-M110)
-- `ngc-popular`: Popular NGC objects
-- `caldwell`: Caldwell catalog
-- `planets`: Major planets (Mercury through Neptune)
-- `jupiter-moons`: Galilean moons (Io, Europa, Ganymede, Callisto)
-- `saturn-moons`: Saturn's moons (Titan, Rhea, Iapetus, Dione, Tethys, Enceladus, Mimas, Hyperion)
-- `uranus-moons`: Uranus moons (Titania, Oberon, Ariel, Umbriel, Miranda)
-- `neptune-moons`: Neptune's moon (Triton)
-- `mars-moons`: Mars moons (Phobos, Deimos - very challenging)
-
-### Ephemeris Management
-
-Download and manage JPL ephemeris files for offline planetary calculations:
-
-```bash
-# List available ephemeris files
-nexstar ephemeris list         # Show only installed files
-nexstar ephemeris list --all   # Show all available files
-
-# Get information about a specific file
-nexstar ephemeris info de440s
-nexstar ephemeris info jup365
-
-# Download individual files
-nexstar ephemeris download de421
-
-# Download pre-configured sets
-nexstar ephemeris download minimal    # DE421 + Jupiter moons (~25MB)
-nexstar ephemeris download standard   # DE440s + Jupiter/Saturn moons (~20MB)
-nexstar ephemeris download complete   # Adds Uranus/Neptune moons (~85MB)
-nexstar ephemeris download full       # All files including Mars moons (~3.2GB)
-
-# View available sets
-nexstar ephemeris sets
-
-# Verify downloaded files
-nexstar ephemeris verify
-
-# Delete files
-nexstar ephemeris delete de421
-```
-
-Ephemeris files are stored in `~/.skyfield/` directory.
-
-### Observer Location
-
-Manage observer location for accurate coordinate calculations:
-
-```bash
-# Set location manually
-nexstar location set --lat 34.05 --lon -118.24 --name "Los Angeles"
-
-# Geocode an address (requires internet)
-nexstar location geocode "Griffith Observatory, Los Angeles"
-nexstar location geocode "New York, NY"
-
-# View current location
-nexstar location show
-
-# Clear saved location
-nexstar location clear
-```
-
-Location is saved to `~/.config/celestron-nexstar/location.json`.
-
-### Telescope Control
-
-Connect to and control the physical telescope:
-
-```bash
-# Connect to telescope (test connection)
-nexstar connect --port /dev/ttyUSB0
-nexstar connect --port COM3  # Windows
-
-# Get telescope info
-nexstar connect --info
-
-# Get current position
-nexstar position
-
-# Slew to an object from catalog
-nexstar goto --object "M31"
-nexstar goto --object "Jupiter"
-
-# Slew to specific coordinates
-nexstar goto --ra 5.5 --dec 22.5
-
-# Slew to alt/az coordinates
-nexstar goto --alt 45 --az 180
-
-# Cancel goto operation
-nexstar goto --cancel
-
-# Manual movement
-nexstar move --direction north --rate 5
-nexstar move --direction east --rate 9
-nexstar move --stop
-
-# Set tracking mode
-nexstar track --mode off
-nexstar track --mode alt_az
-nexstar track --mode eq_north
-nexstar track --mode eq_south
-
-# Get current tracking mode
-nexstar track --get
-
-# Alignment
-nexstar align --ra 5.5 --dec 22.5  # Sync to known position
-```
-
-## Python API Reference
-
-### NexStarTelescope Class
-
-#### Connection Methods
-
-- `connect()` - Establish connection to telescope
-- `disconnect()` - Close connection
-- `echo_test(char='x')` - Test connection with echo command
-
-#### Information Methods
-
-- `get_version()` - Get firmware version
-- `get_model()` - Get telescope model number
-- `get_position_ra_dec()` - Get current RA/Dec coordinates
-- `get_position_alt_az()` - Get current Alt/Az coordinates
-
-#### Movement Methods
-
-- `goto_ra_dec(ra_hours, dec_degrees)` - Slew to RA/Dec coordinates
-- `goto_alt_az(azimuth, altitude)` - Slew to Alt/Az coordinates
-- `move_fixed(direction, rate)` - Move in direction at specified rate
-- `stop_motion(axis='both')` - Stop telescope motion
-- `is_slewing()` - Check if telescope is currently moving
-- `cancel_goto()` - Cancel current goto operation
-
-#### Alignment Methods
-
-- `sync_ra_dec(ra_hours, dec_degrees)` - Sync telescope position to coordinates
-
-#### Tracking Methods
-
-- `get_tracking_mode()` - Get current tracking mode
-- `set_tracking_mode(mode)` - Set tracking mode (OFF, ALT_AZ, EQ_NORTH, EQ_SOUTH)
-
-#### Location and Time Methods
-
-- `get_location()` - Get observer location (lat, lon)
-- `set_location(latitude, longitude)` - Set observer location
-- `get_time()` - Get date and time from telescope
-- `set_time(hour, minute, second, month, day, year, ...)` - Set date and time
-
-### Utility Functions (nexstar_utils.py)
-
-#### Coordinate Conversions
-
-- `ra_to_hours(hours, minutes, seconds)` - Convert RA to decimal hours
-- `dec_to_degrees(degrees, minutes, seconds, sign)` - Convert Dec to decimal degrees
-- `degrees_to_dms(degrees)` - Convert decimal degrees to DMS format
-- `hours_to_hms(hours)` - Convert decimal hours to HMS format
-
-#### Astronomical Calculations
-
-- `alt_az_to_ra_dec(azimuth, altitude, latitude, longitude, utc_time)` - Convert Alt/Az to RA/Dec
-- `ra_dec_to_alt_az(ra_hours, dec_degrees, latitude, longitude, utc_time)` - Convert RA/Dec to Alt/Az
-- `calculate_lst(longitude, utc_time)` - Calculate Local Sidereal Time
-- `angular_separation(ra1, dec1, ra2, dec2)` - Calculate angular distance between coordinates
-
-#### Formatting
-
-- `format_ra(hours)` - Format RA as readable string
-- `format_dec(degrees)` - Format Dec as readable string
-- `format_position(ra_hours, dec_degrees)` - Format complete position
-
-### Python API Example
-
-For those who want to use the Python API directly:
+For developers who want to use the library programmatically:
 
 ```python
 from celestron_nexstar import NexStarTelescope, TrackingMode
-from celestron_nexstar import ra_to_hours, dec_to_degrees
 
-# Context manager automatically connects and disconnects
 with NexStarTelescope(port='/dev/ttyUSB0') as telescope:
-    # Get current position
+    # Get position
     ra, dec = telescope.get_position_ra_dec()
-    print(f"RA: {ra:.4f} hours, Dec: {dec:.4f}°")
 
-    # Slew to coordinates (example: Polaris)
-    polaris_ra = ra_to_hours(2, 31, 49)  # 2h 31m 49s
-    polaris_dec = dec_to_degrees(89, 15, 51, '+')  # +89° 15' 51"
-    telescope.goto_ra_dec(polaris_ra, polaris_dec)
+    # Slew to coordinates
+    telescope.goto_ra_dec(5.5, 22.5)
 
     # Enable tracking
     telescope.set_tracking_mode(TrackingMode.ALT_AZ)
 ```
 
-See `examples/` directory for more comprehensive examples.
+See `examples/` directory for more code samples.
 
-## Coordinate Systems
+## 🧪 Testing
 
-### Equatorial (RA/Dec)
+```bash
+# Run all tests with coverage
+uv run pytest --cov
 
-- **Right Ascension (RA)**: 0-24 hours (0° to 360°)
-- **Declination (Dec)**: -90° to +90°
+# Run specific test file
+uv run pytest tests/test_nexstar_api.py -v
 
-### Horizontal (Alt/Az)
+# Generate HTML coverage report
+uv run pytest --cov=src/celestron_nexstar --cov-report=html
+open htmlcov/index.html
+```
 
-- **Azimuth (Az)**: 0-360° (0° = North, 90° = East, 180° = South, 270° = West)
-- **Altitude (Alt)**: -90° to +90° (0° = horizon, 90° = zenith)
+**Test Coverage:**
+- 86 comprehensive unit tests
+- ~95% coverage on core modules
+- Includes connection, movement, coordinates, calculations
 
-## Tracking Modes
+## ⚠️ Safety Notes
 
-- `TrackingMode.OFF` - No tracking
-- `TrackingMode.ALT_AZ` - Alt-Az tracking for terrestrial observing
-- `TrackingMode.EQ_NORTH` - Equatorial tracking for Northern Hemisphere
-- `TrackingMode.EQ_SOUTH` - Equatorial tracking for Southern Hemisphere
+1. **Clear path**: Ensure telescope has room to move before goto commands
+2. **Solar safety**: Never point at the Sun without proper solar filters
+3. **Cable management**: Watch for cable wrap during extended slews
+4. **Mechanical limits**: Use caution near mount stops
+5. **Emergency stop**: ESC key immediately stops all movement
 
-## Compatibility Notes
+## 🐛 Troubleshooting
 
-### Celestron StarSense AutoAlign
+**Connection Issues**
+- Verify USB cable is connected
+- Check no other software is using the port
+- On Linux, ensure user has serial port permissions: `sudo usermod -a -G dialout $USER` (logout/login required)
 
-**This API does not support the Celestron StarSense AutoAlign accessory.** The StarSense AutoAlign system uses proprietary camera control commands and alignment protocols that are not part of the standard NexStar serial protocol documented by Celestron.
-
-**What is supported:**
-
-- Manual alignment via the `sync_ra_dec()` method
-- Traditional star alignment workflows (manually center a known star, then sync)
-- All standard telescope control functions (goto, tracking, positioning)
-
-**What is NOT supported:**
-
-- StarSense camera-based automatic alignment
-- StarSense-specific commands and protocols
-- Automated plate solving via StarSense hardware
-
-If you need to use StarSense AutoAlign, use the telescope's hand controller. This API is designed for manual control and traditional alignment methods. Users interested in automated alignment could implement custom plate-solving solutions using this API's positioning commands with third-party software.
-
-## Safety Notes
-
-1. Always ensure the telescope has a clear path before issuing goto commands
-2. Never point the telescope at the Sun without proper solar filters
-3. Be aware of cable wrap limits during extended slews
-4. Use manual movement commands carefully to avoid hitting mechanical stops
-5. Verify coordinates before slewing to prevent damage
-
-## Troubleshooting
-
-### Connection Issues
-
-- Verify USB cable is properly connected
-- Check that no other software is using the serial port
-- Try different baud rates if connection fails (default is 9600)
-- On Linux, ensure user has permissions for serial port: `sudo usermod -a -G dialout $USER`
-
-### Slew Issues
-
-- Ensure telescope is properly aligned before slewing
-- Check that tracking mode is appropriate for your setup
+**Movement Issues**
+- Press ESC to stop if telescope is moving unexpectedly
+- Check tracking mode is appropriate for setup
 - Verify coordinates are within valid ranges
-- Make sure telescope is not at a mechanical limit
+- Ensure telescope is not at mechanical limit
 
-### Accuracy Issues
+**Position Tracking Not Working**
+- Tracking auto-starts after `align` commands
+- Manually start: `tracking start`
+- Check telescope is connected
+- Verify port is set correctly
 
-- Perform proper alignment (at least 2-star alignment)
-- Set correct location and time
-- Allow telescope to cool to ambient temperature
-- Check for mechanical issues (loose screws, etc.)
+## 🎯 Project Philosophy
 
-## Documentation
+This project prioritizes the **interactive observing experience**:
 
-Complete documentation is available in the [docs/](docs/) directory:
+1. **Shell-first design**: The CLI is not an afterthought—it's the primary interface
+2. **Real-time feedback**: See everything happening as it happens
+3. **Learn by doing**: Interactive tutorial teaches through practice
+4. **Field-ready**: Offline ephemeris, saved configurations, quick commands
+5. **Safety-conscious**: Emergency stops, collision detection, clear warnings
 
-- [Documentation Index](docs/INDEX.md) - Complete documentation overview
-- [Installation Guide](docs/INSTALL.md) - Detailed installation instructions
-- [Telescope API Documentation](docs/telescope_docs.md) - High-level telescope control
-- [Protocol Documentation](docs/protocol_docs.md) - Low-level serial communication
-- [Type Definitions](docs/types_docs.md) - Enums and dataclasses
-- [Custom Exceptions](docs/exceptions_docs.md) - Exception hierarchy
-- [Coordinate Converters](docs/converters_docs.md) - Coordinate conversion utilities
-- [Astronomical Utilities](docs/utils_docs.md) - Calculations and formatting
-- [Library Initialization](docs/init_docs.md) - Package exports
-- [Usage Examples](docs/examples_docs.md) - Code examples
+## 🤝 Contributing
 
-## License
+Contributions welcome! Areas for improvement:
 
-This is an open-source project. Feel free to use, modify, and distribute as needed.
+- Additional telescope models (currently optimized for NexStar 6SE)
+- More catalog integrations (Sharpless, IC, PK, etc.)
+- Enhanced planetarium software integration
+- Mobile app using the Python API
+- Additional tutorials or documentation
+- Test coverage improvements
 
-## Contributing
+## 📜 License
 
-Contributions are welcome! Areas for improvement:
+MIT License - feel free to use, modify, and distribute.
 
-- Additional telescope models support
-- More astronomical calculations
-- GUI interface
-- Planetarium software integration
-- Enhanced error handling
-- Additional test coverage for protocol.py layer
+## 🙏 Acknowledgments
 
-## Acknowledgments
+- Built on the Celestron NexStar serial protocol
+- Uses Skyfield for astronomical calculations
+- Tutorial system inspired by interactive learning tools
+- Thanks to the astronomy community for catalog data
 
-Based on the Celestron NexStar serial protocol specification.
+## 📞 Contact
 
-## Resources
+For issues, questions, or contributions, please open an issue on GitHub.
 
-- [Celestron NexStar Serial Protocol Documentation (PDF)](https://s3.amazonaws.com/celestron-site-support-files/support_files/1154108406_nexstarcommprot.pdf)
-- [NexStar Programming Guide](https://www.nexstarsite.com/PCControl/ProgrammingNexStar.htm)
-- [PySerial Documentation](https://pyserial.readthedocs.io/)
-- Astronomical calculations based on Jean Meeus's "Astronomical Algorithms"
+---
 
-## Contact
+**Happy Observing! 🌟🔭**
 
-For issues, questions, or contributions, please open an issue on the project repository.
+_Start with `tutorial` and you'll be controlling your telescope like a pro in minutes!_
