@@ -65,10 +65,11 @@ The tutorial covers everything from basic navigation to advanced tracking featur
 The shell is the heart of this project, designed for real observing sessions:
 
 **Real-Time Telescope Control**
-- **Arrow Keys** (↑↓←→): Move telescope in any direction
-- **+/-**: Adjust slew speed (0-9) on the fly
-- **ESC**: Emergency stop
-- **Visual feedback**: Status bar shows movement state and speed
+- **Arrow Keys** (↑↓←→): Always move telescope in real-time (no mode switching!)
+- **Speed Control**: Press `+` to increase speed, `-` to decrease (0=slowest to 9=fastest, default 5)
+- **Emergency Stop**: Press `ESC` to immediately halt all movement
+- **Visual Feedback**: Status bar shows movement state and current speed (e.g., "Speed:5/9")
+- **Command History**: Press `Ctrl+P` (previous) or `Ctrl+N` (next) to navigate history
 
 **Background Position Tracking**
 - Live position updates in status bar (RA/Dec/Alt/Az)
@@ -111,8 +112,8 @@ Browse and search extensive catalogs:
 
 The shell includes 10 comprehensive lessons:
 
-1. **Shell Basics**: Navigation, tab completion, command history
-2. **Movement Control**: Arrow keys, speed adjustment, emergency stop
+1. **Shell Basics**: Navigation, tab completion, command history (Ctrl+P/Ctrl+N)
+2. **Movement Control**: Arrow keys (always active), speed adjustment, emergency stop
 3. **Position Tracking**: Start/stop, intervals, statistics
 4. **Advanced Tracking**: Export, collision detection, visualization
 5. **Celestial Catalogs**: Browse, search, object information
@@ -134,8 +135,10 @@ tutorial all      # Run all lessons in sequence
 
 **Movement & Control**
 ```bash
-# Arrow keys move telescope in real-time (no typing needed!)
-# +/- adjusts speed, ESC stops
+# Arrow keys ↑↓←→ ALWAYS move telescope (press and hold)
+# Press +/- to adjust slew speed (0=slowest to 9=fastest, default 5)
+# Press ESC to stop all movement
+# Use Ctrl+P / Ctrl+N to navigate command history
 
 # Traditional commands also available:
 goto object --name Jupiter
@@ -258,11 +261,18 @@ The shell's background position tracking is a powerful observing companion:
 ### Movement Control
 
 **Interactive Control (Preferred):**
-- Arrow keys provide intuitive, real-time control
-- No typing required—just press and hold
-- Rate adjustable on the fly with +/-
-- ESC for immediate stop
-- Status bar shows current state
+- **Arrow Keys (↑↓←→)**: Always move the telescope - no mode switching needed!
+  - Press and hold to move in any direction
+  - No Enter key needed - instant response
+  - Works anytime, even while typing (just clear text first with Ctrl+U if needed)
+- **Speed Adjustment**: `+` to increase, `-` to decrease
+  - Speed range: 0 (slowest) to 9 (fastest)
+  - Default: 5 (medium speed)
+  - Status bar shows current speed (e.g., "Speed:5/9")
+- **Emergency Stop**: Press `ESC` to immediately halt all movement
+- **Command History**: Use `Ctrl+P` (previous) and `Ctrl+N` (next) to navigate history
+  - Standard emacs-style keybindings
+  - Works anytime without interfering with movement
 
 **Programmatic Control:**
 ```bash

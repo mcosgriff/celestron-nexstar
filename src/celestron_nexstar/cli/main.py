@@ -150,6 +150,7 @@ def shell() -> None:
 
     from prompt_toolkit import PromptSession
     from prompt_toolkit.completion import NestedCompleter
+    from prompt_toolkit.filters import Condition
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.key_binding import KeyBindings
@@ -232,51 +233,74 @@ def shell() -> None:
         # Movement control status
         if movement.moving:
             arrow = {"up": "↑", "down": "↓", "left": "←", "right": "→"}.get(movement.active_direction, "?")
-            parts.append(f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Rate:{movement.slew_rate} </style></b>')
+            parts.append(f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Speed:{movement.slew_rate}/9 </style></b>')
         else:
-            parts.append(f'<b><style bg="ansigreen" fg="ansiblack"> ▣ Rate:{movement.slew_rate} (arrows:move +/-:speed ESC:stop) </style></b>')
+            parts.append(f'<b><style bg="ansigreen" fg="ansiblack"> ▣ Speed:{movement.slew_rate}/9 (arrows=move +/-=speed ESC=stop ^P/^N=history) </style></b>')
 
         return HTML(" ".join(parts))
 
     # Key bindings for interactive movement control
     kb = KeyBindings()
 
-    @kb.add('up')
+    # Define filter: only activate speed/movement keys when input buffer is empty
+    @Condition
+    def buffer_is_empty():
+        from prompt_toolkit.application import get_app
+        try:
+            app = get_app()
+            return len(app.current_buffer.text) == 0
+        except Exception:
+            return False
+
+    # Arrow keys move telescope (only when not typing)
+    @kb.add('up', filter=buffer_is_empty)
     def _(event):
-        """Move telescope up when up arrow is pressed."""
+        """Move telescope up when up arrow is pressed (only when not typing)."""
         movement.start_move("up")
 
-    @kb.add('down')
+    @kb.add('down', filter=buffer_is_empty)
     def _(event):
-        """Move telescope down when down arrow is pressed."""
+        """Move telescope down when down arrow is pressed (only when not typing)."""
         movement.start_move("down")
 
-    @kb.add('left')
+    @kb.add('left', filter=buffer_is_empty)
     def _(event):
-        """Move telescope left when left arrow is pressed."""
+        """Move telescope left when left arrow is pressed (only when not typing)."""
         movement.start_move("left")
 
-    @kb.add('right')
+    @kb.add('right', filter=buffer_is_empty)
     def _(event):
-        """Move telescope right when right arrow is pressed."""
+        """Move telescope right when right arrow is pressed (only when not typing)."""
         movement.start_move("right")
 
+    # Speed adjustment (only when not typing to avoid interfering with -- arguments)
+    @kb.add('+', filter=buffer_is_empty)
+    @kb.add('=', filter=buffer_is_empty)  # Also works without shift
+    def _(event):
+        """Increase slew rate (only when not typing)."""
+        movement.increase_rate()
+
+    @kb.add('-', filter=buffer_is_empty)
+    def _(event):
+        """Decrease slew rate (only when not typing)."""
+        movement.decrease_rate()
+
+    # Command history navigation using Ctrl+P (previous) and Ctrl+N (next)
+    @kb.add('c-p')
+    def _(event):
+        """Navigate to previous command in history (Ctrl+P)."""
+        event.current_buffer.history_backward()
+
+    @kb.add('c-n')
+    def _(event):
+        """Navigate to next command in history (Ctrl+N)."""
+        event.current_buffer.history_forward()
+
+    # ESC always stops movement (works anytime)
     @kb.add('escape')
     def _(event):
         """Stop telescope movement when ESC is pressed."""
         movement.stop_move()
-
-    @kb.add('+')
-    @kb.add('=')  # Also works without shift
-    def _(event):
-        """Increase slew rate."""
-        movement.increase_rate()
-
-    @kb.add('-')
-    @kb.add('_')  # Also works with shift
-    def _(event):
-        """Decrease slew rate."""
-        movement.decrease_rate()
 
     # Custom style for prompt
     style = Style.from_dict({
@@ -301,7 +325,8 @@ def shell() -> None:
     console.print("[bold]Quick Start:[/bold]")
     console.print("  • Type [cyan]'tutorial'[/cyan] for an interactive guided tour")
     console.print("  • Type [cyan]'help'[/cyan] to see all available commands")
-    console.print("  • Arrow keys: move telescope | +/-: speed | ESC: stop")
+    console.print("  • Press [cyan]arrow keys[/cyan] to move telescope | [cyan]+/-[/cyan]: speed | [cyan]ESC[/cyan]: stop")
+    console.print("  • Press [cyan]Ctrl+P/Ctrl+N[/cyan] for command history (previous/next)")
     console.print("  • Type [cyan]'exit'[/cyan] to quit\n")
 
     # Command loop
@@ -377,7 +402,10 @@ def shell() -> None:
                 console.print("  [cyan]Arrow Keys (↑↓←→)[/cyan]   - Move telescope in any direction")
                 console.print("  [cyan]+ / -[/cyan]              - Increase/decrease slew speed (0-9)")
                 console.print("  [cyan]ESC[/cyan]                - Stop all movement")
-                console.print("  [dim]Current rate displayed in status bar (green when stopped, red when moving)[/dim]")
+                console.print("  [dim]Current speed displayed in status bar (green when stopped, red when moving)[/dim]")
+                console.print("\n[bold]Command History:[/bold]")
+                console.print("  [cyan]Ctrl+P[/cyan]             - Previous command in history")
+                console.print("  [cyan]Ctrl+N[/cyan]             - Next command in history")
                 console.print("\n[bold]Tutorial System:[/bold]")
                 console.print("  [cyan]tutorial[/cyan]           - Show interactive tutorial menu")
                 console.print("  [cyan]tutorial <number>[/cyan]  - Run specific lesson (e.g., tutorial 1)")
@@ -583,6 +611,27 @@ def shell() -> None:
                 continue
 
             if not args:
+                continue
+
+            # Check if user typed just a command group name without subcommand
+            # Provide helpful guidance
+            command_groups_needing_subcommands = {
+                'catalog': 'Try: catalog list, catalog search, catalog info, catalog catalogs',
+                'optics': 'Try: optics config, optics show',
+                'ephemeris': 'Try: ephemeris download, ephemeris list, ephemeris verify, ephemeris sets',
+                'position': 'Try: position get',
+                'goto': 'Try: goto object, goto ra-dec, goto alt-az',
+                'move': 'Try: move fixed, move stop',
+                'track': 'Try: track get, track set',
+                'align': 'Try: align sync',
+                'location': 'Try: location show, location set, location geocode',
+                'time': 'Try: time get, time set',
+            }
+
+            if len(args) == 1 and args[0] in command_groups_needing_subcommands:
+                console.print(f"[yellow]'{args[0]}' requires a subcommand.[/yellow]")
+                console.print(f"[dim]{command_groups_needing_subcommands[args[0]]}[/dim]")
+                console.print(f"[dim]Or use: {args[0]} --help[/dim]")
                 continue
 
             # Execute command through typer

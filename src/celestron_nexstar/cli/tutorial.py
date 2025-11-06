@@ -7,6 +7,7 @@ step-by-step lessons and interactive demonstrations.
 
 from dataclasses import dataclass
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.prompt import Confirm
 
@@ -39,7 +40,7 @@ class TutorialSystem:
                     ("The shell has tab completion - try typing 'cat' and press TAB", "catalog"),
                     ("Press TAB twice to see all available commands", "<TAB><TAB>"),
                     ("Type 'help' to see detailed command information", "help"),
-                    ("Use UP/DOWN arrows to navigate command history", "<UP>/<DOWN>"),
+                    ("Use Ctrl+P / Ctrl+N to navigate command history (previous/next)", "Ctrl+P / Ctrl+N"),
                     ("Press CTRL+C to cancel current input, CTRL+D or 'exit' to quit", "exit"),
                 ],
                 demo_mode=True
@@ -48,11 +49,15 @@ class TutorialSystem:
                 title="Interactive Movement Control",
                 description="Control your telescope with arrow keys in real-time",
                 steps=[
-                    ("Arrow keys (↑↓←→) move the telescope in any direction", "<Arrow Keys>"),
-                    ("Press + or - to increase/decrease slew speed (0-9)", "+/-"),
+                    ("Arrow keys (↑↓←→) ALWAYS move the telescope - no mode switching!", ""),
+                    ("Just press and hold an arrow key to move in that direction", ""),
+                    ("No Enter key needed - telescope responds instantly!", ""),
+                    ("Press '+' to increase speed, '-' to decrease", "+/-"),
+                    ("Speed range: 0 (slowest) to 9 (fastest), default is 5 (medium)", ""),
+                    ("Status bar shows current speed like 'Speed:5/9'", ""),
                     ("Press ESC to stop all movement immediately", "ESC"),
-                    ("The status bar shows current rate and movement state", ""),
-                    ("Green bar = stopped, Red bar = moving", ""),
+                    ("Watch the status bar: Green = stopped, Red = moving with direction", ""),
+                    ("Command history uses Ctrl+P (previous) and Ctrl+N (next) instead", "Ctrl+P / Ctrl+N"),
                 ],
                 demo_mode=False
             ),
@@ -99,8 +104,8 @@ class TutorialSystem:
                 steps=[
                     ("Configure your telescope model:", "optics config --telescope nexstar_6se --eyepiece 25"),
                     ("View current configuration:", "optics show"),
-                    ("Set your observing location:", "location set --lat 34.05 --lon -118.24 --name 'Los Angeles'"),
-                    ("Or use geocoding:", "location geocode 'New York, NY'"),
+                    ("Set your observing location:", 'location set --lat 34.05 --lon -118.24 --name "Los Angeles"'),
+                    ("Or use geocoding:", 'location geocode "New York, NY"'),
                     ("View current location:", "location show"),
                 ],
                 demo_mode=True
@@ -162,8 +167,8 @@ class TutorialSystem:
         self.console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Tutorial[/bold cyan]              [bold green]║[/bold green]")
         self.console.print("[bold green]╚══════════════════════════════════════════════════╝[/bold green]\n")
 
-        self.console.print("[dim]This tutorial will guide you through all the features")
-        self.console.print("of the NexStar Interactive Shell.[/dim]\n")
+        self.console.print("[dim]This tutorial will guide you through all the features "
+                          "of the NexStar Interactive Shell.[/dim]\n")
 
         # Show lesson menu
         self._show_menu()
@@ -204,9 +209,9 @@ class TutorialSystem:
 
         # Display all steps
         for i, (instruction, example) in enumerate(lesson.steps, 1):
-            panel_content = f"[bold]{i}. {instruction}[/bold]"
+            panel_content = f"[bold]{i}. {escape(instruction)}[/bold]"
             if example:
-                panel_content += f"\n\n[dim]Example:[/dim] [green]{example}[/green]"
+                panel_content += f"\n\n[dim]Example:[/dim] [green]{escape(example)}[/green]"
 
             self.console.print(Panel(
                 panel_content,
@@ -258,11 +263,11 @@ class TutorialSystem:
         """
         return [
             "Press TAB for command completion",
-            "Use arrow keys (↑↓←→) to move telescope",
-            "Press +/- to adjust slew speed",
+            "Arrow keys (↑↓←→) always move telescope",
+            "Press Ctrl+P/Ctrl+N for command history",
+            "Press +/- to adjust slew speed (0-9)",
             "Type 'help' to see all commands",
             "Type 'tutorial' to start the interactive tutorial",
             "Background tracking shows position in status bar",
-            "Press ESC to emergency stop movement",
-            "Command history saved between sessions",
+            "Press ESC for emergency stop",
         ]
