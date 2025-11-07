@@ -29,14 +29,21 @@ def get_dataset_info() -> FormattedText:
         db = get_database()
         stats = db.get_stats()
 
-        lines: list[tuple[str, str]] = [
-            ("bold", "Database Statistics\n"),
-            ("", "─" * 30 + "\n"),
-            ("", f"Total Objects: {stats.total_objects:,}\n"),
-            ("", f"Catalogs: {len(stats.objects_by_catalog)}\n"),
-            ("", f"Types: {len(stats.objects_by_type)}\n"),
-            ("", "\n"),
-        ]
+        from .state import get_state
+
+        state = get_state()
+        is_focused = state.focused_pane == "dataset"
+
+        lines: list[tuple[str, str]] = []
+        if is_focused:
+            lines.append(("bold yellow", "▶ Database Statistics\n"))
+        else:
+            lines.append(("bold", "Database Statistics\n"))
+        lines.append(("", "─" * 30 + "\n"))
+        lines.append(("", f"Total Objects: {stats.total_objects:,}\n"))
+        lines.append(("", f"Catalogs: {len(stats.objects_by_catalog)}\n"))
+        lines.append(("", f"Types: {len(stats.objects_by_type)}\n"))
+        lines.append(("", "\n"))
 
         # Magnitude range
         if stats.magnitude_range[0] is not None and stats.magnitude_range[1] is not None:
@@ -104,10 +111,106 @@ def get_dataset_info() -> FormattedText:
             lines.append(("", "Limiting Mag: "))
             lines.append(("yellow", f"{limiting_mag:.1f}\n"))
             lines.append(("", "\n"))
-            lines.append(("dim", "Press 't'=telescope 'e'=eyepiece\n"))
 
         except Exception as e:
             lines.append(("yellow", f"Config: Error ({e})\n"))
+
+        # Telescope Status (if connected)
+        lines.append(("", "─" * 30 + "\n"))
+        lines.append(("bold", "Telescope Status\n"))
+        lines.append(("", "\n"))
+
+        try:
+            from ..utils.state import get_telescope
+
+            telescope = get_telescope()
+            if telescope and telescope.protocol and telescope.protocol.is_open():
+                # Connection status
+                lines.append(("green", "  Connected\n"))
+                lines.append(("", "\n"))
+
+                # Get position
+                try:
+                    ra_dec = telescope.get_position_ra_dec()
+                    alt_az = telescope.get_position_alt_az()
+
+                    # Format RA
+                    ra_h = int(ra_dec.ra_hours)
+                    ra_m = int((ra_dec.ra_hours - ra_h) * 60)
+                    ra_s = int(((ra_dec.ra_hours - ra_h) * 60 - ra_m) * 60)
+
+                    # Format Dec
+                    dec_d = int(ra_dec.dec_degrees)
+                    dec_m = int((abs(ra_dec.dec_degrees) - abs(dec_d)) * 60)
+                    dec_s = int(((abs(ra_dec.dec_degrees) - abs(dec_d)) * 60 - dec_m) * 60)
+                    dec_dir = "N" if ra_dec.dec_degrees >= 0 else "S"
+
+                    lines.append(("", "Position (RA/Dec):\n"))
+                    lines.append(("cyan", f"  RA:  {ra_h:02d}h {ra_m:02d}m {ra_s:02d}s\n"))
+                    lines.append(("cyan", f"  Dec: {abs(dec_d):02d}° {dec_m:02d}' {dec_s:02d}\" {dec_dir}\n"))
+                    lines.append(("", "\n"))
+
+                    lines.append(("", "Position (Alt/Az):\n"))
+                    lines.append(("cyan", f"  Alt: {alt_az.altitude:5.1f}°\n"))
+                    lines.append(("cyan", f"  Az:  {alt_az.azimuth:5.1f}°\n"))
+                    lines.append(("", "\n"))
+
+                except Exception:
+                    lines.append(("yellow", "  Position: Unavailable\n"))
+                    lines.append(("", "\n"))
+
+                # Get tracking mode
+                try:
+                    tracking_mode_num = telescope.protocol.get_tracking_mode()
+                    tracking_modes = {
+                        0: "Off",
+                        1: "Alt-Az",
+                        2: "EQ North",
+                        3: "EQ South",
+                    }
+                    tracking_name = tracking_modes.get(tracking_mode_num, f"Unknown ({tracking_mode_num})")
+                    lines.append(("", "Tracking: "))
+                    lines.append(("cyan", f"{tracking_name}\n"))
+                except Exception:
+                    lines.append(("yellow", "  Tracking: Unknown\n"))
+
+            else:
+                lines.append(("dim", "  Not connected\n"))
+                lines.append(("dim", "  Press 'c' to connect\n"))
+
+        except Exception as e:
+            lines.append(("yellow", f"Status: Error ({str(e)[:30]})\n"))
+
+        # Session Information
+        lines.append(("", "\n"))
+        lines.append(("", "─" * 30 + "\n"))
+        lines.append(("bold", "Session\n"))
+        lines.append(("", "\n"))
+
+        try:
+            from .state import get_state
+
+            state = get_state()
+            if state.session_start_time is None:
+                lines.append(("dim", "  Not started\n"))
+                lines.append(("dim", "  Press 's' to start\n"))
+            else:
+                duration = state.get_session_duration()
+                if duration is not None:
+                    hours = int(duration)
+                    minutes = int((duration - hours) * 60)
+                    lines.append(("", f"  Duration: {hours}h {minutes}m\n"))
+                lines.append(("", f"  Observed: {len(state.observed_objects)}\n"))
+                if state.observed_objects:
+                    # Show last 3 observed objects
+                    for obj_name in state.observed_objects[-3:]:
+                        lines.append(("dim", f"    • {obj_name[:25]}\n"))
+
+        except Exception:
+            lines.append(("yellow", "  Session: Error\n"))
+
+        lines.append(("", "\n"))
+        lines.append(("dim", "Press 't'=telescope 'e'=eyepiece\n"))
 
         return FormattedText(lines)
 
@@ -127,10 +230,17 @@ def get_conditions_info() -> FormattedText:
     Returns:
         Formatted text showing weather, sky conditions, and time information
     """
-    lines: list[tuple[str, str]] = [
-        ("bold", "Observing Conditions\n"),
-        ("", "─" * 30 + "\n"),
-    ]
+    from .state import get_state
+
+    state = get_state()
+    is_focused = state.focused_pane == "conditions"
+
+    lines: list[tuple[str, str]] = []
+    if is_focused:
+        lines.append(("bold yellow", "▶ Observing Conditions\n"))
+    else:
+        lines.append(("bold", "Observing Conditions\n"))
+    lines.append(("", "─" * 30 + "\n"))
 
     # Location
     try:
@@ -185,11 +295,11 @@ def get_conditions_info() -> FormattedText:
     lines.append(("", "\n"))
 
     # Time information
+    from datetime import UTC
+
     from .state import get_state
 
     state = get_state()
-    from datetime import UTC
-
     if state.time_display_mode == "utc":
         now = datetime.now(UTC)
         time_label = "UTC"
@@ -296,7 +406,33 @@ def get_conditions_info() -> FormattedText:
 
     lines.append(("", "\n"))
 
-    # Weather placeholder
+    # Observing conditions summary
+    lines.append(("", "\n"))
+    lines.append(("bold", "Observing Quality:\n"))
+
+    try:
+        from ...api.enums import SkyBrightness
+        from ...api.optics import calculate_limiting_magnitude, get_current_configuration
+
+        config = get_current_configuration()
+        if config:
+            limiting_mag = calculate_limiting_magnitude(
+                config.telescope.effective_aperture_mm,
+                sky_brightness=SkyBrightness.GOOD,
+                exit_pupil_mm=config.exit_pupil_mm,
+            )
+            lines.append(("", f"  Limiting Mag: {limiting_mag:.1f}\n"))
+
+            # Calculate dark sky hours remaining (if sun is below horizon)
+            if sun_info and not sun_info.is_daytime and sun_info.sunrise_time:
+                now_utc = datetime.now(UTC)
+                if sun_info.sunrise_time > now_utc:
+                    delta = sun_info.sunrise_time - now_utc
+                    hours = delta.total_seconds() / 3600.0
+                    lines.append(("", f"  Dark Hours: {hours:.1f}h\n"))
+    except Exception:
+        pass
+
     lines.append(("yellow", "  Weather: Not available\n"))
     lines.append(("yellow", "  Light Pollution: Not available\n"))
 
@@ -313,10 +449,14 @@ def get_visible_objects_info() -> FormattedText:
     from .state import get_state
 
     state = get_state()
-    lines: list[tuple[str, str]] = [
-        ("bold", "Currently Visible Objects\n"),
-        ("", "─" * 40 + "\n"),
-    ]
+    is_focused = state.focused_pane == "visible"
+
+    lines: list[tuple[str, str]] = []
+    if is_focused:
+        lines.append(("bold yellow", "▶ Currently Visible Objects\n"))
+    else:
+        lines.append(("bold", "Currently Visible Objects\n"))
+    lines.append(("", "─" * 40 + "\n"))
 
     try:
         from ...api.database import get_database
@@ -393,11 +533,70 @@ def get_visible_objects_info() -> FormattedText:
             state.set_visible_objects([])
             return FormattedText(lines)
 
-        # Already sorted by observability score, but we can sort by altitude for display
-        visible_sorted = sorted(visible, key=lambda x: x[1].altitude_deg or 0, reverse=True)
+        # Apply search filter if active
+        if state.search_query:
+            search_lower = state.search_query.lower()
+            visible = [
+                (obj, vis_info)
+                for obj, vis_info in visible
+                if search_lower in obj.name.lower() or (obj.common_name and search_lower in obj.common_name.lower())
+            ]
+
+        # Apply type filter if active
+        if state.filter_type:
+            visible = [(obj, vis_info) for obj, vis_info in visible if obj.object_type.value == state.filter_type]
+
+        # Apply magnitude filter if active
+        if state.filter_mag_min is not None:
+            visible = [
+                (obj, vis_info)
+                for obj, vis_info in visible
+                if obj.magnitude is not None and obj.magnitude >= state.filter_mag_min
+            ]
+        if state.filter_mag_max is not None:
+            visible = [
+                (obj, vis_info)
+                for obj, vis_info in visible
+                if obj.magnitude is not None and obj.magnitude <= state.filter_mag_max
+            ]
+
+        # Apply sorting
+        def sort_key(item: tuple) -> tuple:
+            obj, vis_info = item
+            if state.sort_by == "altitude":
+                return (vis_info.altitude_deg or -999,)
+            elif state.sort_by == "magnitude":
+                mag = obj.magnitude if obj.magnitude is not None else 999
+                return (mag,)
+            elif state.sort_by == "name":
+                return (obj.name.lower(),)
+            elif state.sort_by == "type":
+                return (obj.object_type.value, obj.name.lower())
+            return (0,)
+
+        visible_sorted = sorted(visible, key=sort_key, reverse=state.sort_reverse)
 
         # Store in state
-        state.set_visible_objects(visible_sorted[:30])
+        state.set_visible_objects(visible_sorted[:50])
+
+        # Show sorting/filtering info
+        lines.append(("dim", f"Sort: {state.sort_by} "))
+        if state.sort_reverse:
+            lines.append(("dim", "↓ "))
+        else:
+            lines.append(("dim", "↑ "))
+        if state.search_mode:
+            if state.search_query:
+                lines.append(("yellow", f"| Search: '{state.search_query[:15]}'"))
+            else:
+                lines.append(("yellow", "| Search: (press '/' again to enter text)"))
+            lines.append(("dim", " Esc to cancel\n"))
+        elif state.search_query:
+            lines.append(("dim", f"| Search: '{state.search_query[:15]}' "))
+        if state.filter_type:
+            lines.append(("dim", f"| Type: {state.filter_type} "))
+        lines.append(("dim", "\n"))
+        lines.append(("", "\n"))
 
         # Show detail view at top if active
         if state.show_detail and state.focused_pane == "visible":
@@ -513,37 +712,52 @@ def get_status_info() -> FormattedText:
     Generate formatted text for the status bar.
 
     Returns:
-        Formatted text for status bar showing position and tracking info
+        Formatted text for status bar showing position, tracking info, and help
     """
+    from .state import get_state
+
+    state = get_state()
     lines: list[tuple[str, str]] = []
 
-    # Position (if available)
+    # Telescope position if connected
     try:
         from ..utils.state import get_telescope
 
         telescope = get_telescope()
         if telescope and telescope.protocol and telescope.protocol.is_open():
-            pos = telescope.get_position_ra_dec()
-            if pos:
-                ra_h = int(pos.ra_hours)
-                ra_m = int((pos.ra_hours - ra_h) * 60)
-                dec_d = int(pos.dec_degrees)
-                dec_m = int((abs(pos.dec_degrees) - abs(dec_d)) * 60)
-                lines.append(("", f"RA: {ra_h:02d}h{ra_m:02d}m "))
-                lines.append(("", f"Dec: {dec_d:+03d}°{dec_m:02d}' "))
+            try:
+                ra_dec = telescope.get_position_ra_dec()
+                alt_az = telescope.get_position_alt_az()
+                lines.append(("cyan", f"RA:{ra_dec.ra_hours:6.2f}h "))
+                lines.append(("cyan", f"Dec:{ra_dec.dec_degrees:6.2f}° "))
+                lines.append(("cyan", f"Alt:{alt_az.altitude:5.1f}° "))
+                lines.append(("cyan", f"Az:{alt_az.azimuth:5.1f}° "))
+                lines.append(("", " | "))
+            except Exception:
+                pass
     except Exception:
         pass
 
-    # Help text - show different hints based on focused pane
-    from .state import get_state
-
-    state = get_state()
+    # Help text - context sensitive, single line
     if state.focused_pane == "visible":
-        if state.show_detail:
-            lines.append(("dim", "Esc=close detail ↑↓=navigate Enter=toggle q=quit"))
+        if state.search_mode:
+            # Show search mode indicator
+            if state.search_query:
+                lines.append(("dim", f"↑↓=nav Enter=detail s=sort r=reverse f=filter Search: '{state.search_query[:15]}' Esc=cancel"))
+            else:
+                lines.append(("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter Search mode (press '/' to enter) Esc=cancel"))
+        elif state.show_detail:
+            lines.append(("dim", "↑↓=nav Enter/Esc=detail s=sort r=reverse f=filter /=search"))
         else:
-            lines.append(("dim", "↑↓=navigate Enter=details q=quit"))
+            lines.append(("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter /=search"))
+    elif state.focused_pane == "conditions":
+        # Unique help for conditions pane
+        lines.append(("dim", "q=quit r=refresh u=toggle UTC/Local time 1/2/3=focus"))
+    elif state.focused_pane == "dataset":
+        # Help for dataset pane
+        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session 1/2/3=focus"))
     else:
-        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece u=time 1/2/3=focus"))
+        # Default help text
+        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session u=time 1/2/3=focus"))
 
     return FormattedText(lines)

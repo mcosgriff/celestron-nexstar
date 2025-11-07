@@ -205,6 +205,8 @@ class TUIApplication:
 
     def run(self) -> None:
         """Run the TUI application."""
+        from .state import get_state
+
         while True:
             result = self.app.run()
             if result == "change_telescope":
@@ -215,5 +217,22 @@ class TUIApplication:
                 _change_eyepiece_interactive()
                 # Recreate app to refresh
                 self.__init__()
+            elif result == "search_mode":
+                # Handle search input
+                state = get_state()
+                if state.search_mode:
+                    # Show prompt for search text
+                    from prompt_toolkit import PromptSession
+
+                    session = PromptSession()
+                    try:
+                        search_text = session.prompt("Search: ", default=state.search_query)
+                        state.search_query = search_text
+                        state.search_mode = False
+                    except KeyboardInterrupt:
+                        state.search_query = ""
+                        state.search_mode = False
+                    # Recreate app to refresh
+                    self.__init__()
             else:
                 break

@@ -79,7 +79,7 @@ def create_layout() -> HSplit:
         ]
     )
 
-    # Status bar
+    # Status bar - single line
     status_bar = Window(
         content=FormattedTextControl(get_status_info),
         height=Dimension.exact(1),
