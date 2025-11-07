@@ -102,6 +102,15 @@ def create_key_bindings() -> KeyBindings:
             state.show_detail = False
             event.app.invalidate()
 
+    @kb.add("u")
+    def toggle_time_mode(event):
+        """Toggle between local and UTC time display."""
+        from .state import get_state
+
+        state = get_state()
+        state.toggle_time_mode()
+        event.app.invalidate()
+
     @kb.add("c-c")
     def interrupt(event):
         """Handle Ctrl+C gracefully."""

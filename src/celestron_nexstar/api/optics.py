@@ -205,32 +205,111 @@ class EyepieceSpecs:
         return self.true_fov_deg(telescope) * 60.0
 
 
-# Common eyepiece focal lengths
+# Common eyepieces for NexStar SE series telescopes
+# Includes standard Plössl and wide-angle options commonly used
 COMMON_EYEPIECES: dict[str, EyepieceSpecs] = {
-    "25mm_plossl": EyepieceSpecs(
-        focal_length_mm=25,
+    # Plössl eyepieces (50° FOV) - Standard included eyepieces
+    "40mm_plossl": EyepieceSpecs(
+        focal_length_mm=40,
         apparent_fov_deg=50,
-        name="25mm Plössl (standard)",
-    ),
-    "10mm_plossl": EyepieceSpecs(
-        focal_length_mm=10,
-        apparent_fov_deg=50,
-        name="10mm Plössl",
+        name="40mm Plössl",
     ),
     "32mm_plossl": EyepieceSpecs(
         focal_length_mm=32,
         apparent_fov_deg=50,
         name="32mm Plössl",
     ),
+    "25mm_plossl": EyepieceSpecs(
+        focal_length_mm=25,
+        apparent_fov_deg=50,
+        name="25mm Plössl (standard)",
+    ),
+    "20mm_plossl": EyepieceSpecs(
+        focal_length_mm=20,
+        apparent_fov_deg=50,
+        name="20mm Plössl",
+    ),
+    "15mm_plossl": EyepieceSpecs(
+        focal_length_mm=15,
+        apparent_fov_deg=50,
+        name="15mm Plössl",
+    ),
+    "12mm_plossl": EyepieceSpecs(
+        focal_length_mm=12,
+        apparent_fov_deg=50,
+        name="12mm Plössl",
+    ),
+    "10mm_plossl": EyepieceSpecs(
+        focal_length_mm=10,
+        apparent_fov_deg=50,
+        name="10mm Plössl",
+    ),
+    "8mm_plossl": EyepieceSpecs(
+        focal_length_mm=8,
+        apparent_fov_deg=50,
+        name="8mm Plössl",
+    ),
+    "6mm_plossl": EyepieceSpecs(
+        focal_length_mm=6,
+        apparent_fov_deg=50,
+        name="6mm Plössl",
+    ),
+    # Wide-angle eyepieces (68-82° FOV) - Popular upgrades
     "25mm_ultrawide": EyepieceSpecs(
         focal_length_mm=25,
         apparent_fov_deg=82,
-        name="25mm Ultra-Wide",
+        name="25mm Ultra-Wide (82°)",
+    ),
+    "20mm_ultrawide": EyepieceSpecs(
+        focal_length_mm=20,
+        apparent_fov_deg=82,
+        name="20mm Ultra-Wide (82°)",
+    ),
+    "15mm_ultrawide": EyepieceSpecs(
+        focal_length_mm=15,
+        apparent_fov_deg=82,
+        name="15mm Ultra-Wide (82°)",
+    ),
+    "10mm_ultrawide": EyepieceSpecs(
+        focal_length_mm=10,
+        apparent_fov_deg=82,
+        name="10mm Ultra-Wide (82°)",
     ),
     "9mm_ultrawide": EyepieceSpecs(
         focal_length_mm=9,
         apparent_fov_deg=82,
-        name="9mm Ultra-Wide",
+        name="9mm Ultra-Wide (82°)",
+    ),
+    "8mm_ultrawide": EyepieceSpecs(
+        focal_length_mm=8,
+        apparent_fov_deg=82,
+        name="8mm Ultra-Wide (82°)",
+    ),
+    # Medium wide-angle eyepieces (68° FOV)
+    "24mm_wide": EyepieceSpecs(
+        focal_length_mm=24,
+        apparent_fov_deg=68,
+        name="24mm Wide (68°)",
+    ),
+    "18mm_wide": EyepieceSpecs(
+        focal_length_mm=18,
+        apparent_fov_deg=68,
+        name="18mm Wide (68°)",
+    ),
+    "13mm_wide": EyepieceSpecs(
+        focal_length_mm=13,
+        apparent_fov_deg=68,
+        name="13mm Wide (68°)",
+    ),
+    "11mm_wide": EyepieceSpecs(
+        focal_length_mm=11,
+        apparent_fov_deg=68,
+        name="11mm Wide (68°)",
+    ),
+    "7mm_wide": EyepieceSpecs(
+        focal_length_mm=7,
+        apparent_fov_deg=68,
+        name="7mm Wide (68°)",
     ),
 }
 

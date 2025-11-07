@@ -90,33 +90,68 @@ def _change_eyepiece_interactive() -> None:
         current_ep_name = current_config.eyepiece.name or f"{current_config.eyepiece.focal_length_mm:.0f}mm"
         console.print(f"\n[bold]Current Eyepiece:[/bold] {current_ep_name}\n")
 
-        # List available eyepieces
+        # List available eyepieces, sorted by focal length
         console.print("[bold]Available Eyepieces:[/bold]")
-        eyepiece_items = list(COMMON_EYEPIECES.items())
-        for i, (_key, eyepiece) in enumerate(eyepiece_items, 1):
-            ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
-            marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
-            console.print(
-                f"  {marker} {i}. {ep_name} ({eyepiece.focal_length_mm:.0f}mm, {eyepiece.apparent_fov_deg:.0f}° FOV)"
-            )
+        eyepiece_items = sorted(COMMON_EYEPIECES.items(), key=lambda x: x[1].focal_length_mm, reverse=True)
 
-        console.print(f"\n[dim]Enter eyepiece number (1-{len(eyepiece_items)}) or name, or 'cancel':[/dim]")
+        # Group by type for better organization
+        plossl_items = [(k, v) for k, v in eyepiece_items if "plossl" in k]
+        ultrawide_items = [(k, v) for k, v in eyepiece_items if "ultrawide" in k]
+        wide_items = [(k, v) for k, v in eyepiece_items if "wide" in k and "ultrawide" not in k]
+
+        item_num = 1
+        if plossl_items:
+            console.print("\n[dim]Plössl Eyepieces (50° FOV):[/dim]")
+            for _key, eyepiece in plossl_items:
+                ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
+                marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
+                console.print(
+                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
+                )
+                item_num += 1
+
+        if ultrawide_items:
+            console.print("\n[dim]Ultra-Wide Eyepieces (82° FOV):[/dim]")
+            for _key, eyepiece in ultrawide_items:
+                ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
+                marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
+                console.print(
+                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
+                )
+                item_num += 1
+
+        if wide_items:
+            console.print("\n[dim]Wide-Angle Eyepieces (68° FOV):[/dim]")
+            for _key, eyepiece in wide_items:
+                ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
+                marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
+                console.print(
+                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
+                )
+                item_num += 1
+
+        total_items = len(eyepiece_items)
+
+        console.print(f"\n[dim]Enter eyepiece number (1-{total_items}) or name/focal length, or 'cancel':[/dim]")
         session = PromptSession()
         choice = session.prompt("> ").strip()
 
         if choice.lower() in ("cancel", "c", "q"):
             return
 
+        # Rebuild flat list for selection
+        all_items = plossl_items + ultrawide_items + wide_items
+
         # Parse choice
         selected_eyepiece = None
         if choice.isdigit():
             idx = int(choice) - 1
-            if 0 <= idx < len(eyepiece_items):
-                selected_eyepiece = eyepiece_items[idx][1]
+            if 0 <= idx < len(all_items):
+                selected_eyepiece = all_items[idx][1]
         else:
             # Try to match by name or focal length
             choice_lower = choice.lower()
-            for key, eyepiece in eyepiece_items:
+            for key, eyepiece in all_items:
                 ep_name = (eyepiece.name or "").lower()
                 if choice_lower in ep_name or choice_lower in key.lower():
                     selected_eyepiece = eyepiece

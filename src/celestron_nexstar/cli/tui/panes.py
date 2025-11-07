@@ -104,8 +104,7 @@ def get_dataset_info() -> FormattedText:
             lines.append(("", "Limiting Mag: "))
             lines.append(("yellow", f"{limiting_mag:.1f}\n"))
             lines.append(("", "\n"))
-            lines.append(("dim", "Press 't' to change telescope\n"))
-            lines.append(("dim", "Press 'e' to change eyepiece\n"))
+            lines.append(("dim", "Press 't'=telescope 'e'=eyepiece\n"))
 
         except Exception as e:
             lines.append(("yellow", f"Config: Error ({e})\n"))
@@ -186,17 +185,120 @@ def get_conditions_info() -> FormattedText:
     lines.append(("", "\n"))
 
     # Time information
-    now = datetime.now()
+    from .state import get_state
+
+    state = get_state()
+    from datetime import UTC
+
+    if state.time_display_mode == "utc":
+        now = datetime.now(UTC)
+        time_label = "UTC"
+    else:
+        now = datetime.now()
+        time_label = "Local"
+
     lines.append(("", "Time:\n"))
-    lines.append(("cyan", f"  Local: {now.strftime('%H:%M:%S')}\n"))
+    lines.append(("cyan", f"  {time_label}: {now.strftime('%H:%M:%S')}\n"))
     lines.append(("cyan", f"  Date:  {now.strftime('%Y-%m-%d')}\n"))
+    lines.append(("dim", "  Press 'u' to toggle UTC/Local\n"))
     lines.append(("", "\n"))
 
-    # Sky conditions (placeholder for now)
+    # Sky conditions
     lines.append(("bold", "Sky Conditions:\n"))
+
+    # Get observer location for moon/sun calculations
+    moon_observer_lat = None
+    moon_observer_lon = None
+    try:
+        from ...api.observer import get_observer_location
+        from ..utils.state import get_telescope
+
+        # Try telescope GPS first
+        telescope = get_telescope()
+        if telescope and telescope.protocol and telescope.protocol.is_open():
+            try:
+                telescope_location = telescope.get_location()
+                if telescope_location and telescope_location.latitude != 0.0 and telescope_location.longitude != 0.0:
+                    moon_observer_lat = telescope_location.latitude
+                    moon_observer_lon = telescope_location.longitude
+            except Exception:
+                pass
+
+        # Fall back to observer location
+        if moon_observer_lat is None or moon_observer_lon is None:
+            location = get_observer_location()
+            if location:
+                moon_observer_lat = location.latitude
+                moon_observer_lon = location.longitude
+    except Exception:
+        pass
+
+    # Moon information
+    if moon_observer_lat is not None and moon_observer_lon is not None:
+        try:
+            from ...api.solar_system import get_moon_info
+
+            moon_info = get_moon_info(moon_observer_lat, moon_observer_lon, now)
+            if moon_info:
+                lines.append(("", "Moon:\n"))
+                lines.append(("cyan", f"  Phase: {moon_info.phase_name}\n"))
+                lines.append(("", f"  Illumination: {moon_info.illumination * 100:.0f}%\n"))
+                if moon_info.altitude_deg > 0:
+                    lines.append(("", f"  Alt: {moon_info.altitude_deg:5.1f}° "))
+                    lines.append(("", f"Az: {moon_info.azimuth_deg:5.1f}°\n"))
+                else:
+                    lines.append(("dim", "  Below horizon\n"))
+            else:
+                lines.append(("yellow", "  Moon: Calculation unavailable\n"))
+        except Exception as e:
+            # Truncate error message to prevent scrolling
+            error_msg = str(e)[:50] + "..." if len(str(e)) > 50 else str(e)
+            lines.append(("yellow", f"  Moon: {error_msg}\n"))
+    else:
+        lines.append(("yellow", "  Moon: Location not set\n"))
+
+    lines.append(("", "\n"))
+
+    # Sun information
+    if moon_observer_lat is not None and moon_observer_lon is not None:
+        try:
+            from ...api.solar_system import get_sun_info
+
+            sun_info = get_sun_info(moon_observer_lat, moon_observer_lon, now)
+            if sun_info:
+                lines.append(("", "Sun:\n"))
+                if sun_info.is_daytime:
+                    lines.append(("green", "  Above horizon\n"))
+                    lines.append(("", f"  Alt: {sun_info.altitude_deg:5.1f}° "))
+                    lines.append(("", f"Az: {sun_info.azimuth_deg:5.1f}°\n"))
+                    if sun_info.sunset_time:
+                        # Convert to local time if needed
+                        sunset_local = sun_info.sunset_time
+                        if state.time_display_mode == "local":
+                            sunset_local = sun_info.sunset_time.replace(tzinfo=UTC).astimezone()
+                        lines.append(("", f"  Sunset: {sunset_local.strftime('%H:%M')}\n"))
+                else:
+                    lines.append(("dim", "  Below horizon\n"))
+                    if sun_info.sunrise_time:
+                        # Convert to local time if needed
+                        sunrise_local = sun_info.sunrise_time
+                        if state.time_display_mode == "local":
+                            sunrise_local = sun_info.sunrise_time.replace(tzinfo=UTC).astimezone()
+                        lines.append(("", f"  Sunrise: {sunrise_local.strftime('%H:%M')}\n"))
+            else:
+                lines.append(("yellow", "  Sun: Calculation unavailable\n"))
+        except Exception as e:
+            # Truncate error message to prevent scrolling
+            error_msg = str(e)[:50] + "..." if len(str(e)) > 50 else str(e)
+            lines.append(("yellow", f"  Sun: {error_msg}\n"))
+    else:
+        lines.append(("yellow", "  Sun: Location not set\n"))
+
+    lines.append(("", "\n"))
+
+    # Weather placeholder
     lines.append(("yellow", "  Weather: Not available\n"))
     lines.append(("yellow", "  Light Pollution: Not available\n"))
-    lines.append(("yellow", "  Moon Phase: Not available\n"))
 
     return FormattedText(lines)
 
@@ -387,8 +489,20 @@ def get_header_info() -> FormattedText:
         lines.append(("bold yellow", "○ Unknown"))
 
     # Time
-    now = datetime.now()
+    from datetime import UTC
+
+    from .state import get_state
+
+    state = get_state()
+    if state.time_display_mode == "utc":
+        now = datetime.now(UTC)
+        time_label = "UTC"
+    else:
+        now = datetime.now()
+        time_label = "Local"
+
     lines.append(("", " " * 5))
+    lines.append(("dim", f"{time_label} "))
     lines.append(("", now.strftime("%H:%M:%S")))
 
     return FormattedText(lines)
@@ -430,6 +544,6 @@ def get_status_info() -> FormattedText:
         else:
             lines.append(("dim", "↑↓=navigate Enter=details q=quit"))
     else:
-        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece 1/2/3=focus"))
+        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece u=time 1/2/3=focus"))
 
     return FormattedText(lines)

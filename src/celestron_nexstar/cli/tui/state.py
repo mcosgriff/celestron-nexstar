@@ -24,6 +24,7 @@ class TUIState:
     selected_index: int = 0
     focused_pane: str = "visible"  # "dataset", "conditions", "visible"
     show_detail: bool = False  # Whether to show detail view in pane
+    time_display_mode: str = "local"  # "local" or "utc" for time display
 
     def get_selected_object(self) -> tuple[CelestialObject, VisibilityInfo] | None:
         """Get the currently selected object."""
@@ -55,6 +56,10 @@ class TUIState:
     def toggle_detail(self) -> None:
         """Toggle detail view."""
         self.show_detail = not self.show_detail
+
+    def toggle_time_mode(self) -> None:
+        """Toggle between local and UTC time display."""
+        self.time_display_mode = "utc" if self.time_display_mode == "local" else "local"
 
 
 # Global state instance
