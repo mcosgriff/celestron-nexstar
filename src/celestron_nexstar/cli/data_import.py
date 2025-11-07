@@ -245,13 +245,12 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     continue
 
                 # Also check by catalog + catalog_number if available (more efficient query)
-                if catalog_number is not None:
-                    if db.exists_by_catalog_number(catalog, catalog_number):
-                        skipped += 1
-                        if verbose:
-                            console.print(f"[dim]Skipping duplicate: {catalog} {catalog_number}[/dim]")
-                        progress.advance(task)
-                        continue
+                if catalog_number is not None and db.exists_by_catalog_number(catalog, catalog_number):
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate: {catalog} {catalog_number}[/dim]")
+                    progress.advance(task)
+                    continue
 
                 # Insert into database
                 try:

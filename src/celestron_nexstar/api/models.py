@@ -150,9 +150,7 @@ class ObservationModel(Base):
     )
 
     # Relationships
-    celestial_object: Mapped[CelestialObjectModel] = relationship(
-        "CelestialObjectModel", back_populates="observations"
-    )
+    celestial_object: Mapped[CelestialObjectModel] = relationship("CelestialObjectModel", back_populates="observations")
 
     def __repr__(self) -> str:
         """String representation of observation."""

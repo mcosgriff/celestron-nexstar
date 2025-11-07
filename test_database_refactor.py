@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 # Add src to path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
@@ -22,17 +23,16 @@ except ImportError as e:
     print(f"Import error: {e}")
     print("Trying direct module import...")
     import importlib.util
+
     spec = importlib.util.spec_from_file_location(
-        "database",
-        project_root / "src" / "celestron_nexstar" / "api" / "database.py"
+        "database", project_root / "src" / "celestron_nexstar" / "api" / "database.py"
     )
     database_module = importlib.util.module_from_spec(spec)
     sys.modules["database"] = database_module
     spec.loader.exec_module(database_module)
 
     spec = importlib.util.spec_from_file_location(
-        "enums",
-        project_root / "src" / "celestron_nexstar" / "api" / "enums.py"
+        "enums", project_root / "src" / "celestron_nexstar" / "api" / "enums.py"
     )
     enums_module = importlib.util.module_from_spec(spec)
     sys.modules["enums"] = enums_module
@@ -176,11 +176,13 @@ def test_database_operations():
     except AssertionError as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return False
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return False
     finally:
@@ -188,10 +190,9 @@ def test_database_operations():
         db.close()
         if db_path.exists():
             db_path.unlink()
-            print(f"\n✓ Cleaned up test database")
+            print("\n✓ Cleaned up test database")
 
 
 if __name__ == "__main__":
     success = test_database_operations()
     sys.exit(0 if success else 1)
-

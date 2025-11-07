@@ -44,8 +44,63 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("3")
     def focus_visible(event):
         """Focus visible objects pane."""
-        # Will be implemented when we have pane references
+        from .state import get_state
+
+        state = get_state()
+        state.focused_pane = "visible"
         event.app.invalidate()
+
+    @kb.add("t")
+    def change_telescope(event):
+        """Change telescope model."""
+        # Exit app with result code to trigger interactive selection
+        event.app.exit(result="change_telescope")
+
+    @kb.add("e")
+    def change_eyepiece(event):
+        """Change eyepiece."""
+        # Exit app with result code to trigger interactive selection
+        event.app.exit(result="change_eyepiece")
+
+    @kb.add("up")
+    def move_up(event):
+        """Move selection up in visible objects pane."""
+        from .state import get_state
+
+        state = get_state()
+        if state.focused_pane == "visible":
+            state.move_selection_up()
+            event.app.invalidate()
+
+    @kb.add("down")
+    def move_down(event):
+        """Move selection down in visible objects pane."""
+        from .state import get_state
+
+        state = get_state()
+        if state.focused_pane == "visible":
+            state.move_selection_down()
+            event.app.invalidate()
+
+    @kb.add("enter")
+    def show_detail(event):
+        """Toggle detail view for selected object."""
+        from .state import get_state
+
+        state = get_state()
+        if state.focused_pane == "visible" and state.get_selected_object():
+            state.toggle_detail()
+            event.app.invalidate()
+
+    @kb.add("escape")
+    def close_detail(event):
+        """Close detail view."""
+        from .state import get_state
+
+        state = get_state()
+        if state.show_detail:
+            state.show_detail = False
+            event.app.invalidate()
 
     @kb.add("c-c")
     def interrupt(event):
@@ -53,4 +108,3 @@ def create_key_bindings() -> KeyBindings:
         event.app.exit()
 
     return kb
-

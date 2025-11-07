@@ -7,5 +7,5 @@ and observing information.
 
 from .app import TUIApplication
 
-__all__ = ["TUIApplication"]
 
+__all__ = ["TUIApplication"]

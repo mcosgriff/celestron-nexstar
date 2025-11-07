@@ -216,7 +216,8 @@ class CatalogDatabase:
         # Create FTS5 table and triggers (not handled by SQLAlchemy)
         with self._get_session() as session:
             # Create FTS5 virtual table
-            session.execute(text("""
+            session.execute(
+                text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS objects_fts USING fts5(
                     name,
                     common_name,
@@ -224,23 +225,29 @@ class CatalogDatabase:
                     content=objects,
                     content_rowid=id
                 )
-            """))
+            """)
+            )
 
             # Create triggers
-            session.execute(text("""
+            session.execute(
+                text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
                     INSERT INTO objects_fts(rowid, name, common_name, description)
                     VALUES (new.id, new.name, new.common_name, new.description);
                 END
-            """))
+            """)
+            )
 
-            session.execute(text("""
+            session.execute(
+                text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
                     DELETE FROM objects_fts WHERE rowid = old.id;
                 END
-            """))
+            """)
+            )
 
-            session.execute(text("""
+            session.execute(
+                text("""
                 CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
                     UPDATE objects_fts SET
                         name = new.name,
@@ -248,7 +255,8 @@ class CatalogDatabase:
                         description = new.description
                     WHERE rowid = new.id;
                 END
-            """))
+            """)
+            )
 
             session.commit()
 
@@ -331,11 +339,7 @@ class CatalogDatabase:
     def get_by_name(self, name: str) -> CelestialObject | None:
         """Get object by exact name match."""
         with self._get_session() as session:
-            model = (
-                session.query(CelestialObjectModel)
-                .filter(CelestialObjectModel.name.ilike(name))
-                .first()
-            )
+            model = session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(name)).first()
             if model is None:
                 return None
             return self._model_to_object(model)
@@ -470,10 +474,7 @@ class CatalogDatabase:
         """Get list of all catalog names."""
         with self._get_session() as session:
             catalogs = (
-                session.query(CelestialObjectModel.catalog)
-                .distinct()
-                .order_by(CelestialObjectModel.catalog)
-                .all()
+                session.query(CelestialObjectModel.catalog).distinct().order_by(CelestialObjectModel.catalog).all()
             )
             return [catalog[0] for catalog in catalogs]
 

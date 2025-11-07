@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import FormattedText
 
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    pass
 
 
 def get_dataset_info() -> FormattedText:
@@ -39,7 +40,7 @@ def get_dataset_info() -> FormattedText:
 
         # Magnitude range
         if stats.magnitude_range[0] is not None and stats.magnitude_range[1] is not None:
-            lines.append(("", f"Magnitude Range:\n"))
+            lines.append(("", "Magnitude Range:\n"))
             lines.append(("cyan", f"  {stats.magnitude_range[0]:.1f} to {stats.magnitude_range[1]:.1f}\n"))
             lines.append(("", "\n"))
 
@@ -59,13 +60,65 @@ def get_dataset_info() -> FormattedText:
             lines.append(("", f"  {obj_type:15s} "))
             lines.append(("yellow", f"{count:6,}\n"))
 
+        lines.append(("", "\n"))
+        lines.append(("", "─" * 30 + "\n"))
+        lines.append(("bold", "Telescope Configuration\n"))
+        lines.append(("", "\n"))
+
+        # Get optical configuration
+        try:
+            from ...api.optics import get_current_configuration
+
+            config = get_current_configuration()
+            lines.append(("", "Telescope:\n"))
+            lines.append(("cyan", f"  {config.telescope.display_name}\n"))
+            lines.append(
+                ("", f'  Aperture: {config.telescope.aperture_mm:.0f}mm ({config.telescope.aperture_inches:.1f}")\n')
+            )
+            lines.append(("", f"  Focal Length: {config.telescope.focal_length_mm:.0f}mm\n"))
+            lines.append(("", f"  f-ratio: f/{config.telescope.focal_ratio:.1f}\n"))
+            lines.append(("", "\n"))
+
+            lines.append(("", "Eyepiece:\n"))
+            eyepiece_name = config.eyepiece.name or f"{config.eyepiece.focal_length_mm:.0f}mm"
+            lines.append(("cyan", f"  {eyepiece_name}\n"))
+            lines.append(("", f"  Focal Length: {config.eyepiece.focal_length_mm:.0f}mm\n"))
+            lines.append(("", f"  Apparent FOV: {config.eyepiece.apparent_fov_deg:.0f}°\n"))
+            lines.append(("", "\n"))
+
+            lines.append(("", "Configuration:\n"))
+            lines.append(("", f"  Magnification: {config.magnification:.0f}x\n"))
+            lines.append(("", f"  Exit Pupil: {config.exit_pupil_mm:.2f}mm\n"))
+            lines.append(("", f"  True FOV: {config.true_fov_arcmin:.1f}' ({config.true_fov_deg:.2f}°)\n"))
+            lines.append(("", "\n"))
+
+            # Limiting magnitude
+            from ...api.enums import SkyBrightness
+            from ...api.optics import calculate_limiting_magnitude
+
+            limiting_mag = calculate_limiting_magnitude(
+                config.telescope.effective_aperture_mm,
+                sky_brightness=SkyBrightness.GOOD,
+                exit_pupil_mm=config.exit_pupil_mm,
+            )
+            lines.append(("", "Limiting Mag: "))
+            lines.append(("yellow", f"{limiting_mag:.1f}\n"))
+            lines.append(("", "\n"))
+            lines.append(("dim", "Press 't' to change telescope\n"))
+            lines.append(("dim", "Press 'e' to change eyepiece\n"))
+
+        except Exception as e:
+            lines.append(("yellow", f"Config: Error ({e})\n"))
+
         return FormattedText(lines)
 
     except Exception as e:
-        return FormattedText([
-            ("bold red", "Database Error\n"),
-            ("", f"Cannot load database: {e}\n"),
-        ])
+        return FormattedText(
+            [
+                ("bold red", "Database Error\n"),
+                ("", f"Cannot load database: {e}\n"),
+            ]
+        )
 
 
 def get_conditions_info() -> FormattedText:
@@ -83,16 +136,52 @@ def get_conditions_info() -> FormattedText:
     # Location
     try:
         from ...api.observer import get_observer_location
+        from ..utils.state import get_telescope
 
-        location = get_observer_location()
-        if location:
-            lines.append(("", f"Location:\n"))
-            lines.append(("cyan", f"  {location.name or 'Unnamed'}\n"))
-            lines.append(("", f"  {location.latitude_deg:.4f}°N, {abs(location.longitude_deg):.4f}°W\n"))
+        # Check if telescope has location
+        telescope = get_telescope()
+        if telescope and telescope.protocol and telescope.protocol.is_open():
+            try:
+                telescope_location = telescope.get_location()
+                if telescope_location and telescope_location.latitude != 0.0 and telescope_location.longitude != 0.0:
+                    # Use telescope location
+                    lat = telescope_location.latitude
+                    lon = telescope_location.longitude
+                    lat_dir = "N" if lat >= 0 else "S"
+                    lon_dir = "E" if lon >= 0 else "W"
+                    lines.append(("", "Location:\n"))
+                    lines.append(("cyan", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
+                    lines.append(("dim", "  (from telescope GPS)\n"))
+            except Exception:
+                # Fall back to observer location
+                location = get_observer_location()
+                if location:
+                    lat = location.latitude
+                    lon = location.longitude
+                    lat_dir = "N" if lat >= 0 else "S"
+                    lon_dir = "E" if lon >= 0 else "W"
+                    lines.append(("", "Location:\n"))
+                    if location.name:
+                        lines.append(("cyan", f"  {location.name}\n"))
+                    lines.append(("", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
+                else:
+                    lines.append(("yellow", "Location: Not set\n"))
         else:
-            lines.append(("yellow", "Location: Not set\n"))
-    except Exception:
-        lines.append(("yellow", "Location: Not set\n"))
+            # No telescope, use observer location
+            location = get_observer_location()
+            if location:
+                lat = location.latitude
+                lon = location.longitude
+                lat_dir = "N" if lat >= 0 else "S"
+                lon_dir = "E" if lon >= 0 else "W"
+                lines.append(("", "Location:\n"))
+                if location.name:
+                    lines.append(("cyan", f"  {location.name}\n"))
+                lines.append(("", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
+            else:
+                lines.append(("yellow", "Location: Not set\n"))
+    except Exception as e:
+        lines.append(("yellow", f"Location: Error ({e})\n"))
 
     lines.append(("", "\n"))
 
@@ -119,6 +208,9 @@ def get_visible_objects_info() -> FormattedText:
     Returns:
         Formatted text showing currently visible celestial objects
     """
+    from .state import get_state
+
+    state = get_state()
     lines: list[tuple[str, str]] = [
         ("bold", "Currently Visible Objects\n"),
         ("", "─" * 40 + "\n"),
@@ -131,18 +223,54 @@ def get_visible_objects_info() -> FormattedText:
         from ...api.visibility import filter_visible_objects
 
         # Get configuration
-        location = get_observer_location()
         config = get_current_configuration()
 
-        if not location:
-            lines.append(("yellow", "Location not set.\n"))
-            lines.append(("", "Use 'location set' to configure.\n"))
-            return FormattedText(lines)
+        # Get location (prefer telescope GPS, fall back to observer location)
+        observer_lat = None
+        observer_lon = None
+
+        try:
+            from ..utils.state import get_telescope
+
+            telescope = get_telescope()
+            if telescope and telescope.protocol and telescope.protocol.is_open():
+                try:
+                    telescope_location = telescope.get_location()
+                    if (
+                        telescope_location
+                        and telescope_location.latitude != 0.0
+                        and telescope_location.longitude != 0.0
+                    ):
+                        observer_lat = telescope_location.latitude
+                        observer_lon = telescope_location.longitude
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Fall back to observer location if telescope doesn't have it
+        if observer_lat is None or observer_lon is None:
+            location = get_observer_location()
+            if location:
+                observer_lat = location.latitude
+                observer_lon = location.longitude
+            else:
+                lines.append(("yellow", "Location not set.\n"))
+                lines.append(("", "Use 'location set' to configure.\n"))
+                state.set_visible_objects([])
+                return FormattedText(lines)
 
         # Get objects from database
         db = get_database()
+        from ...api.enums import SkyBrightness
+        from ...api.optics import calculate_limiting_magnitude
+
         if config:
-            max_mag = config.limiting_magnitude if hasattr(config, "limiting_magnitude") else 15.0
+            max_mag = calculate_limiting_magnitude(
+                config.telescope.effective_aperture_mm,
+                sky_brightness=SkyBrightness.GOOD,
+                exit_pupil_mm=config.exit_pupil_mm,
+            )
         else:
             max_mag = 15.0
 
@@ -152,27 +280,55 @@ def get_visible_objects_info() -> FormattedText:
         visible = filter_visible_objects(
             all_objects,
             config=config,
-            observer_lat=location.latitude_deg,
-            observer_lon=location.longitude_deg,
+            observer_lat=observer_lat,
+            observer_lon=observer_lon,
             min_altitude_deg=20.0,  # Above 20 degrees
         )
 
         if not visible:
             lines.append(("yellow", "No visible objects found.\n"))
             lines.append(("", "Check location and time settings.\n"))
+            state.set_visible_objects([])
             return FormattedText(lines)
 
         # Already sorted by observability score, but we can sort by altitude for display
         visible_sorted = sorted(visible, key=lambda x: x[1].altitude_deg or 0, reverse=True)
 
+        # Store in state
+        state.set_visible_objects(visible_sorted[:30])
+
+        # Show detail view at top if active
+        if state.show_detail and state.focused_pane == "visible":
+            selected = state.get_selected_object()
+            if selected:
+                from .detail import get_object_detail_text
+
+                detail_text = get_object_detail_text(selected[0], selected[1])
+                # Add detail lines to output
+                for line in detail_text:
+                    lines.append(line)
+                lines.append(("", "\n"))
+
         # Display top 30 objects
         lines.append(("", f"Showing {min(30, len(visible_sorted))} of {len(visible_sorted)} objects\n"))
+        if not state.show_detail:
+            lines.append(("dim", "Press '3' to focus, ↑↓ to navigate, Enter for details\n"))
         lines.append(("", "\n"))
 
-        for obj, visibility_info in visible_sorted[:30]:
+        for idx, (obj, visibility_info) in enumerate(visible_sorted[:30]):
+            # Highlight selected item
+            is_selected = idx == state.selected_index and state.focused_pane == "visible"
+            if is_selected:
+                lines.append(("bg:#444444", "> "))  # Selection marker
+            else:
+                lines.append(("", "  "))
+
             # Object name
             name = obj.name[:18]
-            lines.append(("bold", f"{name:18s} "))
+            if is_selected:
+                lines.append(("bold underline", f"{name:18s} "))
+            else:
+                lines.append(("bold", f"{name:18s} "))
 
             # Altitude
             if visibility_info.altitude_deg is not None:
@@ -200,6 +356,7 @@ def get_visible_objects_info() -> FormattedText:
     except Exception as e:
         lines.append(("bold red", "Error\n"))
         lines.append(("", f"Cannot load visible objects: {e}\n"))
+        state.set_visible_objects([])
 
     return FormattedText(lines)
 
@@ -263,8 +420,16 @@ def get_status_info() -> FormattedText:
     except Exception:
         pass
 
-    # Help text
-    lines.append(("dim", "Press 'q' to quit, 'r' to refresh, '1/2/3' to focus panes"))
+    # Help text - show different hints based on focused pane
+    from .state import get_state
+
+    state = get_state()
+    if state.focused_pane == "visible":
+        if state.show_detail:
+            lines.append(("dim", "Esc=close detail ↑↓=navigate Enter=toggle q=quit"))
+        else:
+            lines.append(("dim", "↑↓=navigate Enter=details q=quit"))
+    else:
+        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece 1/2/3=focus"))
 
     return FormattedText(lines)
-

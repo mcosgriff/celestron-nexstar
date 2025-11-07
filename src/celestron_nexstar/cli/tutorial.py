@@ -245,8 +245,8 @@ class TutorialSystem:
             self.run_lesson(i)
 
             if i < len(lessons_to_run) - 1 and not Confirm.ask("\n[dim]Continue to next lesson?[/dim]", default=True):
-                    self.console.print("[yellow]Tutorial paused.[/yellow]")
-                    return
+                self.console.print("[yellow]Tutorial paused.[/yellow]")
+                return
 
         self.console.print("\n[bold green]🎉 Tutorial Complete![/bold green]")
         self.console.print("[dim]You're ready to explore the NexStar shell.[/dim]\n")

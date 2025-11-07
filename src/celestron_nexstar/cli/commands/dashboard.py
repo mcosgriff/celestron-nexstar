@@ -9,6 +9,7 @@ from rich.console import Console
 
 from ..tui import TUIApplication
 
+
 app = typer.Typer(help="Full-screen dashboard commands")
 console = Console()
 
@@ -44,4 +45,3 @@ def show() -> None:
     except Exception as e:
         console.print(f"\n[red]Error: {e}[/red]")
         raise typer.Exit(code=1) from e
-

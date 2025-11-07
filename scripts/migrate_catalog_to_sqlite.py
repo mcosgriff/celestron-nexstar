@@ -95,8 +95,9 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
     db.init_schema()
 
     # Set metadata using SQLAlchemy
-    from celestron_nexstar.api.models import MetadataModel
     from sqlalchemy.orm import Session
+
+    from celestron_nexstar.api.models import MetadataModel
 
     with Session(db._engine) as session:
         # Insert or update metadata

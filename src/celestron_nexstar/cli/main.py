@@ -8,7 +8,21 @@ import typer
 from rich.console import Console
 
 # Import and register subcommands
-from .commands import align, catalog, connect, dashboard, data, ephemeris, goto, location, move, optics, position, time, track
+from .commands import (
+    align,
+    catalog,
+    connect,
+    dashboard,
+    data,
+    ephemeris,
+    goto,
+    location,
+    move,
+    optics,
+    position,
+    time,
+    track,
+)
 
 
 # Create main app

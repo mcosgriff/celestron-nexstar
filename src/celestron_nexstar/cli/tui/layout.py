@@ -38,38 +38,46 @@ def create_layout() -> HSplit:
         style="bg:#333333",
     )
 
-    # Dataset information pane (left)
+    # Use fixed weight-based sizing to maintain stable proportions
+    # Weights: 3:3:4 = 30%:30%:40% split
+    # ignore_content_width=True prevents content from affecting width calculation
+    # Dataset information pane (left) - 30%
     dataset_pane = Window(
         content=FormattedTextControl(get_dataset_info),
-        width=Dimension(weight=30),
+        width=Dimension(weight=3),
         wrap_lines=True,
+        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
         style="bg:#1e1e1e",
     )
 
-    # Conditions pane (middle)
+    # Conditions pane (middle) - 30%
     conditions_pane = Window(
         content=FormattedTextControl(get_conditions_info),
-        width=Dimension(weight=30),
+        width=Dimension(weight=3),
         wrap_lines=True,
+        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
         style="bg:#1e1e1e",
     )
 
-    # Visible objects pane (right, scrollable)
+    # Visible objects pane (right) - 40%
     visible_pane = Window(
         content=FormattedTextControl(get_visible_objects_info),
-        width=Dimension(weight=40),
-        wrap_lines=False,
+        width=Dimension(weight=4),
+        wrap_lines=True,  # Enable wrapping to prevent text cutoff
+        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
         style="bg:#1e1e1e",
     )
 
     # Main content area with three panes
-    main_content = VSplit([
-        dataset_pane,
-        Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
-        conditions_pane,
-        Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
-        visible_pane,
-    ])
+    main_content = VSplit(
+        [
+            dataset_pane,
+            Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
+            conditions_pane,
+            Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
+            visible_pane,
+        ]
+    )
 
     # Status bar
     status_bar = Window(
@@ -80,11 +88,12 @@ def create_layout() -> HSplit:
     )
 
     # Root container
-    root_container = HSplit([
-        header,
-        main_content,
-        status_bar,
-    ])
+    root_container = HSplit(
+        [
+            header,
+            main_content,
+            status_bar,
+        ]
+    )
 
     return root_container
-
