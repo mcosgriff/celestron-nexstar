@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 # Import and register subcommands
-from .commands import align, catalog, connect, data, ephemeris, goto, location, move, optics, position, time, track
+from .commands import align, catalog, connect, dashboard, data, ephemeris, goto, location, move, optics, position, time, track
 
 
 # Create main app
@@ -103,6 +103,7 @@ app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
 app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configuration")
 app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
 app.add_typer(data.app, name="data", help="Data import and management")
+app.add_typer(dashboard.app, name="dashboard", help="Full-screen dashboard")
 
 
 # Also add connect commands directly to main app for convenience
