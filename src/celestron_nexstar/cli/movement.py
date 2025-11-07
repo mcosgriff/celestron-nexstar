@@ -85,7 +85,7 @@ class MovementController:
         return self.slew_rate
 
     def is_moving(self) -> bool:
-        """Check if telescope is currently moving.
+        """Check if the telescope is currently moving.
 
         Returns:
             True if moving, False otherwise

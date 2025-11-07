@@ -3,20 +3,25 @@ SQLite-based Catalog Database
 
 Provides efficient storage and querying for 40,000+ celestial objects
 with full-text search, filtering, and offline capabilities.
+
+Uses SQLAlchemy ORM for type-safe database operations.
 """
 
 from __future__ import annotations
 
 import logging
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
+
 from .catalogs import CelestialObject
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
+from .models import CelestialObjectModel, MetadataModel
 
 
 logger = logging.getLogger(__name__)
@@ -120,7 +125,7 @@ class DatabaseStats:
 
 
 class CatalogDatabase:
-    """Interface to the SQLite catalog database."""
+    """Interface to the SQLite catalog database using SQLAlchemy ORM."""
 
     def __init__(self, db_path: Path | str | None = None):
         """
@@ -133,8 +138,16 @@ class CatalogDatabase:
             db_path = self._get_default_db_path()
 
         self.db_path = Path(db_path)
-        self.conn: sqlite3.Connection | None = None
-        self._connect()
+        self._engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            poolclass=None,  # No connection pooling for SQLite
+            connect_args={
+                "check_same_thread": False,  # Allow multi-threaded access
+            },
+            echo=False,  # Set to True for SQL debugging
+        )
+        self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._configure_optimizations()
 
     def _get_default_db_path(self) -> Path:
         """Get path to bundled database file."""
@@ -158,22 +171,27 @@ class CatalogDatabase:
         # (will be created during migration)
         return parent / "cli" / "data" / "catalogs.db"
 
-    def _connect(self) -> None:
-        """Connect to database and enable optimizations."""
-        self.conn = sqlite3.connect(str(self.db_path))
-        self.conn.row_factory = sqlite3.Row
+    def _configure_optimizations(self) -> None:
+        """Configure SQLite optimizations via engine events."""
+        from sqlalchemy import event
 
-        # Enable optimizations
-        self.conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
-        self.conn.execute("PRAGMA synchronous=NORMAL")  # Faster writes
-        self.conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
-        self.conn.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+        @event.listens_for(self._engine, "connect")
+        def set_sqlite_pragmas(dbapi_conn, connection_record):
+            """Set SQLite pragmas for performance."""
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
+            cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
+            cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
+            cursor.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+            cursor.close()
+
+    def _get_session(self) -> Session:
+        """Get a new database session."""
+        return self._Session()
 
     def close(self) -> None:
         """Close database connection."""
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        self._engine.dispose()
 
     def __enter__(self) -> CatalogDatabase:
         """Context manager entry."""
@@ -184,12 +202,56 @@ class CatalogDatabase:
         self.close()
 
     def init_schema(self) -> None:
-        """Initialize database schema."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
+        """
+        Initialize database schema.
 
-        self.conn.executescript(SCHEMA_SQL)
-        self.conn.commit()
+        Note: This method is kept for backwards compatibility.
+        For new databases, use Alembic migrations instead.
+        """
+        from .models import Base
+
+        # Create all tables
+        Base.metadata.create_all(self._engine)
+
+        # Create FTS5 table and triggers (not handled by SQLAlchemy)
+        with self._get_session() as session:
+            # Create FTS5 virtual table
+            session.execute(text("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS objects_fts USING fts5(
+                    name,
+                    common_name,
+                    description,
+                    content=objects,
+                    content_rowid=id
+                )
+            """))
+
+            # Create triggers
+            session.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
+                    INSERT INTO objects_fts(rowid, name, common_name, description)
+                    VALUES (new.id, new.name, new.common_name, new.description);
+                END
+            """))
+
+            session.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
+                    DELETE FROM objects_fts WHERE rowid = old.id;
+                END
+            """))
+
+            session.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
+                    UPDATE objects_fts SET
+                        name = new.name,
+                        common_name = new.common_name,
+                        description = new.description
+                    WHERE rowid = new.id;
+                END
+            """))
+
+            session.commit()
+
         logger.info("Database schema initialized")
 
     def insert_object(
@@ -231,67 +293,52 @@ class CatalogDatabase:
         Returns:
             ID of inserted object
         """
-        if not self.conn:
-            raise RuntimeError("Database not connected")
-
         # Convert object_type to string if needed
         if isinstance(object_type, CelestialObjectType):
             object_type = object_type.value
 
-        cursor = self.conn.execute(
-            """
-            INSERT INTO objects (
-                name, common_name, catalog, catalog_number,
-                ra_hours, dec_degrees, magnitude, object_type, size_arcmin,
-                description, constellation,
-                is_dynamic, ephemeris_name, parent_planet
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                name,
-                common_name,
-                catalog,
-                catalog_number,
-                ra_hours,
-                dec_degrees,
-                magnitude,
-                object_type,
-                size_arcmin,
-                description,
-                constellation,
-                1 if is_dynamic else 0,
-                ephemeris_name,
-                parent_planet,
-            ),
+        model = CelestialObjectModel(
+            name=name,
+            common_name=common_name,
+            catalog=catalog,
+            catalog_number=catalog_number,
+            ra_hours=ra_hours,
+            dec_degrees=dec_degrees,
+            magnitude=magnitude,
+            object_type=object_type,
+            size_arcmin=size_arcmin,
+            description=description,
+            constellation=constellation,
+            is_dynamic=is_dynamic,
+            ephemeris_name=ephemeris_name,
+            parent_planet=parent_planet,
         )
 
-        return cursor.lastrowid
+        with self._get_session() as session:
+            session.add(model)
+            session.commit()
+            session.refresh(model)
+            return model.id
 
     def get_by_id(self, object_id: int) -> CelestialObject | None:
         """Get object by ID."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
-
-        cursor = self.conn.execute("SELECT * FROM objects WHERE id = ?", (object_id,))
-        row = cursor.fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_object(row)
+        with self._get_session() as session:
+            model = session.get(CelestialObjectModel, object_id)
+            if model is None:
+                return None
+            return self._model_to_object(model)
 
     def get_by_name(self, name: str) -> CelestialObject | None:
         """Get object by exact name match."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
-
-        cursor = self.conn.execute("SELECT * FROM objects WHERE name = ? COLLATE NOCASE LIMIT 1", (name,))
-        row = cursor.fetchone()
-
-        if row is None:
-            return None
-
-        return self._row_to_object(row)
+        with self._get_session() as session:
+            model = (
+                session.query(CelestialObjectModel)
+                .filter(CelestialObjectModel.name.ilike(name))
+                .first()
+            )
+            if model is None:
+                return None
+            return self._model_to_object(model)
 
     def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
@@ -304,39 +351,62 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
-        if not self.conn:
-            raise RuntimeError("Database not connected")
+        with self._get_session() as session:
+            # FTS5 search requires raw SQL
+            result = session.execute(
+                text("""
+                    SELECT objects.id FROM objects
+                    JOIN objects_fts ON objects.id = objects_fts.rowid
+                    WHERE objects_fts MATCH :query
+                    ORDER BY rank
+                    LIMIT :limit
+                """),
+                {"query": query, "limit": limit},
+            )
 
-        # Use FTS5 MATCH for fuzzy search
-        cursor = self.conn.execute(
-            """
-            SELECT objects.* FROM objects
-            JOIN objects_fts ON objects.id = objects_fts.rowid
-            WHERE objects_fts MATCH ?
-            ORDER BY rank
-            LIMIT ?
-            """,
-            (query, limit),
-        )
+            # Get IDs and fetch models
+            object_ids = [row[0] for row in result]
+            objects = []
+            for obj_id in object_ids:
+                model = session.get(CelestialObjectModel, obj_id)
+                if model:
+                    objects.append(self._model_to_object(model))
 
-        return [self._row_to_object(row) for row in cursor.fetchall()]
+            return objects
 
     def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
+        with self._get_session() as session:
+            models = (
+                session.query(CelestialObjectModel)
+                .filter(CelestialObjectModel.catalog == catalog)
+                .order_by(CelestialObjectModel.catalog_number, CelestialObjectModel.name)
+                .limit(limit)
+                .all()
+            )
+            return [self._model_to_object(model) for model in models]
 
-        cursor = self.conn.execute(
-            """
-            SELECT * FROM objects
-            WHERE catalog = ?
-            ORDER BY catalog_number, name
-            LIMIT ?
-            """,
-            (catalog, limit),
-        )
+    def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
+        """
+        Check if an object exists with the given catalog and catalog number.
 
-        return [self._row_to_object(row) for row in cursor.fetchall()]
+        Args:
+            catalog: Catalog name
+            catalog_number: Catalog number
+
+        Returns:
+            True if object exists, False otherwise
+        """
+        with self._get_session() as session:
+            count = (
+                session.query(CelestialObjectModel)
+                .filter(
+                    CelestialObjectModel.catalog == catalog,
+                    CelestialObjectModel.catalog_number == catalog_number,
+                )
+                .count()
+            )
+            return count > 0
 
     def filter_objects(
         self,
@@ -363,125 +433,130 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
-        if not self.conn:
-            raise RuntimeError("Database not connected")
+        with self._get_session() as session:
+            query = session.query(CelestialObjectModel)
 
-        # Build WHERE clause dynamically
-        conditions = []
-        params = []
+            # Build filters
+            if catalog:
+                query = query.filter(CelestialObjectModel.catalog == catalog)
 
-        if catalog:
-            conditions.append("catalog = ?")
-            params.append(catalog)
+            if object_type:
+                if isinstance(object_type, CelestialObjectType):
+                    object_type = object_type.value
+                query = query.filter(CelestialObjectModel.object_type == object_type)
 
-        if object_type:
-            if isinstance(object_type, CelestialObjectType):
-                object_type = object_type.value
-            conditions.append("object_type = ?")
-            params.append(object_type)
+            if max_magnitude is not None:
+                query = query.filter(CelestialObjectModel.magnitude <= max_magnitude)
 
-        if max_magnitude is not None:
-            conditions.append("magnitude <= ?")
-            params.append(max_magnitude)
+            if min_magnitude is not None:
+                query = query.filter(CelestialObjectModel.magnitude >= min_magnitude)
 
-        if min_magnitude is not None:
-            conditions.append("magnitude >= ?")
-            params.append(min_magnitude)
+            if constellation:
+                query = query.filter(CelestialObjectModel.constellation.ilike(constellation))
 
-        if constellation:
-            conditions.append("constellation = ? COLLATE NOCASE")
-            params.append(constellation)
+            if is_dynamic is not None:
+                query = query.filter(CelestialObjectModel.is_dynamic == is_dynamic)
 
-        if is_dynamic is not None:
-            conditions.append("is_dynamic = ?")
-            params.append(1 if is_dynamic else 0)
+            # Order and limit
+            models = (
+                query.order_by(CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc())
+                .limit(limit)
+                .all()
+            )
 
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-        params.append(limit)
-
-        cursor = self.conn.execute(
-            f"""
-            SELECT * FROM objects
-            WHERE {where_clause}
-            ORDER BY magnitude ASC, name ASC
-            LIMIT ?
-            """,
-            params,
-        )
-
-        return [self._row_to_object(row) for row in cursor.fetchall()]
+            return [self._model_to_object(model) for model in models]
 
     def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
-
-        cursor = self.conn.execute("SELECT DISTINCT catalog FROM objects ORDER BY catalog")
-        return [row[0] for row in cursor.fetchall()]
+        with self._get_session() as session:
+            catalogs = (
+                session.query(CelestialObjectModel.catalog)
+                .distinct()
+                .order_by(CelestialObjectModel.catalog)
+                .all()
+            )
+            return [catalog[0] for catalog in catalogs]
 
     def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
-        if not self.conn:
-            raise RuntimeError("Database not connected")
+        from sqlalchemy import func
 
-        # Total count
-        total = self.conn.execute("SELECT COUNT(*) FROM objects").fetchone()[0]
+        with self._get_session() as session:
+            # Total count
+            total = session.query(func.count(CelestialObjectModel.id)).scalar()
 
-        # By catalog
-        by_catalog = {}
-        for row in self.conn.execute("SELECT catalog, COUNT(*) FROM objects GROUP BY catalog"):
-            by_catalog[row[0]] = row[1]
+            # By catalog
+            catalog_counts = (
+                session.query(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id))
+                .group_by(CelestialObjectModel.catalog)
+                .all()
+            )
+            by_catalog = dict(catalog_counts)
 
-        # By type
-        by_type = {}
-        for row in self.conn.execute("SELECT object_type, COUNT(*) FROM objects GROUP BY object_type"):
-            by_type[row[0]] = row[1]
+            # By type
+            type_counts = (
+                session.query(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id))
+                .group_by(CelestialObjectModel.object_type)
+                .all()
+            )
+            by_type = dict(type_counts)
 
-        # Magnitude range
-        mag_row = self.conn.execute(
-            "SELECT MIN(magnitude), MAX(magnitude) FROM objects WHERE magnitude IS NOT NULL"
-        ).fetchone()
-        mag_range = (mag_row[0], mag_row[1]) if mag_row else (None, None)
+            # Magnitude range
+            mag_result = (
+                session.query(
+                    func.min(CelestialObjectModel.magnitude),
+                    func.max(CelestialObjectModel.magnitude),
+                )
+                .filter(CelestialObjectModel.magnitude.isnot(None))
+                .first()
+            )
+            mag_range = (mag_result[0], mag_result[1]) if mag_result and mag_result[0] is not None else (None, None)
 
-        # Dynamic objects
-        dynamic = self.conn.execute("SELECT COUNT(*) FROM objects WHERE is_dynamic = 1").fetchone()[0]
+            # Dynamic objects
+            dynamic = (
+                session.query(func.count(CelestialObjectModel.id))
+                .filter(CelestialObjectModel.is_dynamic.is_(True))
+                .scalar()
+            )
 
-        # Version
-        version_row = self.conn.execute("SELECT value FROM metadata WHERE key = 'version'").fetchone()
-        version = version_row[0] if version_row else "unknown"
+            # Version
+            version_model = session.get(MetadataModel, "version")
+            version = version_model.value if version_model else "unknown"
 
-        # Last updated
-        updated_row = self.conn.execute("SELECT value FROM metadata WHERE key = 'last_updated'").fetchone()
-        last_updated = datetime.fromisoformat(updated_row[0]) if updated_row else None
+            # Last updated
+            updated_model = session.get(MetadataModel, "last_updated")
+            last_updated = (
+                datetime.fromisoformat(updated_model.value) if updated_model and updated_model.value else None
+            )
 
-        return DatabaseStats(
-            total_objects=total,
-            objects_by_catalog=by_catalog,
-            objects_by_type=by_type,
-            magnitude_range=mag_range,
-            dynamic_objects=dynamic,
-            database_version=version,
-            last_updated=last_updated,
-        )
+            return DatabaseStats(
+                total_objects=total or 0,
+                objects_by_catalog=by_catalog,
+                objects_by_type=by_type,
+                magnitude_range=mag_range,
+                dynamic_objects=dynamic or 0,
+                database_version=version,
+                last_updated=last_updated,
+            )
 
-    def _row_to_object(self, row: sqlite3.Row) -> CelestialObject:
-        """Convert database row to CelestialObject."""
+    def _model_to_object(self, model: CelestialObjectModel) -> CelestialObject:
+        """Convert SQLAlchemy model to CelestialObject."""
         obj = CelestialObject(
-            name=row["name"],
-            common_name=row["common_name"],
-            ra_hours=row["ra_hours"],
-            dec_degrees=row["dec_degrees"],
-            magnitude=row["magnitude"],
-            object_type=CelestialObjectType(row["object_type"]),
-            catalog=row["catalog"],
-            description=row["description"],
-            parent_planet=row["parent_planet"],
+            name=model.name,
+            common_name=model.common_name,
+            ra_hours=model.ra_hours,
+            dec_degrees=model.dec_degrees,
+            magnitude=model.magnitude,
+            object_type=CelestialObjectType(model.object_type),
+            catalog=model.catalog,
+            description=model.description,
+            parent_planet=model.parent_planet,
         )
 
         # Handle dynamic objects
-        if row["is_dynamic"] and is_dynamic_object(row["ephemeris_name"] or row["name"]):
+        if model.is_dynamic and is_dynamic_object(model.ephemeris_name or model.name):
             try:
-                ra, dec = get_planetary_position(row["ephemeris_name"] or row["name"])
+                ra, dec = get_planetary_position(model.ephemeris_name or model.name)
                 from dataclasses import replace
 
                 obj = replace(obj, ra_hours=ra, dec_degrees=dec)
@@ -491,9 +566,14 @@ class CatalogDatabase:
         return obj
 
     def commit(self) -> None:
-        """Commit pending transactions."""
-        if self.conn:
-            self.conn.commit()
+        """
+        Commit pending transactions.
+
+        Note: With SQLAlchemy, commits are handled per-session.
+        This method is kept for backwards compatibility but does nothing.
+        """
+        # Sessions handle their own commits
+        pass
 
 
 # Global database instance

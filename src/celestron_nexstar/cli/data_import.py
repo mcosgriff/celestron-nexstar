@@ -234,6 +234,25 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     description_parts.append(f"Also known as: {common_names}")
                 description = "; ".join(description_parts) if description_parts else None
 
+                # Check for duplicates before inserting
+                # First check by name (most common case)
+                existing = db.get_by_name(name)
+                if existing:
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate: {name}[/dim]")
+                    progress.advance(task)
+                    continue
+
+                # Also check by catalog + catalog_number if available (more efficient query)
+                if catalog_number is not None:
+                    if db.exists_by_catalog_number(catalog, catalog_number):
+                        skipped += 1
+                        if verbose:
+                            console.print(f"[dim]Skipping duplicate: {catalog} {catalog_number}[/dim]")
+                        progress.advance(task)
+                        continue
+
                 # Insert into database
                 try:
                     db.insert_object(
@@ -388,6 +407,24 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 # Parse catalog number
                 catalog_number = parse_catalog_number(name, catalog_name)
 
+                # Check for duplicates before inserting
+                existing = db.get_by_name(name)
+                if existing:
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate: {name}[/dim]")
+                    progress.advance(task)
+                    continue
+
+                # Also check by catalog + catalog_number if available
+                if catalog_number is not None:
+                    if db.exists_by_catalog_number(catalog_name, catalog_number):
+                        skipped += 1
+                        if verbose:
+                            console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number}[/dim]")
+                        progress.advance(task)
+                        continue
+
                 # Insert into database
                 try:
                     db.insert_object(
@@ -537,8 +574,6 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
     # Handle custom YAML catalog
     if source_id == "custom":
         # Find catalogs.yaml
-        from pathlib import Path
-
         module_path = Path(__file__).parent
         yaml_path = module_path / "data" / "catalogs.yaml"
 

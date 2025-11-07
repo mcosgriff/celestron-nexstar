@@ -94,15 +94,24 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
     db = CatalogDatabase(db_path)
     db.init_schema()
 
-    # Set metadata
-    db.conn.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('version', '1.0.0')")
-    db.conn.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_updated', ?)",
-        (datetime.now(UTC).isoformat(),),
-    )
-    db.conn.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('source', 'YAML migration')",
-    )
+    # Set metadata using SQLAlchemy
+    from celestron_nexstar.api.models import MetadataModel
+    from sqlalchemy.orm import Session
+
+    with Session(db._engine) as session:
+        # Insert or update metadata
+        for key, value in [
+            ("version", "1.0.0"),
+            ("last_updated", datetime.now(UTC).isoformat()),
+            ("source", "YAML migration"),
+        ]:
+            metadata = session.get(MetadataModel, key)
+            if metadata:
+                metadata.value = value
+            else:
+                metadata = MetadataModel(key=key, value=value)
+                session.add(metadata)
+        session.commit()
 
     # Migrate each catalog
     total_objects = 0
