@@ -154,7 +154,9 @@ class PositionTracker:
             "total_dec_drift_arcsec": dec_drift,
         }
 
-    def _calculate_velocity(self, prev_pos: dict[str, Any], curr_pos: dict[str, Any], time_delta: float) -> dict[str, float]:
+    def _calculate_velocity(
+        self, prev_pos: dict[str, Any], curr_pos: dict[str, Any], time_delta: float
+    ) -> dict[str, float]:
         """Calculate velocity between two positions.
 
         Args:
@@ -177,7 +179,7 @@ class PositionTracker:
         # Calculate total angular velocity using spherical geometry (approximate)
         # Convert RA to degrees for this calculation
         ra_deg_rate = ra_rate * 15  # Convert hours/sec to deg/sec
-        total_rate = (ra_deg_rate**2 + dec_rate**2)**0.5  # degrees/sec
+        total_rate = (ra_deg_rate**2 + dec_rate**2) ** 0.5  # degrees/sec
 
         return {
             "ra": ra_rate,  # hours/sec
@@ -238,10 +240,22 @@ class PositionTracker:
         """
         # 16-point compass rose
         directions = [
-            "N", "NNE", "NE", "ENE",
-            "E", "ESE", "SE", "SSE",
-            "S", "SSW", "SW", "WSW",
-            "W", "WNW", "NW", "NNW"
+            "N",
+            "NNE",
+            "NE",
+            "ENE",
+            "E",
+            "ESE",
+            "SE",
+            "SSE",
+            "S",
+            "SSW",
+            "SW",
+            "WSW",
+            "W",
+            "WNW",
+            "NW",
+            "NNW",
         ]
 
         # Calculate index (0-15)
@@ -283,17 +297,19 @@ class PositionTracker:
 
         try:
             if format.lower() == "csv":
-                with open(filename, 'w', newline='') as f:
+                with open(filename, "w", newline="") as f:
                     writer = csv.writer(f)
-                    writer.writerow(['timestamp', 'ra_hours', 'dec_degrees', 'alt_degrees', 'az_degrees'])
+                    writer.writerow(["timestamp", "ra_hours", "dec_degrees", "alt_degrees", "az_degrees"])
                     for entry in history_list:
-                        writer.writerow([
-                            entry['timestamp'].isoformat(),
-                            entry['ra_hours'],
-                            entry['dec_degrees'],
-                            entry['alt_degrees'],
-                            entry['az_degrees']
-                        ])
+                        writer.writerow(
+                            [
+                                entry["timestamp"].isoformat(),
+                                entry["ra_hours"],
+                                entry["dec_degrees"],
+                                entry["alt_degrees"],
+                                entry["az_degrees"],
+                            ]
+                        )
                 return True, f"Exported {len(history_list)} entries to {filename}"
 
             elif format.lower() == "json":
@@ -301,15 +317,15 @@ class PositionTracker:
                 json_data = []
                 for entry in history_list:
                     json_entry = entry.copy()
-                    json_entry['timestamp'] = entry['timestamp'].isoformat()
+                    json_entry["timestamp"] = entry["timestamp"].isoformat()
                     json_data.append(json_entry)
 
-                with open(filename, 'w') as f:
-                    json.dump({
-                        'export_time': datetime.now().isoformat(),
-                        'count': len(json_data),
-                        'positions': json_data
-                    }, f, indent=2)
+                with open(filename, "w") as f:
+                    json.dump(
+                        {"export_time": datetime.now().isoformat(), "count": len(json_data), "positions": json_data},
+                        f,
+                        indent=2,
+                    )
                 return True, f"Exported {len(history_list)} entries to {filename}"
 
             else:
@@ -363,8 +379,7 @@ class PositionTracker:
 
                                 # Check for unexpected movement (collision detection)
                                 total_speed = self.last_velocity.get("total", 0)
-                                if (not self.expected_slew and
-                                    total_speed > self.alert_threshold):
+                                if not self.expected_slew and total_speed > self.alert_threshold:
                                     # Alert only once every 5 seconds to prevent spam
                                     should_alert = True
                                     if self.last_alert:
@@ -375,25 +390,29 @@ class PositionTracker:
                                         self.last_alert = now
                                         # Log alert in history with special marker
                                         if self.history_enabled:
-                                            self.history.append({
-                                                "timestamp": now,
-                                                "ra_hours": ra_hours,
-                                                "dec_degrees": dec_degrees,
-                                                "alt_degrees": alt_degrees,
-                                                "az_degrees": az_degrees,
-                                                "alert": "UNEXPECTED_MOVEMENT",
-                                                "speed": total_speed,
-                                            })
+                                            self.history.append(
+                                                {
+                                                    "timestamp": now,
+                                                    "ra_hours": ra_hours,
+                                                    "dec_degrees": dec_degrees,
+                                                    "alt_degrees": alt_degrees,
+                                                    "az_degrees": az_degrees,
+                                                    "alert": "UNEXPECTED_MOVEMENT",
+                                                    "speed": total_speed,
+                                                }
+                                            )
 
                             # Add to history if enabled
                             if self.history_enabled:
-                                self.history.append({
-                                    "timestamp": now,
-                                    "ra_hours": ra_hours,
-                                    "dec_degrees": dec_degrees,
-                                    "alt_degrees": alt_degrees,
-                                    "az_degrees": az_degrees,
-                                })
+                                self.history.append(
+                                    {
+                                        "timestamp": now,
+                                        "ra_hours": ra_hours,
+                                        "dec_degrees": dec_degrees,
+                                        "alt_degrees": alt_degrees,
+                                        "az_degrees": az_degrees,
+                                    }
+                                )
 
                 except Exception:
                     with self.lock:

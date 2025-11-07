@@ -6,7 +6,7 @@ Tests geocoding, location saving/loading, and configuration management.
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.observer import (
     DEFAULT_LOCATION,

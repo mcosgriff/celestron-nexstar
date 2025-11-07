@@ -18,6 +18,7 @@ from .catalogs import CelestialObject
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
 
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -437,7 +438,9 @@ class CatalogDatabase:
             by_type[row[0]] = row[1]
 
         # Magnitude range
-        mag_row = self.conn.execute("SELECT MIN(magnitude), MAX(magnitude) FROM objects WHERE magnitude IS NOT NULL").fetchone()
+        mag_row = self.conn.execute(
+            "SELECT MIN(magnitude), MAX(magnitude) FROM objects WHERE magnitude IS NOT NULL"
+        ).fetchone()
         mag_range = (mag_row[0], mag_row[1]) if mag_row else (None, None)
 
         # Dynamic objects

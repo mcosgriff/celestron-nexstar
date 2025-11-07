@@ -234,9 +234,13 @@ def shell() -> None:
         # Movement control status
         if movement.moving:
             arrow = {"up": "↑", "down": "↓", "left": "←", "right": "→"}.get(movement.active_direction, "?")
-            parts.append(f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Speed:{movement.slew_rate}/9 </style></b>')
+            parts.append(
+                f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Speed:{movement.slew_rate}/9 </style></b>'
+            )
         else:
-            parts.append(f'<b><style bg="ansigreen" fg="ansiblack"> ▣ Speed:{movement.slew_rate}/9 (arrows=move +/-=speed ESC=stop ^P/^N=history) </style></b>')
+            parts.append(
+                f'<b><style bg="ansigreen" fg="ansiblack"> ▣ Speed:{movement.slew_rate}/9 (arrows=move +/-=speed ESC=stop ^P/^N=history) </style></b>'
+            )
 
         return HTML(" ".join(parts))
 
@@ -247,6 +251,7 @@ def shell() -> None:
     @Condition
     def buffer_is_empty():
         from prompt_toolkit.application import get_app
+
         try:
             app = get_app()
             return len(app.current_buffer.text) == 0
@@ -254,59 +259,61 @@ def shell() -> None:
             return False
 
     # Arrow keys move telescope (only when not typing)
-    @kb.add('up', filter=buffer_is_empty)
+    @kb.add("up", filter=buffer_is_empty)
     def _(event):
         """Move telescope up when up arrow is pressed (only when not typing)."""
         movement.start_move("up")
 
-    @kb.add('down', filter=buffer_is_empty)
+    @kb.add("down", filter=buffer_is_empty)
     def _(event):
         """Move telescope down when down arrow is pressed (only when not typing)."""
         movement.start_move("down")
 
-    @kb.add('left', filter=buffer_is_empty)
+    @kb.add("left", filter=buffer_is_empty)
     def _(event):
         """Move telescope left when left arrow is pressed (only when not typing)."""
         movement.start_move("left")
 
-    @kb.add('right', filter=buffer_is_empty)
+    @kb.add("right", filter=buffer_is_empty)
     def _(event):
         """Move telescope right when right arrow is pressed (only when not typing)."""
         movement.start_move("right")
 
     # Speed adjustment (only when not typing to avoid interfering with -- arguments)
-    @kb.add('+', filter=buffer_is_empty)
-    @kb.add('=', filter=buffer_is_empty)  # Also works without shift
+    @kb.add("+", filter=buffer_is_empty)
+    @kb.add("=", filter=buffer_is_empty)  # Also works without shift
     def _(event):
         """Increase slew rate (only when not typing)."""
         movement.increase_rate()
 
-    @kb.add('-', filter=buffer_is_empty)
+    @kb.add("-", filter=buffer_is_empty)
     def _(event):
         """Decrease slew rate (only when not typing)."""
         movement.decrease_rate()
 
     # Command history navigation using Ctrl+P (previous) and Ctrl+N (next)
-    @kb.add('c-p')
+    @kb.add("c-p")
     def _(event):
         """Navigate to previous command in history (Ctrl+P)."""
         event.current_buffer.history_backward()
 
-    @kb.add('c-n')
+    @kb.add("c-n")
     def _(event):
         """Navigate to next command in history (Ctrl+N)."""
         event.current_buffer.history_forward()
 
     # ESC always stops movement (works anytime)
-    @kb.add('escape')
+    @kb.add("escape")
     def _(event):
         """Stop telescope movement when ESC is pressed."""
         movement.stop_move()
 
     # Custom style for prompt
-    style = Style.from_dict({
-        'prompt': 'ansicyan bold',
-    })
+    style = Style.from_dict(
+        {
+            "prompt": "ansicyan bold",
+        }
+    )
 
     # Create session with history and completion
     session = PromptSession(
@@ -321,12 +328,16 @@ def shell() -> None:
 
     # Welcome message
     console.print("\n[bold green]╔═══════════════════════════════════════════════════╗[/bold green]")
-    console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Shell[/bold cyan]                   [bold green]║[/bold green]")
+    console.print(
+        "[bold green]║[/bold green]   [bold cyan]NexStar Interactive Shell[/bold cyan]                   [bold green]║[/bold green]"
+    )
     console.print("[bold green]╚═══════════════════════════════════════════════════╝[/bold green]\n")
     console.print("[bold]Quick Start:[/bold]")
     console.print("  • Type [cyan]'tutorial'[/cyan] for an interactive guided tour")
     console.print("  • Type [cyan]'help'[/cyan] to see all available commands")
-    console.print("  • Press [cyan]arrow keys[/cyan] to move telescope | [cyan]+/-[/cyan]: speed | [cyan]ESC[/cyan]: stop")
+    console.print(
+        "  • Press [cyan]arrow keys[/cyan] to move telescope | [cyan]+/-[/cyan]: speed | [cyan]ESC[/cyan]: stop"
+    )
     console.print("  • Press [cyan]Ctrl+P/Ctrl+N[/cyan] for command history (previous/next)")
     console.print("  • Type [cyan]'exit'[/cyan] to quit\n")
 
@@ -334,7 +345,7 @@ def shell() -> None:
     while True:
         try:
             # Get input from user
-            text = session.prompt([('class:prompt', 'nexstar> ')])
+            text = session.prompt([("class:prompt", "nexstar> ")])
 
             # Skip empty input
             if not text.strip():
@@ -343,25 +354,25 @@ def shell() -> None:
             # Handle shell-specific commands
             cmd_lower = text.strip().lower()
 
-            if cmd_lower in ['exit', 'quit']:
+            if cmd_lower in ["exit", "quit"]:
                 movement.stop_move()  # Stop any active movement
                 tracker.stop()
                 console.print("\n[bold]Goodbye![/bold]\n")
                 break
 
-            if cmd_lower == 'clear':
+            if cmd_lower == "clear":
                 console.clear()
                 continue
 
-            if cmd_lower == 'tutorial' or text.strip().startswith("tutorial "):
+            if cmd_lower == "tutorial" or text.strip().startswith("tutorial "):
                 parts = text.strip().split()
                 if len(parts) == 1:
                     # Show tutorial menu
                     tutorial_system.start()
-                elif parts[1] == 'all':
+                elif parts[1] == "all":
                     # Run all lessons
                     tutorial_system.run_all_lessons()
-                elif parts[1] == 'demo':
+                elif parts[1] == "demo":
                     # Run only demo lessons
                     tutorial_system.run_all_lessons(demo_only=True)
                 elif parts[1].isdigit():
@@ -375,7 +386,7 @@ def shell() -> None:
                     console.print("[red]Usage: tutorial [all|demo|<lesson_number>][/red]")
                 continue
 
-            if cmd_lower == 'help':
+            if cmd_lower == "help":
                 console.print("\n[bold]Available command groups:[/bold]")
                 console.print("  [cyan]connect[/cyan]    - Connection commands")
                 console.print("  [cyan]position[/cyan]   - Position query commands")
@@ -390,27 +401,39 @@ def shell() -> None:
                 console.print("  [cyan]optics[/cyan]     - Telescope and eyepiece configuration")
                 console.print("  [cyan]ephemeris[/cyan]  - Ephemeris file management")
                 console.print("\n[bold]Shell-specific commands:[/bold]")
-                console.print("  [cyan]tracking start[/cyan]                            - Start background position tracking")
-                console.print("  [cyan]tracking stop[/cyan]                             - Stop background position tracking")
+                console.print(
+                    "  [cyan]tracking start[/cyan]                            - Start background position tracking"
+                )
+                console.print(
+                    "  [cyan]tracking stop[/cyan]                             - Stop background position tracking"
+                )
                 console.print("  [cyan]tracking status[/cyan]                           - Show tracking status")
-                console.print("  [cyan]tracking interval <sec>[/cyan]                   - Set update interval (0.5-30.0s)")
+                console.print(
+                    "  [cyan]tracking interval <sec>[/cyan]                   - Set update interval (0.5-30.0s)"
+                )
                 console.print("  [cyan]tracking history [--last N][/cyan]              - Show position history")
                 console.print("  [cyan]tracking clear[/cyan]                            - Clear position history")
                 console.print("  [cyan]tracking stats[/cyan]                            - Show tracking statistics")
                 console.print("  [cyan]tracking export <file> [--format][/cyan]    - Export history (csv/json)")
                 console.print("  [cyan]tracking alert-threshold <deg/s>[/cyan]     - Set collision alert threshold")
-                console.print("  [cyan]tracking chart on|off[/cyan]                - Toggle ASCII star chart visualization")
+                console.print(
+                    "  [cyan]tracking chart on|off[/cyan]                - Toggle ASCII star chart visualization"
+                )
                 console.print("\n[bold]Interactive Movement Control:[/bold]")
                 console.print("  [cyan]Arrow Keys (↑↓←→)[/cyan]   - Move telescope in any direction")
                 console.print("  [cyan]+ / -[/cyan]              - Increase/decrease slew speed (0-9)")
                 console.print("  [cyan]ESC[/cyan]                - Stop all movement")
-                console.print("  [dim]Current speed displayed in status bar (green when stopped, red when moving)[/dim]")
+                console.print(
+                    "  [dim]Current speed displayed in status bar (green when stopped, red when moving)[/dim]"
+                )
                 console.print("\n[bold]Command History:[/bold]")
                 console.print("  [cyan]Ctrl+P[/cyan]             - Previous command in history")
                 console.print("  [cyan]Ctrl+N[/cyan]             - Next command in history")
                 console.print("\n[bold]Data Import Commands:[/bold]")
                 console.print("  [cyan]data sources[/cyan]                    - List available catalog data sources")
-                console.print("  [cyan]data import <source>[/cyan]            - Import catalog data (e.g., data import openngc)")
+                console.print(
+                    "  [cyan]data import <source>[/cyan]            - Import catalog data (e.g., data import openngc)"
+                )
                 console.print("  [cyan]data import <source> -m <mag>[/cyan]   - Import with custom magnitude limit")
                 console.print("  [cyan]data stats[/cyan]                      - Show database statistics")
                 console.print("\n[bold]Tutorial System:[/bold]")
@@ -429,7 +452,9 @@ def shell() -> None:
 
                 if subcmd == "start":
                     if not state.get("port"):
-                        console.print("[yellow]Warning: No telescope port configured. Use --port or set NEXSTAR_PORT[/yellow]")
+                        console.print(
+                            "[yellow]Warning: No telescope port configured. Use --port or set NEXSTAR_PORT[/yellow]"
+                        )
                         console.print("[dim]Tracking will start once a connection is available[/dim]")
                     tracker.start()
                     console.print("[green]✓[/green] Background position tracking started")
@@ -482,6 +507,7 @@ def shell() -> None:
                             console.print("[dim]No position history available yet[/dim]")
                         else:
                             from rich.table import Table
+
                             table = Table(title=f"Position History ({len(history)} entries)")
                             table.add_column("Time", style="cyan")
                             table.add_column("RA", justify="right")
@@ -513,7 +539,7 @@ def shell() -> None:
                                     f"{ra_h:02d}h{ra_m:02d}m{ra_s:02d}s",
                                     f"{dec_sign}{dec_d:02d}°{dec_m:02d}'{dec_s:02d}\"",
                                     f"{alt:.1f}°",
-                                    f"{az:.1f}°"
+                                    f"{az:.1f}°",
                                 )
 
                             console.print(table)
@@ -534,10 +560,16 @@ def shell() -> None:
                         if stats["count"] >= 2:
                             duration_min = stats["duration_seconds"] / 60
                             console.print(f"  Duration: [cyan]{duration_min:.1f}[/cyan] minutes")
-                            console.print(f"  First recorded: [dim]{stats['first_timestamp'].strftime('%H:%M:%S')}[/dim]")
+                            console.print(
+                                f"  First recorded: [dim]{stats['first_timestamp'].strftime('%H:%M:%S')}[/dim]"
+                            )
                             console.print(f"  Last recorded: [dim]{stats['last_timestamp'].strftime('%H:%M:%S')}[/dim]")
-                            console.print(f"  Total RA drift: [yellow]{stats['total_ra_drift_arcsec']:.1f}[/yellow] arcsec")
-                            console.print(f"  Total Dec drift: [yellow]{stats['total_dec_drift_arcsec']:.1f}[/yellow] arcsec")
+                            console.print(
+                                f"  Total RA drift: [yellow]{stats['total_ra_drift_arcsec']:.1f}[/yellow] arcsec"
+                            )
+                            console.print(
+                                f"  Total Dec drift: [yellow]{stats['total_dec_drift_arcsec']:.1f}[/yellow] arcsec"
+                            )
 
                         if velocity:
                             console.print("\n[bold]Current Velocity:[/bold]")
@@ -606,7 +638,9 @@ def shell() -> None:
 
                 else:
                     console.print(f"[red]Unknown tracking command: {subcmd}[/red]")
-                    console.print("[dim]Available: start, stop, status, interval, history, clear, stats, export, alert-threshold, chart[/dim]")
+                    console.print(
+                        "[dim]Available: start, stop, status, interval, history, clear, stats, export, alert-threshold, chart[/dim]"
+                    )
 
                 continue
 
@@ -623,17 +657,17 @@ def shell() -> None:
             # Check if user typed just a command group name without subcommand
             # Provide helpful guidance
             command_groups_needing_subcommands = {
-                'catalog': 'Try: catalog list, catalog search, catalog info, catalog catalogs',
-                'optics': 'Try: optics config, optics show',
-                'ephemeris': 'Try: ephemeris download, ephemeris list, ephemeris verify, ephemeris sets',
-                'position': 'Try: position get',
-                'goto': 'Try: goto object, goto ra-dec, goto alt-az',
-                'move': 'Try: move fixed, move stop',
-                'track': 'Try: track get, track set',
-                'align': 'Try: align sync',
-                'location': 'Try: location show, location set, location geocode',
-                'time': 'Try: time get, time set',
-                'data': 'Try: data sources, data import, data stats',
+                "catalog": "Try: catalog list, catalog search, catalog info, catalog catalogs",
+                "optics": "Try: optics config, optics show",
+                "ephemeris": "Try: ephemeris download, ephemeris list, ephemeris verify, ephemeris sets",
+                "position": "Try: position get",
+                "goto": "Try: goto object, goto ra-dec, goto alt-az",
+                "move": "Try: move fixed, move stop",
+                "track": "Try: track get, track set",
+                "align": "Try: align sync",
+                "location": "Try: location show, location set, location geocode",
+                "time": "Try: time get, time set",
+                "data": "Try: data sources, data import, data stats",
             }
 
             if len(args) == 1 and args[0] in command_groups_needing_subcommands:
@@ -647,7 +681,7 @@ def shell() -> None:
             command_success = False
             try:
                 # Construct argv as if called from command line
-                sys.argv = ['nexstar', *args]
+                sys.argv = ["nexstar", *args]
 
                 # Call the app without exiting on error
                 app(standalone_mode=False)
@@ -674,6 +708,7 @@ def shell() -> None:
                 console.print(f"[red]Error: {e}[/red]")
                 if state.get("verbose"):
                     import traceback
+
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
             finally:

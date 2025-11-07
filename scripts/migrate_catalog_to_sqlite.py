@@ -21,12 +21,13 @@ from pathlib import Path
 
 import yaml
 
+from celestron_nexstar.api.database import CatalogDatabase
+from celestron_nexstar.api.enums import CelestialObjectType
+
+
 # Add src to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
-
-from celestron_nexstar.api.database import CatalogDatabase
-from celestron_nexstar.api.enums import CelestialObjectType
 
 
 def find_yaml_catalog() -> Path:
@@ -165,23 +166,23 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
     db.commit()
 
     # Show statistics
-    print(f"\n✓ Migration complete!")
+    print("\n✓ Migration complete!")
     print(f"  Total objects: {total_objects}")
 
     stats = db.get_stats()
-    print(f"\nDatabase statistics:")
+    print("\nDatabase statistics:")
     print(f"  Total objects: {stats.total_objects}")
     print(f"  Dynamic objects: {stats.dynamic_objects}")
     print(f"  Magnitude range: {stats.magnitude_range[0]:.1f} to {stats.magnitude_range[1]:.1f}")
-    print(f"\nObjects by catalog:")
+    print("\nObjects by catalog:")
     for catalog, count in sorted(stats.objects_by_catalog.items()):
         print(f"  {catalog:20s}: {count:4d}")
-    print(f"\nObjects by type:")
+    print("\nObjects by type:")
     for obj_type, count in sorted(stats.objects_by_type.items()):
         print(f"  {obj_type:20s}: {count:4d}")
 
     # Test search
-    print(f"\n✓ Testing FTS5 search...")
+    print("\n✓ Testing FTS5 search...")
     test_queries = ["andromeda", "orion", "jupiter"]
     for query in test_queries:
         results = db.search(query, limit=5)
@@ -211,11 +212,7 @@ def main() -> None:
     yaml_path = args.yaml if args.yaml else find_yaml_catalog()
 
     # Determine output path
-    if args.output:
-        db_path = args.output
-    else:
-        # Default: same location as YAML, but .db extension
-        db_path = yaml_path.parent / "catalogs.db"
+    db_path = args.output or yaml_path.parent / "catalogs.db"
 
     # Ensure output directory exists
     db_path.parent.mkdir(parents=True, exist_ok=True)

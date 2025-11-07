@@ -6,6 +6,7 @@ step-by-step lessons and interactive demonstrations.
 """
 
 from dataclasses import dataclass
+
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
@@ -43,7 +44,7 @@ class TutorialSystem:
                     ("Use Ctrl+P / Ctrl+N to navigate command history (previous/next)", "Ctrl+P / Ctrl+N"),
                     ("Press CTRL+C to cancel current input, CTRL+D or 'exit' to quit", "exit"),
                 ],
-                demo_mode=True
+                demo_mode=True,
             ),
             Lesson(
                 title="Interactive Movement Control",
@@ -59,7 +60,7 @@ class TutorialSystem:
                     ("Watch the status bar: Green = stopped, Red = moving with direction", ""),
                     ("Command history uses Ctrl+P (previous) and Ctrl+N (next) instead", "Ctrl+P / Ctrl+N"),
                 ],
-                demo_mode=False
+                demo_mode=False,
             ),
             Lesson(
                 title="Background Position Tracking",
@@ -72,7 +73,7 @@ class TutorialSystem:
                     ("View position history:", "tracking history --last 10"),
                     ("Stop tracking:", "tracking stop"),
                 ],
-                demo_mode=False
+                demo_mode=False,
             ),
             Lesson(
                 title="Advanced Tracking Features",
@@ -84,7 +85,7 @@ class TutorialSystem:
                     ("The chart shows compass direction and altitude", ""),
                     ("Clear tracking history:", "tracking clear"),
                 ],
-                demo_mode=False
+                demo_mode=False,
             ),
             Lesson(
                 title="Exploring Celestial Objects",
@@ -96,7 +97,7 @@ class TutorialSystem:
                     ("Get detailed object information:", "catalog info M31"),
                     ("View planetary moons:", "catalog list --catalog jupiter-moons"),
                 ],
-                demo_mode=True
+                demo_mode=True,
             ),
             Lesson(
                 title="Telescope Configuration",
@@ -108,7 +109,7 @@ class TutorialSystem:
                     ("Or use geocoding:", 'location geocode "New York, NY"'),
                     ("View current location:", "location show"),
                 ],
-                demo_mode=True
+                demo_mode=True,
             ),
             Lesson(
                 title="Basic Telescope Control",
@@ -120,7 +121,7 @@ class TutorialSystem:
                     ("Or slew to coordinates:", "goto ra-dec --ra 5.5 --dec 22.5"),
                     ("Set tracking mode:", "track set --mode alt_az"),
                 ],
-                demo_mode=False
+                demo_mode=False,
             ),
             Lesson(
                 title="Alignment and Syncing",
@@ -132,7 +133,7 @@ class TutorialSystem:
                     ("Tracking starts automatically after alignment", ""),
                     ("Perform 2-3 star alignment for best results", ""),
                 ],
-                demo_mode=False
+                demo_mode=False,
             ),
             Lesson(
                 title="Ephemeris Management",
@@ -144,7 +145,7 @@ class TutorialSystem:
                     ("This enables accurate planetary moon positions", ""),
                     ("Verify downloaded files:", "ephemeris verify"),
                 ],
-                demo_mode=True
+                demo_mode=True,
             ),
             Lesson(
                 title="Shell Tips & Tricks",
@@ -157,18 +158,21 @@ class TutorialSystem:
                     ("All commands support --help for detailed usage", "catalog --help"),
                     ("The shell is fully scriptable via command mode", ""),
                 ],
-                demo_mode=True
+                demo_mode=True,
             ),
         ]
 
     def start(self) -> None:
         """Start the interactive tutorial."""
         self.console.print("\n[bold green]╔══════════════════════════════════════════════════╗[/bold green]")
-        self.console.print("[bold green]║[/bold green]   [bold cyan]NexStar Interactive Tutorial[/bold cyan]              [bold green]║[/bold green]")
+        self.console.print(
+            "[bold green]║[/bold green]   [bold cyan]NexStar Interactive Tutorial[/bold cyan]              [bold green]║[/bold green]"
+        )
         self.console.print("[bold green]╚══════════════════════════════════════════════════╝[/bold green]\n")
 
-        self.console.print("[dim]This tutorial will guide you through all the features "
-                          "of the NexStar Interactive Shell.[/dim]\n")
+        self.console.print(
+            "[dim]This tutorial will guide you through all the features of the NexStar Interactive Shell.[/dim]\n"
+        )
 
         # Show lesson menu
         self._show_menu()
@@ -213,11 +217,7 @@ class TutorialSystem:
             if example:
                 panel_content += f"\n\n[dim]Example:[/dim] [green]{escape(example)}[/green]"
 
-            self.console.print(Panel(
-                panel_content,
-                border_style="cyan",
-                padding=(0, 2)
-            ))
+            self.console.print(Panel(panel_content, border_style="cyan", padding=(0, 2)))
 
             # Wait for user to acknowledge (except last step)
             if i < len(lesson.steps):
@@ -236,19 +236,15 @@ class TutorialSystem:
         Args:
             demo_only: If True, only run demo lessons
         """
-        lessons_to_run = [
-            (i, lesson) for i, lesson in enumerate(self.lessons)
-            if not demo_only or lesson.demo_mode
-        ]
+        lessons_to_run = [(i, lesson) for i, lesson in enumerate(self.lessons) if not demo_only or lesson.demo_mode]
 
         mode_str = "demo " if demo_only else ""
         self.console.print(f"\n[bold]Running {len(lessons_to_run)} {mode_str}lessons...[/bold]\n")
 
-        for i, lesson in lessons_to_run:
+        for i, _ in lessons_to_run:
             self.run_lesson(i)
 
-            if i < len(lessons_to_run) - 1:
-                if not Confirm.ask("\n[dim]Continue to next lesson?[/dim]", default=True):
+            if i < len(lessons_to_run) - 1 and not Confirm.ask("\n[dim]Continue to next lesson?[/dim]", default=True):
                     self.console.print("[yellow]Tutorial paused.[/yellow]")
                     return
 

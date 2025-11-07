@@ -20,12 +20,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from celestron_nexstar.api.database import get_database
+from celestron_nexstar.api.enums import CelestialObjectType
+
+
 # Add src to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
-
-from celestron_nexstar.api.database import get_database
-from celestron_nexstar.api.enums import CelestialObjectType
 
 
 def download_openngc(output_path: Path) -> None:
@@ -34,7 +35,7 @@ def download_openngc(output_path: Path) -> None:
 
     url = "https://raw.githubusercontent.com/mattiaverga/OpenNGC/master/database_files/NGC.csv"
 
-    print(f"Downloading OpenNGC catalog from GitHub...")
+    print("Downloading OpenNGC catalog from GitHub...")
     print(f"  URL: {url}")
 
     try:
@@ -127,9 +128,7 @@ def map_object_type(type_str: str) -> CelestialObjectType:
     return type_map.get(type_str, CelestialObjectType.NEBULA)  # Default to nebula
 
 
-def import_openngc(
-    csv_path: Path, mag_limit: float = 15.0, verbose: bool = False
-) -> tuple[int, int]:
+def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
     """
     Import OpenNGC catalog into database.
 
@@ -143,7 +142,7 @@ def import_openngc(
     """
     import csv
 
-    print(f"Importing OpenNGC catalog...")
+    print("Importing OpenNGC catalog...")
     print(f"  CSV: {csv_path}")
     print(f"  Magnitude limit: {mag_limit}")
 
@@ -274,7 +273,7 @@ def import_openngc(
     # Commit all changes
     db.commit()
 
-    print(f"\n✓ Import complete!")
+    print("\n✓ Import complete!")
     print(f"  Imported: {imported:,}")
     print(f"  Skipped: {skipped:,} (too faint or invalid)")
     print(f"  Errors: {errors:,}")
@@ -307,16 +306,16 @@ def main() -> None:
 
     # Run import
     try:
-        imported, skipped = import_openngc(csv_path, args.mag_limit, args.verbose)
+        _imported, _skipped = import_openngc(csv_path, args.mag_limit, args.verbose)
 
         # Show updated statistics
         db = get_database()
         stats = db.get_stats()
 
-        print(f"\nUpdated database statistics:")
+        print("\nUpdated database statistics:")
         print(f"  Total objects: {stats.total_objects:,}")
         print(f"  Magnitude range: {stats.magnitude_range[0]:.1f} to {stats.magnitude_range[1]:.1f}")
-        print(f"\nObjects by catalog:")
+        print("\nObjects by catalog:")
         for catalog, count in sorted(stats.objects_by_catalog.items()):
             print(f"  {catalog:20s}: {count:,}")
 

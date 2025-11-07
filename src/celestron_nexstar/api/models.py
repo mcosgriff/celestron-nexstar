@@ -8,7 +8,6 @@ and automatic migration management with Alembic.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -35,27 +34,27 @@ class CelestialObjectModel(Base):
 
     # Object identification
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    common_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    common_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     catalog: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    catalog_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    catalog_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Position (J2000 epoch for fixed objects)
     ra_hours: Mapped[float] = mapped_column(Float, nullable=False)
     dec_degrees: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Physical properties
-    magnitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    magnitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
     object_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    size_arcmin: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    size_arcmin: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Metadata
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    constellation: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    constellation: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # Dynamic object support (planets/moons)
     is_dynamic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
-    ephemeris_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    parent_planet: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    ephemeris_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_planet: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -66,7 +65,7 @@ class CelestialObjectModel(Base):
     )
 
     # Relationships
-    observations: Mapped[list["ObservationModel"]] = relationship(
+    observations: Mapped[list[ObservationModel]] = relationship(
         "ObservationModel", back_populates="celestial_object", cascade="all, delete-orphan"
     )
 
@@ -119,28 +118,28 @@ class ObservationModel(Base):
 
     # Observation details
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    location_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    location_lon: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    location_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    location_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Viewing conditions
-    seeing_quality: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5 scale
-    transparency: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5 scale
-    sky_brightness: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # SQM value
-    weather_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    seeing_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5 scale
+    transparency: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5 scale
+    sky_brightness: Mapped[float | None] = mapped_column(Float, nullable=True)  # SQM value
+    weather_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Equipment used
-    telescope: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    eyepiece: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    filters: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    telescope: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    eyepiece: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    filters: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Observation notes
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    rating: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-5 stars
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5 stars
 
     # Images/sketches
-    image_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    sketch_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    sketch_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -151,7 +150,9 @@ class ObservationModel(Base):
     )
 
     # Relationships
-    celestial_object: Mapped["CelestialObjectModel"] = relationship("CelestialObjectModel", back_populates="observations")
+    celestial_object: Mapped[CelestialObjectModel] = relationship(
+        "CelestialObjectModel", back_populates="observations"
+    )
 
     def __repr__(self) -> str:
         """String representation of observation."""
@@ -177,7 +178,7 @@ class UserPreferenceModel(Base):
     category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
 
     # Description of what this preference controls
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

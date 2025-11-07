@@ -39,6 +39,7 @@ class MovementController:
 
         try:
             from celestron_nexstar import NexStarTelescope
+
             with NexStarTelescope(str(port)) as telescope:
                 telescope.move_fixed(direction, self.slew_rate)
                 self.moving = True
@@ -57,6 +58,7 @@ class MovementController:
 
         try:
             from celestron_nexstar import NexStarTelescope
+
             with NexStarTelescope(str(port)) as telescope:
                 telescope.stop_motion("both")
                 self.moving = False

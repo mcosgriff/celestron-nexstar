@@ -10,13 +10,14 @@ from unittest.mock import MagicMock, patch
 
 import deal
 import serial
+from returns.result import Failure
+
 from celestron_nexstar.api.exceptions import (
     NotConnectedError,
     TelescopeConnectionError,
     TelescopeTimeoutError,
 )
 from celestron_nexstar.api.protocol import NexStarProtocol
-from returns.result import Failure
 
 
 # Disable deal contracts during testing to avoid lambda signature issues

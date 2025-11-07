@@ -1,13 +1,13 @@
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
 # Import models for autogenerate support
 from celestron_nexstar.api.models import Base
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -37,8 +37,9 @@ def get_database_url() -> str:
     if not db_path.exists():
         # Try installed location
         try:
-            import celestron_nexstar.cli
             import sys
+
+            import celestron_nexstar.cli
 
             # Get the actual module path
             cli_path = Path(celestron_nexstar.cli.__path__[0])

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import csv
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import yaml
 from rich.console import Console
@@ -19,6 +19,7 @@ from rich.table import Table
 
 from ..api.database import get_database
 from ..api.enums import CelestialObjectType
+
 
 console = Console()
 
@@ -133,7 +134,10 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
 
     with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter=";")
-        total_rows = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1  # -1 for header
+
+        total_rows = -1
+        with open(csv_path, encoding="utf-8") as fp:
+            total_rows = sum(1 for _ in fp) - 1
 
         with Progress(
             SpinnerColumn(),
@@ -533,9 +537,9 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
     # Handle custom YAML catalog
     if source_id == "custom":
         # Find catalogs.yaml
-        from pathlib import Path as P
+        from pathlib import Path
 
-        module_path = P(__file__).parent
+        module_path = Path(__file__).parent
         yaml_path = module_path / "data" / "catalogs.yaml"
 
         if not yaml_path.exists():
@@ -549,7 +553,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
         try:
             imported, skipped = source.importer(yaml_path, mag_limit, verbose=False)
 
-            console.print(f"\n[green]✓[/green] Import complete!")
+            console.print("\n[green]✓[/green] Import complete!")
             console.print(f"  Imported: [green]{imported:,}[/green]")
             console.print(f"  Skipped:  [yellow]{skipped:,}[/yellow] (too faint or invalid)")
 
@@ -584,7 +588,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
     try:
         imported, skipped = source.importer(cache_path, mag_limit, verbose=False)
 
-        console.print(f"\n[green]✓[/green] Import complete!")
+        console.print("\n[green]✓[/green] Import complete!")
         console.print(f"  Imported: [green]{imported:,}[/green]")
         console.print(f"  Skipped:  [yellow]{skipped:,}[/yellow] (too faint or invalid)")
 

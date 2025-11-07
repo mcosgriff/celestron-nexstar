@@ -5,7 +5,6 @@ Tests telescope specs, eyepiece specs, limiting magnitude, and resolution calcul
 
 import json
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.enums import SkyBrightness

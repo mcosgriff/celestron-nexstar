@@ -9,6 +9,7 @@ from rich.console import Console
 
 from ..data_import import import_data_source, list_data_sources
 
+
 app = typer.Typer(help="Data import and management commands")
 console = Console()
 
@@ -73,14 +74,15 @@ def stats() -> None:
     - Objects by type
     - Magnitude range
     """
-    from ...api.database import get_database
     from rich.table import Table
+
+    from ...api.database import get_database
 
     db = get_database()
     db_stats = db.get_stats()
 
     # Overall stats
-    console.print(f"\n[bold cyan]Database Statistics[/bold cyan]")
+    console.print("\n[bold cyan]Database Statistics[/bold cyan]")
     console.print(f"Total objects: [green]{db_stats.total_objects:,}[/green]")
     console.print(f"Dynamic objects: [yellow]{db_stats.dynamic_objects}[/yellow] (planets/moons)")
 
