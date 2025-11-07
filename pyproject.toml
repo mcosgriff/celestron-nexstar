@@ -32,6 +32,8 @@ dependencies = [
     "skyfield>=1.49",
     "geopy>=2.4.0",
     "prompt-toolkit>=3.0.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
@@ -202,6 +204,8 @@ module = [
     "cachetools",
     "prompt_toolkit",
     "prompt_toolkit.*",
+    "alembic",
+    "alembic.*",
 ]
 ignore_missing_imports = true
 

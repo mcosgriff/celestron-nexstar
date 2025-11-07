@@ -1,0 +1,101 @@
+# Custom Celestial Object Catalog - Example
+#
+# This is an example file showing how to create your own custom catalog.
+# Copy this file to "catalogs.yaml" in the same directory and edit it with your own objects.
+#
+# To import this catalog into the database, use:
+#   nexstar data import custom
+#
+# Object Types (choose one):
+#   - star          : Single star
+#   - double_star   : Binary or multiple star system
+#   - planet        : Planet (will use ephemeris for position)
+#   - moon          : Moon (will use ephemeris for position)
+#   - galaxy        : Galaxy
+#   - nebula        : Nebula (emission, reflection, planetary, etc.)
+#   - cluster       : Star cluster (open or globular)
+#   - asterism      : Pattern of stars (not official constellation)
+#
+# Required Fields:
+#   - name         : Object name (string)
+#   - ra_hours     : Right ascension in decimal hours (0-24)
+#   - dec_degrees  : Declination in decimal degrees (-90 to +90)
+#   - type         : Object type from list above
+#
+# Optional Fields:
+#   - common_name  : Popular name (e.g., "Andromeda Galaxy")
+#   - magnitude    : Apparent magnitude (smaller = brighter)
+#   - description  : Any additional notes or information
+#   - parent       : For moons, the parent planet name
+
+# My Favorite Objects
+my_favorites:
+  - name: Custom Object 1
+    common_name: My Target
+    ra_hours: 12.5
+    dec_degrees: 45.0
+    magnitude: 8.5
+    type: galaxy
+    description: A galaxy I want to observe
+
+  - name: Custom Star
+    ra_hours: 15.2
+    dec_degrees: -22.3
+    magnitude: 4.2
+    type: star
+    description: Interesting variable star
+
+# Observing List for Tonight
+tonight:
+  - name: M13
+    common_name: Great Globular Cluster in Hercules
+    ra_hours: 16.69
+    dec_degrees: 36.46
+    magnitude: 5.8
+    type: cluster
+    description: Best globular cluster in northern hemisphere
+
+  - name: NGC 6960
+    common_name: Western Veil Nebula
+    ra_hours: 20.76
+    dec_degrees: 30.72
+    magnitude: 7.0
+    type: nebula
+    description: Part of the Cygnus Loop supernova remnant
+
+# Local Asterisms
+asterisms:
+  - name: Summer Triangle
+    ra_hours: 19.0
+    dec_degrees: 35.0
+    magnitude: 0.0
+    type: asterism
+    description: Pattern formed by Vega, Deneb, and Altair
+
+# Example with all fields
+complete_example:
+  - name: Example 1
+    common_name: Full Example Object
+    ra_hours: 10.5
+    dec_degrees: 20.0
+    magnitude: 9.0
+    type: nebula
+    description: |
+      This shows all possible fields.
+      Multi-line descriptions are supported.
+      Use the pipe (|) character for multi-line text.
+
+# Tips:
+#   1. RA Hours: Divide RA in HMS by 15 to get hours
+#      Example: 12h 30m 00s = 12.5 hours
+#
+#   2. Dec Degrees: Convert DMS to decimal
+#      Example: 45° 30' 00" = 45.5 degrees
+#
+#   3. Magnitude Limit: Objects fainter than your limit will be skipped
+#      Use: nexstar data import custom --mag-limit 12.0
+#
+#   4. Dynamic Objects: Planets and moons will use JPL ephemeris for current position
+#
+#   5. Multiple Catalogs: You can organize objects into different catalog sections
+#      Each top-level key (e.g., "my_favorites") becomes a catalog name

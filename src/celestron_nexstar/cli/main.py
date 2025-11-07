@@ -8,7 +8,7 @@ import typer
 from rich.console import Console
 
 # Import and register subcommands
-from .commands import align, catalog, connect, ephemeris, goto, location, move, optics, position, time, track
+from .commands import align, catalog, connect, data, ephemeris, goto, location, move, optics, position, time, track
 
 
 # Create main app
@@ -102,6 +102,7 @@ app.add_typer(time.app, name="time", help="Time and date commands")
 app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
 app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configuration")
 app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
+app.add_typer(data.app, name="data", help="Data import and management")
 
 
 # Also add connect commands directly to main app for convenience
@@ -385,6 +386,7 @@ def shell() -> None:
                 console.print("  [cyan]location[/cyan]   - Observer location commands")
                 console.print("  [cyan]time[/cyan]       - Time and date commands")
                 console.print("  [cyan]catalog[/cyan]    - Celestial object catalogs")
+                console.print("  [cyan]data[/cyan]       - Data import and management")
                 console.print("  [cyan]optics[/cyan]     - Telescope and eyepiece configuration")
                 console.print("  [cyan]ephemeris[/cyan]  - Ephemeris file management")
                 console.print("\n[bold]Shell-specific commands:[/bold]")
@@ -406,6 +408,11 @@ def shell() -> None:
                 console.print("\n[bold]Command History:[/bold]")
                 console.print("  [cyan]Ctrl+P[/cyan]             - Previous command in history")
                 console.print("  [cyan]Ctrl+N[/cyan]             - Next command in history")
+                console.print("\n[bold]Data Import Commands:[/bold]")
+                console.print("  [cyan]data sources[/cyan]                    - List available catalog data sources")
+                console.print("  [cyan]data import <source>[/cyan]            - Import catalog data (e.g., data import openngc)")
+                console.print("  [cyan]data import <source> -m <mag>[/cyan]   - Import with custom magnitude limit")
+                console.print("  [cyan]data stats[/cyan]                      - Show database statistics")
                 console.print("\n[bold]Tutorial System:[/bold]")
                 console.print("  [cyan]tutorial[/cyan]           - Show interactive tutorial menu")
                 console.print("  [cyan]tutorial <number>[/cyan]  - Run specific lesson (e.g., tutorial 1)")
@@ -626,6 +633,7 @@ def shell() -> None:
                 'align': 'Try: align sync',
                 'location': 'Try: location show, location set, location geocode',
                 'time': 'Try: time get, time set',
+                'data': 'Try: data sources, data import, data stats',
             }
 
             if len(args) == 1 and args[0] in command_groups_needing_subcommands:
