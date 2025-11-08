@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib import error, request
@@ -434,7 +434,7 @@ def fetch_hourly_weather_forecast(
     """
     Fetch hourly weather forecast and calculate seeing conditions for each hour.
 
-    Uses Open-Meteo API (free, no API key required).
+    Uses database cache first, then Open-Meteo API if data is stale or missing.
     Falls back gracefully if API is unavailable.
 
     Args:
@@ -451,6 +451,75 @@ def fetch_hourly_weather_forecast(
     # Limit to 7 days (168 hours) - Open-Meteo maximum
     hours = min(hours, 168)
     forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
+
+    # Check database for cached data
+    try:
+        from .database import get_database
+        from .models import WeatherForecastModel
+        from sqlalchemy import and_
+
+        db = get_database()
+        existing_forecasts = []
+        with db._get_session() as session:
+            # Check if we have recent data (fetched within last hour)
+            now = datetime.now(UTC)
+            stale_threshold = now - timedelta(hours=1)
+            
+            # Query for forecasts for this location that are not stale
+            existing_forecasts = (
+                session.query(WeatherForecastModel)
+                .filter(
+                    and_(
+                        WeatherForecastModel.latitude == location.latitude,
+                        WeatherForecastModel.longitude == location.longitude,
+                        WeatherForecastModel.fetched_at >= stale_threshold,
+                    )
+                )
+                .order_by(WeatherForecastModel.forecast_timestamp)
+                .all()
+            )
+
+        # If we have enough recent forecasts covering the requested hours, return them
+        # Check if we have forecasts covering at least the requested number of hours
+        if existing_forecasts and len(existing_forecasts) >= hours:
+            # Check if the forecasts cover a sufficient time range
+            # Get the time span of cached forecasts
+            if len(existing_forecasts) > 0:
+                first_ts = existing_forecasts[0].forecast_timestamp
+                last_ts = existing_forecasts[-1].forecast_timestamp
+                if first_ts.tzinfo is None:
+                    first_ts = first_ts.replace(tzinfo=UTC)
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.replace(tzinfo=UTC)
+                
+                time_span_hours = (last_ts - first_ts).total_seconds() / 3600
+                
+                # If we have enough hours of coverage, use cached data
+                if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
+                    logger.debug(f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)")
+                    forecasts = []
+                    for forecast in existing_forecasts[:hours]:
+                        forecasts.append(
+                            HourlySeeingForecast(
+                                timestamp=forecast.forecast_timestamp,
+                                seeing_score=forecast.seeing_score or 50.0,
+                                temperature_f=forecast.temperature_f,
+                                dew_point_f=forecast.dew_point_f,
+                                humidity_percent=forecast.humidity_percent,
+                                wind_speed_mph=forecast.wind_speed_mph,
+                                cloud_cover_percent=forecast.cloud_cover_percent,
+                            )
+                        )
+                    return forecasts
+        
+        # If we get here, we need to fetch from API (either no cache, stale cache, or insufficient coverage)
+        if existing_forecasts:
+            logger.debug(f"Found {len(existing_forecasts)} cached forecasts, but need {hours} hours, fetching from API")
+        else:
+            logger.debug("No recent cached forecasts found, fetching from API")
+    except Exception as e:
+        logger.warning(f"Error checking database for weather forecasts: {e}")
+        # Continue to fetch from API
 
     try:
         # Setup the Open-Meteo API client with cache and retry on error
@@ -498,6 +567,8 @@ def fetch_hourly_weather_forecast(
         prev_temp: float | None = None
 
         # Process each hour
+        # Note: Open-Meteo API returns forecasts starting from the current time
+        # We need to ensure we get enough data to cover from 1 hour before sunset to sunrise
         for i in range(len(hourly_temperature_2m)):
             # Calculate timestamp
             timestamp_seconds = time_range + (i * interval)
@@ -557,6 +628,71 @@ def fetch_hourly_weather_forecast(
             # Stop if we have enough hours
             if len(forecasts) >= hours:
                 break
+
+        # Store forecasts in database (replace stale data)
+        try:
+            from .database import get_database
+            from .models import WeatherForecastModel
+            from sqlalchemy import and_
+
+            db = get_database()
+            with db._get_session() as session:
+                # Delete stale forecasts for this location
+                now = datetime.now(UTC)
+                stale_threshold = now - timedelta(hours=1)
+                session.query(WeatherForecastModel).filter(
+                    and_(
+                        WeatherForecastModel.latitude == location.latitude,
+                        WeatherForecastModel.longitude == location.longitude,
+                        WeatherForecastModel.fetched_at < stale_threshold,
+                    )
+                ).delete()
+
+                # Insert new forecasts
+                for forecast in forecasts:
+                    # Check if forecast already exists for this timestamp
+                    existing = (
+                        session.query(WeatherForecastModel)
+                        .filter(
+                            and_(
+                                WeatherForecastModel.latitude == location.latitude,
+                                WeatherForecastModel.longitude == location.longitude,
+                                WeatherForecastModel.forecast_timestamp == forecast.timestamp,
+                            )
+                        )
+                        .first()
+                    )
+
+                    if existing:
+                        # Update existing forecast
+                        existing.temperature_f = forecast.temperature_f
+                        existing.dew_point_f = forecast.dew_point_f
+                        existing.humidity_percent = forecast.humidity_percent
+                        existing.cloud_cover_percent = forecast.cloud_cover_percent
+                        existing.wind_speed_mph = forecast.wind_speed_mph
+                        existing.seeing_score = forecast.seeing_score
+                        existing.fetched_at = now
+                    else:
+                        # Insert new forecast
+                        db_forecast = WeatherForecastModel(
+                            latitude=location.latitude,
+                            longitude=location.longitude,
+                            forecast_timestamp=forecast.timestamp,
+                            temperature_f=forecast.temperature_f,
+                            dew_point_f=forecast.dew_point_f,
+                            humidity_percent=forecast.humidity_percent,
+                            cloud_cover_percent=forecast.cloud_cover_percent,
+                            wind_speed_mph=forecast.wind_speed_mph,
+                            seeing_score=forecast.seeing_score,
+                            fetched_at=now,
+                        )
+                        session.add(db_forecast)
+
+                session.commit()
+                logger.debug(f"Stored {len(forecasts)} weather forecasts in database")
+        except Exception as e:
+            logger.warning(f"Error storing weather forecasts in database: {e}")
+            # Continue and return forecasts anyway
 
         return forecasts
 

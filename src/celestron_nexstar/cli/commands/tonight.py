@@ -4,7 +4,7 @@
 Shows observing conditions and recommended objects for tonight.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import typer
@@ -136,25 +136,141 @@ def show_conditions() -> None:
         if conditions.hourly_seeing_forecast:
             console.print()
             console.print("[bold]Hourly Seeing Forecast:[/bold]")
-            # Show next 12 hours
-            forecast_to_show = conditions.hourly_seeing_forecast[:12]
-            for forecast in forecast_to_show:
-                time_str = _format_local_time(forecast.timestamp, conditions.latitude, conditions.longitude)
-                time_only = time_str.split()[-2] if " " in time_str else time_str
-
-                # Color code by seeing score
-                if forecast.seeing_score >= 80:
-                    score_color = "[green]"
-                elif forecast.seeing_score >= 40:
-                    score_color = "[yellow]"
+            
+            # Filter forecast to start 1 hour before sunset and go to sunrise
+            # All times stored in UTC, converted to local only for display
+            forecast_to_show = []
+            now_utc = datetime.now(UTC)
+            
+            if conditions.sunset_time and conditions.sunrise_time:
+                # Ensure both times are timezone-aware (UTC)
+                sunset = conditions.sunset_time
+                sunrise = conditions.sunrise_time
+                if sunset.tzinfo is None:
+                    sunset = sunset.replace(tzinfo=UTC)
+                if sunrise.tzinfo is None:
+                    sunrise = sunrise.replace(tzinfo=UTC)
+                
+                # Start 1 hour before sunset, rounded up to the next hour
+                # User wants: "start at 16:00 since sunset is at 16:33"
+                # Sunset at 16:33, 1 hour before = 15:33, round up to 16:00
+                forecast_start_raw = sunset - timedelta(hours=1)
+                # Round up to the next hour (ceiling)
+                forecast_start_hour = forecast_start_raw.replace(minute=0, second=0, microsecond=0)
+                # If the raw time is past the hour mark, round up to next hour
+                if forecast_start_raw > forecast_start_hour:
+                    forecast_start = forecast_start_hour + timedelta(hours=1)
                 else:
-                    score_color = "[red]"
+                    forecast_start = forecast_start_hour
+                forecast_end = sunrise
+                
+                # If sunrise is before sunset (next day), extend to next sunrise
+                if forecast_end < forecast_start:
+                    # Find next sunrise (add 24 hours)
+                    forecast_end = sunrise + timedelta(days=1)
+                
+                # Round forecast_end up to the next hour to include the hour containing sunrise
+                # e.g., if sunrise is 06:15, we want to include 06:00
+                forecast_end_hour = forecast_end.replace(minute=0, second=0, microsecond=0)
+                if forecast_end.minute > 0 or forecast_end.second > 0:
+                    forecast_end_hour = forecast_end_hour + timedelta(hours=1)
+                forecast_end = forecast_end_hour
+                
+                # Filter forecasts within the window (all in UTC
+                # Include forecasts that fall within or overlap the window
+                for forecast in conditions.hourly_seeing_forecast:
+                    forecast_ts = forecast.timestamp
+                    # Ensure forecast timestamp is UTC
+                    if forecast_ts.tzinfo is None:
+                        forecast_ts = forecast_ts.replace(tzinfo=UTC)
+                    elif forecast_ts.tzinfo != UTC:
+                        # Convert to UTC if in different timezone
+                        forecast_ts = forecast_ts.astimezone(UTC)
+                    
+                    # Round forecast timestamp to the hour for comparison
+                    forecast_ts_hour = forecast_ts.replace(minute=0, second=0, microsecond=0)
+                    
+                    # Check if forecast is within the window
+                    # Window: from forecast_start (inclusive) to forecast_end (inclusive)
+                    if forecast_start <= forecast_ts_hour <= forecast_end:
+                        forecast_to_show.append(forecast)
+                
+                # If no forecasts found and we're past sunset, show from now to sunrise
+                if not forecast_to_show and now_utc > sunset:
+                    # We're past sunset, show from now until sunrise (tomorrow if needed)
+                    end_time = sunrise
+                    if end_time < now_utc:
+                        end_time = sunrise + timedelta(days=1)
+                    for forecast in conditions.hourly_seeing_forecast:
+                        forecast_ts = forecast.timestamp
+                        if forecast_ts.tzinfo is None:
+                            forecast_ts = forecast_ts.replace(tzinfo=UTC)
+                        elif forecast_ts.tzinfo != UTC:
+                            forecast_ts = forecast_ts.astimezone(UTC)
+                        if now_utc <= forecast_ts <= end_time:
+                            forecast_to_show.append(forecast)
+                
+                # Sort by timestamp to ensure chronological order
+                forecast_to_show.sort(key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+            else:
+                # Fallback: show next 12 hours if sunset/sunrise not available
+                # But only show future forecasts
+                for forecast in conditions.hourly_seeing_forecast:
+                    forecast_ts = forecast.timestamp
+                    if forecast_ts.tzinfo is None:
+                        forecast_ts = forecast_ts.replace(tzinfo=UTC)
+                    elif forecast_ts.tzinfo != UTC:
+                        forecast_ts = forecast_ts.astimezone(UTC)
+                    if forecast_ts >= now_utc:
+                        forecast_to_show.append(forecast)
+                        if len(forecast_to_show) >= 12:
+                            break
+            
+            # Debug: If no forecasts found, log why
+            if not forecast_to_show and conditions.sunset_time and conditions.sunrise_time:
+                # This shouldn't happen, but if it does, at least show something useful
+                # Try showing forecasts from 1 hour before sunset to sunrise without the "now" filter
+                sunset = conditions.sunset_time
+                sunrise = conditions.sunrise_time
+                if sunset.tzinfo is None:
+                    sunset = sunset.replace(tzinfo=UTC)
+                if sunrise.tzinfo is None:
+                    sunrise = sunrise.replace(tzinfo=UTC)
+                forecast_start = sunset - timedelta(hours=1)
+                forecast_end = sunrise
+                if forecast_end < forecast_start:
+                    forecast_end = sunrise + timedelta(days=1)
+                
+                for forecast in conditions.hourly_seeing_forecast:
+                    forecast_ts = forecast.timestamp
+                    if forecast_ts.tzinfo is None:
+                        forecast_ts = forecast_ts.replace(tzinfo=UTC)
+                    elif forecast_ts.tzinfo != UTC:
+                        forecast_ts = forecast_ts.astimezone(UTC)
+                    if forecast_start <= forecast_ts <= forecast_end:
+                        forecast_to_show.append(forecast)
+                forecast_to_show.sort(key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+            
+            if forecast_to_show:
+                for forecast in forecast_to_show:
+                    time_str = _format_local_time(forecast.timestamp, conditions.latitude, conditions.longitude)
+                    time_only = time_str.split()[-2] if " " in time_str else time_str
 
-                console.print(
-                    f"  {time_only}: {score_color}{forecast.seeing_score:.0f}/100[/] "
-                    f"[dim]({forecast.cloud_cover_percent or 0:.0f}% clouds, "
-                    f"{forecast.wind_speed_mph or 0:.1f} mph wind)[/]"
-                )
+                    # Color code by seeing score
+                    if forecast.seeing_score >= 80:
+                        score_color = "[green]"
+                    elif forecast.seeing_score >= 40:
+                        score_color = "[yellow]"
+                    else:
+                        score_color = "[red]"
+
+                    console.print(
+                        f"  {time_only}: {score_color}{forecast.seeing_score:.0f}/100[/] "
+                        f"[dim]({forecast.cloud_cover_percent or 0:.0f}% clouds, "
+                        f"{forecast.wind_speed_mph or 0:.1f} mph wind)[/]"
+                    )
+            else:
+                console.print("  [dim]No forecast data available for observing window[/dim]")
         console.print()
 
         # Light Pollution
@@ -174,6 +290,59 @@ def show_conditions() -> None:
         console.print(f"  Altitude: {conditions.moon_altitude:.1f}°")
         if conditions.moon_altitude < 0:
             console.print("  [dim]Below horizon[/dim]")
+        console.print()
+
+        # Sun and Moon Events
+        console.print("[bold]Sun & Moon Events (Today):[/bold]")
+        
+        # Sunrise/Sunset
+        if conditions.sunrise_time:
+            sunrise_str = _format_local_time(conditions.sunrise_time, conditions.latitude, conditions.longitude)
+            sunrise_time = sunrise_str.split()[-2] if " " in sunrise_str else sunrise_str
+            console.print(f"  Sunrise: {sunrise_time}")
+        if conditions.sunset_time:
+            sunset_str = _format_local_time(conditions.sunset_time, conditions.latitude, conditions.longitude)
+            sunset_time = sunset_str.split()[-2] if " " in sunset_str else sunset_str
+            console.print(f"  Sunset: {sunset_time}")
+        
+        # Moonrise/Moonset
+        if conditions.moonrise_time:
+            moonrise_str = _format_local_time(conditions.moonrise_time, conditions.latitude, conditions.longitude)
+            moonrise_time = moonrise_str.split()[-2] if " " in moonrise_str else moonrise_str
+            console.print(f"  Moonrise: {moonrise_time}")
+        if conditions.moonset_time:
+            moonset_str = _format_local_time(conditions.moonset_time, conditions.latitude, conditions.longitude)
+            moonset_time = moonset_str.split()[-2] if " " in moonset_str else moonset_str
+            console.print(f"  Moonset: {moonset_time}")
+        
+        # Golden Hour
+        if conditions.golden_hour_evening_start and conditions.golden_hour_evening_end:
+            gh_evening_start = _format_local_time(conditions.golden_hour_evening_start, conditions.latitude, conditions.longitude)
+            gh_evening_end = _format_local_time(conditions.golden_hour_evening_end, conditions.latitude, conditions.longitude)
+            gh_start_time = gh_evening_start.split()[-2] if " " in gh_evening_start else gh_evening_start
+            gh_end_time = gh_evening_end.split()[-2] if " " in gh_evening_end else gh_evening_end
+            console.print(f"  Golden Hour (evening): {gh_start_time} - {gh_end_time}")
+        if conditions.golden_hour_morning_start and conditions.golden_hour_morning_end:
+            gh_morning_start = _format_local_time(conditions.golden_hour_morning_start, conditions.latitude, conditions.longitude)
+            gh_morning_end = _format_local_time(conditions.golden_hour_morning_end, conditions.latitude, conditions.longitude)
+            gh_start_time = gh_morning_start.split()[-2] if " " in gh_morning_start else gh_morning_start
+            gh_end_time = gh_morning_end.split()[-2] if " " in gh_morning_end else gh_morning_end
+            console.print(f"  Golden Hour (morning): {gh_start_time} - {gh_end_time}")
+        
+        # Blue Hour
+        if conditions.blue_hour_evening_start and conditions.blue_hour_evening_end:
+            bh_evening_start = _format_local_time(conditions.blue_hour_evening_start, conditions.latitude, conditions.longitude)
+            bh_evening_end = _format_local_time(conditions.blue_hour_evening_end, conditions.latitude, conditions.longitude)
+            bh_start_time = bh_evening_start.split()[-2] if " " in bh_evening_start else bh_evening_start
+            bh_end_time = bh_evening_end.split()[-2] if " " in bh_evening_end else bh_evening_end
+            console.print(f"  Blue Hour (evening): {bh_start_time} - {bh_end_time}")
+        if conditions.blue_hour_morning_start and conditions.blue_hour_morning_end:
+            bh_morning_start = _format_local_time(conditions.blue_hour_morning_start, conditions.latitude, conditions.longitude)
+            bh_morning_end = _format_local_time(conditions.blue_hour_morning_end, conditions.latitude, conditions.longitude)
+            bh_start_time = bh_morning_start.split()[-2] if " " in bh_morning_start else bh_morning_start
+            bh_end_time = bh_morning_end.split()[-2] if " " in bh_morning_end else bh_morning_end
+            console.print(f"  Blue Hour (morning): {bh_start_time} - {bh_end_time}")
+        
         console.print()
 
         # Recommendations

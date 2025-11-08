@@ -189,3 +189,45 @@ class UserPreferenceModel(Base):
     def __repr__(self) -> str:
         """String representation of preference."""
         return f"<UserPreference(key='{self.key}', category='{self.category}')>"
+
+
+class WeatherForecastModel(Base):
+    """
+    SQLAlchemy model for hourly weather forecasts.
+
+    Stores hourly weather forecast data for a specific location and timestamp.
+    Used to cache weather data and avoid unnecessary API calls.
+    """
+
+    __tablename__ = "weather_forecast"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Location (used to identify forecasts for a location)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+
+    # Forecast timestamp (when this forecast is for)
+    forecast_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Weather data
+    temperature_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dew_point_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    humidity_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_speed_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
+    seeing_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # When this data was fetched/updated
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Composite index for location + timestamp lookups
+    __table_args__ = (
+        Index("idx_location_timestamp", "latitude", "longitude", "forecast_timestamp"),
+        Index("idx_location_fetched", "latitude", "longitude", "fetched_at"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of weather forecast."""
+        return f"<WeatherForecast(id={self.id}, lat={self.latitude}, lon={self.longitude}, timestamp='{self.forecast_timestamp}')>"

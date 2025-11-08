@@ -18,7 +18,7 @@ from .enums import SkyBrightness
 from .light_pollution import LightPollutionData, get_light_pollution_data
 from .observer import ObserverLocation, get_observer_location
 from .optics import calculate_limiting_magnitude, get_current_configuration
-from .solar_system import get_moon_info, get_sun_info
+from .solar_system import calculate_blue_hour, calculate_golden_hour, get_moon_info, get_sun_info
 from .utils import angular_separation, calculate_lst
 from .visibility import VisibilityInfo, filter_visible_objects
 from .weather import (
@@ -93,6 +93,20 @@ class ObservingConditions:
 
     # Hourly forecast (if available)
     hourly_seeing_forecast: tuple[HourlySeeingForecast, ...] = ()  # Hourly seeing conditions
+
+    # Sun and Moon events for current day
+    sunrise_time: datetime | None = None
+    sunset_time: datetime | None = None
+    moonrise_time: datetime | None = None
+    moonset_time: datetime | None = None
+    golden_hour_evening_start: datetime | None = None
+    golden_hour_evening_end: datetime | None = None
+    golden_hour_morning_start: datetime | None = None
+    golden_hour_morning_end: datetime | None = None
+    blue_hour_evening_start: datetime | None = None
+    blue_hour_evening_end: datetime | None = None
+    blue_hour_morning_start: datetime | None = None
+    blue_hour_morning_end: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -225,9 +239,26 @@ class ObservationPlanner:
         # Calculate best seeing time window (typically 2-3 hours after sunset, before sunrise)
         best_seeing_start, best_seeing_end = self._calculate_best_seeing_window(lat, lon, start_time)
 
+        # Get sun and moon event times first to calculate how many hours of forecast we need
+        sun_info = get_sun_info(lat, lon, start_time)
+        sunrise_time = sun_info.sunrise_time if sun_info else None
+        sunset_time = sun_info.sunset_time if sun_info else None
+        
+        # Fetch 3-day forecast (72 hours) to ensure we have enough data
+        # This covers from 1 hour before sunset to sunrise with plenty of buffer
+        hours_needed = 72  # 3 days
+
         # Fetch hourly seeing forecast (if available - requires Pro subscription)
-        hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=24)
+        hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
         hourly_forecast_tuple = tuple(hourly_forecast)
+
+        # Get moonrise/moonset from moon_info
+        moonrise_time = moon_info.moonrise_time if moon_info else None
+        moonset_time = moon_info.moonset_time if moon_info else None
+
+        # Calculate golden hour and blue hour
+        golden_hour = calculate_golden_hour(lat, lon, start_time)
+        blue_hour = calculate_blue_hour(lat, lon, start_time)
 
         return ObservingConditions(
             timestamp=start_time,
@@ -249,6 +280,18 @@ class ObservationPlanner:
             best_seeing_window_start=best_seeing_start,
             best_seeing_window_end=best_seeing_end,
             hourly_seeing_forecast=hourly_forecast_tuple,
+            sunrise_time=sunrise_time,
+            sunset_time=sunset_time,
+            moonrise_time=moonrise_time,
+            moonset_time=moonset_time,
+            golden_hour_evening_start=golden_hour[0],
+            golden_hour_evening_end=golden_hour[1],
+            golden_hour_morning_start=golden_hour[2],
+            golden_hour_morning_end=golden_hour[3],
+            blue_hour_evening_start=blue_hour[0],
+            blue_hour_evening_end=blue_hour[1],
+            blue_hour_morning_start=blue_hour[2],
+            blue_hour_morning_end=blue_hour[3],
         )
 
     def get_recommended_objects(

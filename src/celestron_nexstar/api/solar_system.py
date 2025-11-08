@@ -21,6 +21,8 @@ __all__ = [
     "calculate_moon_phase",
     "get_moon_info",
     "get_sun_info",
+    "calculate_golden_hour",
+    "calculate_blue_hour",
 ]
 
 
@@ -33,6 +35,8 @@ class MoonInfo(NamedTuple):
     azimuth_deg: float  # Current azimuth
     ra_hours: float  # Right ascension
     dec_degrees: float  # Declination
+    moonrise_time: datetime | None = None  # Next moonrise
+    moonset_time: datetime | None = None  # Next moonset
 
 
 class SunInfo(NamedTuple):
@@ -177,6 +181,50 @@ def get_moon_info(
 
         phase_name = calculate_moon_phase(illumination)
 
+        # Calculate moonrise/moonset
+        moonrise_time = None
+        moonset_time = None
+        is_moon_above = moon_alt > 0
+
+        try:
+            # Sample next 48 hours at 1-hour intervals
+            for hours_ahead in range(1, 49):
+                check_dt = dt + timedelta(hours=hours_ahead)
+                t_check = ts.from_datetime(check_dt)
+                astrometric_check = observer.at(t_check).observe(moon)
+                alt_check, _az_check, _ = astrometric_check.apparent().altaz()
+                moon_alt_check = alt_check.degrees
+
+                # Check previous hour for comparison
+                prev_dt = check_dt - timedelta(hours=1)
+                t_prev = ts.from_datetime(prev_dt)
+                astrometric_prev = observer.at(t_prev).observe(moon)
+                alt_prev, _az_prev, _ = astrometric_prev.apparent().altaz()
+                moon_alt_prev = alt_prev.degrees
+
+                # Moonset: was above, now below
+                if is_moon_above and moon_alt_prev > 0 and moon_alt_check <= 0 and moonset_time is None:
+                    # Approximate moonset as midpoint between samples
+                    moonset_time = prev_dt + timedelta(minutes=30)
+                    # Ensure UTC timezone
+                    if moonset_time.tzinfo is None:
+                        moonset_time = moonset_time.replace(tzinfo=UTC)
+                    if moonrise_time is not None:
+                        break
+
+                # Moonrise: was below, now above
+                if not is_moon_above and moon_alt_prev <= 0 and moon_alt_check > 0 and moonrise_time is None:
+                    # Approximate moonrise as midpoint between samples
+                    moonrise_time = prev_dt + timedelta(minutes=30)
+                    # Ensure UTC timezone
+                    if moonrise_time.tzinfo is None:
+                        moonrise_time = moonrise_time.replace(tzinfo=UTC)
+                    if moonset_time is not None:
+                        break
+        except Exception:
+            # If calculation fails, leave as None
+            pass
+
         return MoonInfo(
             phase_name=phase_name,
             illumination=illumination,
@@ -184,6 +232,8 @@ def get_moon_info(
             azimuth_deg=moon_az,
             ra_hours=moon_ra,
             dec_degrees=moon_dec,
+            moonrise_time=moonrise_time,
+            moonset_time=moonset_time,
         )
     except Exception as e:
         logger.error(f"Failed to calculate moon info: {e}")
@@ -257,6 +307,9 @@ def get_sun_info(
                 if is_daytime and sun_alt_prev > 0 and sun_alt_check <= 0 and sunset_time is None:
                     # Approximate sunset as midpoint between samples
                     sunset_time = prev_dt + timedelta(minutes=30)
+                    # Ensure UTC timezone
+                    if sunset_time.tzinfo is None:
+                        sunset_time = sunset_time.replace(tzinfo=UTC)
                     if sunrise_time is not None:
                         break
 
@@ -264,6 +317,9 @@ def get_sun_info(
                 if not is_daytime and sun_alt_prev <= 0 and sun_alt_check > 0 and sunrise_time is None:
                     # Approximate sunrise as midpoint between samples
                     sunrise_time = prev_dt + timedelta(minutes=30)
+                    # Ensure UTC timezone
+                    if sunrise_time.tzinfo is None:
+                        sunrise_time = sunrise_time.replace(tzinfo=UTC)
                     if sunset_time is not None:
                         break
         except Exception:
@@ -282,3 +338,199 @@ def get_sun_info(
     except Exception as e:
         logger.error(f"Failed to calculate sun info: {e}")
         return None
+
+
+def calculate_golden_hour(
+    observer_lat: float,
+    observer_lon: float,
+    dt: datetime | None = None,
+) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
+    """
+    Calculate golden hour times (sun altitude between -4° and 6°).
+
+    Golden hour is the period when the sun is between -4° and 6° altitude,
+    providing warm, soft lighting ideal for photography.
+
+    Args:
+        observer_lat: Observer latitude in degrees
+        observer_lon: Observer longitude in degrees
+        dt: Datetime to calculate for (default: now)
+
+    Returns:
+        Tuple of (evening_start, evening_end, morning_start, morning_end)
+        where each can be None if not found
+    """
+    if dt is None:
+        dt = datetime.now(UTC)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    try:
+        ts, earth, sun, _moon = _get_skyfield_objects()
+        if ts is None or earth is None or sun is None:
+            return (None, None, None, None)
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+
+        evening_start = None
+        evening_end = None
+        morning_start = None
+        morning_end = None
+
+        # Get current sun altitude to determine if we're looking for evening or morning
+        t = ts.from_datetime(dt)
+        astrometric = observer.at(t).observe(sun)
+        alt, _az, _ = astrometric.apparent().altaz()
+        current_alt = alt.degrees
+
+        # Sample next 48 hours at 10-minute intervals for better precision
+        prev_alt = current_alt
+        in_evening_gh = False
+        in_morning_gh = False
+        
+        for minutes_ahead in range(0, 48 * 60, 10):
+            check_dt = dt + timedelta(minutes=minutes_ahead)
+            # Ensure UTC timezone
+            if check_dt.tzinfo is None:
+                check_dt = check_dt.replace(tzinfo=UTC)
+            t_check = ts.from_datetime(check_dt)
+            astrometric_check = observer.at(t_check).observe(sun)
+            alt_check, _az_check, _ = astrometric_check.apparent().altaz()
+            sun_alt_check = alt_check.degrees
+
+            # Evening golden hour: sun descending from 6° to -4°
+            if sun_alt_check <= 6 and sun_alt_check >= -4:
+                if not in_evening_gh:
+                    # Entering evening golden hour
+                    if prev_alt > 6:
+                        evening_start = check_dt
+                        if evening_start.tzinfo is None:
+                            evening_start = evening_start.replace(tzinfo=UTC)
+                    in_evening_gh = True
+                evening_end = check_dt
+                if evening_end.tzinfo is None:
+                    evening_end = evening_end.replace(tzinfo=UTC)
+            elif in_evening_gh and sun_alt_check < -4:
+                # Exited evening golden hour
+                break
+
+            # Morning golden hour: sun ascending from -4° to 6°
+            if sun_alt_check >= -4 and sun_alt_check <= 6:
+                if not in_morning_gh:
+                    # Entering morning golden hour
+                    if prev_alt < -4:
+                        morning_start = check_dt
+                        if morning_start.tzinfo is None:
+                            morning_start = morning_start.replace(tzinfo=UTC)
+                    in_morning_gh = True
+                morning_end = check_dt
+                if morning_end.tzinfo is None:
+                    morning_end = morning_end.replace(tzinfo=UTC)
+            elif in_morning_gh and sun_alt_check > 6:
+                # Exited morning golden hour
+                break
+
+            prev_alt = sun_alt_check
+
+        return (evening_start, evening_end, morning_start, morning_end)
+    except Exception as e:
+        logger.error(f"Failed to calculate golden hour: {e}")
+        return (None, None, None, None)
+
+
+def calculate_blue_hour(
+    observer_lat: float,
+    observer_lon: float,
+    dt: datetime | None = None,
+) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
+    """
+    Calculate blue hour times (sun altitude between -6° and -4°).
+
+    Blue hour is the period when the sun is between -6° and -4° altitude,
+    providing cool, blue lighting ideal for photography.
+
+    Args:
+        observer_lat: Observer latitude in degrees
+        observer_lon: Observer longitude in degrees
+        dt: Datetime to calculate for (default: now)
+
+    Returns:
+        Tuple of (evening_start, evening_end, morning_start, morning_end)
+        where each can be None if not found
+    """
+    if dt is None:
+        dt = datetime.now(UTC)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    try:
+        ts, earth, sun, _moon = _get_skyfield_objects()
+        if ts is None or earth is None or sun is None:
+            return (None, None, None, None)
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+
+        evening_start = None
+        evening_end = None
+        morning_start = None
+        morning_end = None
+
+        # Get current sun altitude to determine if we're looking for evening or morning
+        t = ts.from_datetime(dt)
+        astrometric = observer.at(t).observe(sun)
+        alt, _az, _ = astrometric.apparent().altaz()
+        current_alt = alt.degrees
+
+        # Sample next 48 hours at 10-minute intervals for better precision
+        prev_alt = current_alt
+        in_evening_bh = False
+        in_morning_bh = False
+        
+        for minutes_ahead in range(0, 48 * 60, 10):
+            check_dt = dt + timedelta(minutes=minutes_ahead)
+            # Ensure UTC timezone
+            if check_dt.tzinfo is None:
+                check_dt = check_dt.replace(tzinfo=UTC)
+            t_check = ts.from_datetime(check_dt)
+            astrometric_check = observer.at(t_check).observe(sun)
+            alt_check, _az_check, _ = astrometric_check.apparent().altaz()
+            sun_alt_check = alt_check.degrees
+
+            # Evening blue hour: sun descending from -4° to -6°
+            if sun_alt_check <= -4 and sun_alt_check >= -6:
+                if not in_evening_bh:
+                    # Entering evening blue hour
+                    if prev_alt > -4:
+                        evening_start = check_dt
+                        if evening_start.tzinfo is None:
+                            evening_start = evening_start.replace(tzinfo=UTC)
+                    in_evening_bh = True
+                evening_end = check_dt
+                if evening_end.tzinfo is None:
+                    evening_end = evening_end.replace(tzinfo=UTC)
+            elif in_evening_bh and sun_alt_check < -6:
+                # Exited evening blue hour
+                break
+
+            # Morning blue hour: sun ascending from -6° to -4°
+            if sun_alt_check >= -6 and sun_alt_check <= -4:
+                if not in_morning_bh:
+                    # Entering morning blue hour
+                    if prev_alt < -6:
+                        morning_start = check_dt
+                        if morning_start.tzinfo is None:
+                            morning_start = morning_start.replace(tzinfo=UTC)
+                    in_morning_bh = True
+                morning_end = check_dt
+                if morning_end.tzinfo is None:
+                    morning_end = morning_end.replace(tzinfo=UTC)
+            elif in_morning_bh and sun_alt_check > -4:
+                # Exited morning blue hour
+                break
+
+            prev_alt = sun_alt_check
+
+        return (evening_start, evening_end, morning_start, morning_end)
+    except Exception as e:
+        logger.error(f"Failed to calculate blue hour: {e}")
+        return (None, None, None, None)
