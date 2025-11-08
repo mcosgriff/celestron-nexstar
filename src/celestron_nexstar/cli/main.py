@@ -22,6 +22,7 @@ from .commands import (
     optics,
     position,
     time,
+    tonight,
     track,
 )
 
@@ -120,6 +121,7 @@ app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
 app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configuration")
 app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
 app.add_typer(data.app, name="data", help="Data import and management")
+app.add_typer(tonight.app, name="tonight", help="Tonight's observing plan")
 app.add_typer(dashboard.app, name="dashboard", help="Full-screen dashboard")
 
 

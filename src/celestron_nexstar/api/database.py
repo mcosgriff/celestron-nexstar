@@ -10,6 +10,7 @@ Uses SQLAlchemy ORM for type-safe database operations.
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -139,16 +140,18 @@ class CatalogDatabase:
             db_path = self._get_default_db_path()
 
         self.db_path = Path(db_path)
-        
+
         # Use pysqlite3 if available (supports SpatiaLite extensions)
         # Fall back to built-in sqlite3 if not available
         try:
             import pysqlite3
+
             dbapi = pysqlite3
         except ImportError:
             import sqlite3
+
             dbapi = sqlite3
-        
+
         self._engine = create_engine(
             f"sqlite:///{self.db_path}",
             module=dbapi,  # Use pysqlite3 for extension support
@@ -188,18 +191,16 @@ class CatalogDatabase:
         from sqlalchemy import event
 
         @event.listens_for(self._engine, "connect")
-        def set_sqlite_pragmas(dbapi_conn, connection_record):
+        def set_sqlite_pragmas(dbapi_conn: Any, connection_record: Any) -> None:
             """Set SQLite pragmas for performance and enable extension loading."""
             cursor = dbapi_conn.cursor()
-            
+
             # Enable extension loading if supported (for SpatiaLite)
-            try:
+            # Built-in sqlite3 may not support enable_load_extension
+            # This is fine - SpatiaLite is optional
+            with suppress(AttributeError):
                 dbapi_conn.enable_load_extension(True)
-            except AttributeError:
-                # Built-in sqlite3 may not support enable_load_extension
-                # This is fine - SpatiaLite is optional
-                pass
-            
+
             cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
             cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
@@ -513,7 +514,7 @@ class CatalogDatabase:
                 .group_by(CelestialObjectModel.catalog)
                 .all()
             )
-            by_catalog = dict(catalog_counts)
+            by_catalog: dict[str, int] = {row[0]: row[1] for row in catalog_counts}
 
             # By type
             type_counts = (
@@ -521,7 +522,7 @@ class CatalogDatabase:
                 .group_by(CelestialObjectModel.object_type)
                 .all()
             )
-            by_type = dict(type_counts)
+            by_type: dict[str, int] = {row[0]: row[1] for row in type_counts}
 
             # Magnitude range
             mag_result = (
@@ -671,11 +672,7 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     # Get file size after vacuum
     # Note: Some filesystems may cache file size, so the actual size on disk
     # may differ from what stat() reports immediately after VACUUM
-    if db.db_path.exists():
-        # Refresh stat cache by accessing the file
-        size_after = db.db_path.stat().st_size
-    else:
-        size_after = 0
+    size_after = db.db_path.stat().st_size if db.db_path.exists() else 0
 
     size_reclaimed = size_before - size_after
 

@@ -138,8 +138,10 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
         warnings.append(f"Some clouds ({weather.cloud_cover_percent:.0f}% cover)")
     else:
         status = "excellent"
-        if weather.cloud_cover_percent > 0:
-            warnings.append(f"Clear skies ({weather.cloud_cover_percent:.0f}% cover)")
+        # Don't add warning for essentially clear skies (< 20% cloud cover)
+        # Only mention if there are some clouds (5-20%)
+        if weather.cloud_cover_percent >= 5:
+            warnings.append(f"Mostly clear ({weather.cloud_cover_percent:.0f}% cloud cover)")
 
     # Humidity assessment (high humidity = poor transparency)
     if weather.humidity_percent is not None:
