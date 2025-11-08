@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import FormattedText
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -585,7 +586,7 @@ def get_conditions_info() -> FormattedText:
         if lp_location:
             try:
                 lp_data = get_light_pollution_data(lp_location[0], lp_location[1])
-                
+
                 # Display Bortle class with color coding
                 bortle = lp_data.bortle_class
                 if bortle <= BortleClass.CLASS_2:
@@ -600,7 +601,7 @@ def get_conditions_info() -> FormattedText:
                 lines.append((bortle_color, f"Bortle {bortle.value}\n"))
                 lines.append(("", f"    SQM: {lp_data.sqm_value:.2f} mag/arcsec²\n"))
                 lines.append(("", f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.1f} mag\n"))
-                
+
                 # Show visibility indicators
                 visibility_parts = []
                 if lp_data.milky_way_visible:
@@ -609,13 +610,13 @@ def get_conditions_info() -> FormattedText:
                     visibility_parts.append("Airglow")
                 if lp_data.zodiacal_light_visible:
                     visibility_parts.append("Zodiacal Light")
-                
+
                 if visibility_parts:
                     lines.append(("dim", f"    Visible: {', '.join(visibility_parts)}\n"))
-                
+
                 # Show source (cached or API)
                 if lp_data.cached:
-                    lines.append(("dim", f"    (cached)\n"))
+                    lines.append(("dim", "    (cached)\n"))
                 elif lp_data.source:
                     lines.append(("dim", f"    (source: {lp_data.source})\n"))
             except Exception as e:
@@ -623,7 +624,7 @@ def get_conditions_info() -> FormattedText:
                 lines.append(("yellow", f"Error: {str(e)[:30]}...\n"))
         else:
             lines.append(("yellow", "Location not set\n"))
-    except Exception as e:
+    except Exception:
         logger.exception("Error in light pollution display")
         lines.append(("yellow", "Unavailable\n"))
 

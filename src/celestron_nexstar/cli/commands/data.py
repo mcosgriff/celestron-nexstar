@@ -122,9 +122,7 @@ def stats() -> None:
 
             if table_exists:
                 # Get total count
-                total_count = session.execute(
-                    text("SELECT COUNT(*) FROM light_pollution_grid")
-                ).fetchone()[0]
+                total_count = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()[0]
 
                 if total_count > 0:
                     # Get SQM range
@@ -178,7 +176,7 @@ def stats() -> None:
                     console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
             else:
                 console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
-    except Exception as e:
+    except Exception:
         # Silently skip if there's an error (table might not exist)
         pass
 
@@ -232,7 +230,7 @@ def vacuum() -> None:
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("clear-light-pollution")
@@ -279,17 +277,15 @@ def clear_light_pollution(
         with db._get_session() as session:
             from sqlalchemy import text
 
-            result = session.execute(
-                text("SELECT COUNT(*) FROM light_pollution_grid")
-            ).fetchone()
+            result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
             row_count = result[0] if result else 0
     except Exception:
         console.print("\n[yellow]⚠[/yellow] Light pollution table does not exist or is empty.\n")
-        raise typer.Exit(code=0)
+        raise typer.Exit(code=0) from None
 
     if row_count == 0:
         console.print("\n[dim]Light pollution table is already empty.[/dim]\n")
-        raise typer.Exit(code=0)
+        raise typer.Exit(code=0) from None
 
     # Show what will be deleted
     console.print("\n[bold yellow]⚠ Warning: This will delete all light pollution data![/bold yellow]\n")
@@ -304,15 +300,17 @@ def clear_light_pollution(
             )
             if response.lower() not in ("yes", "y"):
                 console.print("\n[dim]Operation cancelled.[/dim]\n")
-                raise typer.Exit(code=0)
+                raise typer.Exit(code=0) from None
         except typer.Abort:
             console.print("\n[dim]Operation cancelled.[/dim]\n")
-            raise typer.Exit(code=0)
+            raise typer.Exit(code=0) from None
 
     # Clear the data
     try:
         deleted_count = clear_light_pollution_data(db)
-        console.print(f"\n[bold green]✓[/bold green] Cleared [green]{deleted_count:,}[/green] rows from light pollution table.\n")
+        console.print(
+            f"\n[bold green]✓[/bold green] Cleared [green]{deleted_count:,}[/green] rows from light pollution table.\n"
+        )
 
         # Run VACUUM to reclaim space
         if vacuum:
@@ -322,7 +320,7 @@ def clear_light_pollution(
             size_before, size_after = vacuum_database(db)
             size_reclaimed = size_before - size_after
 
-            console.print(f"[bold green]✓[/bold green] Database optimized")
+            console.print("[bold green]✓[/bold green] Database optimized")
             console.print(f"  Size before: [cyan]{size_before / (1024 * 1024):.2f} MB[/cyan]")
             console.print(f"  Size after:  [cyan]{size_after / (1024 * 1024):.2f} MB[/cyan]")
             if size_reclaimed > 0:
@@ -336,7 +334,7 @@ def clear_light_pollution(
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("download-light-pollution")
@@ -403,7 +401,7 @@ def download_light_pollution(
         Use --states to limit download to specific states/provinces.
         This significantly reduces database size. Example:
         --states "Colorado,New Mexico,Arizona"
-        
+
         Supported: US states, Canadian provinces, Mexican states
         Only works with --region north_america
     """
@@ -412,7 +410,7 @@ def download_light_pollution(
     from ...api.light_pollution_db import download_world_atlas_data_sync
 
     regions_to_download = [region] if region else None
-    
+
     # Parse states filter
     state_filter = None
     if states:
@@ -463,12 +461,8 @@ def download_light_pollution(
 
         console.print(results_table)
         console.print(f"\n[bold]Total grid points:[/bold] [green]{total_points:,}[/green]")
-        console.print(
-            "\n[dim]Light pollution data is now available offline in the database.[/dim]"
-        )
-        console.print(
-            "[dim]The system will automatically use this data when APIs are unavailable.[/dim]\n"
-        )
+        console.print("\n[dim]Light pollution data is now available offline in the database.[/dim]")
+        console.print("[dim]The system will automatically use this data when APIs are unavailable.[/dim]\n")
 
     except ImportError as e:
         if "PIL" in str(e) or "Pillow" in str(e):
@@ -477,10 +471,10 @@ def download_light_pollution(
             console.print("  [cyan]pip install Pillow[/cyan]\n")
         else:
             console.print(f"\n[red]✗[/red] Error: {e}\n")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"\n[red]✗[/red] Error downloading data: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None

@@ -107,4 +107,3 @@ class MovementController:
             Current direction or None if not moving
         """
         return self.active_direction
-

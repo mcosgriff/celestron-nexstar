@@ -371,9 +371,7 @@ def _estimate_sqm_from_location(lat: float, lon: float) -> float:
     return 20.0
 
 
-async def get_light_pollution_data_async(
-    lat: float, lon: float, force_refresh: bool = False
-) -> LightPollutionData:
+async def get_light_pollution_data_async(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
     """
     Get light pollution data for a location (async).
 
@@ -475,9 +473,7 @@ def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False
                 age = datetime.now(UTC) - cache_time.replace(tzinfo=UTC)
                 if age < timedelta(hours=CACHE_STALE_HOURS):
                     # Use cached data
-                    return _create_light_pollution_data(
-                        location_data["sqm"], location_data.get("source"), cached=True
-                    )
+                    return _create_light_pollution_data(location_data["sqm"], location_data.get("source"), cached=True)
             except (ValueError, KeyError):
                 pass
 
@@ -489,9 +485,7 @@ def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False
             location_data = cache_data["data"].get(cache_key)
             if location_data:
                 # Use stale cache rather than blocking
-                return _create_light_pollution_data(
-                    location_data["sqm"], location_data.get("source"), cached=True
-                )
+                return _create_light_pollution_data(location_data["sqm"], location_data.get("source"), cached=True)
         # No cache available, use estimation
         sqm = _estimate_sqm_from_location(lat, lon)
         return _create_light_pollution_data(sqm, "estimated", cached=False)
@@ -545,4 +539,3 @@ async def get_light_pollution_data_batch_async(
             data_map[(lat, lon)] = _create_light_pollution_data(sqm, "estimated", cached=False)
 
     return data_map
-

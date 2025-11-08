@@ -7,19 +7,8 @@ Main application class for the full-screen terminal user interface.
 from __future__ import annotations
 
 from prompt_toolkit import Application, PromptSession
-from prompt_toolkit.formatted_text import FormattedText
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.key_binding.key_processor import KeyPressEvent
-from prompt_toolkit.layout.containers import (
-    ConditionalContainer,
-    HSplit,
-    VSplit,
-    Window,
-)
-from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.layout.containers import FloatContainer
 from prompt_toolkit.layout.layout import Layout
-from prompt_toolkit.styles import Style
 from rich.console import Console
 
 from .bindings import create_key_bindings
@@ -437,21 +426,23 @@ def _show_settings_dialog() -> None:
 
 def _show_location_input_dialog() -> str | None:
     """Show btop-style input dialog for location entry.
-    
+
     Note: Due to prompt_toolkit limitations, this temporarily pauses the TUI.
     For better modal support, consider migrating to Textual framework.
     """
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
-    
+
     session: PromptSession[str] = PromptSession()
-    
+
     # Show styled prompt with btop-like appearance
     try:
         result = session.prompt(
-            HTML('<style fg="#ff6600">[Location]</style> Enter location to geocode:\n'
-                 'Examples: "New York, NY", "90210", "London, UK"\n'
-                 '<style fg="#ff6600">></style> '),
+            HTML(
+                '<style fg="#ff6600">[Location]</style> Enter location to geocode:\n'
+                'Examples: "New York, NY", "90210", "London, UK"\n'
+                '<style fg="#ff6600">></style> '
+            ),
             default="",
         )
         return result.strip() if result else None
@@ -461,23 +452,25 @@ def _show_location_input_dialog() -> str | None:
 
 def _show_location_confirm_dialog(location_name: str, lat: float, lon: float) -> bool:
     """Show confirmation dialog for location update.
-    
+
     Note: Due to prompt_toolkit limitations, this temporarily pauses the TUI.
     """
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
-    
+
     # Format coordinates
     lat_dir = "N" if lat >= 0 else "S"
     lon_dir = "E" if lon >= 0 else "W"
-    
+
     session: PromptSession[str] = PromptSession()
     try:
         result = session.prompt(
-            HTML(f'<style fg="#ff6600">[Confirm Location]</style>\n'
-                 f'Location: <style fg="cyan">{location_name}</style>\n'
-                 f'Coordinates: {abs(lat):.4f}° {lat_dir}, {abs(lon):.4f}° {lon_dir}\n'
-                 f'Update location? (y/n): '),
+            HTML(
+                f'<style fg="#ff6600">[Confirm Location]</style>\n'
+                f'Location: <style fg="cyan">{location_name}</style>\n'
+                f"Coordinates: {abs(lat):.4f}° {lat_dir}, {abs(lon):.4f}° {lon_dir}\n"
+                f"Update location? (y/n): "
+            ),
             default="n",
         )
         return result.strip().lower() in ("y", "yes")
@@ -488,7 +481,7 @@ def _show_location_confirm_dialog(location_name: str, lat: float, lon: float) ->
 def _update_location_interactive() -> None:
     """Interactive location update with geocoding using btop-style dialogs."""
     try:
-        from ...api.observer import geocode_location, get_observer_location, set_observer_location
+        from ...api.observer import geocode_location, set_observer_location
 
         # Step 1: Get location input
         query = _show_location_input_dialog()
@@ -524,7 +517,7 @@ def _show_error_dialog(message: str) -> None:
     """Show error dialog."""
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
-    
+
     session: PromptSession[str] = PromptSession()
     session.prompt(
         HTML(f'<style fg="#ff0000">✗ Error:</style> {message}\n\nPress Enter to continue...'),
@@ -535,7 +528,7 @@ def _show_success_dialog(message: str) -> None:
     """Show success dialog."""
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
-    
+
     session: PromptSession[str] = PromptSession()
     session.prompt(
         HTML(f'<style fg="#00ff00">✓ Success:</style> {message}\n\nPress Enter to continue...'),
@@ -545,7 +538,7 @@ def _show_success_dialog(message: str) -> None:
 def _show_info_dialog(message: str) -> None:
     """Show info dialog."""
     from prompt_toolkit import PromptSession
-    
+
     session: PromptSession[str] = PromptSession()
     session.prompt(f"{message}\n\nPress Enter to continue...")
 

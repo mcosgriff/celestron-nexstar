@@ -192,4 +192,3 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
 
     warning_msg = "; ".join(warnings) if warnings else "Good observing conditions"
     return (status, warning_msg)
-

@@ -485,4 +485,3 @@ class PositionTracker:
                 f"Dec: {dec_sign}{dec_d:02d}°{dec_m:02d}'{dec_s:02d}\"  "
                 f"Alt: {alt:.1f}°  Az: {az:.1f}°{age}{chart_info}{slew_info}"
             )
-

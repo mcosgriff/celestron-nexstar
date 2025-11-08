@@ -239,14 +239,17 @@ class ObservationPlanner:
         if target_types:
             filtered_objects = []
             for obj in all_objects:
-                if (ObservingTarget.PLANETS in target_types and obj.object_type.value == "planet") or (
-                    ObservingTarget.MESSIER in target_types and obj.catalog == "messier"
-                ) or (ObservingTarget.CALDWELL in target_types and obj.catalog == "caldwell") or (
-                    ObservingTarget.NGC_IC in target_types and obj.catalog in ("ngc", "ic")
-                ) or (
-                    ObservingTarget.DEEP_SKY in target_types
-                    and obj.object_type.value in ("galaxy", "nebula", "cluster")
-                ) or (ObservingTarget.DOUBLE_STARS in target_types and obj.object_type.value == "double_star"):
+                if (
+                    (ObservingTarget.PLANETS in target_types and obj.object_type.value == "planet")
+                    or (ObservingTarget.MESSIER in target_types and obj.catalog == "messier")
+                    or (ObservingTarget.CALDWELL in target_types and obj.catalog == "caldwell")
+                    or (ObservingTarget.NGC_IC in target_types and obj.catalog in ("ngc", "ic"))
+                    or (
+                        ObservingTarget.DEEP_SKY in target_types
+                        and obj.object_type.value in ("galaxy", "nebula", "cluster")
+                    )
+                    or (ObservingTarget.DOUBLE_STARS in target_types and obj.object_type.value == "double_star")
+                ):
                     filtered_objects.append(obj)
             all_objects = filtered_objects
 
@@ -465,4 +468,3 @@ def get_tonight_plan(
     conditions = _planner.get_tonight_conditions(lat, lon)
     objects = _planner.get_recommended_objects(conditions, target_types)
     return conditions, objects
-

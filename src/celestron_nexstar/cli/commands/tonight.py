@@ -38,7 +38,7 @@ def show_conditions() -> None:
         else:
             quality_text = "[red]Poor[/red]"
 
-        console.print(f"Overall Quality: {quality_text} ({quality*100:.0f}/100)\n")
+        console.print(f"Overall Quality: {quality_text} ({quality * 100:.0f}/100)\n")
 
         # Weather
         weather = conditions.weather
@@ -76,7 +76,7 @@ def show_conditions() -> None:
 
         # Moon
         console.print("[bold]Moon:[/bold]")
-        console.print(f"  Illumination: {conditions.moon_illumination*100:.0f}%")
+        console.print(f"  Illumination: {conditions.moon_illumination * 100:.0f}%")
         console.print(f"  Altitude: {conditions.moon_altitude:.1f}°")
         console.print()
 
@@ -96,13 +96,13 @@ def show_conditions() -> None:
 
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"[red]Error getting conditions:[/red] {e}")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("objects")
@@ -123,7 +123,7 @@ def show_objects(
             except ValueError:
                 console.print(f"[red]Invalid target type: {target_type}[/red]")
                 console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from None
 
         objects = planner.get_recommended_objects(conditions, target_types, max_results=limit)
 
@@ -160,13 +160,13 @@ def show_objects(
 
     except ValueError as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     except Exception as e:
         console.print(f"[red]Error getting objects:[/red] {e}")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command("plan")
@@ -178,4 +178,3 @@ def show_plan(
     show_conditions()
     console.print("\n" + "=" * 80 + "\n")
     show_objects(target_type=target_type, limit=limit)
-

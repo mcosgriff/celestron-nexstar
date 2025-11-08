@@ -114,4 +114,3 @@ def parse_catalog_number(name: str, catalog: str) -> int | None:
                     return int(digits)
 
     return None
-

@@ -9,7 +9,7 @@ geospatial queries with R-tree spatial indexing when available. Falls back to
 regular SQL queries if SpatiaLite is not installed.
 
 SpatiaLite Installation (optional, for better performance):
-    Linux: 
+    Linux:
         sudo apt-get install libsqlite3-mod-spatialite libspatialite-dev
         # Also install pysqlite3-binary for Python 3.13:
         uv add pysqlite3-binary
@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from urllib import request
 
 from sqlalchemy import text
+
 
 if TYPE_CHECKING:
     from .database import CatalogDatabase
@@ -59,6 +60,7 @@ REGION_BOUNDS = {
     "asia": (5.0, 75.0, 60.0, 180.0),
     "australia": (-48.0, 8.0, 94.0, 180.0),
 }
+
 
 # Light pollution color scale mapping (RGB to SQM)
 # Based on typical light pollution map color scales
@@ -224,9 +226,7 @@ def clear_light_pollution_data(db: CatalogDatabase) -> int:
     """
     with db._get_session() as session:
         # First, get count of rows to be deleted
-        count_result = session.execute(
-            text("SELECT COUNT(*) FROM light_pollution_grid")
-        ).fetchone()
+        count_result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
         row_count = count_result[0] if count_result else 0
 
         if row_count == 0:
@@ -823,4 +823,3 @@ def download_world_atlas_data_sync(
         return {}
     except RuntimeError:
         return asyncio.run(download_world_atlas_data(regions, grid_resolution, force, state_filter))
-
