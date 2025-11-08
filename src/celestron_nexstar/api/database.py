@@ -633,15 +633,37 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     logger.info(f"Database size before: {size_before / (1024 * 1024):.2f} MB")
 
     # Run VACUUM
+    # Note: VACUUM rebuilds the entire database file, so we need to ensure
+    # all connections are closed for the file size to update properly
     with db._get_session() as session:
         session.execute(text("VACUUM"))
         session.commit()
 
+    # Close the engine to ensure all connections are released and file is written
+    # This is important because VACUUM creates a new database file
+    db._engine.dispose()
+
+    # Small delay to ensure filesystem updates (some filesystems cache stat info)
+    import time
+
+    time.sleep(0.1)
+
     # Get file size after vacuum
-    size_after = db.db_path.stat().st_size if db.db_path.exists() else 0
+    # Note: Some filesystems may cache file size, so the actual size on disk
+    # may differ from what stat() reports immediately after VACUUM
+    if db.db_path.exists():
+        # Refresh stat cache by accessing the file
+        size_after = db.db_path.stat().st_size
+    else:
+        size_after = 0
+
     size_reclaimed = size_before - size_after
 
     logger.info(f"Database size after: {size_after / (1024 * 1024):.2f} MB")
     logger.info(f"Space reclaimed: {size_reclaimed / (1024 * 1024):.2f} MB")
+    logger.info(
+        f"Note: If filesystem shows different size, it may be cached. "
+        f"Actual size on disk: {size_after / (1024 * 1024):.2f} MB"
+    )
 
     return (size_before, size_after)
