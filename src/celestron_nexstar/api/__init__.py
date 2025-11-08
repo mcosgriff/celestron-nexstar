@@ -126,6 +126,25 @@ from celestron_nexstar.api.visibility import (
     get_object_altitude_azimuth,
 )
 
+# Weather API
+from celestron_nexstar.api.weather import (
+    WeatherData,
+    assess_observing_conditions,
+    fetch_weather,
+    get_weather_api_key,
+)
+
+# Import utilities
+from celestron_nexstar.api.importers import (
+    map_openngc_type,
+    parse_catalog_number,
+    parse_ra_dec,
+)
+
+# Movement and tracking
+from celestron_nexstar.api.movement import MovementController
+from celestron_nexstar.api.tracking import PositionTracker
+
 
 __all__ = [
     "ALL_CATALOGS",
@@ -221,4 +240,16 @@ __all__ = [
     "set_current_configuration",
     "set_observer_location",
     "verify_file",
+    # Weather
+    "WeatherData",
+    "assess_observing_conditions",
+    "fetch_weather",
+    "get_weather_api_key",
+    # Importers
+    "map_openngc_type",
+    "parse_catalog_number",
+    "parse_ra_dec",
+    # Movement and tracking
+    "MovementController",
+    "PositionTracker",
 ]

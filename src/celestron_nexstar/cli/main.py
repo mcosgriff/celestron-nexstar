@@ -5,6 +5,7 @@ This is the main entry point for the Celestron NexStar command-line interface.
 """
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 
 # Import and register subcommands
@@ -85,6 +86,8 @@ def main(
     state["port"] = port
     state["profile"] = profile
     state["verbose"] = verbose
+
+    load_dotenv()
 
     if verbose:
         console.print("[dim]Verbose mode enabled[/dim]")
@@ -170,19 +173,27 @@ def shell() -> None:
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.key_binding.key_processor import KeyPressEvent
     from prompt_toolkit.styles import Style
 
-    from .movement import MovementController
-    from .tracking import PositionTracker
+    from celestron_nexstar.api.movement import MovementController
+    from celestron_nexstar.api.tracking import PositionTracker
+
     from .tutorial import TutorialSystem
+
+    # Helper function to get port with correct type
+    def get_port() -> str | None:
+        """Get port from state, ensuring correct type."""
+        port = state.get("port")
+        return port if isinstance(port, str) else None
 
     # Background position tracking state
     # Instantiate the tracker with a function to get the port
-    tracker = PositionTracker(lambda: state.get("port"))
+    tracker = PositionTracker(get_port)
 
     # Interactive movement control state
     # Instantiate the movement controller with a function to get the port
-    movement = MovementController(lambda: state.get("port"))
+    movement = MovementController(get_port)
 
     # Tutorial system
     tutorial_system = TutorialSystem(console)
@@ -248,7 +259,8 @@ def shell() -> None:
 
         # Movement control status
         if movement.moving:
-            arrow = {"up": "↑", "down": "↓", "left": "←", "right": "→"}.get(movement.active_direction, "?")
+            direction = movement.active_direction or ""
+            arrow = {"up": "↑", "down": "↓", "left": "←", "right": "→"}.get(direction, "?")
             parts.append(
                 f'<b><style bg="ansired" fg="ansiwhite"> Moving {arrow} Speed:{movement.slew_rate}/9 </style></b>'
             )
@@ -264,7 +276,7 @@ def shell() -> None:
 
     # Define filter: only activate speed/movement keys when input buffer is empty
     @Condition
-    def buffer_is_empty():
+    def buffer_is_empty() -> bool:
         from prompt_toolkit.application import get_app
 
         try:
@@ -275,51 +287,52 @@ def shell() -> None:
 
     # Arrow keys move telescope (only when not typing)
     @kb.add("up", filter=buffer_is_empty)
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Move telescope up when up arrow is pressed (only when not typing)."""
         movement.start_move("up")
 
     @kb.add("down", filter=buffer_is_empty)
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Move telescope down when down arrow is pressed (only when not typing)."""
         movement.start_move("down")
 
     @kb.add("left", filter=buffer_is_empty)
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Move telescope left when left arrow is pressed (only when not typing)."""
         movement.start_move("left")
 
     @kb.add("right", filter=buffer_is_empty)
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Move telescope right when right arrow is pressed (only when not typing)."""
         movement.start_move("right")
 
     # Speed adjustment (only when not typing to avoid interfering with -- arguments)
     @kb.add("+", filter=buffer_is_empty)
     @kb.add("=", filter=buffer_is_empty)  # Also works without shift
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Increase slew rate (only when not typing)."""
         movement.increase_rate()
 
     @kb.add("-", filter=buffer_is_empty)
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Decrease slew rate (only when not typing)."""
+        movement.decrease_rate()
         movement.decrease_rate()
 
     # Command history navigation using Ctrl+P (previous) and Ctrl+N (next)
     @kb.add("c-p")
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Navigate to previous command in history (Ctrl+P)."""
         event.current_buffer.history_backward()
 
     @kb.add("c-n")
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Navigate to next command in history (Ctrl+N)."""
         event.current_buffer.history_forward()
 
     # ESC always stops movement (works anytime)
     @kb.add("escape")
-    def _(event):
+    def _(event: KeyPressEvent) -> None:
         """Stop telescope movement when ESC is pressed."""
         movement.stop_move()
 
@@ -331,7 +344,7 @@ def shell() -> None:
     )
 
     # Create session with history and completion
-    session = PromptSession(
+    session: PromptSession[str] = PromptSession(
         history=InMemoryHistory(),
         completer=NestedCompleter.from_nested_dict(build_completions()),
         key_bindings=kb,

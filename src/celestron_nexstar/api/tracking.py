@@ -11,11 +11,14 @@ in a background thread with features including:
 - ASCII star chart visualization
 """
 
+from __future__ import annotations
+
 import csv
 import json
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -23,7 +26,7 @@ from typing import Any
 class PositionTracker:
     """Background thread for tracking telescope position."""
 
-    def __init__(self, get_port_func: callable) -> None:
+    def __init__(self, get_port_func: Callable[[], str | None]) -> None:
         """Initialize the position tracker.
 
         Args:
@@ -339,7 +342,7 @@ class PositionTracker:
         while self.enabled:
             try:
                 # Import here to avoid circular dependencies
-                from celestron_nexstar import NexStarTelescope
+                from .telescope import NexStarTelescope
 
                 # Check if we have a connection
                 port = self.get_port()
@@ -482,3 +485,4 @@ class PositionTracker:
                 f"Dec: {dec_sign}{dec_d:02d}°{dec_m:02d}'{dec_s:02d}\"  "
                 f"Alt: {alt:.1f}°  Az: {az:.1f}°{age}{chart_info}{slew_info}"
             )
+

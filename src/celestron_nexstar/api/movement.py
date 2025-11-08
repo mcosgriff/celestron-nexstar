@@ -2,18 +2,25 @@
 Movement Controller for Interactive Telescope Control
 
 This module provides the MovementController class for real-time telescope
-movement control using arrow keys with features including:
-- Arrow key directional control (up/down/left/right)
+movement control with features including:
+- Directional control (up/down/left/right)
 - Variable slew rate adjustment (0-9)
-- Visual feedback for movement state
-- Emergency stop functionality
+- Movement state tracking
 """
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .telescope import NexStarTelescope
 
 
 class MovementController:
-    """Controller for interactive telescope movement using arrow keys."""
+    """Controller for interactive telescope movement."""
 
-    def __init__(self, get_port_func: callable) -> None:
+    def __init__(self, get_port_func: Callable[[], str | None]) -> None:
         """Initialize the movement controller.
 
         Args:
@@ -38,7 +45,7 @@ class MovementController:
             return
 
         try:
-            from celestron_nexstar import NexStarTelescope
+            from .telescope import NexStarTelescope
 
             with NexStarTelescope(str(port)) as telescope:
                 telescope.move_fixed(direction, self.slew_rate)
@@ -57,7 +64,7 @@ class MovementController:
             return
 
         try:
-            from celestron_nexstar import NexStarTelescope
+            from .telescope import NexStarTelescope
 
             with NexStarTelescope(str(port)) as telescope:
                 telescope.stop_motion("both")
@@ -99,3 +106,4 @@ class MovementController:
             Current direction or None if not moving
         """
         return self.active_direction
+

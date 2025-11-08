@@ -409,9 +409,12 @@ def get_conditions_info() -> FormattedText:
 
     # Weather information
     lines.append(("bold", "Weather:\n"))
+    weather_data = None
+    weather_status = None
+    weather_warning = None
     try:
         from ...api.observer import get_observer_location
-        from .weather import assess_observing_conditions, fetch_weather
+        from ...api.weather import assess_observing_conditions, fetch_weather
 
         # Get location for weather
         weather_location = None
@@ -444,45 +447,45 @@ def get_conditions_info() -> FormattedText:
             weather_location = None
 
         if weather_location:
-            weather = fetch_weather(weather_location)
-            status, warning = assess_observing_conditions(weather)
+            weather_data = fetch_weather(weather_location)
+            weather_status, weather_warning = assess_observing_conditions(weather_data)
 
-            if weather.error:
-                lines.append(("yellow", f"  {weather.error}\n"))
+            if weather_data.error:
+                lines.append(("yellow", f"  {weather_data.error}\n"))
                 lines.append(("dim", "  Set OPENWEATHER_API_KEY env var\n"))
             else:
                 # Status indicator
-                if status == "excellent":
+                if weather_status == "excellent":
                     status_color = "green"
                     status_icon = "✓"
-                elif status == "good":
+                elif weather_status == "good":
                     status_color = "cyan"
                     status_icon = "○"
-                elif status == "fair":
+                elif weather_status == "fair":
                     status_color = "yellow"
                     status_icon = "⚠"
-                elif status == "poor":
+                elif weather_status == "poor":
                     status_color = "red"
                     status_icon = "✗"
                 else:
                     status_color = "dim"
                     status_icon = "?"
 
-                lines.append((status_color, f"  {status_icon} {status.title()}\n"))
-                lines.append(("", f"  {warning}\n"))
+                lines.append((status_color, f"  {status_icon} {weather_status.title()}\n"))
+                lines.append(("", f"  {weather_warning}\n"))
 
                 # Weather details
-                if weather.temperature_c is not None:
-                    lines.append(("", f"  Temp: {weather.temperature_c:.1f}°C\n"))
-                if weather.cloud_cover_percent is not None:
-                    lines.append(("", f"  Clouds: {weather.cloud_cover_percent:.0f}%\n"))
-                if weather.humidity_percent is not None:
-                    lines.append(("", f"  Humidity: {weather.humidity_percent:.0f}%\n"))
-                if weather.wind_speed_ms is not None:
-                    wind_kmh = weather.wind_speed_ms * 3.6
+                if weather_data.temperature_c is not None:
+                    lines.append(("", f"  Temp: {weather_data.temperature_c:.1f}°C\n"))
+                if weather_data.cloud_cover_percent is not None:
+                    lines.append(("", f"  Clouds: {weather_data.cloud_cover_percent:.0f}%\n"))
+                if weather_data.humidity_percent is not None:
+                    lines.append(("", f"  Humidity: {weather_data.humidity_percent:.0f}%\n"))
+                if weather_data.wind_speed_ms is not None:
+                    wind_kmh = weather_data.wind_speed_ms * 3.6
                     lines.append(("", f"  Wind: {wind_kmh:.0f} km/h\n"))
-                if weather.visibility_km is not None:
-                    lines.append(("", f"  Visibility: {weather.visibility_km:.1f} km\n"))
+                if weather_data.visibility_km is not None:
+                    lines.append(("", f"  Visibility: {weather_data.visibility_km:.1f} km\n"))
         else:
             lines.append(("yellow", "  Location not set\n"))
     except Exception:
@@ -519,8 +522,36 @@ def get_conditions_info() -> FormattedText:
     except Exception:
         pass
 
-    lines.append(("yellow", "  Weather: Not available\n"))
-    lines.append(("yellow", "  Light Pollution: Not available\n"))
+    # Show weather status in observing quality
+    if weather_status and weather_data and not weather_data.error:
+        # Status indicator
+        if weather_status == "excellent":
+            status_color = "green"
+            status_text = "Excellent"
+        elif weather_status == "good":
+            status_color = "cyan"
+            status_text = "Good"
+        elif weather_status == "fair":
+            status_color = "yellow"
+            status_text = "Fair"
+        elif weather_status == "poor":
+            status_color = "red"
+            status_text = "Poor"
+        else:
+            status_color = "dim"
+            status_text = "Unknown"
+
+        lines.append(("", "  Weather: "))
+        lines.append((status_color, f"{status_text}\n"))
+    elif weather_data and weather_data.error:
+        lines.append(("", "  Weather: "))
+        lines.append(("yellow", "Unavailable\n"))
+    else:
+        lines.append(("", "  Weather: "))
+        lines.append(("yellow", "Not available\n"))
+
+    lines.append(("", "  Light Pollution: "))
+    lines.append(("yellow", "Not available\n"))
 
     return FormattedText(lines)
 

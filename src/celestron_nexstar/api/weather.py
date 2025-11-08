@@ -16,7 +16,7 @@ from urllib import error, request
 
 
 if TYPE_CHECKING:
-    from ...api.observer import ObserverLocation
+    from .observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         url = (
             f"https://api.openweathermap.org/data/2.5/weather"
             f"?lat={location.latitude}&lon={location.longitude}"
-            f"&appid={api_key}&units=metric"
+            f"&appid={api_key}&units=imperial"
         )
 
         with request.urlopen(url, timeout=10) as response:
@@ -190,3 +190,4 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
 
     warning_msg = "; ".join(warnings) if warnings else "Good observing conditions"
     return (status, warning_msg)
+
