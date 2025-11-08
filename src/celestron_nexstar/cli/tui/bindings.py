@@ -237,6 +237,17 @@ def create_key_bindings() -> KeyBindings:
         """Show settings dialog."""
         event.app.exit(result="settings")
 
+    @kb.add("l")
+    def update_location(event: KeyPressEvent) -> None:
+        """Update observer location (geocode address)."""
+        from .state import get_state
+
+        state = get_state()
+        if state.focused_pane == "conditions":
+            event.app.exit(result="update_location")
+        else:
+            event.app.invalidate()
+
     # Note: Full text input for search requires a modal dialog
     # For now, search mode is toggled with '/' and can be cleared with Esc
     # To actually enter search text, the app would need to show a prompt dialog

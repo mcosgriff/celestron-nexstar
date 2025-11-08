@@ -423,6 +423,81 @@ def _show_settings_dialog() -> None:
         error_session.prompt("Press Enter to continue...")
 
 
+def _update_location_interactive() -> None:
+    """Interactive location update with geocoding."""
+    try:
+        from ...api.observer import geocode_location, get_observer_location, set_observer_location
+
+        current_location = get_observer_location()
+        if current_location:
+            console.print(f"\n[bold]Current Location:[/bold]")
+            if current_location.name:
+                console.print(f"  {current_location.name}")
+            lat_dir = "N" if current_location.latitude >= 0 else "S"
+            lon_dir = "E" if current_location.longitude >= 0 else "W"
+            console.print(
+                f"  {abs(current_location.latitude):.4f}°{lat_dir}, "
+                f"{abs(current_location.longitude):.4f}°{lon_dir}"
+            )
+        else:
+            console.print("\n[bold]Current Location:[/bold] Not set\n")
+
+        console.print("\n[bold]Enter new location:[/bold]")
+        console.print("[dim]Examples: 'New York, NY', '90210', 'London, UK', '123 Main St, Boston, MA'[/dim]")
+        console.print("[dim]Press Ctrl+C to cancel[/dim]\n")
+
+        session: PromptSession[str] = PromptSession()
+        try:
+            query = session.prompt("Location: ").strip()
+            if not query:
+                console.print("[yellow]No location entered, cancelled[/yellow]")
+                console.print("[dim]Press Enter to return...[/dim]")
+                session.prompt("")
+                return
+
+            # Geocode the location
+            console.print(f"\n[dim]Geocoding '{query}'...[/dim]")
+            try:
+                new_location = geocode_location(query)
+                console.print(f"[green]✓[/green] Found: {new_location.name}")
+                lat_dir = "N" if new_location.latitude >= 0 else "S"
+                lon_dir = "E" if new_location.longitude >= 0 else "W"
+                console.print(
+                    f"  Coordinates: {abs(new_location.latitude):.4f}°{lat_dir}, "
+                    f"{abs(new_location.longitude):.4f}°{lon_dir}"
+                )
+
+                # Confirm and save
+                console.print("\n[bold]Update location?[/bold] (y/n): ", end="")
+                confirm = session.prompt("").strip().lower()
+                if confirm in ("y", "yes", ""):
+                    set_observer_location(new_location, save=True)
+                    console.print("[green]✓[/green] Location updated successfully!")
+                    console.print("[dim]Press Enter to return to dashboard...[/dim]")
+                    session.prompt("")
+                else:
+                    console.print("[yellow]Location update cancelled[/yellow]")
+                    console.print("[dim]Press Enter to return...[/dim]")
+                    session.prompt("")
+            except ValueError as e:
+                console.print(f"[red]✗[/red] {e}")
+                console.print("[dim]Press Enter to return...[/dim]")
+                session.prompt("")
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Cancelled[/yellow]")
+            console.print("[dim]Press Enter to return...[/dim]")
+            try:
+                session.prompt("")
+            except KeyboardInterrupt:
+                pass
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+
 def _show_help_overlay() -> None:
     """Show help overlay with keyboard shortcuts."""
     try:
@@ -572,6 +647,10 @@ class TUIApplication:
                 self._initialize_app()
             elif result == "help":
                 _show_help_overlay()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "update_location":
+                _update_location_interactive()
                 # Recreate app to refresh
                 self._initialize_app()
             else:

@@ -56,6 +56,26 @@ from celestron_nexstar.api.exceptions import (
     TelescopeTimeoutError,
 )
 
+# Import utilities
+from celestron_nexstar.api.importers import (
+    map_openngc_type,
+    parse_catalog_number,
+    parse_ra_dec,
+)
+
+# Light pollution
+from celestron_nexstar.api.light_pollution import (
+    BortleClass,
+    LightPollutionData,
+    get_light_pollution_data,
+    get_light_pollution_data_async,
+    get_light_pollution_data_batch_async,
+    sqm_to_bortle,
+)
+
+# Movement and tracking
+from celestron_nexstar.api.movement import MovementController
+
 # Observer location management
 from celestron_nexstar.api.observer import (
     DEFAULT_LOCATION,
@@ -87,6 +107,7 @@ from celestron_nexstar.api.optics import (
     set_current_configuration,
 )
 from celestron_nexstar.api.telescope import NexStarTelescope
+from celestron_nexstar.api.tracking import PositionTracker
 
 # Type definitions
 from celestron_nexstar.api.types import (
@@ -134,17 +155,6 @@ from celestron_nexstar.api.weather import (
     get_weather_api_key,
 )
 
-# Import utilities
-from celestron_nexstar.api.importers import (
-    map_openngc_type,
-    parse_catalog_number,
-    parse_ra_dec,
-)
-
-# Movement and tracking
-from celestron_nexstar.api.movement import MovementController
-from celestron_nexstar.api.tracking import PositionTracker
-
 
 __all__ = [
     "ALL_CATALOGS",
@@ -157,6 +167,8 @@ __all__ = [
     "PLANET_NAMES",
     "TELESCOPE_SPECS",
     "AlignmentMode",
+    # Light pollution
+    "BortleClass",
     # Catalogs
     "CelestialObject",
     "CommandError",
@@ -168,6 +180,9 @@ __all__ = [
     "GeographicLocation",
     "HorizontalCoordinates",
     "InvalidCoordinateError",
+    "LightPollutionData",
+    # Movement and tracking
+    "MovementController",
     # Exceptions
     "NexStarError",
     # Main telescope class
@@ -176,6 +191,7 @@ __all__ = [
     # Observer location
     "ObserverLocation",
     "OpticalConfiguration",
+    "PositionTracker",
     "TelescopeConfig",
     "TelescopeConnectionError",
     "TelescopeInfo",
@@ -188,8 +204,11 @@ __all__ = [
     "TrackingMode",
     # Visibility
     "VisibilityInfo",
+    # Weather
+    "WeatherData",
     "alt_az_to_ra_dec",
     "angular_separation",
+    "assess_observing_conditions",
     "assess_visibility",
     "calculate_atmospheric_extinction",
     "calculate_dawes_limit_arcsec",
@@ -205,6 +224,7 @@ __all__ = [
     "delete_file",
     "download_file",
     "download_set",
+    "fetch_weather",
     "filter_visible_objects",
     "format_dec",
     "format_position",
@@ -219,6 +239,9 @@ __all__ = [
     "get_ephemeris_directory",
     "get_file_size",
     "get_installed_files",
+    "get_light_pollution_data",
+    "get_light_pollution_data_async",
+    "get_light_pollution_data_batch_async",
     "get_object_altitude_azimuth",
     "get_object_by_name",
     "get_observer_location",
@@ -227,11 +250,16 @@ __all__ = [
     "get_set_info",
     "get_telescope_specs",
     "get_total_size",
+    "get_weather_api_key",
     "hours_to_hms",
     "is_dynamic_object",
     "is_file_installed",
     "is_object_resolvable",
     "load_location",
+    # Importers
+    "map_openngc_type",
+    "parse_catalog_number",
+    "parse_ra_dec",
     "ra_dec_to_alt_az",
     # Coordinate conversions
     "ra_to_hours",
@@ -239,17 +267,6 @@ __all__ = [
     "search_objects",
     "set_current_configuration",
     "set_observer_location",
+    "sqm_to_bortle",
     "verify_file",
-    # Weather
-    "WeatherData",
-    "assess_observing_conditions",
-    "fetch_weather",
-    "get_weather_api_key",
-    # Importers
-    "map_openngc_type",
-    "parse_catalog_number",
-    "parse_ra_dec",
-    # Movement and tracking
-    "MovementController",
-    "PositionTracker",
 ]

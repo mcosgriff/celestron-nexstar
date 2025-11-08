@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import FormattedText
 
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     pass
@@ -550,8 +552,80 @@ def get_conditions_info() -> FormattedText:
         lines.append(("", "  Weather: "))
         lines.append(("yellow", "Not available\n"))
 
+    # Light pollution information
     lines.append(("", "  Light Pollution: "))
-    lines.append(("yellow", "Not available\n"))
+    try:
+        from ...api.light_pollution import BortleClass, get_light_pollution_data
+
+        # Get location for light pollution (same logic as weather)
+        lp_location = None
+        try:
+            from ..utils.state import get_telescope
+
+            telescope = get_telescope()
+            if telescope and telescope.protocol and telescope.protocol.is_open():
+                try:
+                    telescope_location = telescope.get_location()
+                    if (
+                        telescope_location
+                        and telescope_location.latitude != 0.0
+                        and telescope_location.longitude != 0.0
+                    ):
+                        lp_location = (telescope_location.latitude, telescope_location.longitude)
+                except Exception:
+                    pass
+
+            if lp_location is None:
+                location = get_observer_location()
+                if location:
+                    lp_location = (location.latitude, location.longitude)
+        except Exception:
+            lp_location = None
+
+        if lp_location:
+            try:
+                lp_data = get_light_pollution_data(lp_location[0], lp_location[1])
+                
+                # Display Bortle class with color coding
+                bortle = lp_data.bortle_class
+                if bortle <= BortleClass.CLASS_2:
+                    bortle_color = "green"
+                elif bortle <= BortleClass.CLASS_4:
+                    bortle_color = "cyan"
+                elif bortle <= BortleClass.CLASS_6:
+                    bortle_color = "yellow"
+                else:
+                    bortle_color = "red"
+
+                lines.append((bortle_color, f"Bortle {bortle.value}\n"))
+                lines.append(("", f"    SQM: {lp_data.sqm_value:.2f} mag/arcsec²\n"))
+                lines.append(("", f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.1f} mag\n"))
+                
+                # Show visibility indicators
+                visibility_parts = []
+                if lp_data.milky_way_visible:
+                    visibility_parts.append("Milky Way")
+                if lp_data.airglow_visible:
+                    visibility_parts.append("Airglow")
+                if lp_data.zodiacal_light_visible:
+                    visibility_parts.append("Zodiacal Light")
+                
+                if visibility_parts:
+                    lines.append(("dim", f"    Visible: {', '.join(visibility_parts)}\n"))
+                
+                # Show source (cached or API)
+                if lp_data.cached:
+                    lines.append(("dim", f"    (cached)\n"))
+                elif lp_data.source:
+                    lines.append(("dim", f"    (source: {lp_data.source})\n"))
+            except Exception as e:
+                logger.exception("Error fetching light pollution data")
+                lines.append(("yellow", f"Error: {str(e)[:30]}...\n"))
+        else:
+            lines.append(("yellow", "Location not set\n"))
+    except Exception as e:
+        logger.exception("Error in light pollution display")
+        lines.append(("yellow", "Unavailable\n"))
 
     return FormattedText(lines)
 
@@ -883,7 +957,7 @@ def get_status_info() -> FormattedText:
             lines.append(("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter /=search"))
     elif state.focused_pane == "conditions":
         # Unique help for conditions pane
-        lines.append(("dim", "q=quit r=refresh u=toggle UTC/Local time 1/2/3=focus"))
+        lines.append(("dim", "q=quit r=refresh u=toggle UTC/Local l=location 1/2/3=focus"))
     elif state.focused_pane == "dataset":
         # Help for dataset pane
         lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session 1/2/3=focus"))
