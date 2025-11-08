@@ -386,16 +386,9 @@ def _show_settings_dialog() -> None:
         console.print(f"  Longitude: {location.longitude:.4f}°")
         console.print(f"  Elevation: {location.elevation:.0f}m\n")
 
-        # Weather API key status
-        import os
-
-        api_key = os.environ.get("OPENWEATHER_API_KEY") or os.environ.get("OWM_API_KEY")
+        # Weather API status
         console.print("[bold]Weather API:[/bold]")
-        if api_key:
-            console.print("  [green]✓[/green] API key configured")
-        else:
-            console.print("  [yellow]✗[/yellow] API key not set")
-            console.print("  [dim]Set OPENWEATHER_API_KEY environment variable[/dim]")
+        console.print("  [green]✓[/green] Using Open-Meteo (free, no API key required)")
         console.print("")
 
         # Telescope connection status

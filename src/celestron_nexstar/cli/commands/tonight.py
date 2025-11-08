@@ -70,7 +70,7 @@ def show_conditions() -> None:
         else:
             quality_text = "[red]Poor[/red]"
 
-        console.print(f"Overall Quality: {quality_text} ({quality * 100:.0f}/100)\n")
+        console.print(f"Overall Quality (general conditions): {quality_text} ({quality * 100:.0f}/100)\n")
 
         # Weather
         weather = conditions.weather
@@ -110,8 +110,51 @@ def show_conditions() -> None:
         else:
             seeing_text = "[red]Poor[/red]"
 
-        console.print("[bold]Seeing Conditions:[/bold]")
+        console.print("[bold]Seeing Conditions[/bold] (atmospheric steadiness for image sharpness):")
         console.print(f"  Seeing: {seeing_text} ({seeing:.0f}/100)")
+
+        # Seeing-based recommendations
+        if seeing >= 80:
+            console.print("  [dim]✓ Ideal for: High-magnification planetary detail, splitting close doubles, faint deep-sky[/dim]")
+        elif seeing >= 60:
+            console.print("  [dim]✓ Good for: Planetary observing, bright deep-sky, double stars[/dim]")
+        elif seeing >= 40:
+            console.print("  [dim]✓ Suitable for: Bright objects, low-power deep-sky, wide doubles[/dim]")
+        else:
+            console.print("  [dim]⚠ Limited to: Bright planets, bright clusters, low-power viewing[/dim]")
+
+        # Best seeing time window
+        if conditions.best_seeing_window_start and conditions.best_seeing_window_end:
+            start_str = _format_local_time(conditions.best_seeing_window_start, conditions.latitude, conditions.longitude)
+            end_str = _format_local_time(conditions.best_seeing_window_end, conditions.latitude, conditions.longitude)
+            # Extract just the time portion
+            start_time = start_str.split()[-2] if " " in start_str else start_str
+            end_time = end_str.split()[-2] if " " in end_str else end_str
+            console.print(f"  [dim]Best seeing window: {start_time} - {end_time}[/dim]")
+
+        # Hourly seeing forecast (if available - uses free Open-Meteo API)
+        if conditions.hourly_seeing_forecast:
+            console.print()
+            console.print("[bold]Hourly Seeing Forecast:[/bold]")
+            # Show next 12 hours
+            forecast_to_show = conditions.hourly_seeing_forecast[:12]
+            for forecast in forecast_to_show:
+                time_str = _format_local_time(forecast.timestamp, conditions.latitude, conditions.longitude)
+                time_only = time_str.split()[-2] if " " in time_str else time_str
+
+                # Color code by seeing score
+                if forecast.seeing_score >= 80:
+                    score_color = "[green]"
+                elif forecast.seeing_score >= 40:
+                    score_color = "[yellow]"
+                else:
+                    score_color = "[red]"
+
+                console.print(
+                    f"  {time_only}: {score_color}{forecast.seeing_score:.0f}/100[/] "
+                    f"[dim]({forecast.cloud_cover_percent or 0:.0f}% clouds, "
+                    f"{forecast.wind_speed_mph or 0:.1f} mph wind)[/]"
+                )
         console.print()
 
         # Light Pollution
@@ -162,6 +205,7 @@ def show_conditions() -> None:
 def show_objects(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
+    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
 ) -> None:
     """Show recommended objects for tonight."""
     try:
@@ -178,7 +222,7 @@ def show_objects(
                 console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
                 raise typer.Exit(code=1) from None
 
-        objects = planner.get_recommended_objects(conditions, target_types, max_results=limit)
+        objects = planner.get_recommended_objects(conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing)
 
         if not objects:
             console.print("[yellow]No objects currently visible with current conditions.[/yellow]")
@@ -191,8 +235,9 @@ def show_objects(
         table.add_column("Type", style="dim")
         table.add_column("Mag", justify="right")
         table.add_column("Alt", justify="right")
-        table.add_column("Best Time", style="dim")
-        table.add_column("Reason", style="dim")
+        table.add_column("Transit", style="dim")
+        table.add_column("Moon Sep", justify="right", style="dim")
+        table.add_column("Tips", style="dim", width=35)
 
         for obj_rec in objects[:limit]:
             priority_stars = "★" * (6 - obj_rec.priority)  # Invert: 1 = ★★★★★, 5 = ★
@@ -210,6 +255,21 @@ def show_objects(
             else:
                 time_str = best_time.strftime("%H:%M UTC")
 
+            # Format viewing tips (show first 2, truncate if needed)
+            tips_text = "; ".join(obj_rec.viewing_tips[:2]) if obj_rec.viewing_tips else ""
+            if len(tips_text) > 33:
+                tips_text = tips_text[:30] + "..."
+
+            # Format moon separation
+            moon_sep_text = "-"
+            if obj_rec.moon_separation_deg is not None:
+                if obj_rec.moon_separation_deg < 30:
+                    moon_sep_text = f"[red]{obj_rec.moon_separation_deg:.0f}°[/red]"  # Too close
+                elif obj_rec.moon_separation_deg < 60:
+                    moon_sep_text = f"[yellow]{obj_rec.moon_separation_deg:.0f}°[/yellow]"  # Moderate
+                else:
+                    moon_sep_text = f"[green]{obj_rec.moon_separation_deg:.0f}°[/green]"  # Good separation
+
             table.add_row(
                 priority_stars,
                 obj.common_name or obj.name,
@@ -217,7 +277,8 @@ def show_objects(
                 f"{obj_rec.apparent_magnitude:.1f}" if obj_rec.apparent_magnitude else "-",
                 f"{obj_rec.altitude:.0f}°",
                 time_str,
-                obj_rec.reason,
+                moon_sep_text,
+                tips_text,
             )
 
         console.print(table)
@@ -238,8 +299,9 @@ def show_objects(
 def show_plan(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
+    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects)."""
     show_conditions()
     console.print("\n" + "=" * 80 + "\n")
-    show_objects(target_type=target_type, limit=limit)
+    show_objects(target_type=target_type, limit=limit, best_for_seeing=best_for_seeing)

@@ -2,7 +2,7 @@
 Weather API Integration
 
 Provides weather data for observing conditions and visibility warnings.
-Uses OpenWeatherMap API (free tier available).
+Uses Open-Meteo API (free, no API key required).
 """
 
 from __future__ import annotations
@@ -11,8 +11,21 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib import error, request
+
+try:
+    import numpy as np
+    import openmeteo_requests
+    import requests_cache
+    from retry_requests import retry
+
+    OPENMETEO_AVAILABLE = True
+except ImportError:
+    OPENMETEO_AVAILABLE = False
+    np = None  # type: ignore[assignment]
 
 
 if TYPE_CHECKING:
@@ -36,9 +49,53 @@ class WeatherData:
     error: str | None = None
 
 
+@dataclass
+class HourlySeeingForecast:
+    """Hourly seeing conditions forecast."""
+
+    timestamp: datetime
+    seeing_score: float  # 0-100
+    temperature_f: float | None
+    dew_point_f: float | None
+    humidity_percent: float | None
+    wind_speed_mph: float | None
+    cloud_cover_percent: float | None
+
+
+def calculate_dew_point_fahrenheit(temp_f: float, humidity_percent: float) -> float:
+    """
+    Calculate dew point from temperature and humidity using Magnus formula.
+
+    Args:
+        temp_f: Temperature in Fahrenheit
+        humidity_percent: Relative humidity as percentage (0-100)
+
+    Returns:
+        Dew point in Fahrenheit
+    """
+    import math
+
+    # Convert to Celsius for calculation
+    temp_c = (temp_f - 32.0) * 5.0 / 9.0
+    humidity = humidity_percent / 100.0
+
+    # Magnus formula constants
+    a = 17.27
+    b = 237.7
+
+    # Calculate dew point in Celsius
+    alpha = ((a * temp_c) / (b + temp_c)) + math.log(humidity)
+    dew_point_c = (b * alpha) / (a - alpha)
+
+    # Convert back to Fahrenheit
+    dew_point_f = (dew_point_c * 9.0 / 5.0) + 32.0
+
+    return dew_point_f
+
+
 def get_weather_api_key() -> str | None:
     """
-    Get OpenWeatherMap API key from environment variable.
+    Get OpenWeatherMap API key from environment variable (deprecated - kept for backward compatibility).
 
     Returns:
         API key if set, None otherwise
@@ -50,7 +107,7 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
     """
     Fetch current weather data for the observer location.
 
-    Uses OpenWeatherMap API (requires free API key).
+    Uses Open-Meteo API (free, no API key required).
 
     Args:
         location: Observer location with latitude and longitude
@@ -58,54 +115,116 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
     Returns:
         WeatherData with current conditions, or error message if failed
     """
-    api_key = get_weather_api_key()
-    if not api_key:
-        return WeatherData(error="No API key set. Set OPENWEATHER_API_KEY environment variable.")
+    if not OPENMETEO_AVAILABLE:
+        return WeatherData(error="openmeteo-requests library not available. Install with: pip install openmeteo-requests")
 
     try:
-        # OpenWeatherMap Current Weather API
-        url = (
-            f"https://api.openweathermap.org/data/2.5/weather"
-            f"?lat={location.latitude}&lon={location.longitude}"
-            f"&appid={api_key}&units=imperial"
-        )
+        # Setup the Open-Meteo API client with cache and retry on error
+        cache_dir = Path.home() / ".cache" / "celestron-nexstar"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_session = requests_cache.CachedSession(str(cache_dir / "openmeteo_cache"), expire_after=3600)
+        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+        openmeteo = openmeteo_requests.Client(session=retry_session)
 
-        with request.urlopen(url, timeout=10) as response:
-            data = json.loads(response.read().decode())
+        # Get current weather from Open-Meteo
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "current": [
+                "temperature_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+                "weather_code",
+            ],
+            "hourly": [
+                "temperature_2m",
+                "dew_point_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+            ],
+            "timezone": "auto",
+            "wind_speed_unit": "mph",
+            "temperature_unit": "fahrenheit",
+            "forecast_days": 1,  # Only need current + a few hours for dew point
+        }
 
-        # Extract relevant weather information
-        main = data.get("main", {})
-        weather = data.get("weather", [{}])[0]
-        clouds = data.get("clouds", {})
-        wind = data.get("wind", {})
-        visibility = data.get("visibility")
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # Get current weather
+        current = response.Current()
+        current_temperature_2m = current.Variables(0).Value()
+        current_relative_humidity_2m = current.Variables(1).Value()
+        current_cloud_cover = current.Variables(2).Value()
+        current_wind_speed_10m = current.Variables(3).Value()
+        weather_code = current.Variables(4).Value()
+
+        # Get hourly data for dew point (first hour)
+        hourly = response.Hourly()
+        hourly_dew_point_2m = hourly.Variables(1).ValuesAsNumpy()
+
+        # Extract values (handle NaN)
+        def safe_float(value: float) -> float | None:
+            """Convert value to float, returning None if NaN."""
+            if np is not None and np.isnan(value):
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+
+        temp_f = safe_float(current_temperature_2m)
+        humidity = safe_float(current_relative_humidity_2m)
+        cloud_cover = safe_float(current_cloud_cover)
+        wind_speed_mph = safe_float(current_wind_speed_10m)
+        dew_point_f = safe_float(hourly_dew_point_2m[0]) if len(hourly_dew_point_2m) > 0 else None
+
+        # If dew point not available, calculate from temp/humidity
+        if dew_point_f is None and temp_f is not None and humidity is not None:
+            dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
+
+        # Map weather code to condition string (WMO Weather interpretation codes)
+        condition = None
+        if weather_code is not None:
+            code = int(weather_code)
+            if code == 0:
+                condition = "Clear"
+            elif code in (1, 2, 3):
+                condition = "Partly Cloudy"
+            elif code in (45, 48):
+                condition = "Foggy"
+            elif code in (51, 53, 55, 56, 57):
+                condition = "Drizzle"
+            elif code in (61, 63, 65, 66, 67):
+                condition = "Rain"
+            elif code in (71, 73, 75, 77):
+                condition = "Snow"
+            elif code in (80, 81, 82):
+                condition = "Rain Showers"
+            elif code in (85, 86):
+                condition = "Snow Showers"
+            elif code in (95, 96, 99):
+                condition = "Thunderstorm"
+            else:
+                condition = "Cloudy"
 
         return WeatherData(
-            temperature_c=main.get("temp"),  # In Fahrenheit when units=imperial
-            dew_point_f=main.get("dew_point"),  # In Fahrenheit when units=imperial
-            humidity_percent=main.get("humidity"),
-            cloud_cover_percent=clouds.get("all"),
-            wind_speed_ms=wind.get("speed"),  # In mph when units=imperial
-            visibility_km=visibility / 1000.0 if visibility else None,  # Convert m to km
-            condition=weather.get("main"),
+            temperature_c=temp_f,  # In Fahrenheit when units=imperial
+            dew_point_f=dew_point_f,
+            humidity_percent=humidity,
+            cloud_cover_percent=cloud_cover,
+            wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
+            visibility_km=None,  # Open-Meteo doesn't provide visibility in free tier
+            condition=condition,
             last_updated="now",
         )
 
-    except error.HTTPError as e:
-        if e.code == 401:
-            return WeatherData(error="Invalid API key")
-        elif e.code == 404:
-            return WeatherData(error="Location not found")
-        else:
-            return WeatherData(error=f"API error: {e.code}")
-    except error.URLError as e:
-        return WeatherData(error=f"Network error: {e.reason}")
-    except (KeyError, ValueError, TypeError) as e:
-        logger.exception("Error parsing weather data")
-        return WeatherData(error=f"Data parsing error: {e}")
     except Exception as e:
-        logger.exception("Unexpected error fetching weather")
-        return WeatherData(error=f"Error: {e}")
+        logger.exception("Error fetching weather from Open-Meteo")
+        return WeatherData(error=f"Error fetching weather: {e}")
 
 
 def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
@@ -307,3 +426,140 @@ def calculate_seeing_conditions(
 
     # Ensure score is between 0-100
     return max(0.0, min(100.0, total_score))
+
+
+def fetch_hourly_weather_forecast(
+    location: ObserverLocation, hours: int = 24
+) -> list[HourlySeeingForecast]:
+    """
+    Fetch hourly weather forecast and calculate seeing conditions for each hour.
+
+    Uses Open-Meteo API (free, no API key required).
+    Falls back gracefully if API is unavailable.
+
+    Args:
+        location: Observer location with latitude and longitude
+        hours: Number of hours to forecast (default: 24, max: 168 for 7 days)
+
+    Returns:
+        List of HourlySeeingForecast objects, or empty list if unavailable
+    """
+    if not OPENMETEO_AVAILABLE:
+        logger.debug("openmeteo-requests not available, skipping hourly forecast")
+        return []
+
+    # Limit to 7 days (168 hours) - Open-Meteo maximum
+    hours = min(hours, 168)
+    forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
+
+    try:
+        # Setup the Open-Meteo API client with cache and retry on error
+        cache_dir = Path.home() / ".cache" / "celestron-nexstar"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_session = requests_cache.CachedSession(str(cache_dir / "openmeteo_cache"), expire_after=3600)
+        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+        openmeteo = openmeteo_requests.Client(session=retry_session)
+
+        # Get timezone for the location (simplified - use UTC offset)
+        # Open-Meteo can auto-detect, but we'll use "auto" for timezone
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "hourly": [
+                "temperature_2m",
+                "dew_point_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+            ],
+            "timezone": "auto",  # Auto-detect timezone
+            "forecast_days": forecast_days,
+            "wind_speed_unit": "mph",
+            "temperature_unit": "fahrenheit",
+        }
+
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # Process hourly data
+        hourly = response.Hourly()
+        hourly_temperature_2m = hourly.Variables(0).ValuesAsNumpy()
+        hourly_dew_point_2m = hourly.Variables(1).ValuesAsNumpy()
+        hourly_relative_humidity_2m = hourly.Variables(2).ValuesAsNumpy()
+        hourly_cloud_cover = hourly.Variables(3).ValuesAsNumpy()
+        hourly_wind_speed_10m = hourly.Variables(4).ValuesAsNumpy()
+
+        # Get time range
+        time_range = hourly.Time()
+        interval = hourly.Interval()
+
+        forecasts = []
+        prev_temp: float | None = None
+
+        # Process each hour
+        for i in range(len(hourly_temperature_2m)):
+            # Calculate timestamp
+            timestamp_seconds = time_range + (i * interval)
+            timestamp = datetime.fromtimestamp(timestamp_seconds, tz=UTC)
+
+            # Extract weather data (handle NaN values)
+            def safe_float(value: float) -> float | None:
+                """Convert numpy value to float, returning None if NaN."""
+                if np is not None and np.isnan(value):
+                    return None
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    return None
+
+            temp_f = safe_float(hourly_temperature_2m[i])
+            dew_point_f = safe_float(hourly_dew_point_2m[i])
+            humidity = safe_float(hourly_relative_humidity_2m[i])
+            cloud_cover = safe_float(hourly_cloud_cover[i])
+            wind_speed_mph = safe_float(hourly_wind_speed_10m[i])
+
+            # Skip if essential data is missing
+            if temp_f is None:
+                continue
+
+            # Calculate temperature change per hour (for stability)
+            temp_change_per_hour = 0.0
+            if prev_temp is not None and temp_f is not None:
+                temp_change_per_hour = temp_f - prev_temp
+            prev_temp = temp_f
+
+            # Create WeatherData for seeing calculation
+            weather_data = WeatherData(
+                temperature_c=temp_f,
+                dew_point_f=dew_point_f,
+                humidity_percent=humidity,
+                cloud_cover_percent=cloud_cover,
+                wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
+                condition=None,  # Open-Meteo doesn't provide condition strings
+            )
+
+            # Calculate seeing score
+            seeing_score = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+
+            forecasts.append(
+                HourlySeeingForecast(
+                    timestamp=timestamp,
+                    seeing_score=seeing_score,
+                    temperature_f=temp_f,
+                    dew_point_f=dew_point_f,
+                    humidity_percent=humidity,
+                    wind_speed_mph=wind_speed_mph,
+                    cloud_cover_percent=cloud_cover,
+                )
+            )
+
+            # Stop if we have enough hours
+            if len(forecasts) >= hours:
+                break
+
+        return forecasts
+
+    except Exception as e:
+        logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
+        return []

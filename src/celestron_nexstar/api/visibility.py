@@ -12,12 +12,20 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+try:
+    import numpy as np
+
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None  # type: ignore[assignment]
+
 from .catalogs import CelestialObject
 from .enums import SkyBrightness
 from .ephemeris import get_planetary_position, is_dynamic_object
 from .observer import get_observer_location
 from .optics import OpticalConfiguration, calculate_limiting_magnitude, get_current_configuration
-from .utils import angular_separation, ra_dec_to_alt_az
+from .utils import angular_separation, calculate_lst, ra_dec_to_alt_az
 
 
 logger = logging.getLogger(__name__)
@@ -332,6 +340,8 @@ def filter_visible_objects(
     """
     Filter a list of objects to only those currently visible.
 
+    Uses vectorized numpy operations when available for faster processing.
+
     Args:
         objects: List of celestial objects
         config: Optical configuration
@@ -346,6 +356,47 @@ def filter_visible_objects(
         List of (object, visibility_info) tuples for visible objects,
         sorted by observability score (best first)
     """
+    if not objects:
+        return []
+
+    # Get optical configuration
+    if config is None:
+        config = get_current_configuration()
+
+    # Get observer location
+    if observer_lat is None or observer_lon is None:
+        location = get_observer_location()
+        if location is None:
+            logger.warning("No observer location set, cannot calculate visibility")
+            return []
+        observer_lat = location.latitude
+        observer_lon = location.longitude
+
+    if dt is None:
+        dt = datetime.now(UTC)
+
+    # Calculate telescope's limiting magnitude once
+    limiting_mag = calculate_limiting_magnitude(
+        config.telescope.effective_aperture_mm,
+        sky_brightness=sky_brightness,
+        exit_pupil_mm=config.exit_pupil_mm,
+    )
+
+    # Use vectorized calculations if numpy is available and we have enough objects
+    if NUMPY_AVAILABLE and len(objects) > 10:
+        return _filter_visible_objects_vectorized(
+            objects,
+            config,
+            limiting_mag,
+            min_altitude_deg,
+            min_observability_score,
+            observer_lat,
+            observer_lon,
+            dt,
+            sky_brightness,
+        )
+
+    # Fallback to original method for small lists or when numpy unavailable
     visible = []
 
     for obj in objects:
@@ -359,6 +410,147 @@ def filter_visible_objects(
             dt=dt,
         )
 
+        if visibility.is_visible and visibility.observability_score >= min_observability_score:
+            visible.append((obj, visibility))
+
+    # Sort by observability score (best first)
+    visible.sort(key=lambda x: x[1].observability_score, reverse=True)
+
+    return visible
+
+
+def _filter_visible_objects_vectorized(
+    objects: list[CelestialObject],
+    config: OpticalConfiguration,
+    limiting_mag: float,
+    min_altitude_deg: float,
+    min_observability_score: float,
+    observer_lat: float,
+    observer_lon: float,
+    dt: datetime,
+    sky_brightness: SkyBrightness,
+) -> list[tuple[CelestialObject, VisibilityInfo]]:
+    """
+    Vectorized version of filter_visible_objects using numpy.
+
+    Processes all objects in batch for faster computation.
+    """
+    if not NUMPY_AVAILABLE or np is None:
+        # Fallback if numpy not available
+        return []
+
+    from .constants import DEGREES_PER_HOUR_ANGLE
+
+    # Separate dynamic and fixed objects
+    fixed_objects = []
+    dynamic_objects = []
+    dynamic_indices = []
+
+    for i, obj in enumerate(objects):
+        if is_dynamic_object(obj.name):
+            dynamic_objects.append(obj)
+            dynamic_indices.append(i)
+        else:
+            fixed_objects.append((i, obj))
+
+    # Process fixed objects in batch (vectorized)
+    if fixed_objects:
+        _, fixed_objs = zip(*fixed_objects, strict=False)
+        ra_hours = np.array([obj.ra_hours for obj in fixed_objs])
+        dec_degrees = np.array([obj.dec_degrees for obj in fixed_objs])
+        magnitudes = np.array([obj.magnitude if obj.magnitude is not None else 999.0 for obj in fixed_objs])
+
+        # Calculate LST once
+        lst_hours = calculate_lst(observer_lon, dt)
+        lst_rad = np.radians(lst_hours * DEGREES_PER_HOUR_ANGLE)
+
+        # Convert to radians
+        ra_rad = np.radians(ra_hours * DEGREES_PER_HOUR_ANGLE)
+        dec_rad = np.radians(dec_degrees)
+        lat_rad = np.radians(observer_lat)
+
+        # Calculate hour angles (vectorized)
+        ha_rad = lst_rad - ra_rad
+
+        # Calculate altitudes (vectorized)
+        sin_alt = np.sin(dec_rad) * np.sin(lat_rad) + np.cos(dec_rad) * np.cos(lat_rad) * np.cos(ha_rad)
+        sin_alt = np.clip(sin_alt, -1.0, 1.0)  # Clamp to valid range
+        alt_rad = np.arcsin(sin_alt)
+        altitudes = np.degrees(alt_rad)
+
+        # Calculate atmospheric extinction (vectorized)
+        extinction = np.where(altitudes > 0, 0.28 / np.tan(np.radians(altitudes)), 0.0)
+        apparent_mags = magnitudes + extinction
+
+        # Filter by altitude and magnitude (vectorized)
+        above_horizon = altitudes > 0
+        above_min_alt = altitudes >= min_altitude_deg
+        bright_enough = apparent_mags <= limiting_mag
+
+        # Calculate observability scores (vectorized)
+        # Start with perfect score, reduce based on conditions
+        scores = np.ones(len(fixed_objs), dtype=np.float64)
+
+        # Reduce score for low altitude
+        low_alt_mask = (altitudes > 0) & (altitudes < min_altitude_deg)
+        scores[low_alt_mask] *= altitudes[low_alt_mask] / min_altitude_deg
+
+        # Reduce score for objects near detection limit
+        mag_headroom = limiting_mag - apparent_mags
+        near_limit_mask = (mag_headroom >= 0) & (mag_headroom < 1.0)
+        scores[near_limit_mask] *= 0.5 + 0.5 * mag_headroom[near_limit_mask]
+
+        # Set score to 0 for invisible objects
+        is_visible_mask = above_horizon & above_min_alt & bright_enough
+        scores[~is_visible_mask] = 0.0
+
+        # Process results
+        visible = []
+        for idx, (_, obj) in enumerate(fixed_objects):
+            if is_visible_mask[idx] and scores[idx] >= min_observability_score:
+                alt = float(altitudes[idx])
+                az = float(np.degrees(np.arccos(np.clip(
+                    (np.sin(dec_rad[idx]) - np.sin(lat_rad) * np.sin(alt_rad[idx]))
+                    / (np.cos(lat_rad) * np.cos(alt_rad[idx])),
+                    -1.0,
+                    1.0,
+                ))))
+                if np.sin(ha_rad[idx]) > 0:
+                    az = 360.0 - az
+
+                reasons = []
+                if alt < min_altitude_deg:
+                    reasons.append(f"Low altitude (alt: {alt:.1f}°, optimal >{min_altitude_deg:.0f}°)")
+                if apparent_mags[idx] > limiting_mag - 1.0:
+                    reasons.append(
+                        f"Near detection limit (mag {apparent_mags[idx]:.1f}, limit {limiting_mag:.1f})"
+                    )
+                else:
+                    reasons.append(f"Magnitude {apparent_mags[idx]:.1f} well within limit")
+
+                visibility = VisibilityInfo(
+                    object_name=obj.name,
+                    is_visible=True,
+                    magnitude=obj.magnitude,
+                    altitude_deg=alt,
+                    azimuth_deg=az,
+                    limiting_magnitude=limiting_mag,
+                    reasons=tuple(reasons),
+                    observability_score=float(scores[idx]),
+                )
+                visible.append((obj, visibility))
+
+    # Process dynamic objects individually (can't vectorize easily)
+    for obj in dynamic_objects:
+        visibility = assess_visibility(
+            obj,
+            config=config,
+            sky_brightness=sky_brightness,
+            min_altitude_deg=min_altitude_deg,
+            observer_lat=observer_lat,
+            observer_lon=observer_lon,
+            dt=dt,
+        )
         if visibility.is_visible and visibility.observability_score >= min_observability_score:
             visible.append((obj, visibility))
 

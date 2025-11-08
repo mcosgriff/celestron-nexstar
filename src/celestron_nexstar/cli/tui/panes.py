@@ -20,6 +20,82 @@ if TYPE_CHECKING:
     pass
 
 
+def _get_indicator_color(score: float) -> str:
+    """
+    Get color for condition indicator based on score (0-100).
+
+    Args:
+        score: Condition score from 0-100
+
+    Returns:
+        Color name for prompt_toolkit styling
+    """
+    if score >= 90:
+        return "ansigreen"  # Great conditions (green)
+    elif score >= 80:
+        return "ansicyan"  # Good conditions (light green/cyan)
+    elif score >= 50:
+        return "ansiyellow"  # Marginal conditions (yellow)
+    else:
+        return "ansired"  # Poor conditions (red)
+
+
+def _calculate_cloud_cover_score(cloud_cover_percent: float) -> float:
+    """
+    Calculate cloud cover score (0-100, higher is better).
+
+    Args:
+        cloud_cover_percent: Cloud cover percentage (0-100)
+
+    Returns:
+        Score from 0-100
+    """
+    # Lower cloud cover = better (0% = 100, 100% = 0)
+    return max(0.0, 100.0 - cloud_cover_percent)
+
+
+def _calculate_wind_score(wind_mph: float) -> float:
+    """
+    Calculate wind speed score (0-100, higher is better).
+
+    Args:
+        wind_mph: Wind speed in mph
+
+    Returns:
+        Score from 0-100
+    """
+    # Optimal: 5-10 mph = 100
+    # Below 5 mph: insufficient mixing (reduced score)
+    # Above 10 mph: turbulence increases (reduced score)
+    if 5.0 <= wind_mph <= 10.0:
+        return 100.0
+    elif wind_mph < 5.0:
+        # Below 5 mph: score reduces linearly
+        return wind_mph * 20.0  # 0-100 points
+    elif wind_mph <= 15.0:
+        # 10-15 mph: score reduces gradually
+        return 100.0 - (wind_mph - 10.0) * 10.0  # 100-50 points
+    elif wind_mph <= 20.0:
+        # 15-20 mph: score reduces more sharply
+        return 50.0 - (wind_mph - 15.0) * 10.0  # 50-0 points
+    else:
+        return 0.0
+
+
+def _calculate_humidity_score(humidity_percent: float) -> float:
+    """
+    Calculate humidity score (0-100, higher is better).
+
+    Args:
+        humidity_percent: Relative humidity percentage (0-100)
+
+    Returns:
+        Score from 0-100
+    """
+    # Lower humidity = better (0% = 100, 100% = 0)
+    return max(0.0, 100.0 - humidity_percent)
+
+
 def get_dataset_info() -> FormattedText:
     """
     Generate formatted text for the dataset information pane.
@@ -455,7 +531,6 @@ def get_conditions_info() -> FormattedText:
 
             if weather_data.error:
                 lines.append(("yellow", f"  {weather_data.error}\n"))
-                lines.append(("dim", "  Set OPENWEATHER_API_KEY env var\n"))
             else:
                 # Status indicator
                 if weather_status == "excellent":
@@ -498,10 +573,54 @@ def get_conditions_info() -> FormattedText:
 
     lines.append(("", "\n"))
 
-    # Observing conditions summary
+    # Observing conditions summary with color-coded indicators
     lines.append(("", "\n"))
     lines.append(("bold", "Observing Quality:\n"))
 
+    # Get seeing score from observation planner
+    seeing_score: float | None = None
+    try:
+        from ...api.observation_planner import ObservationPlanner
+
+        planner = ObservationPlanner()
+        conditions = planner.get_tonight_conditions()
+        seeing_score = conditions.seeing_score
+    except Exception:
+        pass
+
+    # Display color-coded indicators
+    if weather_data and not weather_data.error:
+        # Cloud Cover indicator
+        if weather_data.cloud_cover_percent is not None:
+            cloud_score = _calculate_cloud_cover_score(weather_data.cloud_cover_percent)
+            cloud_color = _get_indicator_color(cloud_score)
+            lines.append(("", "  Cloud Cover: "))
+            lines.append((cloud_color, f"● {weather_data.cloud_cover_percent:.0f}%\n"))
+
+        # Seeing indicator
+        if seeing_score is not None:
+            seeing_color = _get_indicator_color(seeing_score)
+            lines.append(("", "  Seeing: "))
+            lines.append((seeing_color, f"● {seeing_score:.0f}/100\n"))
+
+        # Wind indicator
+        if weather_data.wind_speed_ms is not None:
+            wind_mph = weather_data.wind_speed_ms  # Already in mph when units=imperial
+            wind_score = _calculate_wind_score(wind_mph)
+            wind_color = _get_indicator_color(wind_score)
+            lines.append(("", "  Wind: "))
+            lines.append((wind_color, f"● {wind_mph:.1f} mph\n"))
+
+        # Humidity indicator
+        if weather_data.humidity_percent is not None:
+            humidity_score = _calculate_humidity_score(weather_data.humidity_percent)
+            humidity_color = _get_indicator_color(humidity_score)
+            lines.append(("", "  Humidity: "))
+            lines.append((humidity_color, f"● {weather_data.humidity_percent:.0f}%\n"))
+    else:
+        lines.append(("yellow", "  Conditions: Unavailable\n"))
+
+    # Additional info
     try:
         from ...api.enums import SkyBrightness
         from ...api.optics import calculate_limiting_magnitude, get_current_configuration
@@ -524,34 +643,6 @@ def get_conditions_info() -> FormattedText:
                     lines.append(("", f"  Dark Hours: {hours:.1f}h\n"))
     except Exception:
         pass
-
-    # Show weather status in observing quality
-    if weather_status and weather_data and not weather_data.error:
-        # Status indicator
-        if weather_status == "excellent":
-            status_color = "green"
-            status_text = "Excellent"
-        elif weather_status == "good":
-            status_color = "cyan"
-            status_text = "Good"
-        elif weather_status == "fair":
-            status_color = "yellow"
-            status_text = "Fair"
-        elif weather_status == "poor":
-            status_color = "red"
-            status_text = "Poor"
-        else:
-            status_color = "dim"
-            status_text = "Unknown"
-
-        lines.append(("", "  Weather: "))
-        lines.append((status_color, f"{status_text}\n"))
-    elif weather_data and weather_data.error:
-        lines.append(("", "  Weather: "))
-        lines.append(("yellow", "Unavailable\n"))
-    else:
-        lines.append(("", "  Weather: "))
-        lines.append(("yellow", "Not available\n"))
 
     # Light pollution information
     lines.append(("", "  Light Pollution: "))

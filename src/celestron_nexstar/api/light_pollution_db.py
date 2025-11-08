@@ -515,42 +515,112 @@ def _process_png_to_database(
 
     logger.info(f"Processing {region} image ({width}x{height} pixels)...")
 
-    for y in range(0, height, max(1, int(grid_resolution / lat_step))):
-        for x in range(0, width, max(1, int(grid_resolution / lon_step))):
-            # Get pixel RGB
-            pixel = img.getpixel((x, y))
-            if isinstance(pixel, (int, float)):
-                # Grayscale image
-                r = g = b = int(pixel)
-            elif isinstance(pixel, tuple) and len(pixel) >= 3:
-                # RGB/RGBA tuple
-                r, g, b = pixel[0], pixel[1], pixel[2]
-            else:
-                # Fallback (shouldn't happen with RGB mode)
-                r = g = b = 0
+    # Try to use numpy for faster processing if available
+    try:
+        import numpy as np
 
-            # Convert to lat/lon
-            lat = lat_max - (y * lat_step)
-            lon = lon_min + (x * lon_step)
+        numpy_available = True
+    except ImportError:
+        numpy_available = False
+        np = None  # type: ignore[assignment]
 
-            # Apply state/province filter if specified
-            if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
-                continue
+    # Calculate sampling step
+    y_step = max(1, int(grid_resolution / lat_step))
+    x_step = max(1, int(grid_resolution / lon_step))
 
-            # Convert RGB to SQM
-            sqm = _rgb_to_sqm(r, g, b)
+    # Use numpy for vectorized processing if available
+    if numpy_available and np is not None:
+        # Convert PIL image to numpy array
+        img_array = np.array(img)
+        if len(img_array.shape) == 2:
+            # Grayscale - convert to RGB
+            img_array = np.stack([img_array, img_array, img_array], axis=2)
+        elif len(img_array.shape) == 4:
+            # RGBA - take only RGB
+            img_array = img_array[:, :, :3]
 
-            # Round to grid resolution
-            lat_rounded = round(lat / grid_resolution) * grid_resolution
-            lon_rounded = round(lon / grid_resolution) * grid_resolution
+        # Create coordinate grids (vectorized)
+        y_indices = np.arange(0, height, y_step)
+        x_indices = np.arange(0, width, x_step)
+        y_grid, x_grid = np.meshgrid(y_indices, x_indices, indexing="ij")
 
-            batch_data.append((lat_rounded, lon_rounded, sqm, region))
+        # Calculate lat/lon for all pixels at once (vectorized)
+        lats = lat_max - (y_grid * lat_step)
+        lons = lon_min + (x_grid * lon_step)
 
-            # Insert in batches
-            if len(batch_data) >= batch_size:
-                _insert_batch(db, batch_data)
-                inserted += len(batch_data)
-                batch_data = []
+        # Extract RGB values (vectorized)
+        r_values = img_array[y_grid, x_grid, 0]
+        g_values = img_array[y_grid, x_grid, 1]
+        b_values = img_array[y_grid, x_grid, 2]
+
+        # Convert RGB to SQM (vectorized)
+        # Vectorize the _rgb_to_sqm function
+        r_norm = r_values / 255.0
+        g_norm = g_values / 255.0
+        b_norm = b_values / 255.0
+        brightness = (r_norm + g_norm + b_norm) / 3.0
+        sqm_values = 22.0 - (brightness * 5.0)  # Approximate conversion
+
+        # Round to grid resolution (vectorized)
+        lat_rounded = np.round(lats / grid_resolution) * grid_resolution
+        lon_rounded = np.round(lons / grid_resolution) * grid_resolution
+
+        # Flatten arrays for iteration
+        for i in range(len(y_indices)):
+            for j in range(len(x_indices)):
+                lat = float(lat_rounded[i, j])
+                lon = float(lon_rounded[i, j])
+                sqm = float(sqm_values[i, j])
+
+                # Apply state/province filter if specified
+                if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
+                    continue
+
+                batch_data.append((lat, lon, sqm, region))
+
+                # Insert in batches
+                if len(batch_data) >= batch_size:
+                    _insert_batch(db, batch_data)
+                    inserted += len(batch_data)
+                    batch_data = []
+    else:
+        # Fallback to original pixel-by-pixel method
+        for y in range(0, height, y_step):
+            for x in range(0, width, x_step):
+                # Get pixel RGB
+                pixel = img.getpixel((x, y))
+                if isinstance(pixel, (int, float)):
+                    # Grayscale image
+                    r = g = b = int(pixel)
+                elif isinstance(pixel, tuple) and len(pixel) >= 3:
+                    # RGB/RGBA tuple
+                    r, g, b = pixel[0], pixel[1], pixel[2]
+                else:
+                    # Fallback (shouldn't happen with RGB mode)
+                    r = g = b = 0
+
+                # Convert to lat/lon
+                lat = lat_max - (y * lat_step)
+                lon = lon_min + (x * lon_step)
+
+                # Apply state/province filter if specified
+                if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
+                    continue
+
+                # Convert RGB to SQM
+                sqm = _rgb_to_sqm(r, g, b)
+
+                # Round to grid resolution
+                lat_rounded = round(lat / grid_resolution) * grid_resolution
+                lon_rounded = round(lon / grid_resolution) * grid_resolution
+
+                batch_data.append((lat_rounded, lon_rounded, sqm, region))
+
+                # Insert in batches
+                if len(batch_data) >= batch_size:
+                    _insert_batch(db, batch_data)
+                    inserted += len(batch_data)
+                    batch_data = []
 
     # Insert remaining
     if batch_data:

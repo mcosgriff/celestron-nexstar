@@ -41,6 +41,11 @@ dependencies = [
     "sphinx>=8.2.3",
     "pysqlite3-binary>=0.5.4",
     "timezonefinder>=6.2.0",
+    "openmeteo-requests>=1.7.4",
+    "requests-cache>=1.2.1",
+    "retry-requests>=2.0.0",
+    "numpy>=2.3.4",
+    "pandas>=2.3.3",
 ]
 
 [project.optional-dependencies]

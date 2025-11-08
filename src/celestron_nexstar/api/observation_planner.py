@@ -18,9 +18,17 @@ from .enums import SkyBrightness
 from .light_pollution import LightPollutionData, get_light_pollution_data
 from .observer import ObserverLocation, get_observer_location
 from .optics import calculate_limiting_magnitude, get_current_configuration
-from .solar_system import get_moon_info
+from .solar_system import get_moon_info, get_sun_info
+from .utils import angular_separation, calculate_lst
 from .visibility import VisibilityInfo, filter_visible_objects
-from .weather import WeatherData, assess_observing_conditions, calculate_seeing_conditions, fetch_weather
+from .weather import (
+    HourlySeeingForecast,
+    WeatherData,
+    assess_observing_conditions,
+    calculate_seeing_conditions,
+    fetch_hourly_weather_forecast,
+    fetch_weather,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +87,13 @@ class ObservingConditions:
     recommendations: tuple[str, ...]
     warnings: tuple[str, ...]
 
+    # Time windows
+    best_seeing_window_start: datetime | None = None  # When seeing typically improves
+    best_seeing_window_end: datetime | None = None  # When seeing typically degrades
+
+    # Hourly forecast (if available)
+    hourly_seeing_forecast: tuple[HourlySeeingForecast, ...] = ()  # Hourly seeing conditions
+
 
 @dataclass(frozen=True)
 class RecommendedObject:
@@ -100,6 +115,9 @@ class RecommendedObject:
     priority: int  # 1 (highest) to 5 (lowest)
     reason: str
     viewing_tips: tuple[str, ...]
+
+    # Additional info
+    moon_separation_deg: float | None = None  # Angular distance from moon
 
 
 class ObservationPlanner:
@@ -204,6 +222,13 @@ class ObservationPlanner:
             weather, lp_data, moon_illum, quality_score, weather_status, weather_warning
         )
 
+        # Calculate best seeing time window (typically 2-3 hours after sunset, before sunrise)
+        best_seeing_start, best_seeing_end = self._calculate_best_seeing_window(lat, lon, start_time)
+
+        # Fetch hourly seeing forecast (if available - requires Pro subscription)
+        hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=24)
+        hourly_forecast_tuple = tuple(hourly_forecast)
+
         return ObservingConditions(
             timestamp=start_time,
             latitude=lat,
@@ -221,6 +246,9 @@ class ObservationPlanner:
             seeing_score=seeing_score,
             recommendations=recommendations,
             warnings=warnings,
+            best_seeing_window_start=best_seeing_start,
+            best_seeing_window_end=best_seeing_end,
+            hourly_seeing_forecast=hourly_forecast_tuple,
         )
 
     def get_recommended_objects(
@@ -228,6 +256,7 @@ class ObservationPlanner:
         conditions: ObservingConditions | None = None,
         target_types: list[ObservingTarget] | None = None,
         max_results: int = 20,
+        best_for_seeing: bool = False,
     ) -> list[RecommendedObject]:
         """
         Get recommended objects to observe tonight.
@@ -236,6 +265,7 @@ class ObservationPlanner:
             conditions: Observing conditions (default: calculate now)
             target_types: Types of targets to include (default: all)
             max_results: Maximum number of recommendations
+            best_for_seeing: Filter to only objects ideal for current seeing conditions
 
         Returns:
             List of recommended objects, sorted by priority
@@ -243,9 +273,29 @@ class ObservationPlanner:
         if conditions is None:
             conditions = self.get_tonight_conditions()
 
-        # Get all objects from database (prefer database over YAML catalogs)
+        # Pre-calculate moon position once (used for all objects)
+        moon_info = get_moon_info(conditions.latitude, conditions.longitude, conditions.timestamp)
+        moon_ra = moon_info.ra_hours if moon_info else None
+        moon_dec = moon_info.dec_degrees if moon_info else None
+
+        # Get objects from database with smart pre-filtering
         db = get_database()
-        all_objects = db.filter_objects(limit=10000)  # Get up to 10k objects
+        # Pre-filter by magnitude to reduce load:
+        # - For poor seeing: only bright objects (mag < 10)
+        # - For good seeing: reasonable limit (mag < 15)
+        # - For excellent seeing: can go fainter (mag < 18)
+        if conditions.seeing_score < 50:
+            max_mag = 10.0  # Poor seeing: only bright objects
+        elif conditions.seeing_score >= 80:
+            max_mag = 18.0  # Excellent seeing: can see fainter
+        else:
+            max_mag = 15.0  # Good seeing: reasonable limit
+
+        # Limit initial query to reduce memory usage
+        # We'll get more than max_results to account for filtering
+        initial_limit = min(5000, max_results * 50)  # Get up to 5k or 50x requested results
+
+        all_objects = db.filter_objects(max_magnitude=max_mag, limit=initial_limit)
 
         # Filter by target types if specified
         if target_types:
@@ -266,9 +316,14 @@ class ObservationPlanner:
             all_objects = filtered_objects
 
         # Filter by visibility
+        # Limit processing to reasonable number - we only need max_results * 2 for good candidates
+        # This prevents processing thousands of objects when we only need 20
+        processing_limit = max(max_results * 10, 500)  # Process up to 10x requested or 500, whichever is larger
+        objects_to_process = all_objects[:processing_limit]
+
         config = get_current_configuration()
         visible_pairs = filter_visible_objects(
-            all_objects,
+            objects_to_process,
             config=config,
             min_altitude_deg=20.0,
             observer_lat=conditions.latitude,
@@ -276,12 +331,52 @@ class ObservationPlanner:
             dt=conditions.timestamp,
         )
 
-        # Score and rank objects
+        # Filter by seeing conditions if poor seeing
+        # Poor seeing (<50): Exclude very faint objects that require excellent seeing
+        if conditions.seeing_score < 50:
+            filtered_pairs = []
+            for obj, vis_info in visible_pairs:
+                # Keep bright objects, planets, and double stars
+                # For very faint objects (mag > 10), skip if seeing is poor
+                if (
+                    obj.object_type.value in ("planet", "moon", "double_star")
+                    or (obj.magnitude is not None and obj.magnitude < 10)
+                ):
+                    filtered_pairs.append((obj, vis_info))
+            visible_pairs = filtered_pairs
+
+        # Score and rank objects (with cached moon position)
         recommendations = []
         for obj, vis_info in visible_pairs:
-            rec = self._score_object(obj, conditions, vis_info)
+            rec = self._score_object(obj, conditions, vis_info, moon_ra=moon_ra, moon_dec=moon_dec)
             if rec:
                 recommendations.append(rec)
+
+        # Filter for best-for-seeing if requested
+        if best_for_seeing:
+            seeing = conditions.seeing_score
+            if seeing >= 80:
+                # Excellent seeing: prioritize faint deep-sky, double stars, planets
+                recommendations = [
+                    r
+                    for r in recommendations
+                    if (
+                        (r.obj.object_type.value in ("galaxy", "nebula") and r.apparent_magnitude > 10)
+                        or r.obj.object_type.value == "double_star"
+                        or r.obj.object_type.value == "planet"
+                    )
+                ]
+            elif seeing < 50:
+                # Poor seeing: prioritize bright objects, planets
+                recommendations = [
+                    r
+                    for r in recommendations
+                    if (
+                        r.obj.object_type.value == "planet"
+                        or (r.apparent_magnitude < 6)
+                        or (r.obj.object_type.value == "double_star" and r.apparent_magnitude < 5)
+                    )
+                ]
 
         # Sort by priority and observability score
         recommendations.sort(key=lambda r: (r.priority, -r.observability_score))
@@ -370,6 +465,8 @@ class ObservationPlanner:
         obj: CelestialObject,
         conditions: ObservingConditions,
         vis_info: VisibilityInfo,
+        moon_ra: float | None = None,
+        moon_dec: float | None = None,
     ) -> RecommendedObject | None:
         """Score an object for recommendation."""
         if not vis_info.is_visible:
@@ -386,6 +483,9 @@ class ObservationPlanner:
             obj, conditions.latitude, conditions.longitude, conditions.timestamp
         )
 
+        # Calculate moon separation (using cached moon position)
+        moon_separation = self._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
+
         return RecommendedObject(
             obj=obj,
             altitude=vis_info.altitude_deg or 0.0,
@@ -397,6 +497,7 @@ class ObservationPlanner:
             priority=priority,
             reason=f"Well positioned at {vis_info.altitude_deg:.0f}° altitude" if vis_info.altitude_deg else "Visible",
             viewing_tips=tips,
+            moon_separation_deg=moon_separation,
         )
 
     def _determine_priority(
@@ -405,10 +506,34 @@ class ObservationPlanner:
         conditions: ObservingConditions,
         vis_info: VisibilityInfo,
     ) -> int:
-        """Determine observation priority (1=highest, 5=lowest)."""
-        # Priority 1: Planets (always interesting)
-        if obj.object_type.value == "planet":
-            return 1
+        """Determine observation priority (1=highest, 5=lowest) based on conditions."""
+        seeing = conditions.seeing_score
+
+        # Priority 1: Objects that benefit from current seeing conditions
+        # Excellent seeing (>=80): Prioritize faint deep-sky, high-magnification targets
+        if seeing >= 80:
+            if obj.object_type.value in ("galaxy", "nebula") and obj.magnitude and obj.magnitude > 10:
+                return 1
+            if obj.object_type.value == "double_star":
+                return 1
+            if obj.object_type.value == "planet":
+                return 1  # Planets always good with excellent seeing
+
+        # Poor seeing (<50): Prioritize bright objects, planets, double stars
+        elif seeing < 50:
+            if obj.object_type.value == "planet":
+                return 1
+            if obj.object_type.value == "double_star" and obj.magnitude and obj.magnitude < 5:
+                return 1
+            if obj.magnitude and obj.magnitude < 6:  # Bright objects
+                return 2
+
+        # Good seeing (50-79): Balanced recommendations
+        else:
+            if obj.object_type.value == "planet":
+                return 1
+            if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
+                return 2
 
         # Priority 2: Bright objects in dark skies
         if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
@@ -432,6 +557,24 @@ class ObservationPlanner:
     ) -> tuple[str, ...]:
         """Generate viewing tips for an object."""
         tips = []
+        seeing = conditions.seeing_score
+
+        # Seeing-based recommendations
+        if seeing >= 80:
+            if obj.object_type.value == "planet":
+                tips.append("Excellent seeing - ideal for high-magnification planetary detail")
+            elif obj.object_type.value == "double_star":
+                tips.append("Excellent seeing - perfect for splitting close doubles")
+            elif obj.object_type.value in ("galaxy", "nebula"):
+                tips.append("Excellent seeing - good for faint detail")
+        elif seeing < 50:
+            if obj.object_type.value in ("galaxy", "nebula", "cluster"):
+                tips.append("Poor seeing - focus on bright, low-power objects")
+            elif obj.object_type.value == "planet":
+                tips.append("Poor seeing - detail may be limited")
+        else:
+            if obj.object_type.value == "planet":
+                tips.append("Good seeing - moderate magnification recommended")
 
         # Eyepiece recommendations
         if obj.object_type.value in ("galaxy", "nebula", "cluster"):
@@ -457,10 +600,122 @@ class ObservationPlanner:
         start_time: datetime,
     ) -> datetime:
         """Calculate when object is highest in sky (transit)."""
-        # Simplified: assume transit is when RA = LST
-        # In reality, calculate when altitude is maximum
-        # For now, return 2 hours from start
-        return start_time + timedelta(hours=2)
+        # Calculate Local Sidereal Time
+        lst_hours = calculate_lst(lon, start_time)
+
+        # Object's RA in hours
+        obj_ra = obj.ra_hours
+
+        # Hour angle at transit is 0 (object is on meridian)
+        # LST = RA at transit
+        # Calculate time difference needed to reach transit
+        ha_hours = lst_hours - obj_ra
+
+        # Normalize hour angle to -12 to +12 hours
+        if ha_hours > 12:
+            ha_hours -= 24
+        elif ha_hours < -12:
+            ha_hours += 24
+
+        # Convert hour angle to time difference
+        # 1 hour angle = 1 hour of sidereal time ≈ 0.9973 hours of solar time
+        time_diff_hours = ha_hours * 0.9973
+
+        transit_time = start_time + timedelta(hours=time_diff_hours)
+
+        # If transit is more than 12 hours away, use next transit
+        if abs(time_diff_hours) > 12:
+            if time_diff_hours > 0:
+                transit_time -= timedelta(hours=24)
+            else:
+                transit_time += timedelta(hours=24)
+
+        return transit_time
+
+    def _calculate_moon_separation(
+        self,
+        obj: CelestialObject,
+        conditions: ObservingConditions,
+    ) -> float | None:
+        """Calculate angular separation between object and moon."""
+        try:
+            moon_info = get_moon_info(conditions.latitude, conditions.longitude, conditions.timestamp)
+            if not moon_info:
+                return None
+
+            # Calculate angular separation
+            separation = angular_separation(
+                obj.ra_hours,
+                obj.dec_degrees,
+                moon_info.ra_hours,
+                moon_info.dec_degrees,
+            )
+
+            return separation
+        except Exception:
+            return None
+
+    def _calculate_moon_separation_fast(
+        self,
+        obj: CelestialObject,
+        moon_ra: float | None,
+        moon_dec: float | None,
+    ) -> float | None:
+        """Calculate angular separation using pre-calculated moon position (faster)."""
+        if moon_ra is None or moon_dec is None:
+            return None
+
+        try:
+            separation = angular_separation(
+                obj.ra_hours,
+                obj.dec_degrees,
+                moon_ra,
+                moon_dec,
+            )
+            return separation
+        except Exception:
+            return None
+
+    def _calculate_best_seeing_window(
+        self,
+        lat: float,
+        lon: float,
+        start_time: datetime,
+    ) -> tuple[datetime | None, datetime | None]:
+        """
+        Calculate best seeing time window.
+
+        Typically, seeing improves 2-3 hours after sunset (when ground cools)
+        and degrades 1-2 hours before sunrise (when ground warms).
+
+        Returns:
+            Tuple of (start_time, end_time) or (None, None) if calculation fails
+        """
+        try:
+            sun_info = get_sun_info(lat, lon, start_time)
+            if not sun_info or not sun_info.sunset_time or not sun_info.sunrise_time:
+                return (None, None)
+
+            # Best seeing typically starts 2-3 hours after sunset
+            best_start = sun_info.sunset_time + timedelta(hours=2.5)
+
+            # Best seeing typically ends 1-2 hours before sunrise
+            best_end = sun_info.sunrise_time - timedelta(hours=1.5)
+
+            # Ensure times are in UTC
+            if best_start.tzinfo is None:
+                best_start = best_start.replace(tzinfo=UTC)
+            if best_end.tzinfo is None:
+                best_end = best_end.replace(tzinfo=UTC)
+
+            # If end is before start, it means we're past midnight
+            # In that case, extend to next sunrise
+            if best_end < best_start:
+                best_end = sun_info.sunrise_time + timedelta(days=1) - timedelta(hours=1.5)
+
+            return (best_start, best_end)
+        except Exception:
+            return (None, None)
 
 
 # Singleton
