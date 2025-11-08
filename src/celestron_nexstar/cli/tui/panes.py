@@ -6,6 +6,7 @@ Functions to generate formatted text content for each pane in the TUI.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -406,6 +407,91 @@ def get_conditions_info() -> FormattedText:
 
     lines.append(("", "\n"))
 
+    # Weather information
+    lines.append(("bold", "Weather:\n"))
+    try:
+        from ...api.observer import get_observer_location
+        from .weather import assess_observing_conditions, fetch_weather
+
+        # Get location for weather
+        weather_location = None
+        try:
+            from ..utils.state import get_telescope
+
+            telescope = get_telescope()
+            if telescope and telescope.protocol and telescope.protocol.is_open():
+                try:
+                    telescope_location = telescope.get_location()
+                    if (
+                        telescope_location
+                        and telescope_location.latitude != 0.0
+                        and telescope_location.longitude != 0.0
+                    ):
+                        # Create ObserverLocation from telescope location
+                        from ...api.observer import ObserverLocation
+
+                        weather_location = ObserverLocation(
+                            latitude=telescope_location.latitude,
+                            longitude=telescope_location.longitude,
+                            elevation=0.0,  # GeographicLocation doesn't have elevation
+                        )
+                except Exception:
+                    pass
+
+            if weather_location is None:
+                weather_location = get_observer_location()
+        except Exception:
+            weather_location = None
+
+        if weather_location:
+            weather = fetch_weather(weather_location)
+            status, warning = assess_observing_conditions(weather)
+
+            if weather.error:
+                lines.append(("yellow", f"  {weather.error}\n"))
+                lines.append(("dim", "  Set OPENWEATHER_API_KEY env var\n"))
+            else:
+                # Status indicator
+                if status == "excellent":
+                    status_color = "green"
+                    status_icon = "✓"
+                elif status == "good":
+                    status_color = "cyan"
+                    status_icon = "○"
+                elif status == "fair":
+                    status_color = "yellow"
+                    status_icon = "⚠"
+                elif status == "poor":
+                    status_color = "red"
+                    status_icon = "✗"
+                else:
+                    status_color = "dim"
+                    status_icon = "?"
+
+                lines.append((status_color, f"  {status_icon} {status.title()}\n"))
+                lines.append(("", f"  {warning}\n"))
+
+                # Weather details
+                if weather.temperature_c is not None:
+                    lines.append(("", f"  Temp: {weather.temperature_c:.1f}°C\n"))
+                if weather.cloud_cover_percent is not None:
+                    lines.append(("", f"  Clouds: {weather.cloud_cover_percent:.0f}%\n"))
+                if weather.humidity_percent is not None:
+                    lines.append(("", f"  Humidity: {weather.humidity_percent:.0f}%\n"))
+                if weather.wind_speed_ms is not None:
+                    wind_kmh = weather.wind_speed_ms * 3.6
+                    lines.append(("", f"  Wind: {wind_kmh:.0f} km/h\n"))
+                if weather.visibility_km is not None:
+                    lines.append(("", f"  Visibility: {weather.visibility_km:.1f} km\n"))
+        else:
+            lines.append(("yellow", "  Location not set\n"))
+    except Exception:
+        logger = logging.getLogger(__name__)
+        logger.exception("Error fetching weather")
+        lines.append(("yellow", "  Weather unavailable\n"))
+
+    lines.append(("", "\n"))
+
     # Observing conditions summary
     lines.append(("", "\n"))
     lines.append(("bold", "Observing Quality:\n"))
@@ -561,7 +647,10 @@ def get_visible_objects_info() -> FormattedText:
             ]
 
         # Apply sorting
-        def sort_key(item: tuple) -> tuple:
+        from ...api.catalogs import CelestialObject
+        from ...api.visibility import VisibilityInfo
+
+        def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple[float | str, ...]:
             obj, vis_info = item
             if state.sort_by == "altitude":
                 return (vis_info.altitude_deg or -999,)
@@ -606,8 +695,12 @@ def get_visible_objects_info() -> FormattedText:
 
                 detail_text = get_object_detail_text(selected[0], selected[1])
                 # Add detail lines to output
-                for line in detail_text:
-                    lines.append(line)
+                # FormattedText is a list of tuples, convert to list of lines
+                detail_lines_list = list(detail_text)
+                for line in detail_lines_list:
+                    # Ensure line is a tuple[str, str] (ignore mouse handlers if present)
+                    if isinstance(line, tuple) and len(line) >= 2:
+                        lines.append((line[0], line[1]))
                 lines.append(("", "\n"))
 
         # Display top 30 objects
@@ -743,9 +836,16 @@ def get_status_info() -> FormattedText:
         if state.search_mode:
             # Show search mode indicator
             if state.search_query:
-                lines.append(("dim", f"↑↓=nav Enter=detail s=sort r=reverse f=filter Search: '{state.search_query[:15]}' Esc=cancel"))
+                lines.append(
+                    (
+                        "dim",
+                        f"↑↓=nav Enter=detail s=sort r=reverse f=filter Search: '{state.search_query[:15]}' Esc=cancel",
+                    )
+                )
             else:
-                lines.append(("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter Search mode (press '/' to enter) Esc=cancel"))
+                lines.append(
+                    ("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter Search mode (press '/' to enter) Esc=cancel")
+                )
         elif state.show_detail:
             lines.append(("dim", "↑↓=nav Enter/Esc=detail s=sort r=reverse f=filter /=search"))
         else:

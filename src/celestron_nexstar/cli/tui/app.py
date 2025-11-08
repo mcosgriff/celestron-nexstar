@@ -41,7 +41,7 @@ def _change_telescope_interactive() -> None:
             )
 
         console.print(f"\n[dim]Enter telescope number (1-{len(telescope_models)}) or name, or 'cancel':[/dim]")
-        session = PromptSession()
+        session: PromptSession[str] = PromptSession()
         choice = session.prompt("> ").strip()
 
         if choice.lower() in ("cancel", "c", "q"):
@@ -105,9 +105,7 @@ def _change_eyepiece_interactive() -> None:
             for _key, eyepiece in plossl_items:
                 ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
                 marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
-                console.print(
-                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
-                )
+                console.print(f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)")
                 item_num += 1
 
         if ultrawide_items:
@@ -115,9 +113,7 @@ def _change_eyepiece_interactive() -> None:
             for _key, eyepiece in ultrawide_items:
                 ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
                 marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
-                console.print(
-                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
-                )
+                console.print(f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)")
                 item_num += 1
 
         if wide_items:
@@ -125,15 +121,13 @@ def _change_eyepiece_interactive() -> None:
             for _key, eyepiece in wide_items:
                 ep_name = eyepiece.name or f"{eyepiece.focal_length_mm:.0f}mm"
                 marker = "←" if eyepiece.focal_length_mm == current_config.eyepiece.focal_length_mm else " "
-                console.print(
-                    f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)"
-                )
+                console.print(f"  {marker} {item_num:2d}. {ep_name:30s} ({eyepiece.focal_length_mm:.0f}mm)")
                 item_num += 1
 
         total_items = len(eyepiece_items)
 
         console.print(f"\n[dim]Enter eyepiece number (1-{total_items}) or name/focal length, or 'cancel':[/dim]")
-        session = PromptSession()
+        session: PromptSession[str] = PromptSession()
         choice = session.prompt("> ").strip()
 
         if choice.lower() in ("cancel", "c", "q"):
@@ -180,11 +174,333 @@ def _change_eyepiece_interactive() -> None:
         console.print(f"[red]Error: {e}[/red]")
 
 
+def _goto_selected_object() -> None:
+    """Goto selected object with telescope."""
+    try:
+        from .state import get_state
+
+        state = get_state()
+        selected = state.get_selected_object()
+
+        if not selected:
+            console.print("[yellow]No object selected[/yellow]")
+            return
+
+        obj, vis_info = selected
+
+        # Check telescope connection
+        from ..utils.state import get_telescope
+
+        telescope = get_telescope()
+        session: PromptSession[str] = PromptSession()
+        if not telescope or not telescope.protocol or not telescope.protocol.is_open():
+            console.print("[yellow]Telescope not connected[/yellow]")
+            console.print("[dim]Press 'c' to connect[/dim]")
+            session.prompt("Press Enter to continue...")
+            return
+
+        # Check if object is above horizon
+        if vis_info.altitude_deg is None or vis_info.altitude_deg < 0:
+            console.print(f"[yellow]Warning: {obj.name} is below the horizon[/yellow]")
+            confirm = session.prompt("Slew anyway? (y/N): ").strip().lower()
+            if confirm != "y":
+                return
+
+        # Perform goto
+        display_name = obj.common_name or obj.name
+        console.print(f"\n[bold]Slewing to {display_name}[/bold]")
+        console.print(f"[dim]RA: {obj.ra_hours:.4f}h, Dec: {obj.dec_degrees:+.4f}°[/dim]\n")
+
+        success = telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees)
+        if success:
+            console.print("[green]✓[/green] Slew initiated")
+            console.print("[dim]Press Enter to return...[/dim]")
+            session.prompt("")
+        else:
+            console.print("[red]✗[/red] Slew failed")
+            console.print("[dim]Press Enter to return...[/dim]")
+            session.prompt("")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
+def _connect_telescope_interactive() -> None:
+    """Interactive telescope connection."""
+    try:
+        from ..utils.state import get_telescope
+
+        telescope = get_telescope()
+        session: PromptSession[str] = PromptSession()
+        if telescope and telescope.protocol and telescope.protocol.is_open():
+            console.print("\n[bold]Telescope is already connected[/bold]\n")
+            disconnect = session.prompt("Disconnect? (y/N): ").strip().lower()
+            if disconnect == "y":
+                from ..utils.state import clear_telescope
+
+                telescope.disconnect()
+                clear_telescope()
+                console.print("[green]✓[/green] Disconnected")
+            console.print("[dim]Press Enter to return...[/dim]")
+            session.prompt("")
+            return
+
+        # Prompt for port
+        console.print("\n[bold]Connect Telescope[/bold]\n")
+        console.print("[dim]Enter serial port (e.g., /dev/ttyUSB0, COM3) or 'cancel':[/dim]")
+        port = session.prompt("Port: ").strip()
+
+        if port.lower() in ("cancel", "c", "q"):
+            return
+
+        if not port:
+            console.print("[yellow]No port specified[/yellow]")
+            return
+
+        # Connect
+        from celestron_nexstar import NexStarTelescope, TelescopeConfig
+
+        console.print(f"\n[dim]Connecting to {port}...[/dim]")
+        config = TelescopeConfig(port=port)
+        telescope = NexStarTelescope(config)
+        telescope.connect()
+
+        from ..utils.state import set_telescope
+
+        set_telescope(telescope)
+
+        console.print("[green]✓[/green] Connected")
+        console.print("[dim]Press Enter to return...[/dim]")
+        session.prompt("")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
+def _park_telescope_interactive() -> None:
+    """Interactive telescope parking."""
+    try:
+        from ..utils.state import get_telescope
+
+        telescope = get_telescope()
+        session: PromptSession[str] = PromptSession()
+        if not telescope or not telescope.protocol or not telescope.protocol.is_open():
+            console.print("[yellow]Telescope not connected[/yellow]")
+            session.prompt("Press Enter to continue...")
+            return
+
+        console.print("\n[bold]Park Telescope[/bold]\n")
+        console.print("[yellow]Warning: This will move the telescope to park position[/yellow]")
+        confirm = session.prompt("Park telescope? (y/N): ").strip().lower()
+
+        if confirm != "y":
+            return
+
+        # Park (typically Alt=0, Az=180 or similar - check telescope API)
+        console.print("\n[dim]Parking telescope...[/dim]")
+        # Note: Actual park command depends on telescope model
+        # For now, just move to a safe position
+        success = telescope.goto_alt_az(180.0, 0.0)  # South, horizon
+        if success:
+            console.print("[green]✓[/green] Telescope parked")
+        else:
+            console.print("[red]✗[/red] Park failed")
+
+        console.print("[dim]Press Enter to return...[/dim]")
+        session.prompt("")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
+def _change_tracking_mode_interactive() -> None:
+    """Interactive tracking mode selection."""
+    try:
+        from ..utils.state import get_telescope
+
+        telescope = get_telescope()
+        session: PromptSession[str] = PromptSession()
+        if not telescope or not telescope.protocol or not telescope.protocol.is_open():
+            console.print("[yellow]Telescope not connected[/yellow]")
+            session.prompt("Press Enter to continue...")
+            return
+
+        from ...api.types import TrackingMode
+
+        console.print("\n[bold]Tracking Mode[/bold]\n")
+        console.print("Available modes:")
+        console.print("  1. Alt-Az (Alt-Azimuth)")
+        console.print("  2. EQ North (Equatorial, Northern Hemisphere)")
+        console.print("  3. EQ South (Equatorial, Southern Hemisphere)")
+        console.print("  4. Off (No tracking)\n")
+
+        choice = session.prompt("Select mode (1-4) or 'cancel': ").strip()
+
+        if choice.lower() in ("cancel", "c", "q"):
+            return
+
+        mode_map = {
+            "1": TrackingMode.ALT_AZ,
+            "2": TrackingMode.EQ_NORTH,
+            "3": TrackingMode.EQ_SOUTH,
+            "4": TrackingMode.OFF,
+        }
+
+        if choice not in mode_map:
+            console.print("[yellow]Invalid selection[/yellow]")
+            return
+
+        mode = mode_map[choice]
+        telescope.set_tracking_mode(mode)
+        console.print(f"[green]✓[/green] Tracking mode set to {mode.value}")
+        console.print("[dim]Press Enter to return...[/dim]")
+        session.prompt("")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
+def _show_settings_dialog() -> None:
+    """Show settings/configuration dialog."""
+    try:
+        console.print("\n[bold]Settings[/bold]\n")
+        console.print("─" * 40 + "\n")
+
+        # Location settings
+        from ...api.observer import get_observer_location
+
+        location = get_observer_location()
+        console.print("[bold]Location:[/bold]")
+        if location.name:
+            console.print(f"  Name: {location.name}")
+        console.print(f"  Latitude: {location.latitude:.4f}°")
+        console.print(f"  Longitude: {location.longitude:.4f}°")
+        console.print(f"  Elevation: {location.elevation:.0f}m\n")
+
+        # Weather API key status
+        import os
+
+        api_key = os.environ.get("OPENWEATHER_API_KEY") or os.environ.get("OWM_API_KEY")
+        console.print("[bold]Weather API:[/bold]")
+        if api_key:
+            console.print("  [green]✓[/green] API key configured")
+        else:
+            console.print("  [yellow]✗[/yellow] API key not set")
+            console.print("  [dim]Set OPENWEATHER_API_KEY environment variable[/dim]")
+        console.print("")
+
+        # Telescope connection status
+        from ..utils.state import get_telescope
+
+        telescope = get_telescope()
+        console.print("[bold]Telescope:[/bold]")
+        if telescope and telescope.protocol and telescope.protocol.is_open():
+            console.print("  [green]✓[/green] Connected")
+            try:
+                info = telescope.get_info()
+                console.print(f"  Model: {info.model}")
+                console.print(f"  Firmware: {info.firmware_major}.{info.firmware_minor}")
+            except Exception:
+                pass
+        else:
+            console.print("  [yellow]✗[/yellow] Not connected")
+        console.print("")
+
+        session: PromptSession[str] = PromptSession()
+        session.prompt("Press Enter to return...")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
+def _show_help_overlay() -> None:
+    """Show help overlay with keyboard shortcuts."""
+    try:
+        console.print("\n[bold]Keyboard Shortcuts[/bold]\n")
+        console.print("─" * 50 + "\n")
+
+        shortcuts = [
+            (
+                "Navigation",
+                [
+                    ("1", "Focus dataset pane"),
+                    ("2", "Focus conditions pane"),
+                    ("3", "Focus visible objects pane"),
+                    ("↑/↓", "Move selection up/down"),
+                    ("Enter", "Toggle detail view"),
+                ],
+            ),
+            (
+                "Actions",
+                [
+                    ("g", "Goto selected object"),
+                    ("c", "Connect/disconnect telescope"),
+                    ("p", "Park telescope"),
+                    ("m", "Change tracking mode"),
+                ],
+            ),
+            (
+                "Configuration",
+                [
+                    ("t", "Change telescope"),
+                    ("e", "Change eyepiece"),
+                    ("u", "Toggle UTC/Local time"),
+                ],
+            ),
+            (
+                "Search & Filter",
+                [
+                    ("/", "Search objects"),
+                    ("f", "Filter by type"),
+                    ("s", "Cycle sort options"),
+                    ("r", "Toggle sort direction"),
+                    ("Esc", "Close search/filter"),
+                ],
+            ),
+            (
+                "Other",
+                [
+                    ("?", "Show this help"),
+                    ("q", "Quit application"),
+                ],
+            ),
+        ]
+
+        for category, items in shortcuts:
+            console.print(f"[bold cyan]{category}:[/bold cyan]")
+            for key, desc in items:
+                console.print(f"  [yellow]{key:10s}[/yellow] {desc}")
+            console.print("")
+
+        console.print("[dim]Press Enter to return...[/dim]")
+        session: PromptSession[str] = PromptSession()
+        session.prompt("")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        error_session: PromptSession[str] = PromptSession()
+        error_session.prompt("Press Enter to continue...")
+
+
 class TUIApplication:
     """Full-screen TUI application for telescope control and observing."""
 
     def __init__(self) -> None:
         """Initialize the TUI application."""
+        self._initialize_app()
+
+    def _initialize_app(self) -> None:
+        """Initialize or reinitialize the application."""
         # Create layout once and reuse it
         # This ensures the layout structure doesn't get recreated on refresh
         root_container = create_layout()
@@ -195,7 +511,7 @@ class TUIApplication:
 
         # Create application
         # The layout is created once and reused, so pane widths should remain stable
-        self.app = Application(
+        self.app: Application[None] = Application(
             layout=layout,
             key_bindings=key_bindings,
             full_screen=True,
@@ -212,11 +528,11 @@ class TUIApplication:
             if result == "change_telescope":
                 _change_telescope_interactive()
                 # Recreate app to refresh
-                self.__init__()
+                self._initialize_app()
             elif result == "change_eyepiece":
                 _change_eyepiece_interactive()
                 # Recreate app to refresh
-                self.__init__()
+                self._initialize_app()
             elif result == "search_mode":
                 # Handle search input
                 state = get_state()
@@ -224,7 +540,7 @@ class TUIApplication:
                     # Show prompt for search text
                     from prompt_toolkit import PromptSession
 
-                    session = PromptSession()
+                    session: PromptSession[str] = PromptSession()
                     try:
                         search_text = session.prompt("Search: ", default=state.search_query)
                         state.search_query = search_text
@@ -233,6 +549,30 @@ class TUIApplication:
                         state.search_query = ""
                         state.search_mode = False
                     # Recreate app to refresh
-                    self.__init__()
+                    self._initialize_app()
+            elif result == "goto_object":
+                _goto_selected_object()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "connect_telescope":
+                _connect_telescope_interactive()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "park_telescope":
+                _park_telescope_interactive()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "tracking_mode":
+                _change_tracking_mode_interactive()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "settings":
+                _show_settings_dialog()
+                # Recreate app to refresh
+                self._initialize_app()
+            elif result == "help":
+                _show_help_overlay()
+                # Recreate app to refresh
+                self._initialize_app()
             else:
                 break

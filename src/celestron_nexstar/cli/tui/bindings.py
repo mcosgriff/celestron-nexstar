@@ -7,6 +7,7 @@ Defines keyboard shortcuts for the TUI application.
 from __future__ import annotations
 
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 
 
 def create_key_bindings() -> KeyBindings:
@@ -20,17 +21,17 @@ def create_key_bindings() -> KeyBindings:
 
     @kb.add("q")
     @kb.add("c-q")
-    def exit_app(event):
+    def exit_app(event: KeyPressEvent) -> None:
         """Quit application."""
         event.app.exit()
 
     @kb.add("r")
-    def refresh_all(event):
+    def refresh_all(event: KeyPressEvent) -> None:
         """Force refresh all panes."""
         event.app.invalidate()
 
     @kb.add("1")
-    def focus_dataset(event):
+    def focus_dataset(event: KeyPressEvent) -> None:
         """Focus dataset pane."""
         from .state import get_state
 
@@ -39,7 +40,7 @@ def create_key_bindings() -> KeyBindings:
         event.app.invalidate()
 
     @kb.add("2")
-    def focus_conditions(event):
+    def focus_conditions(event: KeyPressEvent) -> None:
         """Focus conditions pane."""
         from .state import get_state
 
@@ -48,7 +49,7 @@ def create_key_bindings() -> KeyBindings:
         event.app.invalidate()
 
     @kb.add("3")
-    def focus_visible(event):
+    def focus_visible(event: KeyPressEvent) -> None:
         """Focus visible objects pane."""
         from .state import get_state
 
@@ -57,19 +58,19 @@ def create_key_bindings() -> KeyBindings:
         event.app.invalidate()
 
     @kb.add("t")
-    def change_telescope(event):
+    def change_telescope(event: KeyPressEvent) -> None:
         """Change telescope model."""
         # Exit app with result code to trigger interactive selection
         event.app.exit(result="change_telescope")
 
     @kb.add("e")
-    def change_eyepiece(event):
+    def change_eyepiece(event: KeyPressEvent) -> None:
         """Change eyepiece."""
         # Exit app with result code to trigger interactive selection
         event.app.exit(result="change_eyepiece")
 
     @kb.add("up")
-    def move_up(event):
+    def move_up(event: KeyPressEvent) -> None:
         """Move selection up in visible objects pane."""
         from .state import get_state
 
@@ -79,7 +80,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("down")
-    def move_down(event):
+    def move_down(event: KeyPressEvent) -> None:
         """Move selection down in visible objects pane."""
         from .state import get_state
 
@@ -89,7 +90,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("enter")
-    def show_detail(event):
+    def show_detail(event: KeyPressEvent) -> None:
         """Toggle detail view for selected object."""
         from .state import get_state
 
@@ -98,9 +99,8 @@ def create_key_bindings() -> KeyBindings:
             state.toggle_detail()
             event.app.invalidate()
 
-
     @kb.add("u")
-    def toggle_time_mode(event):
+    def toggle_time_mode(event: KeyPressEvent) -> None:
         """Toggle between local and UTC time display."""
         from .state import get_state
 
@@ -109,12 +109,12 @@ def create_key_bindings() -> KeyBindings:
         event.app.invalidate()
 
     @kb.add("c-c")
-    def interrupt(event):
+    def interrupt(event: KeyPressEvent) -> None:
         """Handle Ctrl+C gracefully."""
         event.app.exit()
 
     @kb.add("s")
-    def cycle_sort(event):
+    def cycle_sort(event: KeyPressEvent) -> None:
         """Cycle through sort options."""
         from .state import get_state
 
@@ -133,7 +133,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("r")
-    def toggle_reverse(event):
+    def toggle_reverse(event: KeyPressEvent) -> None:
         """Toggle sort direction."""
         from .state import get_state
 
@@ -146,7 +146,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("f")
-    def filter_menu(event):
+    def filter_menu(event: KeyPressEvent) -> None:
         """Toggle filter menu or cycle type filter."""
         from .state import get_state
 
@@ -166,7 +166,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("/")
-    def search_mode(event):
+    def search_mode(event: KeyPressEvent) -> None:
         """Enter search mode (will prompt for text)."""
         from .state import get_state
 
@@ -179,7 +179,7 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("escape")
-    def close_search_or_filter(event):
+    def close_search_or_filter(event: KeyPressEvent) -> None:
         """Close search mode or filter menu."""
         from .state import get_state
 
@@ -197,12 +197,12 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("c")
-    def connect_telescope(event):
+    def connect_telescope(event: KeyPressEvent) -> None:
         """Connect/disconnect telescope."""
         event.app.exit(result="connect_telescope")
 
     @kb.add("g")
-    def goto_object(event):
+    def goto_object(event: KeyPressEvent) -> None:
         """Goto selected object."""
         from .state import get_state
 
@@ -213,14 +213,29 @@ def create_key_bindings() -> KeyBindings:
             event.app.invalidate()
 
     @kb.add("p")
-    def park_telescope(event):
+    def park_telescope(event: KeyPressEvent) -> None:
         """Park telescope."""
         event.app.exit(result="park_telescope")
 
     @kb.add("m")
-    def tracking_mode(event):
+    def tracking_mode(event: KeyPressEvent) -> None:
         """Change tracking mode."""
         event.app.exit(result="tracking_mode")
+
+    @kb.add("?")
+    def show_help(event: KeyPressEvent) -> None:
+        """Show help overlay."""
+        event.app.exit(result="help")
+
+    @kb.add("h")
+    def show_help_alt(event: KeyPressEvent) -> None:
+        """Show help overlay (alternative key)."""
+        event.app.exit(result="help")
+
+    @kb.add(",")
+    def show_settings(event: KeyPressEvent) -> None:
+        """Show settings dialog."""
+        event.app.exit(result="settings")
 
     # Note: Full text input for search requires a modal dialog
     # For now, search mode is toggled with '/' and can be cleared with Esc

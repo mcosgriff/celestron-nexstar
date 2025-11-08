@@ -416,13 +416,12 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     continue
 
                 # Also check by catalog + catalog_number if available
-                if catalog_number is not None:
-                    if db.exists_by_catalog_number(catalog_name, catalog_number):
-                        skipped += 1
-                        if verbose:
-                            console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number}[/dim]")
-                        progress.advance(task)
-                        continue
+                if catalog_number is not None and db.exists_by_catalog_number(catalog_name, catalog_number):
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number}[/dim]")
+                    progress.advance(task)
+                    continue
 
                 # Insert into database
                 try:
@@ -585,7 +584,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
         console.print(f"Importing with magnitude limit: {mag_limit}\n")
 
         try:
-            imported, skipped = source.importer(yaml_path, mag_limit, verbose=False)
+            imported, skipped = source.importer(yaml_path, mag_limit, False)
 
             console.print("\n[green]✓[/green] Import complete!")
             console.print(f"  Imported: [green]{imported:,}[/green]")
@@ -620,7 +619,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
     # Import data
     console.print(f"\nImporting with magnitude limit: {mag_limit}")
     try:
-        imported, skipped = source.importer(cache_path, mag_limit, verbose=False)
+        imported, skipped = source.importer(cache_path, mag_limit, False)
 
         console.print("\n[green]✓[/green] Import complete!")
         console.print(f"  Imported: [green]{imported:,}[/green]")

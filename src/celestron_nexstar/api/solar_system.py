@@ -282,4 +282,3 @@ def get_sun_info(
     except Exception as e:
         logger.error(f"Failed to calculate sun info: {e}")
         return None
-
