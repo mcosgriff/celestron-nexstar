@@ -71,6 +71,7 @@ class ObservingConditions:
     # Moon
     moon_illumination: float  # 0.0-1.0
     moon_altitude: float  # degrees
+    moon_phase: str | None  # Phase name (e.g., "New Moon", "Waxing Crescent")
 
     # Overall assessment
     observing_quality_score: float  # 0.0-1.0
@@ -183,9 +184,11 @@ class ObservationPlanner:
         if moon_info:
             moon_illum = moon_info.illumination
             moon_alt = moon_info.altitude_deg
+            moon_phase = moon_info.phase_name
         else:
             moon_illum = 0.5  # Default to half moon if calculation fails
             moon_alt = 0.0
+            moon_phase = None
 
         # Assess overall quality
         quality_score = self._calculate_quality_score(weather, lp_data, moon_illum, weather_status)
@@ -206,6 +209,7 @@ class ObservationPlanner:
             aperture_mm=aperture,
             moon_illumination=moon_illum,
             moon_altitude=moon_alt,
+            moon_phase=moon_phase,
             observing_quality_score=quality_score,
             recommendations=recommendations,
             warnings=warnings,
@@ -334,7 +338,8 @@ class ObservationPlanner:
         # Note: WeatherData doesn't have precipitation_probability in current implementation
         # This would need to be added to weather.py if needed
 
-        if weather_warning and weather_status != "unavailable":
+        # Only add weather warning if it's an actual warning (not "Good observing conditions")
+        if weather_warning and weather_status != "unavailable" and weather_warning != "Good observing conditions":
             warnings.append(weather_warning)
 
         # Light pollution

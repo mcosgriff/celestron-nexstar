@@ -4,15 +4,46 @@
 Shows observing conditions and recommended objects for tonight.
 """
 
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
 import typer
 from rich.console import Console
 from rich.table import Table
+from timezonefinder import TimezoneFinder
 
 from ...api.observation_planner import ObservationPlanner, ObservingTarget
 
 
 app = typer.Typer(help="Tonight's observing plan")
 console = Console()
+_tz_finder = TimezoneFinder()
+
+
+def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
+    """Get timezone for a given latitude and longitude."""
+    try:
+        tz_name = _tz_finder.timezone_at(lat=lat, lng=lon)
+        if tz_name:
+            return ZoneInfo(tz_name)
+    except Exception:
+        pass
+    return None
+
+
+def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
+    """Format datetime in local timezone, falling back to UTC if timezone unavailable."""
+    # Ensure datetime has timezone info
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    tz = _get_local_timezone(lat, lon)
+    if tz:
+        local_dt = dt.astimezone(tz)
+        tz_name = local_dt.tzname() or (tz.key if hasattr(tz, "key") else "Local")
+        return local_dt.strftime(f"%Y-%m-%d %H:%M {tz_name}")
+    else:
+        return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
 @app.command("conditions")
@@ -25,7 +56,8 @@ def show_conditions() -> None:
         # Display header
         location_name = conditions.location_name or "Current Location"
         console.print(f"\n[bold cyan]Observing Conditions for {location_name}[/bold cyan]")
-        console.print(f"[dim]{conditions.timestamp.strftime('%Y-%m-%d %H:%M UTC')}[/dim]\n")
+        time_str = _format_local_time(conditions.timestamp, conditions.latitude, conditions.longitude)
+        console.print(f"[dim]{time_str}[/dim]\n")
 
         # Overall quality
         quality = conditions.observing_quality_score
@@ -76,8 +108,12 @@ def show_conditions() -> None:
 
         # Moon
         console.print("[bold]Moon:[/bold]")
+        if conditions.moon_phase:
+            console.print(f"  Phase: {conditions.moon_phase}")
         console.print(f"  Illumination: {conditions.moon_illumination * 100:.0f}%")
         console.print(f"  Altitude: {conditions.moon_altitude:.1f}°")
+        if conditions.moon_altitude < 0:
+            console.print("  [dim]Below horizon[/dim]")
         console.print()
 
         # Recommendations
@@ -145,13 +181,25 @@ def show_objects(
             priority_stars = "★" * (6 - obj_rec.priority)  # Invert: 1 = ★★★★★, 5 = ★
             obj = obj_rec.obj
 
+            # Convert best viewing time to local timezone
+            best_time = obj_rec.best_viewing_time
+            if best_time.tzinfo is None:
+                best_time = best_time.replace(tzinfo=UTC)
+
+            tz = _get_local_timezone(conditions.latitude, conditions.longitude)
+            if tz:
+                local_time = best_time.astimezone(tz)
+                time_str = local_time.strftime("%H:%M")
+            else:
+                time_str = best_time.strftime("%H:%M UTC")
+
             table.add_row(
                 priority_stars,
                 obj.common_name or obj.name,
                 obj.object_type.value,
                 f"{obj_rec.apparent_magnitude:.1f}" if obj_rec.apparent_magnitude else "-",
                 f"{obj_rec.altitude:.0f}°",
-                obj_rec.best_viewing_time.strftime("%H:%M"),
+                time_str,
                 obj_rec.reason,
             )
 

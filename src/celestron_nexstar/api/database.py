@@ -144,12 +144,10 @@ class CatalogDatabase:
         # Use pysqlite3 if available (supports SpatiaLite extensions)
         # Fall back to built-in sqlite3 if not available
         try:
-            import pysqlite3
-
+            import pysqlite3  # type: ignore[import-untyped]
             dbapi = pysqlite3
         except ImportError:
             import sqlite3
-
             dbapi = sqlite3
 
         self._engine = create_engine(

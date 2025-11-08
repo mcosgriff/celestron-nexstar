@@ -40,6 +40,7 @@ dependencies = [
     "pillow>=12.0.0",
     "sphinx>=8.2.3",
     "pysqlite3-binary>=0.5.4",
+    "timezonefinder>=6.2.0",
 ]
 
 [project.optional-dependencies]

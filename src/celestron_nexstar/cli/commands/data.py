@@ -122,15 +122,20 @@ def stats() -> None:
 
             if table_exists:
                 # Get total count
-                total_count = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()[0]
+                count_result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
+                total_count = count_result[0] if count_result is not None else 0
 
                 if total_count > 0:
                     # Get SQM range
                     sqm_range = session.execute(
                         text("SELECT MIN(sqm_value), MAX(sqm_value) FROM light_pollution_grid")
                     ).fetchone()
-                    sqm_min = sqm_range[0] if sqm_range[0] is not None else None
-                    sqm_max = sqm_range[1] if sqm_range[1] is not None else None
+                    if sqm_range is not None:
+                        sqm_min = sqm_range[0] if sqm_range[0] is not None else None
+                        sqm_max = sqm_range[1] if sqm_range[1] is not None else None
+                    else:
+                        sqm_min = None
+                        sqm_max = None
 
                     # Get coverage by region
                     region_counts = session.execute(
