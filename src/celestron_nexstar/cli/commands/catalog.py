@@ -13,11 +13,13 @@ from rich.text import Text
 
 from celestron_nexstar.api.catalogs import (
     ALL_CATALOGS,
+    CelestialObject,
     get_all_objects,
     get_catalog,
     get_object_by_name,
     search_objects,
 )
+from celestron_nexstar.api.database import get_database
 
 from ..utils.output import console, format_dec, format_ra, print_error, print_info, print_json
 from ..utils.selection import select_object
@@ -25,6 +27,27 @@ from ..utils.state import ensure_connected
 
 
 app = typer.Typer(help="Celestial object catalog commands")
+
+
+def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
+    """
+    Autocompletion function for object names.
+
+    Returns names from the database that match the incomplete string.
+    Case-insensitive matching and sorting.
+    
+    The database query handles case-insensitivity, so we pass the incomplete
+    string as-is. The database will convert both the column and the prefix
+    to lowercase for comparison.
+    """
+    try:
+        db = get_database()
+        # Database query is already case-insensitive, so pass incomplete as-is
+        # The get_names_for_completion method handles case-insensitive matching
+        return db.get_names_for_completion(prefix=incomplete, limit=50)
+    except Exception:
+        # If database is not available, return empty list
+        return []
 
 
 @app.command()
@@ -71,29 +94,90 @@ def search(
                 }
             )
         else:
-            # Create results table
-            table = Table(
-                title=f"Search Results for '{query}' ({len(results)} found)",
-                show_header=True,
-                header_style="bold magenta",
-            )
-            table.add_column("Name", style="cyan", width=15)
-            table.add_column("Type", style="yellow", width=10)
-            table.add_column("RA", style="green", width=12)
-            table.add_column("Dec", style="green", width=12)
-            table.add_column("Mag", style="blue", width=6)
-            table.add_column("Match", style="dim", width=16)
-            table.add_column("Description", style="white")
+            # Group results by match type
+            from collections import defaultdict
 
+            grouped_results: defaultdict[str, list[tuple[CelestialObject, str]]] = defaultdict(list)
             for obj, match_type in results:
-                ra_str = f"{obj.ra_hours:.2f}h"
-                dec_str = f"{obj.dec_degrees:+.1f}°"
-                mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
-                desc = obj.common_name or obj.description or ""
+                grouped_results[match_type].append((obj, match_type))
 
-                table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, match_type, desc[:30])
+            # Match type display order and styling
+            match_type_order = ["exact", "name", "alias", "description"]
+            match_type_styles = {
+                "exact": "bold green",
+                "name": "cyan",
+                "alias": "yellow",
+                "description": "dim",
+            }
+            match_type_titles = {
+                "exact": "Exact Matches",
+                "name": "Name Matches",
+                "alias": "Common Name Matches",
+                "description": "Description Matches",
+            }
 
-            console.print(table)
+            # Display tables for each match type (in order)
+            total_found = len(results)
+            for match_type in match_type_order:
+                if match_type not in grouped_results:
+                    continue
+
+                type_results = grouped_results[match_type]
+                type_count = len(type_results)
+
+                # Create table for this match type
+                table = Table(
+                    title=f"{match_type_titles[match_type]} ({type_count})",
+                    show_header=True,
+                    header_style=match_type_styles.get(match_type, "white"),
+                    title_style=match_type_styles.get(match_type, "white"),
+                )
+                table.add_column("Name", style="cyan", width=15)
+                table.add_column("Type", style="yellow", width=10)
+                table.add_column("RA", style="green", width=12)
+                table.add_column("Dec", style="green", width=12)
+                table.add_column("Mag", style="blue", width=6)
+                table.add_column("Description", style="white")
+
+                for obj, _ in type_results:
+                    ra_str = f"{obj.ra_hours:.2f}h"
+                    dec_str = f"{obj.dec_degrees:+.1f}°"
+                    mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                    desc = obj.common_name or obj.description or ""
+
+                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+
+                console.print(table)
+                console.print()  # Blank line between tables
+
+            # Display any other match types not in the standard order
+            for match_type, type_results in grouped_results.items():
+                if match_type not in match_type_order:
+                    type_count = len(type_results)
+                    table = Table(
+                        title=f"{match_type_titles.get(match_type, match_type.title())} ({type_count})",
+                        show_header=True,
+                        header_style="white",
+                    )
+                    table.add_column("Name", style="cyan", width=15)
+                    table.add_column("Type", style="yellow", width=10)
+                    table.add_column("RA", style="green", width=12)
+                    table.add_column("Dec", style="green", width=12)
+                    table.add_column("Mag", style="blue", width=6)
+                    table.add_column("Description", style="white")
+
+                    for obj, _ in type_results:
+                        ra_str = f"{obj.ra_hours:.2f}h"
+                        dec_str = f"{obj.dec_degrees:+.1f}°"
+                        mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                        desc = obj.common_name or obj.description or ""
+
+                        table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+
+                    console.print(table)
+                    console.print()
+
+            console.print(f"[dim]Total: {total_found} objects found[/dim]")
             print_info("Use 'nexstar catalog info <name>' for detailed information")
 
     except Exception as e:
@@ -194,7 +278,11 @@ def list_catalog(
 
 @app.command()
 def info(
-    object_name: str = typer.Argument(..., help="Object name (e.g., M31, Polaris, Andromeda)"),
+    object_name: str = typer.Argument(
+        ...,
+        help="Object name (e.g., M31, Polaris, Andromeda)",
+        autocompletion=_autocomplete_object_name,
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     """
@@ -280,7 +368,11 @@ def info(
 
 @app.command()
 def goto(
-    object_name: str = typer.Argument(..., help="Object name to slew to (e.g., M31, Polaris)"),
+    object_name: str = typer.Argument(
+        ...,
+        help="Object name to slew to (e.g., M31, Polaris)",
+        autocompletion=_autocomplete_object_name,
+    ),
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     wait: bool = typer.Option(True, help="Wait for slew to complete"),
 ) -> None:

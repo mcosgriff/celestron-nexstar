@@ -34,7 +34,7 @@ class CelestialObjectModel(Base):
 
     # Object identification
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    common_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    common_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     catalog: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     catalog_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

@@ -44,7 +44,12 @@ def import_source(
     Objects are filtered by magnitude to include only those visible with
     typical amateur telescopes.
 
+    Available sources: openngc, yale_bsc, custom
+
     [bold green]Examples:[/bold green]
+
+        # Import custom YAML catalog (catalogs.yaml)
+        nexstar data import custom
 
         # Import OpenNGC catalog (default mag ≤ 15.0)
         nexstar data import openngc
@@ -54,7 +59,9 @@ def import_source(
 
     [bold blue]Available Sources:[/bold blue]
 
-        openngc  - NGC/IC catalog (13,970 objects)
+        custom    - Custom YAML catalog (catalogs.yaml)
+        openngc   - NGC/IC catalog (13,970 objects)
+        yale_bsc  - Yale Bright Star Catalog (9,096 stars, mag ≤ 6.5)
 
     Use 'nexstar data sources' to see all available sources.
     """

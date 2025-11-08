@@ -7,6 +7,7 @@ Provides CLI commands for importing catalog data from various sources.
 from __future__ import annotations
 
 import csv
+import json
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -216,6 +217,187 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
 # parse_catalog_number moved to api.importers
 
 
+def download_yale_bsc(json_path: Path) -> None:
+    """
+    Download Yale Bright Star Catalog in JSON format.
+
+    Args:
+        json_path: Path to save the JSON file
+    """
+    url = "https://raw.githubusercontent.com/aduboisforge/Bright-Star-Catalog-JSON/refs/heads/master/BSC.json"
+
+    console.print("[dim]Downloading Yale Bright Star Catalog from GitHub...[/dim]")
+    try:
+        urllib.request.urlretrieve(url, json_path)
+        console.print(f"[green]✓[/green] Downloaded to {json_path}")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to download: {e}")
+        raise
+
+
+def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = False) -> tuple[int, int]:
+    """
+    Import Yale Bright Star Catalog into database.
+
+    Args:
+        json_path: Path to bright_star_catalog.json file
+        mag_limit: Maximum magnitude to import (default: 6.5, all stars in BSC)
+        verbose: Show detailed progress
+
+    Returns:
+        (imported_count, skipped_count)
+    """
+    db = get_database()
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    # Load JSON file
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            stars_data = json.load(f)
+    except FileNotFoundError:
+        console.print(f"[red]✗[/red] File not found: {json_path}")
+        console.print("[dim]Use --download to fetch from GitHub[/dim]")
+        raise
+    except json.JSONDecodeError as e:
+        console.print(f"[red]✗[/red] Invalid JSON: {e}")
+        raise
+
+    if not isinstance(stars_data, list):
+        console.print("[red]✗[/red] Invalid JSON format: expected array of stars")
+        raise ValueError("Invalid JSON format")
+
+    total_stars = len(stars_data)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Importing Yale BSC (mag ≤ {mag_limit})...", total=total_stars)
+
+        for star_data in stars_data:
+            try:
+                # Extract data from JSON
+                # Format: {"harvard_ref_#":1,"RA":"00:05:09.90","DEC":"+45:13:45.00","MAG":"6.70","Title HD":"A1Vn",...}
+                hr_number = star_data.get("harvard_ref_#")
+                ra_str = star_data.get("RA", "")
+                dec_str = star_data.get("DEC", "")
+                mag_str = star_data.get("MAG", "")
+                spectral_type = star_data.get("Title HD", "")
+
+                # Skip if missing essential data
+                if hr_number is None or not ra_str or not dec_str:
+                    skipped += 1
+                    progress.advance(task)
+                    continue
+
+                # Parse RA from "HH:MM:SS.ss" format to decimal hours
+                try:
+                    ra_parts = ra_str.split(":")
+                    ra_hours = float(ra_parts[0]) + float(ra_parts[1]) / 60 + float(ra_parts[2]) / 3600
+                except (ValueError, IndexError):
+                    skipped += 1
+                    progress.advance(task)
+                    continue
+
+                # Parse DEC from "+DD:MM:SS.ss" format to decimal degrees
+                try:
+                    dec_sign = 1 if not dec_str.startswith("-") else -1
+                    dec_str_abs = dec_str.lstrip("+-")
+                    dec_parts = dec_str_abs.split(":")
+                    dec_degrees = dec_sign * (float(dec_parts[0]) + float(dec_parts[1]) / 60 + float(dec_parts[2]) / 3600)
+                except (ValueError, IndexError):
+                    skipped += 1
+                    progress.advance(task)
+                    continue
+
+                # Parse magnitude
+                try:
+                    vmag = float(mag_str) if mag_str else None
+                except ValueError:
+                    vmag = None
+
+                # Filter by magnitude
+                if vmag is not None and vmag > mag_limit:
+                    skipped += 1
+                    progress.advance(task)
+                    continue
+
+                # Build star name (use HR number as primary identifier)
+                star_name = f"HR {hr_number}"
+
+                # Common name (none in this format)
+                common_name = None
+
+                # Build description
+                description_parts = [f"HR {hr_number}"]
+                if spectral_type:
+                    description_parts.append(f"Spectral type: {spectral_type}")
+                description = "; ".join(description_parts) if description_parts else None
+
+                # Determine object type (check if double star)
+                # Yale BSC marks double stars, but we'll use a simple heuristic
+                # For now, treat all as stars unless we have better data
+                obj_type = CelestialObjectType.STAR
+
+                # Check for duplicates
+                existing = db.get_by_name(star_name)
+                if existing:
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate: {star_name}[/dim]")
+                    progress.advance(task)
+                    continue
+
+                # Check by HR number if available
+                if hr_number and db.exists_by_catalog_number("yale_bsc", hr_number):
+                    skipped += 1
+                    if verbose:
+                        console.print(f"[dim]Skipping duplicate HR {hr_number}[/dim]")
+                    progress.advance(task)
+                    continue
+
+                # Insert into database
+                try:
+                    db.insert_object(
+                        name=star_name,
+                        catalog="yale_bsc",
+                        ra_hours=ra_hours,
+                        dec_degrees=dec_degrees,
+                        object_type=obj_type,
+                        magnitude=vmag,
+                        common_name=common_name,
+                        catalog_number=hr_number,
+                        description=description,
+                        constellation=None,  # Not available in this format
+                    )
+
+                    imported += 1
+
+                except Exception as e:
+                    if verbose:
+                        console.print(f"[yellow]Warning: Error importing {star_name}: {e}[/yellow]")
+                    errors += 1
+
+            except Exception as e:
+                if verbose:
+                    console.print(f"[yellow]Warning: Error processing star: {e}[/yellow]")
+                errors += 1
+
+            progress.advance(task)
+
+    # Commit all changes
+    db.commit()
+
+    return imported, skipped
+
+
 def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool = False) -> tuple[int, int]:
     """
     Import custom YAML catalog into database.
@@ -301,7 +483,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 is_dynamic = object_type in (CelestialObjectType.PLANET, CelestialObjectType.MOON)
 
                 # Extract parent planet for moons
-                parent_planet = obj.get("parent")
+                parent_planet = obj.get("parent_planet") or obj.get("parent")
 
                 # Parse catalog number
                 catalog_number = parse_catalog_number(name, catalog_name)
@@ -410,6 +592,15 @@ DATA_SOURCES: dict[str, DataSource] = {
         attribution="Mattia Verga and OpenNGC contributors",
         importer=import_openngc,
     ),
+    "yale_bsc": DataSource(
+        name="Yale Bright Star Catalog",
+        description="Bright stars (magnitude ≤ 6.5)",
+        url="https://github.com/aduboisforge/Bright-Star-Catalog-JSON",
+        objects_available=9096,
+        license="Public Domain",
+        attribution="Yale University Observatory",
+        importer=import_yale_bsc,
+    ),
 }
 
 
@@ -431,6 +622,12 @@ def list_data_sources() -> None:
             imported = stats.objects_by_catalog.get("ngc", 0) + stats.objects_by_catalog.get("ic", 0)
             # Subtract the original 12 NGC objects from migration
             imported = max(0, imported - 12)
+        elif source_id == "yale_bsc":
+            imported = stats.objects_by_catalog.get("yale_bsc", 0)
+        elif source_id == "custom":
+            # Count objects from custom catalogs (messier, asterisms, planets, moons, etc.)
+            custom_catalogs = ["messier", "asterisms", "planets", "moons", "ngc", "caldwell"]
+            imported = sum(stats.objects_by_catalog.get(cat, 0) for cat in custom_catalogs)
         else:
             imported = 0
 
@@ -505,12 +702,19 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
             return False
 
     # Download data for remote sources
-    cache_path = Path("/tmp") / f"{source_id}.csv"
+    # Determine file extension based on source
+    cache_path = Path("/tmp") / f"{source_id}.json" if source_id == "yale_bsc" else Path("/tmp") / f"{source_id}.csv"
 
     if not cache_path.exists():
         console.print("Downloading data...")
         if source_id == "openngc":
             if not download_openngc(cache_path):
+                return False
+        elif source_id == "yale_bsc":
+            try:
+                download_yale_bsc(cache_path)
+            except Exception as e:
+                console.print(f"[red]✗[/red] Download failed: {e}")
                 return False
         else:
             console.print(f"[red]✗[/red] No downloader for {source_id}")

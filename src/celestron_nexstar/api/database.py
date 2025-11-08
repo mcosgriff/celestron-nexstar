@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS objects (
 
 -- Indexes for fast lookups
 CREATE INDEX IF NOT EXISTS idx_name ON objects(name);
+CREATE INDEX IF NOT EXISTS idx_common_name ON objects(common_name);
 CREATE INDEX IF NOT EXISTS idx_catalog ON objects(catalog);
 CREATE INDEX IF NOT EXISTS idx_magnitude ON objects(magnitude);
 CREATE INDEX IF NOT EXISTS idx_type ON objects(object_type);
@@ -497,6 +498,53 @@ class CatalogDatabase:
                 session.query(CelestialObjectModel.catalog).distinct().order_by(CelestialObjectModel.catalog).all()
             )
             return [catalog[0] for catalog in catalogs]
+
+    def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
+        """
+        Get object names for command-line autocompletion.
+
+        Filters names that start with the given prefix (case-insensitive).
+
+        Args:
+            prefix: Prefix to match (empty string returns all)
+            limit: Maximum number of results to return
+
+        Returns:
+            List of unique names matching the prefix (case-insensitive)
+        """
+        from sqlalchemy import func, select
+
+        with self._get_session() as session:
+            # Build case-insensitive filter using LIKE for better compatibility
+            prefix_lower = prefix.lower()
+
+            # Query for names starting with prefix (case-insensitive)
+            # Use LIKE instead of startswith for better SQL compatibility
+            query = (
+                select(CelestialObjectModel.name)
+                .distinct()
+                .filter(func.lower(CelestialObjectModel.name).like(f"{prefix_lower}%"))
+                .order_by(func.lower(CelestialObjectModel.name))
+                .limit(limit)
+            )
+
+            # Execute and get results
+            result = session.execute(query).fetchall()
+            return [row[0] for row in result if row[0]]
+
+    def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
+        """
+        Get all object names for command-line autocompletion.
+
+        DEPRECATED: Use get_names_for_completion() with a prefix for better performance.
+
+        Args:
+            limit: Maximum number of results to return
+
+        Returns:
+            List of unique names (case-insensitive)
+        """
+        return self.get_names_for_completion(prefix="", limit=limit)
 
     def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
