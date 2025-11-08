@@ -25,10 +25,11 @@ logger = logging.getLogger(__name__)
 class WeatherData:
     """Weather information for observing conditions."""
 
-    temperature_c: float | None = None
+    temperature_c: float | None = None  # In Fahrenheit when units=imperial
+    dew_point_f: float | None = None  # Dew point in Fahrenheit
     humidity_percent: float | None = None
     cloud_cover_percent: float | None = None
-    wind_speed_ms: float | None = None
+    wind_speed_ms: float | None = None  # In mph when units=imperial
     visibility_km: float | None = None
     condition: str | None = None  # e.g., "Clear", "Cloudy", "Rain"
     last_updated: str | None = None
@@ -80,10 +81,11 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         visibility = data.get("visibility")
 
         return WeatherData(
-            temperature_c=main.get("temp"),
+            temperature_c=main.get("temp"),  # In Fahrenheit when units=imperial
+            dew_point_f=main.get("dew_point"),  # In Fahrenheit when units=imperial
             humidity_percent=main.get("humidity"),
             cloud_cover_percent=clouds.get("all"),
-            wind_speed_ms=wind.get("speed"),
+            wind_speed_ms=wind.get("speed"),  # In mph when units=imperial
             visibility_km=visibility / 1000.0 if visibility else None,  # Convert m to km
             condition=weather.get("main"),
             last_updated="now",
@@ -169,15 +171,17 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
 
     # Wind assessment (high wind = poor seeing)
     if weather.wind_speed_ms is not None:
-        wind_kmh = weather.wind_speed_ms * 3.6  # Convert m/s to km/h
-        if wind_kmh > 40:
+        # API returns mph when units=imperial (despite field name)
+        # Use directly as mph for display
+        wind_mph = weather.wind_speed_ms  # Already in mph when units=imperial
+        if wind_mph > 25:  # ~40 km/h
             if status in ("excellent", "good"):
                 status = "fair"
-            warnings.append(f"Strong wind ({wind_kmh:.0f} km/h)")
-        elif wind_kmh > 25:
+            warnings.append(f"Strong wind ({wind_mph:.0f} mph)")
+        elif wind_mph > 15:  # ~25 km/h
             if status == "excellent":
                 status = "good"
-            warnings.append(f"Moderate wind ({wind_kmh:.0f} km/h)")
+            warnings.append(f"Moderate wind ({wind_mph:.0f} mph)")
 
     # Precipitation/condition warnings
     if weather.condition:
@@ -192,3 +196,114 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
 
     warning_msg = "; ".join(warnings) if warnings else "Good observing conditions"
     return (status, warning_msg)
+
+
+def calculate_seeing_conditions(
+    weather: WeatherData, temperature_change_per_hour: float = 0.0
+) -> float:
+    """
+    Calculate astronomical seeing conditions score (0-100).
+
+    Uses a weighted algorithm considering:
+    - Temperature-Dew Point Spread (30% weight)
+    - Wind Speed (30% weight)
+    - Humidity Impact (20% weight)
+    - Temperature Stability (20% weight)
+
+    Args:
+        weather: Weather data
+        temperature_change_per_hour: Rate of temperature change per hour (degrees F)
+                                    Default 0.0 if historical data unavailable
+
+    Returns:
+        Seeing score from 0-100 (higher is better)
+    """
+    if weather.error or weather.temperature_c is None:
+        return 50.0  # Default score if data unavailable
+
+    total_score = 0.0
+
+    # 1. Temperature-Dew Point Spread (30% weight)
+    if weather.temperature_c is not None and weather.dew_point_f is not None:
+        temp_spread = weather.temperature_c - weather.dew_point_f
+        # Optimal spread: 15-30°F = excellent (30 points)
+        # Spread < 5°F = poor (0 points)
+        # Spread > 30°F = still good but not better (30 points)
+        if temp_spread >= 30:
+            spread_score = 30.0
+        elif temp_spread >= 15:
+            spread_score = 30.0
+        elif temp_spread >= 10:
+            spread_score = 20.0 + (temp_spread - 10) * 2.0  # 20-30 points
+        elif temp_spread >= 5:
+            spread_score = 10.0 + (temp_spread - 5) * 2.0  # 10-20 points
+        else:
+            spread_score = temp_spread * 2.0  # 0-10 points
+        total_score += spread_score
+    else:
+        # If dew point unavailable, use default
+        total_score += 15.0
+
+    # 2. Wind Speed (30% weight)
+    if weather.wind_speed_ms is not None:
+        wind_mph = weather.wind_speed_ms  # Already in mph when units=imperial
+        # Optimal: 5-10 mph = excellent (30 points)
+        # Below 5 mph: insufficient mixing (reduced score)
+        # Above 10 mph: turbulence increases (reduced score)
+        # Above 20 mph: poor conditions (0 points)
+        if 5.0 <= wind_mph <= 10.0:
+            wind_score = 30.0
+        elif wind_mph < 5.0:
+            # Below 5 mph: score reduces linearly
+            wind_score = wind_mph * 6.0  # 0-30 points
+        elif wind_mph <= 15.0:
+            # 10-15 mph: score reduces gradually
+            wind_score = 30.0 - (wind_mph - 10.0) * 3.0  # 30-15 points
+        elif wind_mph <= 20.0:
+            # 15-20 mph: score reduces more sharply
+            wind_score = 15.0 - (wind_mph - 15.0) * 3.0  # 15-0 points
+        else:
+            wind_score = 0.0
+        total_score += wind_score
+    else:
+        total_score += 15.0
+
+    # 3. Humidity Impact (20% weight)
+    if weather.humidity_percent is not None:
+        # Lower humidity = better seeing
+        # 0-30% = excellent (20 points)
+        # 30-60% = good (15 points)
+        # 60-80% = fair (10 points)
+        # 80-100% = poor (0-5 points)
+        if weather.humidity_percent <= 30:
+            humidity_score = 20.0
+        elif weather.humidity_percent <= 60:
+            humidity_score = 20.0 - (weather.humidity_percent - 30) * (5.0 / 30.0)  # 20-15 points
+        elif weather.humidity_percent <= 80:
+            humidity_score = 15.0 - (weather.humidity_percent - 60) * (5.0 / 20.0)  # 15-10 points
+        else:
+            humidity_score = 10.0 - (weather.humidity_percent - 80) * (10.0 / 20.0)  # 10-0 points
+        total_score += max(0.0, humidity_score)
+    else:
+        total_score += 10.0
+
+    # 4. Temperature Stability (20% weight)
+    # Measures rate of temperature change per hour
+    # Smaller changes = more stable air = better seeing
+    # Each degree F per hour reduces score
+    if abs(temperature_change_per_hour) <= 0.5:
+        stability_score = 20.0  # Very stable
+    elif abs(temperature_change_per_hour) <= 1.0:
+        stability_score = 18.0
+    elif abs(temperature_change_per_hour) <= 2.0:
+        stability_score = 15.0
+    elif abs(temperature_change_per_hour) <= 3.0:
+        stability_score = 10.0
+    elif abs(temperature_change_per_hour) <= 5.0:
+        stability_score = 5.0
+    else:
+        stability_score = 0.0  # Rapid changes = unstable
+    total_score += stability_score
+
+    # Ensure score is between 0-100
+    return max(0.0, min(100.0, total_score))

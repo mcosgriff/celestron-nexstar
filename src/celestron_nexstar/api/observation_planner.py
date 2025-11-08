@@ -20,7 +20,7 @@ from .observer import ObserverLocation, get_observer_location
 from .optics import calculate_limiting_magnitude, get_current_configuration
 from .solar_system import get_moon_info
 from .visibility import VisibilityInfo, filter_visible_objects
-from .weather import WeatherData, assess_observing_conditions, fetch_weather
+from .weather import WeatherData, assess_observing_conditions, calculate_seeing_conditions, fetch_weather
 
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ class ObservingConditions:
 
     # Overall assessment
     observing_quality_score: float  # 0.0-1.0
+    seeing_score: float  # 0.0-100.0 (astronomical seeing conditions)
     recommendations: tuple[str, ...]
     warnings: tuple[str, ...]
 
@@ -193,6 +194,12 @@ class ObservationPlanner:
         # Assess overall quality
         quality_score = self._calculate_quality_score(weather, lp_data, moon_illum, weather_status)
 
+        # Calculate seeing conditions
+        # Note: Temperature stability requires historical data
+        # For now, assume stable conditions (0.0 change/hour)
+        # This can be enhanced later with temperature history tracking
+        seeing_score = calculate_seeing_conditions(weather, temperature_change_per_hour=0.0)
+
         recommendations, warnings = self._generate_recommendations(
             weather, lp_data, moon_illum, quality_score, weather_status, weather_warning
         )
@@ -211,6 +218,7 @@ class ObservationPlanner:
             moon_altitude=moon_alt,
             moon_phase=moon_phase,
             observing_quality_score=quality_score,
+            seeing_score=seeing_score,
             recommendations=recommendations,
             warnings=warnings,
         )

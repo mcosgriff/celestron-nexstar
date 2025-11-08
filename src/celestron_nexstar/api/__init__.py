@@ -151,6 +151,7 @@ from celestron_nexstar.api.visibility import (
 from celestron_nexstar.api.weather import (
     WeatherData,
     assess_observing_conditions,
+    calculate_seeing_conditions,
     fetch_weather,
     get_weather_api_key,
 )

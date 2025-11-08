@@ -81,6 +81,8 @@ def show_conditions() -> None:
             # API returns Fahrenheit when units=imperial (despite field name)
             # Display directly as Fahrenheit
             console.print(f"  Temperature: {weather.temperature_c:.1f}°F")
+        if weather.dew_point_f is not None:
+            console.print(f"  Dew Point: {weather.dew_point_f:.1f}°F")
         if weather.humidity_percent is not None:
             console.print(f"  Humidity: {weather.humidity_percent:.0f}%")
         if weather.wind_speed_ms is not None:
@@ -95,6 +97,21 @@ def show_conditions() -> None:
             console.print(f"  Condition: {weather.condition}")
         if weather.error:
             console.print(f"  [yellow]Warning: {weather.error}[/yellow]")
+        console.print()
+
+        # Seeing Conditions
+        seeing = conditions.seeing_score
+        if seeing >= 80:
+            seeing_text = "[green]Excellent[/green]"
+        elif seeing >= 60:
+            seeing_text = "[yellow]Good[/yellow]"
+        elif seeing >= 40:
+            seeing_text = "[yellow]Fair[/yellow]"
+        else:
+            seeing_text = "[red]Poor[/red]"
+
+        console.print("[bold]Seeing Conditions:[/bold]")
+        console.print(f"  Seeing: {seeing_text} ({seeing:.0f}/100)")
         console.print()
 
         # Light Pollution
