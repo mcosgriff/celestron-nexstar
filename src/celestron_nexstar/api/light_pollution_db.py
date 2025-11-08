@@ -9,9 +9,15 @@ geospatial queries with R-tree spatial indexing when available. Falls back to
 regular SQL queries if SpatiaLite is not installed.
 
 SpatiaLite Installation (optional, for better performance):
-    Linux: sudo apt-get install libspatialite-dev
+    Linux: 
+        sudo apt-get install libsqlite3-mod-spatialite libspatialite-dev
+        # Also install pysqlite3-binary for Python 3.13:
+        uv add pysqlite3-binary
     macOS: brew install spatialite-tools
     Windows: Download from SpatiaLite website
+
+Note: The system uses pysqlite3-binary (which supports Python 3.13) to enable
+extension loading. Python 3.14's built-in sqlite3 doesn't support extension loading.
 
 The system will work without SpatiaLite but queries will be slower for large datasets.
 """

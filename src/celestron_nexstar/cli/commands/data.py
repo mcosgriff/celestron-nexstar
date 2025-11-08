@@ -73,8 +73,10 @@ def stats() -> None:
     - Objects by catalog
     - Objects by type
     - Magnitude range
+    - Light pollution data statistics
     """
     from rich.table import Table
+    from sqlalchemy import text
 
     from ...api.database import get_database
 
@@ -109,6 +111,76 @@ def stats() -> None:
         type_table.add_row(obj_type, f"{count:,}")
 
     console.print(type_table)
+
+    # Light pollution statistics
+    try:
+        with db._get_session() as session:
+            # Check if table exists
+            table_exists = session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
+            ).fetchone()
+
+            if table_exists:
+                # Get total count
+                total_count = session.execute(
+                    text("SELECT COUNT(*) FROM light_pollution_grid")
+                ).fetchone()[0]
+
+                if total_count > 0:
+                    # Get SQM range
+                    sqm_range = session.execute(
+                        text("SELECT MIN(sqm_value), MAX(sqm_value) FROM light_pollution_grid")
+                    ).fetchone()
+                    sqm_min = sqm_range[0] if sqm_range[0] is not None else None
+                    sqm_max = sqm_range[1] if sqm_range[1] is not None else None
+
+                    # Get coverage by region
+                    region_counts = session.execute(
+                        text(
+                            "SELECT region, COUNT(*) FROM light_pollution_grid WHERE region IS NOT NULL GROUP BY region ORDER BY region"
+                        )
+                    ).fetchall()
+
+                    # Check for SpatiaLite
+                    spatialite_available = False
+                    try:
+                        session.execute(text("SELECT load_extension('mod_spatialite')"))
+                        spatialite_available = True
+                    except Exception:
+                        pass
+
+                    lp_table = Table(title="\nLight Pollution Data")
+                    lp_table.add_column("Metric", style="cyan")
+                    lp_table.add_column("Value", justify="right", style="green")
+
+                    lp_table.add_row("Total grid points", f"{total_count:,}")
+                    if sqm_min is not None and sqm_max is not None:
+                        lp_table.add_row("SQM range", f"{sqm_min:.2f} to {sqm_max:.2f}")
+                    if spatialite_available:
+                        lp_table.add_row("SpatiaLite", "[green]Available[/green]")
+                    else:
+                        lp_table.add_row("SpatiaLite", "[dim]Not available[/dim]")
+
+                    console.print(lp_table)
+
+                    # Regions table if we have region data
+                    if region_counts:
+                        region_table = Table(title="Coverage by Region")
+                        region_table.add_column("Region", style="cyan")
+                        region_table.add_column("Grid Points", justify="right", style="green")
+
+                        for region, count in region_counts:
+                            region_name = region if region else "Unknown"
+                            region_table.add_row(region_name, f"{count:,}")
+
+                        console.print(region_table)
+                else:
+                    console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
+            else:
+                console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
+    except Exception as e:
+        # Silently skip if there's an error (table might not exist)
+        pass
 
     # Database info
     if db_stats.last_updated:

@@ -139,8 +139,19 @@ class CatalogDatabase:
             db_path = self._get_default_db_path()
 
         self.db_path = Path(db_path)
+        
+        # Use pysqlite3 if available (supports SpatiaLite extensions)
+        # Fall back to built-in sqlite3 if not available
+        try:
+            import pysqlite3
+            dbapi = pysqlite3
+        except ImportError:
+            import sqlite3
+            dbapi = sqlite3
+        
         self._engine = create_engine(
             f"sqlite:///{self.db_path}",
+            module=dbapi,  # Use pysqlite3 for extension support
             poolclass=None,  # No connection pooling for SQLite
             connect_args={
                 "check_same_thread": False,  # Allow multi-threaded access
@@ -178,8 +189,17 @@ class CatalogDatabase:
 
         @event.listens_for(self._engine, "connect")
         def set_sqlite_pragmas(dbapi_conn, connection_record):
-            """Set SQLite pragmas for performance."""
+            """Set SQLite pragmas for performance and enable extension loading."""
             cursor = dbapi_conn.cursor()
+            
+            # Enable extension loading if supported (for SpatiaLite)
+            try:
+                dbapi_conn.enable_load_extension(True)
+            except AttributeError:
+                # Built-in sqlite3 may not support enable_load_extension
+                # This is fine - SpatiaLite is optional
+                pass
+            
             cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
             cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
