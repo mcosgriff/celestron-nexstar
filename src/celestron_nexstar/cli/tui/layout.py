@@ -7,6 +7,7 @@ Builds the full-screen TUI layout with panes and containers.
 from __future__ import annotations
 
 from prompt_toolkit.layout.containers import (
+    FloatContainer,
     HSplit,
     VSplit,
     Window,
@@ -23,7 +24,7 @@ from .panes import (
 )
 
 
-def create_layout() -> HSplit:
+def create_layout() -> FloatContainer:
     """
     Create the main layout for the TUI application.
 
@@ -96,4 +97,5 @@ def create_layout() -> HSplit:
         ]
     )
 
-    return root_container
+    # Wrap in FloatContainer to support modal dialogs
+    return FloatContainer(content=root_container, floats=[])

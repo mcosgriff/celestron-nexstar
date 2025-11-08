@@ -7,7 +7,19 @@ Main application class for the full-screen terminal user interface.
 from __future__ import annotations
 
 from prompt_toolkit import Application, PromptSession
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_processor import KeyPressEvent
+from prompt_toolkit.layout.containers import (
+    ConditionalContainer,
+    HSplit,
+    VSplit,
+    Window,
+)
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.styles import Style
 from rich.console import Console
 
 from .bindings import create_key_bindings
@@ -423,79 +435,119 @@ def _show_settings_dialog() -> None:
         error_session.prompt("Press Enter to continue...")
 
 
+def _show_location_input_dialog() -> str | None:
+    """Show btop-style input dialog for location entry.
+    
+    Note: Due to prompt_toolkit limitations, this temporarily pauses the TUI.
+    For better modal support, consider migrating to Textual framework.
+    """
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    
+    session: PromptSession[str] = PromptSession()
+    
+    # Show styled prompt with btop-like appearance
+    try:
+        result = session.prompt(
+            HTML('<style fg="#ff6600">[Location]</style> Enter location to geocode:\n'
+                 'Examples: "New York, NY", "90210", "London, UK"\n'
+                 '<style fg="#ff6600">></style> '),
+            default="",
+        )
+        return result.strip() if result else None
+    except KeyboardInterrupt:
+        return None
+
+
+def _show_location_confirm_dialog(location_name: str, lat: float, lon: float) -> bool:
+    """Show confirmation dialog for location update.
+    
+    Note: Due to prompt_toolkit limitations, this temporarily pauses the TUI.
+    """
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    
+    # Format coordinates
+    lat_dir = "N" if lat >= 0 else "S"
+    lon_dir = "E" if lon >= 0 else "W"
+    
+    session: PromptSession[str] = PromptSession()
+    try:
+        result = session.prompt(
+            HTML(f'<style fg="#ff6600">[Confirm Location]</style>\n'
+                 f'Location: <style fg="cyan">{location_name}</style>\n'
+                 f'Coordinates: {abs(lat):.4f}° {lat_dir}, {abs(lon):.4f}° {lon_dir}\n'
+                 f'Update location? (y/n): '),
+            default="n",
+        )
+        return result.strip().lower() in ("y", "yes")
+    except KeyboardInterrupt:
+        return False
+
+
 def _update_location_interactive() -> None:
-    """Interactive location update with geocoding."""
+    """Interactive location update with geocoding using btop-style dialogs."""
     try:
         from ...api.observer import geocode_location, get_observer_location, set_observer_location
 
-        current_location = get_observer_location()
-        if current_location:
-            console.print(f"\n[bold]Current Location:[/bold]")
-            if current_location.name:
-                console.print(f"  {current_location.name}")
-            lat_dir = "N" if current_location.latitude >= 0 else "S"
-            lon_dir = "E" if current_location.longitude >= 0 else "W"
-            console.print(
-                f"  {abs(current_location.latitude):.4f}°{lat_dir}, "
-                f"{abs(current_location.longitude):.4f}°{lon_dir}"
-            )
-        else:
-            console.print("\n[bold]Current Location:[/bold] Not set\n")
+        # Step 1: Get location input
+        query = _show_location_input_dialog()
+        if not query:
+            return
 
-        console.print("\n[bold]Enter new location:[/bold]")
-        console.print("[dim]Examples: 'New York, NY', '90210', 'London, UK', '123 Main St, Boston, MA'[/dim]")
-        console.print("[dim]Press Ctrl+C to cancel[/dim]\n")
-
-        session: PromptSession[str] = PromptSession()
+        # Step 2: Geocode
         try:
-            query = session.prompt("Location: ").strip()
-            if not query:
-                console.print("[yellow]No location entered, cancelled[/yellow]")
-                console.print("[dim]Press Enter to return...[/dim]")
-                session.prompt("")
-                return
+            new_location = geocode_location(query)
+        except ValueError as e:
+            # Show error dialog
+            _show_error_dialog(f"Geocoding failed: {e}")
+            return
 
-            # Geocode the location
-            console.print(f"\n[dim]Geocoding '{query}'...[/dim]")
-            try:
-                new_location = geocode_location(query)
-                console.print(f"[green]✓[/green] Found: {new_location.name}")
-                lat_dir = "N" if new_location.latitude >= 0 else "S"
-                lon_dir = "E" if new_location.longitude >= 0 else "W"
-                console.print(
-                    f"  Coordinates: {abs(new_location.latitude):.4f}°{lat_dir}, "
-                    f"{abs(new_location.longitude):.4f}°{lon_dir}"
-                )
+        # Step 3: Confirm update
+        confirmed = _show_location_confirm_dialog(
+            new_location.name or "Unknown",
+            new_location.latitude,
+            new_location.longitude,
+        )
 
-                # Confirm and save
-                console.print("\n[bold]Update location?[/bold] (y/n): ", end="")
-                confirm = session.prompt("").strip().lower()
-                if confirm in ("y", "yes", ""):
-                    set_observer_location(new_location, save=True)
-                    console.print("[green]✓[/green] Location updated successfully!")
-                    console.print("[dim]Press Enter to return to dashboard...[/dim]")
-                    session.prompt("")
-                else:
-                    console.print("[yellow]Location update cancelled[/yellow]")
-                    console.print("[dim]Press Enter to return...[/dim]")
-                    session.prompt("")
-            except ValueError as e:
-                console.print(f"[red]✗[/red] {e}")
-                console.print("[dim]Press Enter to return...[/dim]")
-                session.prompt("")
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Cancelled[/yellow]")
-            console.print("[dim]Press Enter to return...[/dim]")
-            try:
-                session.prompt("")
-            except KeyboardInterrupt:
-                pass
+        if confirmed:
+            set_observer_location(new_location, save=True)
+            _show_success_dialog("Location updated successfully!")
+        else:
+            _show_info_dialog("Location update cancelled")
 
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
-        import traceback
+        _show_error_dialog(f"Error: {e}")
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+def _show_error_dialog(message: str) -> None:
+    """Show error dialog."""
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    
+    session: PromptSession[str] = PromptSession()
+    session.prompt(
+        HTML(f'<style fg="#ff0000">✗ Error:</style> {message}\n\nPress Enter to continue...'),
+    )
+
+
+def _show_success_dialog(message: str) -> None:
+    """Show success dialog."""
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    
+    session: PromptSession[str] = PromptSession()
+    session.prompt(
+        HTML(f'<style fg="#00ff00">✓ Success:</style> {message}\n\nPress Enter to continue...'),
+    )
+
+
+def _show_info_dialog(message: str) -> None:
+    """Show info dialog."""
+    from prompt_toolkit import PromptSession
+    
+    session: PromptSession[str] = PromptSession()
+    session.prompt(f"{message}\n\nPress Enter to continue...")
 
 
 def _show_help_overlay() -> None:
@@ -567,11 +619,18 @@ def _show_help_overlay() -> None:
         error_session.prompt("Press Enter to continue...")
 
 
+# Global reference to current TUI application instance for dialog support
+_current_tui_app: TUIApplication | None = None
+
+
 class TUIApplication:
     """Full-screen TUI application for telescope control and observing."""
 
     def __init__(self) -> None:
         """Initialize the TUI application."""
+        global _current_tui_app
+        _current_tui_app = self
+        self._float_container: FloatContainer | None = None
         self._initialize_app()
 
     def _initialize_app(self) -> None:
@@ -579,6 +638,9 @@ class TUIApplication:
         # Create layout once and reuse it
         # This ensures the layout structure doesn't get recreated on refresh
         root_container = create_layout()
+        # Store reference to FloatContainer for dynamic float management
+        if isinstance(root_container, FloatContainer):
+            self._float_container = root_container
         layout = Layout(root_container)
 
         # Create key bindings

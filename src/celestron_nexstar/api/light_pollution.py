@@ -335,10 +335,15 @@ async def _fetch_sqm_async(lat: float, lon: float) -> float | None:
         db = get_database()
         sqm = get_sqm_from_database(lat, lon, db)
         if sqm is not None:
-            logger.debug(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
+            logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
             return sqm
+        else:
+            logger.debug(f"No SQM data in database for {lat},{lon}")
     except Exception as e:
-        logger.debug(f"Database lookup failed: {e}")
+        logger.warning(f"Database lookup failed: {e}")
+        import traceback
+
+        logger.debug(traceback.format_exc())
 
     # Try primary API
     sqm = await _fetch_from_lightpollutionmap_api(lat, lon)
@@ -447,7 +452,20 @@ def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False
     """
     cache_key = _get_cache_key(lat, lon)
 
-    # Always check cache first - this is synchronous and safe
+    # Always check database first (synchronous, fast, offline)
+    try:
+        from .database import get_database
+        from .light_pollution_db import get_sqm_from_database
+
+        db = get_database()
+        sqm = get_sqm_from_database(lat, lon, db)
+        if sqm is not None:
+            logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
+            return _create_light_pollution_data(sqm, "database", cached=False)
+    except Exception as e:
+        logger.debug(f"Database lookup failed: {e}")
+
+    # Check cache second - this is synchronous and safe
     cache_data = _load_cache()
     if not force_refresh and cache_data and "data" in cache_data:
         location_data = cache_data["data"].get(cache_key)
