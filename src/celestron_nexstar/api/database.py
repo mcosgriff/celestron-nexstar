@@ -31,6 +31,7 @@ __all__ = [
     "DatabaseStats",
     "get_database",
     "init_database",
+    "vacuum_database",
 ]
 
 # SQL Schema
@@ -607,3 +608,40 @@ def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     db = CatalogDatabase(db_path)
     db.init_schema()
     return db
+
+
+def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
+    """
+    Reclaim unused space in the database by running VACUUM.
+
+    SQLite doesn't automatically reclaim space when data is deleted.
+    VACUUM rebuilds the database file, removing free pages and reducing file size.
+
+    Args:
+        db: Database instance (default: uses get_database())
+
+    Returns:
+        Tuple of (size_before_bytes, size_after_bytes)
+    """
+    if db is None:
+        db = get_database()
+
+    # Get file size before vacuum
+    size_before = db.db_path.stat().st_size if db.db_path.exists() else 0
+
+    logger.info(f"Running VACUUM on database: {db.db_path}")
+    logger.info(f"Database size before: {size_before / (1024 * 1024):.2f} MB")
+
+    # Run VACUUM
+    with db._get_session() as session:
+        session.execute(text("VACUUM"))
+        session.commit()
+
+    # Get file size after vacuum
+    size_after = db.db_path.stat().st_size if db.db_path.exists() else 0
+    size_reclaimed = size_before - size_after
+
+    logger.info(f"Database size after: {size_after / (1024 * 1024):.2f} MB")
+    logger.info(f"Space reclaimed: {size_reclaimed / (1024 * 1024):.2f} MB")
+
+    return (size_before, size_after)

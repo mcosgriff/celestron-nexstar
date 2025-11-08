@@ -22,8 +22,8 @@ import asyncio
 import logging
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING
-from urllib import error, request
+from typing import TYPE_CHECKING, Any
+from urllib import request
 
 from sqlalchemy import text
 
@@ -147,7 +147,7 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
         schema_sql = """
         -- Initialize SpatiaLite if not already done
         SELECT load_extension('mod_spatialite');
-        
+
         -- Create table with geometry column
         CREATE TABLE IF NOT EXISTS light_pollution_grid (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,13 +158,13 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(latitude, longitude)
         );
-        
+
         -- Add geometry column if it doesn't exist
         SELECT AddGeometryColumn('light_pollution_grid', 'geometry', 4326, 'POINT', 'XY');
-        
+
         -- Create spatial index (R-tree)
         SELECT CreateSpatialIndex('light_pollution_grid', 'geometry');
-        
+
         -- Create regular indexes
         CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude);
         CREATE INDEX IF NOT EXISTS idx_lp_region ON light_pollution_grid(region);
@@ -203,10 +203,208 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
         session.commit()
 
 
+def clear_light_pollution_data(db: CatalogDatabase) -> int:
+    """
+    Clear all light pollution data from the database.
+
+    Deletes all rows from the light_pollution_grid table.
+    Also handles SpatiaLite spatial indexes if present.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Number of rows deleted
+    """
+    with db._get_session() as session:
+        # First, get count of rows to be deleted
+        count_result = session.execute(
+            text("SELECT COUNT(*) FROM light_pollution_grid")
+        ).fetchone()
+        row_count = count_result[0] if count_result else 0
+
+        if row_count == 0:
+            logger.info("Light pollution table is already empty")
+            return 0
+
+        # Delete all rows
+        session.execute(text("DELETE FROM light_pollution_grid"))
+        session.commit()
+
+        logger.info(f"Cleared {row_count} rows from light_pollution_grid table")
+        return row_count
+
+
+def _load_state_boundaries(state_names: list[str], region: str) -> list[dict[str, Any]] | None:
+    """
+    Load state/province boundary polygons for filtering.
+
+    Uses bounding boxes for US states, Canadian provinces, and Mexican states.
+    Returns a list of boundary dictionaries with geometry data.
+
+    Args:
+        state_names: List of state/province names to load
+        region: Region name (used to determine which country boundaries to load)
+
+    Returns:
+        List of boundary dictionaries or None if unavailable
+    """
+    # Map region to supported countries
+    country_map = {
+        "north_america": ["usa", "canada", "mexico"],
+    }
+
+    countries = country_map.get(region, [])
+    if not countries:
+        logger.warning(f"State filtering not supported for region: {region}")
+        return None
+
+    # Get state bounding boxes
+    state_bboxes = _get_state_bounding_boxes()
+
+    boundaries: list[dict[str, Any]] = []
+
+    for state_name in state_names:
+        state_lower = state_name.lower().strip()
+        # Try to match state name (handle variations)
+        matched = False
+        for state_key, bbox in state_bboxes.items():
+            if state_lower in state_key.lower() or state_key.lower() in state_lower:
+                boundaries.append(
+                    {
+                        "name": state_key,
+                        "bbox": bbox,  # (min_lat, max_lat, min_lon, max_lon)
+                        "type": "bbox",  # Simplified to bounding box for now
+                    }
+                )
+                matched = True
+                break
+
+        if not matched:
+            logger.warning(f"Could not find boundary for: {state_name}")
+
+    return boundaries if boundaries else None
+
+
+def _get_state_bounding_boxes() -> dict[str, tuple[float, float, float, float]]:
+    """
+    Get bounding boxes for US states, Canadian provinces, and Mexican states.
+
+    Returns:
+        Dictionary mapping state/province name to (min_lat, max_lat, min_lon, max_lon)
+    """
+    # US States bounding boxes (approximate)
+    us_states = {
+        "Colorado": (36.99, 41.00, -109.05, -102.04),
+        "New Mexico": (31.33, 37.00, -109.05, -103.00),
+        "Arizona": (31.33, 37.00, -114.82, -109.05),
+        "Utah": (36.99, 42.00, -114.05, -109.05),
+        "Wyoming": (41.00, 45.00, -111.05, -104.05),
+        "Montana": (44.36, 49.00, -116.05, -104.04),
+        "Idaho": (41.99, 49.00, -117.24, -111.05),
+        "Nevada": (35.00, 42.00, -120.00, -114.05),
+        "California": (32.53, 42.00, -124.45, -114.13),
+        "Oregon": (41.99, 46.30, -124.57, -116.47),
+        "Washington": (45.54, 49.00, -124.79, -116.92),
+        "Texas": (25.84, 36.50, -106.66, -93.51),
+        "Oklahoma": (33.62, 37.00, -103.00, -94.43),
+        "Kansas": (36.99, 40.00, -102.05, -94.59),
+        "Nebraska": (40.00, 43.00, -104.05, -95.31),
+        "South Dakota": (42.48, 45.94, -104.06, -96.44),
+        "North Dakota": (45.93, 49.00, -104.05, -96.55),
+        "Minnesota": (43.50, 49.38, -97.23, -89.49),
+        "Iowa": (40.38, 43.50, -96.64, -90.14),
+        "Missouri": (35.99, 40.61, -95.77, -89.10),
+        "Arkansas": (33.00, 36.50, -94.62, -89.64),
+        "Louisiana": (28.93, 33.02, -94.04, -88.82),
+        "Mississippi": (30.14, 35.00, -91.66, -88.10),
+        "Alabama": (30.14, 35.00, -88.47, -84.89),
+        "Tennessee": (34.98, 36.68, -90.31, -81.65),
+        "Kentucky": (36.50, 39.15, -89.57, -81.96),
+        "Illinois": (36.97, 42.51, -91.51, -87.49),
+        "Indiana": (37.77, 41.76, -88.10, -84.78),
+        "Ohio": (38.40, 41.98, -84.82, -80.52),
+        "Michigan": (41.70, 48.31, -90.42, -82.13),
+        "Wisconsin": (42.49, 47.08, -92.89, -86.25),
+        "Pennsylvania": (39.72, 42.27, -80.52, -74.69),
+        "New York": (40.48, 45.01, -79.76, -71.85),
+        "Vermont": (42.73, 45.01, -73.44, -71.47),
+        "New Hampshire": (42.70, 45.31, -72.56, -70.61),
+        "Maine": (43.06, 47.46, -71.08, -66.95),
+        "Massachusetts": (41.19, 42.89, -73.51, -69.86),
+        "Rhode Island": (41.15, 42.02, -71.86, -71.12),
+        "Connecticut": (40.99, 42.05, -73.73, -71.78),
+        "New Jersey": (38.93, 41.36, -75.56, -73.89),
+        "Delaware": (38.45, 39.72, -75.79, -75.05),
+        "Maryland": (37.91, 39.72, -79.49, -75.05),
+        "West Virginia": (37.20, 40.64, -82.64, -77.72),
+        "Virginia": (36.54, 39.47, -83.68, -75.24),
+        "North Carolina": (33.84, 36.59, -84.32, -75.46),
+        "South Carolina": (32.03, 35.22, -83.35, -78.54),
+        "Georgia": (30.36, 35.00, -85.61, -80.84),
+        "Florida": (24.52, 31.00, -87.63, -79.97),
+    }
+
+    # Canadian Provinces (approximate)
+    canada_provinces = {
+        "Alberta": (48.99, 60.00, -120.00, -110.00),
+        "British Columbia": (48.30, 60.00, -139.06, -114.04),
+        "Manitoba": (49.00, 60.00, -102.00, -89.00),
+        "New Brunswick": (44.56, 48.07, -69.06, -63.70),
+        "Newfoundland and Labrador": (46.62, 60.00, -67.81, -52.64),
+        "Northwest Territories": (60.00, 78.00, -136.00, -102.00),
+        "Nova Scotia": (43.42, 47.04, -66.42, -59.80),
+        "Nunavut": (51.00, 83.00, -141.00, -61.00),
+        "Ontario": (41.68, 56.86, -95.15, -74.32),
+        "Prince Edward Island": (45.95, 47.06, -64.42, -61.97),
+        "Quebec": (44.99, 62.61, -79.76, -57.10),
+        "Saskatchewan": (49.00, 60.00, -110.00, -101.36),
+        "Yukon": (60.00, 70.00, -141.00, -123.00),
+    }
+
+    # Mexican States (approximate - key ones)
+    mexico_states = {
+        "Baja California": (28.00, 32.72, -118.00, -112.00),
+        "Baja California Sur": (22.87, 28.00, -115.00, -109.00),
+        "Sonora": (26.04, 32.72, -115.00, -108.00),
+        "Chihuahua": (25.84, 31.78, -109.00, -103.00),
+        "Coahuila": (25.84, 30.00, -103.00, -98.00),
+        "Nuevo León": (23.63, 27.50, -101.00, -98.00),
+        "Tamaulipas": (22.27, 27.50, -100.00, -96.00),
+    }
+
+    # Combine all
+    all_boundaries = {**us_states, **canada_provinces, **mexico_states}
+    return all_boundaries
+
+
+def _point_in_boundaries(lat: float, lon: float, boundaries: list[dict[str, Any]]) -> bool:
+    """
+    Check if a point is within any of the given boundaries.
+
+    Uses bounding box check for simplicity. For more accurate results,
+    would need full polygon geometry and point-in-polygon algorithm.
+
+    Args:
+        lat: Latitude
+        lon: Longitude
+        boundaries: List of boundary dictionaries with bbox
+
+    Returns:
+        True if point is within any boundary
+    """
+    for boundary in boundaries:
+        if boundary.get("type") == "bbox":
+            min_lat, max_lat, min_lon, max_lon = boundary["bbox"]
+            if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
+                return True
+    return False
+
+
 async def _download_png_async(url: str, output_path: Path) -> bool:
     """Download PNG image asynchronously."""
     try:
-        import aiohttp  # type: ignore[import-untyped]
+        import aiohttp
 
         async with (
             aiohttp.ClientSession() as session,
@@ -228,6 +426,9 @@ async def _download_png_async(url: str, output_path: Path) -> bool:
                     with open(output_path, "wb") as f:
                         f.write(response.read())
                     return True
+                else:
+                    logger.error(f"Failed to download {url}: HTTP {response.status}")
+                    return False
         except Exception as e:
             logger.error(f"Failed to download {url}: {e}")
             return False
@@ -237,7 +438,11 @@ async def _download_png_async(url: str, output_path: Path) -> bool:
 
 
 def _process_png_to_database(
-    png_path: Path, region: str, db: CatalogDatabase, grid_resolution: float = 0.1
+    png_path: Path,
+    region: str,
+    db: CatalogDatabase,
+    grid_resolution: float = 0.1,
+    state_filter: list[str] | None = None,
 ) -> int:
     """
     Process PNG image and store SQM values in database.
@@ -247,6 +452,7 @@ def _process_png_to_database(
         region: Region name
         db: Database instance
         grid_resolution: Grid resolution in degrees (default 0.1° ≈ 11km)
+        state_filter: Optional list of state/province names to filter by
 
     Returns:
         Number of grid points inserted
@@ -278,7 +484,7 @@ def _process_png_to_database(
 
     # Convert to RGB if needed
     if img.mode != "RGB":
-        img = img.convert("RGB")
+        img = img.convert("RGB")  # type: ignore[assignment]
 
     # Calculate lat/lon step per pixel
     lat_step = (lat_max - lat_min) / height
@@ -286,6 +492,15 @@ def _process_png_to_database(
 
     # Create table if needed
     _create_light_pollution_table(db)
+
+    # Load state/province boundaries if filtering is requested
+    boundary_filter = None
+    if state_filter:
+        boundary_filter = _load_state_boundaries(state_filter, region)
+        if boundary_filter:
+            logger.info(f"Filtering to {len(state_filter)} states/provinces: {', '.join(state_filter)}")
+        else:
+            logger.warning(f"Could not load boundaries for {state_filter}, processing all data")
 
     # Process pixels and insert into database
     inserted = 0
@@ -297,11 +512,24 @@ def _process_png_to_database(
     for y in range(0, height, max(1, int(grid_resolution / lat_step))):
         for x in range(0, width, max(1, int(grid_resolution / lon_step))):
             # Get pixel RGB
-            r, g, b = img.getpixel((x, y))
+            pixel = img.getpixel((x, y))
+            if isinstance(pixel, (int, float)):
+                # Grayscale image
+                r = g = b = int(pixel)
+            elif isinstance(pixel, tuple) and len(pixel) >= 3:
+                # RGB/RGBA tuple
+                r, g, b = pixel[0], pixel[1], pixel[2]
+            else:
+                # Fallback (shouldn't happen with RGB mode)
+                r = g = b = 0
 
             # Convert to lat/lon
             lat = lat_max - (y * lat_step)
             lon = lon_min + (x * lon_step)
+
+            # Apply state/province filter if specified
+            if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
+                continue
 
             # Convert RGB to SQM
             sqm = _rgb_to_sqm(r, g, b)
@@ -336,7 +564,7 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
             # Insert with geometry column
             sql = text(
                 """
-                INSERT OR REPLACE INTO light_pollution_grid 
+                INSERT OR REPLACE INTO light_pollution_grid
                 (latitude, longitude, sqm_value, region, geometry)
                 VALUES (:lat, :lon, :sqm, :region, MakePoint(:lon, :lat, 4326))
                 """
@@ -345,7 +573,7 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
             # Insert without geometry column
             sql = text(
                 """
-                INSERT OR REPLACE INTO light_pollution_grid 
+                INSERT OR REPLACE INTO light_pollution_grid
                 (latitude, longitude, sqm_value, region)
                 VALUES (:lat, :lon, :sqm, :region)
                 """
@@ -377,10 +605,10 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     # Check if table exists first
     try:
         with db._get_session() as session:
-            result = session.execute(
+            table_check = session.execute(
                 text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
             ).fetchone()
-            if result is None:
+            if table_check is None:
                 logger.debug("light_pollution_grid table does not exist")
                 return None
     except Exception as e:
@@ -390,6 +618,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     use_spatialite = _check_spatialite_available(db)
     search_radius_km = 22.0  # ~22km search radius
 
+    result: list[Any]
     with db._get_session() as session:
         if use_spatialite:
             # Use SpatiaLite spatial query with R-tree index for fast nearest neighbor
@@ -406,7 +635,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
                 LIMIT 4
                 """
             )
-            result = session.execute(
+            query_results = session.execute(
                 sql,
                 {
                     "lat": lat,
@@ -414,6 +643,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
                     "radius": search_radius_deg,
                 },
             ).fetchall()
+            result = list(query_results)
         else:
             # Fallback to regular SQL with bounding box
             search_radius = search_radius_km / 111.0  # Convert km to degrees
@@ -428,7 +658,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
                 LIMIT 4
                 """
             )
-            result = session.execute(
+            query_results = session.execute(
                 sql,
                 {
                     "lat_min": lat - search_radius,
@@ -439,6 +669,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
                     "lon": lon,
                 },
             ).fetchall()
+            result = list(query_results)
 
         if not result:
             logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
@@ -453,8 +684,8 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
         points = [(float(r[0]), float(r[1]), float(r[2])) for r in result]
 
         # Find the 4 closest points forming a rectangle
-        lats = sorted(set(p[0] for p in points))
-        lons = sorted(set(p[1] for p in points))
+        lats = sorted({p[0] for p in points})
+        lons = sorted({p[1] for p in points})
 
         if len(lats) < 2 or len(lons) < 2:
             # Not enough points for interpolation, use nearest
@@ -505,7 +736,10 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
 
 async def download_world_atlas_data(
-    regions: list[str] | None = None, grid_resolution: float = 0.1, force: bool = False
+    regions: list[str] | None = None,
+    grid_resolution: float = 0.1,
+    force: bool = False,
+    state_filter: list[str] | None = None,
 ) -> dict[str, int]:
     """
     Download and process World Atlas 2024 light pollution data.
@@ -514,6 +748,7 @@ async def download_world_atlas_data(
         regions: List of regions to download (None = all)
         grid_resolution: Grid resolution in degrees (default 0.1° ≈ 11km)
         force: Force re-download even if data exists
+        state_filter: Optional list of state/province names to filter by
 
     Returns:
         Dictionary mapping region to number of points inserted
@@ -551,14 +786,17 @@ async def download_world_atlas_data(
             logger.info(f"Using existing {region} data")
 
         # Process and store in database
-        count = _process_png_to_database(png_path, region, db, grid_resolution)
+        count = _process_png_to_database(png_path, region, db, grid_resolution, state_filter)
         results[region] = count
 
     return results
 
 
 def download_world_atlas_data_sync(
-    regions: list[str] | None = None, grid_resolution: float = 0.1, force: bool = False
+    regions: list[str] | None = None,
+    grid_resolution: float = 0.1,
+    force: bool = False,
+    state_filter: list[str] | None = None,
 ) -> dict[str, int]:
     """
     Synchronous wrapper for downloading World Atlas data.
@@ -567,15 +805,16 @@ def download_world_atlas_data_sync(
         regions: List of regions to download (None = all)
         grid_resolution: Grid resolution in degrees (default 0.1° ≈ 11km)
         force: Force re-download even if data exists
+        state_filter: Optional list of state/province names to filter by
 
     Returns:
         Dictionary mapping region to number of points inserted
     """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
         # In async context, can't use run_until_complete
         logger.warning("Cannot download in async context. Use download_world_atlas_data() instead.")
         return {}
     except RuntimeError:
-        return asyncio.run(download_world_atlas_data(regions, grid_resolution, force))
+        return asyncio.run(download_world_atlas_data(regions, grid_resolution, force, state_filter))
 
