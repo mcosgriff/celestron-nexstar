@@ -35,7 +35,7 @@ def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
 
     Returns names from the database that match the incomplete string.
     Case-insensitive matching and sorting.
-    
+
     The database query handles case-insensitivity, so we pass the incomplete
     string as-is. The database will convert both the column and the prefix
     to lowercase for comparison.

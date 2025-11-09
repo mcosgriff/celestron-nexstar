@@ -19,6 +19,7 @@ from .commands import (
     goto,
     location,
     move,
+    multi_night,
     optics,
     position,
     time,
@@ -122,6 +123,7 @@ app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configurat
 app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
 app.add_typer(data.app, name="data", help="Data import and management")
 app.add_typer(tonight.app, name="tonight", help="Tonight's observing plan")
+app.add_typer(multi_night.app, name="multi-night", help="Multi-night planning and comparison")
 app.add_typer(dashboard.app, name="dashboard", help="Full-screen dashboard")
 
 

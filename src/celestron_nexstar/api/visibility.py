@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+
 try:
     import numpy as np
 

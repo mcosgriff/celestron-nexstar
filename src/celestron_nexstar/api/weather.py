@@ -7,14 +7,13 @@ Uses Open-Meteo API (free, no API key required).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib import error, request
+
 
 try:
     import numpy as np
@@ -348,9 +347,7 @@ def calculate_seeing_conditions(
         # Optimal spread: 15-30°F = excellent (30 points)
         # Spread < 5°F = poor (0 points)
         # Spread > 30°F = still good but not better (30 points)
-        if temp_spread >= 30:
-            spread_score = 30.0
-        elif temp_spread >= 15:
+        if temp_spread >= 30 or temp_spread >= 15:
             spread_score = 30.0
         elif temp_spread >= 10:
             spread_score = 20.0 + (temp_spread - 10) * 2.0  # 20-30 points
@@ -454,17 +451,25 @@ def fetch_hourly_weather_forecast(
 
     # Check database for cached data
     try:
+        from sqlalchemy import and_, inspect
+
         from .database import get_database
-        from .models import WeatherForecastModel
-        from sqlalchemy import and_
+        from .models import Base, WeatherForecastModel
 
         db = get_database()
+
+        # Ensure weather_forecast table exists (create if migration hasn't run yet)
+        inspector = inspect(db._engine)
+        if "weather_forecast" not in inspector.get_table_names():
+            logger.debug("weather_forecast table not found, creating it...")
+            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])
+
         existing_forecasts = []
         with db._get_session() as session:
             # Check if we have recent data (fetched within last hour)
             now = datetime.now(UTC)
             stale_threshold = now - timedelta(hours=1)
-            
+
             # Query for forecasts for this location that are not stale
             existing_forecasts = (
                 session.query(WeatherForecastModel)
@@ -491,9 +496,9 @@ def fetch_hourly_weather_forecast(
                     first_ts = first_ts.replace(tzinfo=UTC)
                 if last_ts.tzinfo is None:
                     last_ts = last_ts.replace(tzinfo=UTC)
-                
+
                 time_span_hours = (last_ts - first_ts).total_seconds() / 3600
-                
+
                 # If we have enough hours of coverage, use cached data
                 if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
                     logger.debug(f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)")
@@ -511,7 +516,7 @@ def fetch_hourly_weather_forecast(
                             )
                         )
                     return forecasts
-        
+
         # If we get here, we need to fetch from API (either no cache, stale cache, or insufficient coverage)
         if existing_forecasts:
             logger.debug(f"Found {len(existing_forecasts)} cached forecasts, but need {hours} hours, fetching from API")
@@ -631,9 +636,10 @@ def fetch_hourly_weather_forecast(
 
         # Store forecasts in database (replace stale data)
         try:
+            from sqlalchemy import and_
+
             from .database import get_database
             from .models import WeatherForecastModel
-            from sqlalchemy import and_
 
             db = get_database()
             with db._get_session() as session:

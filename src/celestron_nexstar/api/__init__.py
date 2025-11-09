@@ -182,6 +182,8 @@ __all__ = [
     "EyepieceSpecs",
     "GeographicLocation",
     "HorizontalCoordinates",
+    # Weather
+    "HourlySeeingForecast",
     "InvalidCoordinateError",
     "LightPollutionData",
     # Movement and tracking
@@ -207,8 +209,6 @@ __all__ = [
     "TrackingMode",
     # Visibility
     "VisibilityInfo",
-    # Weather
-    "HourlySeeingForecast",
     "WeatherData",
     "alt_az_to_ra_dec",
     "angular_separation",

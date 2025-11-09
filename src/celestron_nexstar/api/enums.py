@@ -12,6 +12,7 @@ __all__ = [
     "CelestialObjectType",
     "Direction",
     "EphemerisSet",
+    "MoonPhase",
     "OutputFormat",
     "SkyBrightness",
     "TrackingMode",
@@ -84,3 +85,16 @@ class OutputFormat(StrEnum):
     CSV = "csv"  # CSV output
     DMS = "dms"  # Degrees/minutes/seconds
     HMS = "hms"  # Hours/minutes/seconds
+
+
+class MoonPhase(StrEnum):
+    """Moon phase names."""
+
+    NEW_MOON = "New Moon"
+    WAXING_CRESCENT = "Waxing Crescent"
+    FIRST_QUARTER = "First Quarter"
+    WAXING_GIBBOUS = "Waxing Gibbous"
+    FULL_MOON = "Full Moon"
+    WANING_GIBBOUS = "Waning Gibbous"
+    LAST_QUARTER = "Last Quarter"
+    WANING_CRESCENT = "Waning Crescent"

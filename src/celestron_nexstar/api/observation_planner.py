@@ -14,12 +14,18 @@ from enum import StrEnum
 
 from .catalogs import CelestialObject
 from .database import get_database
-from .enums import SkyBrightness
+from .enums import MoonPhase, SkyBrightness
 from .light_pollution import LightPollutionData, get_light_pollution_data
 from .observer import ObserverLocation, get_observer_location
 from .optics import calculate_limiting_magnitude, get_current_configuration
-from .solar_system import calculate_blue_hour, calculate_golden_hour, get_moon_info, get_sun_info
-from .utils import angular_separation, calculate_lst
+from .solar_system import (
+    calculate_astronomical_twilight,
+    calculate_blue_hour,
+    calculate_golden_hour,
+    get_moon_info,
+    get_sun_info,
+)
+from .utils import angular_separation, calculate_lst, ra_dec_to_alt_az
 from .visibility import VisibilityInfo, filter_visible_objects
 from .weather import (
     HourlySeeingForecast,
@@ -79,7 +85,7 @@ class ObservingConditions:
     # Moon
     moon_illumination: float  # 0.0-1.0
     moon_altitude: float  # degrees
-    moon_phase: str | None  # Phase name (e.g., "New Moon", "Waxing Crescent")
+    moon_phase: MoonPhase | None  # Phase name (e.g., "New Moon", "Waxing Crescent")
 
     # Overall assessment
     observing_quality_score: float  # 0.0-1.0
@@ -88,8 +94,7 @@ class ObservingConditions:
     warnings: tuple[str, ...]
 
     # Time windows
-    best_seeing_window_start: datetime | None = None  # When seeing typically improves
-    best_seeing_window_end: datetime | None = None  # When seeing typically degrades
+    best_seeing_windows: tuple[tuple[datetime, datetime], ...] = ()  # Discrete time windows with excellent/good seeing
 
     # Hourly forecast (if available)
     hourly_seeing_forecast: tuple[HourlySeeingForecast, ...] = ()  # Hourly seeing conditions
@@ -107,6 +112,12 @@ class ObservingConditions:
     blue_hour_evening_end: datetime | None = None
     blue_hour_morning_start: datetime | None = None
     blue_hour_morning_end: datetime | None = None
+    astronomical_twilight_evening_start: datetime | None = None  # When astronomical twilight begins (evening)
+    astronomical_twilight_evening_end: datetime | None = None  # When true night begins (evening)
+    astronomical_twilight_morning_start: datetime | None = None  # When true night ends (morning)
+    astronomical_twilight_morning_end: datetime | None = None  # When astronomical twilight ends (morning)
+    galactic_center_start: datetime | None = None  # When galactic center becomes visible
+    galactic_center_end: datetime | None = None  # When galactic center becomes too low
 
 
 @dataclass(frozen=True)
@@ -236,14 +247,11 @@ class ObservationPlanner:
             weather, lp_data, moon_illum, quality_score, weather_status, weather_warning
         )
 
-        # Calculate best seeing time window (typically 2-3 hours after sunset, before sunrise)
-        best_seeing_start, best_seeing_end = self._calculate_best_seeing_window(lat, lon, start_time)
-
         # Get sun and moon event times first to calculate how many hours of forecast we need
         sun_info = get_sun_info(lat, lon, start_time)
         sunrise_time = sun_info.sunrise_time if sun_info else None
         sunset_time = sun_info.sunset_time if sun_info else None
-        
+
         # Fetch 3-day forecast (72 hours) to ensure we have enough data
         # This covers from 1 hour before sunset to sunrise with plenty of buffer
         hours_needed = 72  # 3 days
@@ -252,13 +260,24 @@ class ObservationPlanner:
         hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
         hourly_forecast_tuple = tuple(hourly_forecast)
 
+        # Calculate best seeing time windows from hourly forecast
+        best_seeing_windows = self._calculate_best_seeing_windows(
+            hourly_forecast, sunset_time, sunrise_time
+        )
+
         # Get moonrise/moonset from moon_info
         moonrise_time = moon_info.moonrise_time if moon_info else None
         moonset_time = moon_info.moonset_time if moon_info else None
 
-        # Calculate golden hour and blue hour
+        # Calculate golden hour, blue hour, and astronomical twilight
         golden_hour = calculate_golden_hour(lat, lon, start_time)
         blue_hour = calculate_blue_hour(lat, lon, start_time)
+        astronomical_twilight = calculate_astronomical_twilight(lat, lon, start_time)
+
+        # Calculate galactic center visibility
+        gc_start, gc_end = self._calculate_galactic_center_visibility(
+            lat, lon, start_time, sunset_time, sunrise_time
+        )
 
         return ObservingConditions(
             timestamp=start_time,
@@ -277,8 +296,7 @@ class ObservationPlanner:
             seeing_score=seeing_score,
             recommendations=recommendations,
             warnings=warnings,
-            best_seeing_window_start=best_seeing_start,
-            best_seeing_window_end=best_seeing_end,
+            best_seeing_windows=best_seeing_windows,
             hourly_seeing_forecast=hourly_forecast_tuple,
             sunrise_time=sunrise_time,
             sunset_time=sunset_time,
@@ -292,6 +310,12 @@ class ObservationPlanner:
             blue_hour_evening_end=blue_hour[1],
             blue_hour_morning_start=blue_hour[2],
             blue_hour_morning_end=blue_hour[3],
+            astronomical_twilight_evening_start=astronomical_twilight[0],
+            astronomical_twilight_evening_end=astronomical_twilight[1],
+            astronomical_twilight_morning_start=astronomical_twilight[2],
+            astronomical_twilight_morning_end=astronomical_twilight[3],
+            galactic_center_start=gc_start,
+            galactic_center_end=gc_end,
         )
 
     def get_recommended_objects(
@@ -719,44 +743,183 @@ class ObservationPlanner:
         except Exception:
             return None
 
-    def _calculate_best_seeing_window(
+    def _calculate_best_seeing_windows(
+        self,
+        hourly_forecast: list[HourlySeeingForecast],
+        sunset_time: datetime | None,
+        sunrise_time: datetime | None,
+    ) -> tuple[tuple[datetime, datetime], ...]:
+        """
+        Calculate discrete time windows with excellent or good seeing conditions.
+
+        Analyzes hourly forecast to find contiguous periods where seeing is:
+        - Excellent (>= 80): Preferred for high-quality observations
+        - Good (>= 60): Used if no excellent periods found
+
+        Returns:
+            Tuple of (start_time, end_time) tuples for each window
+        """
+        if not hourly_forecast or sunset_time is None or sunrise_time is None:
+            return ()
+
+        try:
+            # Filter forecasts to observing window (sunset to sunrise)
+            # Ensure times are UTC
+            if sunset_time.tzinfo is None:
+                sunset_time = sunset_time.replace(tzinfo=UTC)
+            if sunrise_time.tzinfo is None:
+                sunrise_time = sunrise_time.replace(tzinfo=UTC)
+
+            # Extend to next sunrise if needed
+            if sunrise_time < sunset_time:
+                sunrise_time = sunrise_time + timedelta(days=1)
+
+            # Filter forecasts within the observing window
+            observing_forecasts = []
+            for forecast in hourly_forecast:
+                forecast_ts = forecast.timestamp
+                if forecast_ts.tzinfo is None:
+                    forecast_ts = forecast_ts.replace(tzinfo=UTC)
+                elif forecast_ts.tzinfo != UTC:
+                    forecast_ts = forecast_ts.astimezone(UTC)
+
+                if sunset_time <= forecast_ts <= sunrise_time:
+                    observing_forecasts.append(forecast)
+
+            if not observing_forecasts:
+                return ()
+
+            # First, try to find excellent seeing periods (>= 80)
+            windows = self._find_seeing_windows(observing_forecasts, min_score=80.0)
+
+            # If no excellent periods, fall back to good seeing (>= 60)
+            if not windows:
+                windows = self._find_seeing_windows(observing_forecasts, min_score=60.0)
+
+            return tuple(windows)
+        except Exception as e:
+            logger.error(f"Failed to calculate best seeing windows: {e}")
+            return ()
+
+    def _find_seeing_windows(
+        self,
+        forecasts: list[HourlySeeingForecast],
+        min_score: float,
+    ) -> list[tuple[datetime, datetime]]:
+        """
+        Find contiguous time windows where seeing score is at least min_score.
+
+        Args:
+            forecasts: List of hourly forecasts, sorted by timestamp
+            min_score: Minimum seeing score threshold (e.g., 80 for excellent, 60 for good)
+
+        Returns:
+            List of (start_time, end_time) tuples for contiguous windows
+        """
+        if not forecasts:
+            return []
+
+        windows = []
+        window_start = None
+
+        # Sort forecasts by timestamp to ensure chronological order
+        sorted_forecasts = sorted(forecasts, key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+
+        for _i, forecast in enumerate(sorted_forecasts):
+            forecast_ts = forecast.timestamp
+            if forecast_ts.tzinfo is None:
+                forecast_ts = forecast_ts.replace(tzinfo=UTC)
+            elif forecast_ts.tzinfo != UTC:
+                forecast_ts = forecast_ts.astimezone(UTC)
+
+            if forecast.seeing_score >= min_score:
+                if window_start is None:
+                    # Start of a new window - use this forecast's timestamp
+                    window_start = forecast_ts
+            else:
+                # Seeing dropped below threshold - end window at current forecast's timestamp
+                # (which represents the start of this hour, i.e., end of previous hour)
+                if window_start is not None:
+                    # Only add window if it's at least 1 hour long
+                    if (forecast_ts - window_start).total_seconds() >= 3600:
+                        windows.append((window_start, forecast_ts))
+                    window_start = None
+
+        # Close any open window at the end
+        if window_start is not None:
+            last_forecast = sorted_forecasts[-1]
+            last_ts = last_forecast.timestamp
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.replace(tzinfo=UTC)
+            elif last_ts.tzinfo != UTC:
+                last_ts = last_ts.astimezone(UTC)
+            # Only add window if it's at least 1 hour long
+            if (last_ts - window_start).total_seconds() >= 3600:
+                windows.append((window_start, last_ts))
+
+        return windows
+
+    def _calculate_galactic_center_visibility(
         self,
         lat: float,
         lon: float,
         start_time: datetime,
+        sunset_time: datetime | None,
+        sunrise_time: datetime | None,
     ) -> tuple[datetime | None, datetime | None]:
         """
-        Calculate best seeing time window.
+        Calculate when the galactic center is visible.
 
-        Typically, seeing improves 2-3 hours after sunset (when ground cools)
-        and degrades 1-2 hours before sunrise (when ground warms).
+        The galactic center (Sagittarius A*) is at approximately:
+        RA: 17h 45m 40s (17.7611 hours)
+        Dec: -29° 00' 28" (-29.0078 degrees)
 
         Returns:
-            Tuple of (start_time, end_time) or (None, None) if calculation fails
+            Tuple of (start_time, end_time) when galactic center is above 10° altitude
+            and between sunset and sunrise, or (None, None) if not visible
         """
+        # Galactic center coordinates
+        gc_ra = 17.7611  # hours
+        gc_dec = -29.0078  # degrees
+        min_altitude = 10.0  # Minimum altitude for visibility (degrees)
+
+        if sunset_time is None or sunrise_time is None:
+            return (None, None)
+
         try:
-            sun_info = get_sun_info(lat, lon, start_time)
-            if not sun_info or not sun_info.sunset_time or not sun_info.sunrise_time:
-                return (None, None)
+            # Sample from sunset to sunrise at 5-minute intervals
+            gc_start = None
+            gc_end = None
+            prev_alt = None
 
-            # Best seeing typically starts 2-3 hours after sunset
-            best_start = sun_info.sunset_time + timedelta(hours=2.5)
+            # Start from sunset
+            check_time = sunset_time
+            # Extend to next sunrise if needed
+            end_time = sunrise_time + timedelta(days=1) if sunrise_time < sunset_time else sunrise_time
 
-            # Best seeing typically ends 1-2 hours before sunrise
-            best_end = sun_info.sunrise_time - timedelta(hours=1.5)
+            while check_time <= end_time:
+                alt, _az = ra_dec_to_alt_az(gc_ra, gc_dec, lat, lon, check_time)
 
-            # Ensure times are in UTC
-            if best_start.tzinfo is None:
-                best_start = best_start.replace(tzinfo=UTC)
-            if best_end.tzinfo is None:
-                best_end = best_end.replace(tzinfo=UTC)
+                # Check if we're crossing the minimum altitude threshold
+                if prev_alt is not None:
+                    # Rising above minimum altitude
+                    if prev_alt < min_altitude and alt >= min_altitude and gc_start is None:
+                        # Interpolate to find exact time
+                        gc_start = check_time - timedelta(minutes=2.5)  # Approximate midpoint
+                        if gc_start.tzinfo is None:
+                            gc_start = gc_start.replace(tzinfo=UTC)
+                    # Falling below minimum altitude
+                    elif prev_alt >= min_altitude and alt < min_altitude and gc_start is not None:
+                        # Interpolate to find exact time
+                        gc_end = check_time - timedelta(minutes=2.5)  # Approximate midpoint
+                        if gc_end.tzinfo is None:
+                            gc_end = gc_end.replace(tzinfo=UTC)
+                        break  # Found both start and end
 
-            # If end is before start, it means we're past midnight
-            # In that case, extend to next sunrise
-            if best_end < best_start:
-                best_end = sun_info.sunrise_time + timedelta(days=1) - timedelta(hours=1.5)
+                prev_alt = alt
+                check_time += timedelta(minutes=5)
 
-            return (best_start, best_end)
+            return (gc_start, gc_end)
         except Exception:
             return (None, None)
 

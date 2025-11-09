@@ -15,7 +15,6 @@ from pathlib import Path
 
 import yaml
 from cachetools import TTLCache, cached
-from fuzzysearch import find_near_matches
 
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
@@ -304,8 +303,9 @@ def search_objects(
         List of tuples (CelestialObject, match_type) sorted by match quality.
         Match types: "exact", "name", "alias", "description"
     """
-    from .database import get_database
     from sqlalchemy import func, select, text
+
+    from .database import get_database
 
     query_lower = query.lower()
     all_results: list[tuple[int, CelestialObject, str]] = []  # (score, object, match_type)

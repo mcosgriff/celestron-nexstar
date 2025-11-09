@@ -504,6 +504,7 @@ class CatalogDatabase:
         Get object names for command-line autocompletion.
 
         Filters names that start with the given prefix (case-insensitive).
+        Searches both the `name` and `common_name` fields.
 
         Args:
             prefix: Prefix to match (empty string returns all)
@@ -518,19 +519,41 @@ class CatalogDatabase:
             # Build case-insensitive filter using LIKE for better compatibility
             prefix_lower = prefix.lower()
 
-            # Query for names starting with prefix (case-insensitive)
-            # Use LIKE instead of startswith for better SQL compatibility
-            query = (
+            # Query both name and common_name fields, returning the actual values
+            # Use a UNION-like approach with separate queries, then combine
+            names_set = set()
+
+            # Query name field
+            name_query = (
                 select(CelestialObjectModel.name)
                 .distinct()
                 .filter(func.lower(CelestialObjectModel.name).like(f"{prefix_lower}%"))
                 .order_by(func.lower(CelestialObjectModel.name))
                 .limit(limit)
             )
+            name_results = session.execute(name_query).fetchall()
+            for row in name_results:
+                if row[0]:
+                    names_set.add(row[0])
 
-            # Execute and get results
-            result = session.execute(query).fetchall()
-            return [row[0] for row in result if row[0]]
+            # Query common_name field
+            common_name_query = (
+                select(CelestialObjectModel.common_name)
+                .distinct()
+                .filter(
+                    CelestialObjectModel.common_name.isnot(None),
+                    func.lower(CelestialObjectModel.common_name).like(f"{prefix_lower}%"),
+                )
+                .order_by(func.lower(CelestialObjectModel.common_name))
+                .limit(limit)
+            )
+            common_name_results = session.execute(common_name_query).fetchall()
+            for row in common_name_results:
+                if row[0]:
+                    names_set.add(row[0])
+
+            # Return sorted list, limited to requested limit
+            return sorted(names_set, key=str.lower)[:limit]
 
     def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
         """
