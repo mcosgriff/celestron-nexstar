@@ -14,13 +14,16 @@ from rich.table import Table
 from timezonefinder import TimezoneFinder
 
 from ...api.compass import azimuth_to_compass_8point, format_object_path
-from ...api.constellations import get_visible_asterisms, get_visible_constellations
+from ...api.constellations import get_prominent_constellations, get_visible_asterisms, get_visible_constellations
+from ...api.database import get_database
+from ...api.enums import CelestialObjectType, SkyBrightness
 from ...api.iss_tracking import get_iss_passes_cached
 from ...api.models import get_db_session
 from ...api.observer import get_observer_location
 from ...api.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
 from ...api.optics import COMMON_BINOCULARS
 from ...api.sun_moon import calculate_sun_times
+from ...api.utils import ra_dec_to_alt_az
 
 
 app = typer.Typer(help="Binocular viewing commands")
@@ -77,6 +80,65 @@ def _get_current_season(dt: datetime) -> str:
         return "Fall"
     else:  # 12, 1, 2
         return "Winter"
+
+
+def _get_visible_stars(
+    lat: float,
+    lon: float,
+    observation_time: datetime,
+    min_altitude_deg: float,
+    max_magnitude: float = 9.0,
+    limit: int = 20,
+) -> list[tuple]:
+    """
+    Get visible stars above horizon at given time.
+    
+    Queries the database directly - all star data comes from the database,
+    not from YAML files. Stars should be imported via 'nexstar data import yale_bsc'
+    or 'nexstar data import custom' before using this command.
+    
+    Args:
+        lat: Observer latitude
+        lon: Observer longitude
+        observation_time: Time of observation
+        min_altitude_deg: Minimum altitude for visibility
+        max_magnitude: Maximum magnitude (fainter limit) - higher for binoculars
+        limit: Maximum number of stars to return
+        
+    Returns:
+        List of (star_object, altitude_deg, azimuth_deg) tuples sorted by magnitude (brightest first)
+    """
+    db = get_database()
+    
+    # Query stars directly from database (not from YAML)
+    # Stars must be imported first via: nexstar data import yale_bsc
+    stars = db.filter_objects(
+        object_type=CelestialObjectType.STAR,
+        max_magnitude=max_magnitude,
+        limit=500,  # Get more than we need to filter by altitude
+    )
+    
+    visible = []
+    for star in stars:
+        if star.magnitude is None:
+            continue
+            
+        # Calculate altitude and azimuth
+        alt, az = ra_dec_to_alt_az(
+            star.ra_hours,
+            star.dec_degrees,
+            lat,
+            lon,
+            observation_time,
+        )
+        
+        if alt >= min_altitude_deg:
+            visible.append((star, alt, az))
+    
+    # Sort by magnitude (brightest first), then by altitude
+    visible.sort(key=lambda x: (x[0].magnitude or 99, -x[1]))
+    
+    return visible[:limit]
 
 
 @app.command("tonight")
@@ -239,9 +301,59 @@ def show_tonight(
         if midnight < now:
             midnight = midnight.replace(day=midnight.day + 1)
 
-        visible_constellations = get_visible_constellations(lat, lon, midnight, min_altitude_deg=20.0)
+        # Get visible constellations (using lower threshold to catch more)
+        visible_constellations = get_visible_constellations(lat, lon, midnight, min_altitude_deg=10.0)
+        
+        # Track which constellations have low centers (below normal viewing threshold)
+        # Normal threshold is 20° for binoculars
+        normal_threshold = 20.0
+        low_altitude_constellations = set()
+        
+        # Mark constellations already in the list that are below normal threshold
+        for constellation, alt, az in visible_constellations:
+            if alt < normal_threshold:
+                low_altitude_constellations.add(constellation.name)
+        
+        # Also include constellations that have visible stars, even if center is low
+        # Get visible stars first to find their constellations
+        limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
+        visible_stars_for_const = _get_visible_stars(lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=100)
+        
+        # Find unique constellations from visible stars
+        constellations_with_stars = set()
+        for star, _, _ in visible_stars_for_const:
+            if star.constellation:
+                constellations_with_stars.add(star.constellation)
+        
+        # Add constellations that have visible stars but aren't already in the list
+        all_prominent = get_prominent_constellations()
+        existing_names = {c.name for c, _, _ in visible_constellations}
+        
+        for constellation in all_prominent:
+            if constellation.name in constellations_with_stars and constellation.name not in existing_names:
+                # Calculate altitude for this constellation
+                alt, az = ra_dec_to_alt_az(
+                    constellation.ra_hours,
+                    constellation.dec_degrees,
+                    lat,
+                    lon,
+                    midnight,
+                )
+                # Include even if slightly below threshold (as long as it has visible stars)
+                if alt >= 0:  # Above horizon
+                    visible_constellations.append((constellation, alt, az))
+                    # Mark if center is below normal threshold
+                    if alt < normal_threshold:
+                        low_altitude_constellations.add(constellation.name)
+        
+        # Re-sort by altitude
+        visible_constellations.sort(key=lambda x: x[1], reverse=True)
+        
+        # Separate into fully visible and partially visible
+        fully_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name not in low_altitude_constellations]
+        partially_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name in low_altitude_constellations]
 
-        if visible_constellations:
+        if fully_visible:
             current_season = _get_current_season(now)
             
             table_const = Table(expand=True)
@@ -251,7 +363,7 @@ def show_tonight(
             table_const.add_column("Season", style="dim", width=20)
             table_const.add_column("Highlights", style="dim")  # No width - will expand to fill space
 
-            for constellation, alt, az in visible_constellations[:12]:  # Top 12
+            for constellation, alt, az in fully_visible[:12]:  # Top 12
                 direction = azimuth_to_compass_8point(az)
 
                 description = constellation.description
@@ -273,6 +385,90 @@ def show_tonight(
             console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
             console.print("[yellow]No prominent constellations currently visible[/yellow]")
+        
+        # Partially visible constellations
+        if partially_visible:
+            console.print()
+            console.print("[bold yellow]Constellations Partially Visible[/bold yellow]")
+            console.print("[dim]Some stars visible, but whole constellation is low in the sky[/dim]\n")
+            
+            current_season = _get_current_season(now)
+            
+            table_partial = Table(expand=True)
+            table_partial.add_column("Constellation", style="bold", width=15)
+            table_partial.add_column("Direction", justify="right", width=10)
+            table_partial.add_column("Altitude", justify="right", width=10)
+            table_partial.add_column("Season", style="dim", width=20)
+            table_partial.add_column("Note", style="dim")  # No width - will expand to fill space
+
+            for constellation, alt, az in partially_visible:
+                direction = azimuth_to_compass_8point(az)
+
+                description = constellation.description
+
+                # Check if constellation is out of season
+                season_display = constellation.season
+                if constellation.season != current_season:
+                    season_display = f"{constellation.season} (best in {constellation.season.lower()}, visible out of season)"
+
+                table_partial.add_row(
+                    constellation.name,
+                    direction,
+                    f"{alt:.0f}°",
+                    season_display,
+                    f"Only some stars visible - whole constellation low",
+                )
+
+            console.print(table_partial)
+
+        console.print()
+
+        # Visible Stars
+        console.print("[bold green]Bright Stars (Tonight)[/bold green]")
+        # Calculate limiting magnitude for binoculars (using good sky conditions)
+        limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
+        console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.1f})[/dim]\n")
+
+        # Use binocular limiting magnitude (typically 9-10 for 10x50)
+        visible_stars = _get_visible_stars(lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=20)
+
+        if visible_stars:
+            table_stars = Table(expand=True)
+            table_stars.add_column("Star", style="bold", width=20)
+            table_stars.add_column("Direction", justify="right", width=10)
+            table_stars.add_column("Altitude", justify="right", width=10)
+            table_stars.add_column("Magnitude", justify="right", width=12)
+            table_stars.add_column("Constellation", style="dim", width=15)
+            table_stars.add_column("Notes", style="dim")  # No width - will expand to fill space
+
+            for star, alt, az in visible_stars:
+                direction = azimuth_to_compass_8point(az)
+                
+                # Star name (prefer common name if available)
+                star_name = star.common_name or star.name
+                
+                # Magnitude
+                mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
+                
+                # Constellation
+                constellation = star.constellation or "—"
+                
+                # Description/notes
+                notes = star.description or ""
+
+                table_stars.add_row(
+                    star_name,
+                    direction,
+                    f"{alt:.0f}°",
+                    mag_str,
+                    constellation,
+                    notes,
+                )
+
+            console.print(table_stars)
+            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+        else:
+            console.print("[yellow]No bright stars currently visible[/yellow]")
 
         console.print()
 

@@ -47,6 +47,7 @@ class CelestialObject:
     catalog: str
     description: str | None = None
     parent_planet: str | None = None
+    constellation: str | None = None
 
     def matches_search(self, query: str) -> bool:
         """Check if object matches search query."""
@@ -143,6 +144,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
             catalog=catalog_name,
             description=obj_data.get("description"),
             parent_planet=obj_data.get("parent_planet"),
+            constellation=obj_data.get("constellation"),
         )
         objects.append(obj)
 
@@ -179,6 +181,7 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
                 catalog=catalog_name,
                 description=obj_data.get("description"),
                 parent_planet=obj_data.get("parent_planet"),
+                constellation=obj_data.get("constellation"),
             )
             objects.append(obj)
         all_catalogs[catalog_name] = objects

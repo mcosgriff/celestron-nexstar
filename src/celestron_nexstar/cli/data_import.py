@@ -505,6 +505,9 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     progress.advance(task)
                     continue
 
+                # Extract constellation if present
+                constellation = obj.get("constellation")
+
                 # Insert into database
                 try:
                     db.insert_object(
@@ -517,7 +520,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                         common_name=common_name,
                         catalog_number=catalog_number,
                         description=description,
-                        constellation=None,  # Not in YAML
+                        constellation=constellation,  # Read from YAML if present
                         is_dynamic=is_dynamic,
                         ephemeris_name=name if is_dynamic else None,
                         parent_planet=parent_planet,

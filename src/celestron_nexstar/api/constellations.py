@@ -609,17 +609,26 @@ def populate_constellation_database(db_session: Session) -> None:
 
     # Add constellations
     for constellation in PROMINENT_CONSTELLATIONS:
+        # Calculate approximate boundaries from center and area
+        # Use a simple square approximation: sqrt(area) gives approximate side length
+        # Convert to RA/Dec ranges (rough approximation)
+        import math
+        side_deg = math.sqrt(constellation.area_sq_deg)
+        ra_range_hours = side_deg / 15.0  # 1 hour = 15 degrees
+        dec_range_deg = side_deg
+        
         model = ConstellationModel(
             name=constellation.name,
             abbreviation=constellation.abbreviation,
             ra_hours=constellation.ra_hours,
             dec_degrees=constellation.dec_degrees,
+            ra_min_hours=constellation.ra_hours - ra_range_hours / 2,
+            ra_max_hours=constellation.ra_hours + ra_range_hours / 2,
+            dec_min_degrees=constellation.dec_degrees - dec_range_deg / 2,
+            dec_max_degrees=constellation.dec_degrees + dec_range_deg / 2,
             area_sq_deg=constellation.area_sq_deg,
             brightest_star=constellation.brightest_star,
-            magnitude=constellation.magnitude,
             season=constellation.season,
-            hemisphere=constellation.hemisphere,
-            description=constellation.description,
         )
         db_session.add(model)
 
@@ -633,8 +642,7 @@ def populate_constellation_database(db_session: Session) -> None:
             size_degrees=asterism.size_degrees,
             parent_constellation=asterism.parent_constellation,
             season=asterism.season,
-            hemisphere=asterism.hemisphere,
-            member_stars=",".join(asterism.member_stars),
+            stars=",".join(asterism.member_stars),
             description=asterism.description,
         )
         db_session.add(model)

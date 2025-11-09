@@ -660,6 +660,7 @@ class CatalogDatabase:
             catalog=model.catalog,
             description=model.description,
             parent_planet=model.parent_planet,
+            constellation=model.constellation,
         )
 
         # Handle dynamic objects
