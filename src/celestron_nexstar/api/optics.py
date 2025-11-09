@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
+    "COMMON_BINOCULARS",
     "COMMON_EYEPIECES",
+    "BinocularOptics",
     "EyepieceSpecs",
+    "NakedEyeOptics",
     "OpticalConfiguration",
     "TelescopeModel",
     "TelescopeSpecs",
@@ -107,6 +110,102 @@ class TelescopeSpecs:
         return self.model.display_name
 
 
+@dataclass(frozen=True, slots=True)
+class BinocularOptics:
+    """Binocular optical specifications."""
+
+    magnification: float  # Magnification (e.g., 7x, 10x, 15x)
+    aperture_mm: float  # Objective lens diameter (e.g., 50mm, 70mm)
+    actual_fov_deg: float  # Actual field of view in degrees
+    name: str | None = None  # Optional name/model (e.g., "10x50", "15x70")
+
+    @property
+    def exit_pupil_mm(self) -> float:
+        """
+        Calculate exit pupil diameter.
+
+        For comfortable viewing, exit pupil should match eye's pupil (7mm dark-adapted).
+        Formula: exit_pupil = aperture / magnification
+
+        Returns:
+            Exit pupil diameter in mm
+        """
+        return self.aperture_mm / self.magnification
+
+    @property
+    def light_gathering_power(self) -> float:
+        """
+        Light gathering power relative to naked eye (7mm pupil).
+
+        Returns:
+            Factor by which binoculars gather more light than eye
+        """
+        return (self.aperture_mm / HUMAN_EYE_PUPIL_MM) ** 2
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable name (e.g., '10x50 Binoculars')."""
+        if self.name:
+            return self.name
+        return f"{self.magnification:.0f}x{self.aperture_mm:.0f} Binoculars"
+
+    def limiting_magnitude(self, sky_brightness: SkyBrightness = SkyBrightness.GOOD) -> float:
+        """
+        Calculate limiting magnitude for these binoculars.
+
+        Args:
+            sky_brightness: Sky quality
+
+        Returns:
+            Limiting magnitude (dimmer = higher number)
+        """
+        return calculate_limiting_magnitude(self.aperture_mm, sky_brightness, self.exit_pupil_mm)
+
+
+@dataclass(frozen=True, slots=True)
+class NakedEyeOptics:
+    """Naked eye optical specifications."""
+
+    pupil_diameter_mm: float = HUMAN_EYE_PUPIL_MM  # Dark-adapted pupil (7mm)
+    fov_deg: float = 120.0  # Approximate binocular field of view (both eyes)
+
+    @property
+    def magnification(self) -> float:
+        """Naked eye has no magnification."""
+        return 1.0
+
+    @property
+    def light_gathering_power(self) -> float:
+        """Naked eye is the baseline (1.0x)."""
+        return 1.0
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable name."""
+        return "Naked Eye"
+
+    def limiting_magnitude(self, sky_brightness: SkyBrightness = SkyBrightness.GOOD) -> float:
+        """
+        Calculate limiting magnitude for naked eye.
+
+        Args:
+            sky_brightness: Sky quality
+
+        Returns:
+            Limiting magnitude (dimmer = higher number)
+        """
+        # Naked eye limiting magnitude varies primarily with sky quality
+        # These are typical values for young observers with good vision
+        limiting_mags = {
+            SkyBrightness.EXCELLENT: 7.5,  # Perfect dark sky (Bortle 1-2)
+            SkyBrightness.GOOD: 6.5,  # Good rural sky (Bortle 3-4)
+            SkyBrightness.FAIR: 5.5,  # Suburban sky (Bortle 5-6)
+            SkyBrightness.POOR: 4.5,  # Urban sky (Bortle 7-8)
+            SkyBrightness.URBAN: 3.5,  # City center (Bortle 9)
+        }
+        return limiting_mags[sky_brightness]
+
+
 # Telescope specifications database keyed by model enum
 TELESCOPE_SPECS: dict[TelescopeModel, TelescopeSpecs] = {
     TelescopeModel.NEXSTAR_4SE: TelescopeSpecs(
@@ -151,6 +250,69 @@ def get_telescope_specs(model: TelescopeModel) -> TelescopeSpecs:
         Telescope specifications
     """
     return TELESCOPE_SPECS[model]
+
+
+# Common binocular configurations for astronomy
+# Format: magnification x aperture (e.g., 7x50, 10x50, 15x70)
+COMMON_BINOCULARS: dict[str, BinocularOptics] = {
+    # Standard astronomy binoculars (optimal exit pupil ~5-7mm)
+    "7x50": BinocularOptics(
+        magnification=7,
+        aperture_mm=50,
+        actual_fov_deg=7.0,
+        name="7x50 (Classic)",
+    ),
+    "8x42": BinocularOptics(
+        magnification=8,
+        aperture_mm=42,
+        actual_fov_deg=6.5,
+        name="8x42 (Compact)",
+    ),
+    "10x50": BinocularOptics(
+        magnification=10,
+        aperture_mm=50,
+        actual_fov_deg=6.0,
+        name="10x50 (Popular)",
+    ),
+    # Large astronomy binoculars (higher power)
+    "15x70": BinocularOptics(
+        magnification=15,
+        aperture_mm=70,
+        actual_fov_deg=4.5,
+        name="15x70 (Large)",
+    ),
+    "20x80": BinocularOptics(
+        magnification=20,
+        aperture_mm=80,
+        actual_fov_deg=3.5,
+        name="20x80 (Giant)",
+    ),
+    "25x100": BinocularOptics(
+        magnification=25,
+        aperture_mm=100,
+        actual_fov_deg=2.8,
+        name="25x100 (Mounted)",
+    ),
+    # Wide-field binoculars (low power, wide views)
+    "7x35": BinocularOptics(
+        magnification=7,
+        aperture_mm=35,
+        actual_fov_deg=8.0,
+        name="7x35 (Wide-field)",
+    ),
+    "10x42": BinocularOptics(
+        magnification=10,
+        aperture_mm=42,
+        actual_fov_deg=6.5,
+        name="10x42 (Versatile)",
+    ),
+    "12x50": BinocularOptics(
+        magnification=12,
+        aperture_mm=50,
+        actual_fov_deg=5.5,
+        name="12x50 (Higher Power)",
+    ),
+}
 
 
 @dataclass
