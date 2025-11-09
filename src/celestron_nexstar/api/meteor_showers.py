@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from ..coordinate_utils import ra_dec_to_alt_az
+from .utils import ra_dec_to_alt_az
 
 
 if TYPE_CHECKING:

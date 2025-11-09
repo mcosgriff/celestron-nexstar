@@ -7,10 +7,11 @@ and automatic migration management with Alembic.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -403,3 +404,30 @@ class MeteorShowerModel(Base):
     def __repr__(self) -> str:
         """String representation of meteor shower."""
         return f"<MeteorShower(id={self.id}, name='{self.name}', peak={self.peak_month}/{self.peak_day})>"
+
+
+@contextmanager
+def get_db_session():
+    """
+    Get a database session as a context manager.
+
+    Yields a SQLAlchemy Session that is automatically closed when exiting the context.
+    Use this for database operations that need a session.
+
+    Example:
+        with get_db_session() as db:
+            # Use db session here
+            pass
+    """
+    from .database import get_database
+
+    db = get_database()
+    session = db._get_session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

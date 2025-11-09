@@ -11,6 +11,7 @@ from rich.console import Console
 # Import and register subcommands
 from .commands import (
     align,
+    binoculars,
     catalog,
     connect,
     dashboard,
@@ -20,6 +21,7 @@ from .commands import (
     location,
     move,
     multi_night,
+    naked_eye,
     optics,
     position,
     time,
@@ -158,6 +160,18 @@ app.add_typer(
     multi_night.app,
     name="multi-night",
     help="Multi-night planning and comparison",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    binoculars.app,
+    name="binoculars",
+    help="Binocular viewing (ISS, constellations, asterisms)",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    naked_eye.app,
+    name="naked-eye",
+    help="Naked-eye stargazing (no equipment needed)",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(

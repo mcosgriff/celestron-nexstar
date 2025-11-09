@@ -77,7 +77,7 @@ class ISSPass:
 
     @property
     def is_good_pass(self) -> bool:
-        """Whether this is a good quality pass (>30° max altitude)."""
+        """Whether this is a good quality pass (>30Â° max altitude)."""
         return self.max_altitude_deg >= 30
 
     @property
@@ -218,7 +218,7 @@ def get_iss_passes(
         longitude: Observer longitude in degrees
         start_time: Start of search window (default: now)
         days: Number of days to search (default: 7)
-        min_altitude_deg: Minimum peak altitude for pass (default: 10°)
+        min_altitude_deg: Minimum peak altitude for pass (default: 10Â°)
 
     Returns:
         List of ISS passes sorted by rise time
@@ -335,7 +335,7 @@ def get_iss_passes_cached(
         longitude: Observer longitude in degrees
         start_time: Start of search window (default: now)
         days: Number of days to search (default: 7)
-        min_altitude_deg: Minimum peak altitude for pass (default: 10°)
+        min_altitude_deg: Minimum peak altitude for pass (default: 10Â°)
         db_session: SQLAlchemy session (optional, creates new if None)
 
     Returns:
