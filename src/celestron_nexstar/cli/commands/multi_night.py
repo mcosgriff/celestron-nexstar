@@ -16,7 +16,8 @@ from rich.console import Console
 from rich.table import Table
 from timezonefinder import TimezoneFinder
 
-from ...api.catalogs import get_object_by_name
+from ...api.catalogs import CelestialObject, get_object_by_name
+from ...api.enums import CelestialObjectType
 from ...api.observation_planner import ObservationPlanner, ObservingConditions
 from ...api.solar_system import get_moon_info, get_sun_info
 from ...api.utils import angular_separation, calculate_lst, ra_dec_to_alt_az
@@ -93,6 +94,54 @@ DEFAULT_THRESHOLDS = {
     "max_clouds": 30.0,  # Highlight if clouds <= 30%
     "min_darkness": 5.0,  # Highlight if darkness >= 5.0 mag
     "min_seeing": 60.0,  # Highlight if seeing >= 60/100
+}
+
+# Object-type specific scoring weights
+# Different celestial objects have different observing requirements
+OBJECT_TYPE_WEIGHTS = {
+    CelestialObjectType.PLANET: {
+        "seeing": 0.45,           # Planets critically need steady air
+        "visibility": 0.25,       # High altitude important for steadiness
+        "conditions_quality": 0.20,  # General conditions matter
+        "moon_separation": 0.05,  # Planets tolerate moon well (bright targets)
+        "moon_brightness": 0.05,  # Moon brightness less critical
+    },
+    CelestialObjectType.GALAXY: {
+        "moon_separation": 0.30,  # Galaxies very sensitive to moon proximity
+        "conditions_quality": 0.25,  # Need dark, transparent skies
+        "visibility": 0.25,       # Need good altitude
+        "seeing": 0.10,          # Seeing less critical for extended objects
+        "moon_brightness": 0.10,  # Also sensitive to moon brightness
+    },
+    CelestialObjectType.NEBULA: {
+        "moon_separation": 0.25,  # Nebulae sensitive to moon
+        "conditions_quality": 0.30,  # Need transparency and darkness
+        "visibility": 0.25,       # Need good altitude
+        "seeing": 0.10,          # Seeing less critical
+        "moon_brightness": 0.10,  # Moon brightness matters
+    },
+    CelestialObjectType.CLUSTER: {
+        "visibility": 0.30,       # Altitude very important
+        "conditions_quality": 0.25,  # General conditions
+        "seeing": 0.20,          # Some benefit from steady air
+        "moon_separation": 0.15,  # Moderate moon sensitivity
+        "moon_brightness": 0.10,  # Less sensitive than galaxies
+    },
+    CelestialObjectType.DOUBLE_STAR: {
+        "seeing": 0.50,          # Critical for resolving close pairs
+        "visibility": 0.25,       # High altitude for steadiness
+        "conditions_quality": 0.15,  # General conditions
+        "moon_separation": 0.05,  # Stars tolerate moon well
+        "moon_brightness": 0.05,  # Bright targets
+    },
+    # Default weights for other types (star, asterism, constellation, moon)
+    "default": {
+        "conditions_quality": 0.30,
+        "seeing": 0.25,
+        "visibility": 0.25,
+        "moon_separation": 0.15,
+        "moon_brightness": 0.05,
+    },
 }
 
 
@@ -692,7 +741,8 @@ def show_best_night(
         console.print(f"\n[bold cyan]Best Night for {obj.name}[/bold cyan]")
         if obj.common_name:
             console.print(f"[dim]{obj.common_name}[/dim]")
-        console.print(f"[dim]Checking next {days} nights...[/dim]\n")
+        console.print(f"[dim]Type: {obj.object_type.value.title()}[/dim]")
+        console.print(f"[dim]Checking next {days} nights with {obj.object_type.value}-optimized scoring...[/dim]\n")
 
         # Check each night
         nights_data: list[NightData] = []
@@ -770,15 +820,12 @@ def show_best_night(
                             conditions.moon_illumination,
                         )
 
-                    # Calculate score combining conditions, visibility, and moon separation
-                    conditions_score = conditions.observing_quality_score * SCORING_WEIGHTS["conditions_quality"]
-                    seeing_score = (conditions.seeing_score / 100.0) * SCORING_WEIGHTS["seeing"]
-                    visibility_score = visibility.observability_score * SCORING_WEIGHTS["visibility"]
-                    moon_sep_score = moon_separation_score * SCORING_WEIGHTS["moon_separation"]
-                    moon_brightness_score = (1.0 - conditions.moon_illumination) * SCORING_WEIGHTS["moon_brightness"]
-
-                    total_score = (
-                        conditions_score + seeing_score + visibility_score + moon_sep_score + moon_brightness_score
+                    # Calculate object-type specific score
+                    total_score = _calculate_object_type_score(
+                        obj,
+                        conditions,
+                        visibility,
+                        moon_separation_score,
                     )
 
                     nights_data.append({
@@ -892,6 +939,22 @@ def show_best_night(
         console.print(f"  Seeing: {best_conditions.seeing_score:.0f}/100")
         console.print(f"  Cloud Cover: {best_conditions.weather.cloud_cover_percent or 100.0:.0f}%")
         console.print(f"  Moon: {best_conditions.moon_illumination*100:.0f}% illuminated")
+
+        # Show moon separation
+        best_moon_sep: float = best["moon_separation_deg"]
+        console.print(f"  Moon Separation: {best_moon_sep:.0f}°")
+
+        # Add object-type specific note
+        if obj.object_type == CelestialObjectType.PLANET:
+            console.print("  [dim]Note: Planets benefit most from excellent seeing and high altitude[/dim]")
+        elif obj.object_type == CelestialObjectType.GALAXY:
+            console.print("  [dim]Note: Galaxies need dark skies and distance from the moon[/dim]")
+        elif obj.object_type == CelestialObjectType.NEBULA:
+            console.print("  [dim]Note: Nebulae need transparency, darkness, and distance from moon[/dim]")
+        elif obj.object_type == CelestialObjectType.DOUBLE_STAR:
+            console.print("  [dim]Note: Double stars need excellent seeing to resolve close pairs[/dim]")
+        elif obj.object_type == CelestialObjectType.CLUSTER:
+            console.print("  [dim]Note: Clusters benefit most from good altitude and moderate darkness[/dim]")
 
         if best_visibility.is_visible:
             console.print("  [green]✓ Object will be visible[/green]")
@@ -1244,6 +1307,45 @@ def _is_nighttime(timestamp: datetime, lat: float, lon: float) -> bool:
         True if the sun is below the horizon, False otherwise
     """
     return _is_nighttime_cached(timestamp.isoformat(), lat, lon)
+
+
+def _calculate_object_type_score(
+    obj: CelestialObject,
+    conditions: ObservingConditions,
+    visibility: VisibilityInfo,
+    moon_separation_score: float,
+) -> float:
+    """
+    Calculate observation quality score tailored to the object's type.
+
+    Different objects have different observing requirements:
+    - Planets: Need excellent seeing, less affected by moon
+    - Galaxies: Need dark skies and distance from moon
+    - Nebulae: Need darkness and transparency
+    - Clusters: Need good altitude and moderate darkness
+    - Double stars: Need excellent seeing to resolve
+
+    Args:
+        obj: Celestial object being observed
+        conditions: Observing conditions for the night
+        visibility: Visibility assessment for the object
+        moon_separation_score: Pre-calculated moon-object separation score
+
+    Returns:
+        Total score (0.0-1.0) weighted for object type
+    """
+    # Get weights for this object type, fall back to default
+    weights = OBJECT_TYPE_WEIGHTS.get(obj.object_type, OBJECT_TYPE_WEIGHTS["default"])
+
+    # Calculate component scores
+    conditions_score = conditions.observing_quality_score * weights["conditions_quality"]
+    seeing_score = (conditions.seeing_score / 100.0) * weights["seeing"]
+    visibility_score = visibility.observability_score * weights["visibility"]
+    moon_sep_score = moon_separation_score * weights["moon_separation"]
+    moon_brightness_score = (1.0 - conditions.moon_illumination) * weights["moon_brightness"]
+
+    # Total score
+    return conditions_score + seeing_score + visibility_score + moon_sep_score + moon_brightness_score
 
 
 def _calculate_moon_separation_score(
