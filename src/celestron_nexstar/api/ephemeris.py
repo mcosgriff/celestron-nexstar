@@ -27,15 +27,16 @@ __all__ = [
 
 
 # Planet names mapping to Skyfield ephemeris names and required BSP files
+# Note: JPL ephemeris files use uppercase object names
 PLANET_NAMES = {
-    "mercury": ("mercury", "de440s.bsp"),
-    "venus": ("venus", "de440s.bsp"),
-    "mars": ("mars", "de440s.bsp"),
-    "jupiter": ("jupiter barycenter", "de440s.bsp"),
-    "saturn": ("saturn barycenter", "de440s.bsp"),
-    "uranus": ("uranus barycenter", "de440s.bsp"),
-    "neptune": ("neptune barycenter", "de440s.bsp"),
-    "moon": ("moon", "de421.bsp"),  # de440s doesn't include Moon
+    "mercury": ("199 MERCURY", "de440s.bsp"),  # Use numeric ID for planets
+    "venus": ("299 VENUS", "de440s.bsp"),
+    "mars": ("4 MARS BARYCENTER", "de440s.bsp"),  # Use barycenter for Mars
+    "jupiter": ("5 JUPITER BARYCENTER", "de440s.bsp"),
+    "saturn": ("6 SATURN BARYCENTER", "de440s.bsp"),
+    "uranus": ("7 URANUS BARYCENTER", "de440s.bsp"),
+    "neptune": ("8 NEPTUNE BARYCENTER", "de440s.bsp"),
+    "moon": ("MOON", "de421.bsp"),  # de440s doesn't include Moon
     # Jupiter moons (jup365.bsp)
     "io": ("io", "jup365.bsp"),
     "europa": ("europa", "jup365.bsp"),
@@ -95,7 +96,12 @@ def _get_ephemeris(bsp_file: str) -> SpiceKernel:
 
     # Use Skyfield directory for both loading and downloading
     skyfield_dir = _get_skyfield_directory()
-    loader = Loader(str(skyfield_dir))
+
+    # Ensure directory exists
+    skyfield_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use absolute path to ensure Skyfield finds the file
+    loader = Loader(str(skyfield_dir.resolve()))
 
     # Load file - will download to skyfield_dir if not present
     eph = loader(bsp_file)
@@ -165,9 +171,24 @@ def get_planetary_position(
     try:
         target = eph[ephemeris_name]
     except KeyError:
-        raise ValueError(
-            f"Object '{ephemeris_name}' not found in {bsp_file}. The ephemeris file may be missing or corrupted."
-        ) from None
+        # Try uppercase version (JPL ephemeris files often use uppercase)
+        try:
+            target = eph[ephemeris_name.upper()]
+        except KeyError:
+            # List available objects for better error message
+            available_objects = sorted(eph.names())
+            # Filter to strings only and convert to lowercase for comparison
+            mars_objects = [
+                str(obj) for obj in available_objects
+                if isinstance(obj, str) and "mars" in str(obj).lower()
+            ]
+            error_msg = (
+                f"Object '{ephemeris_name}' not found in {bsp_file}.\n"
+                f"Available objects containing 'mars': {', '.join(mars_objects) if mars_objects else 'none'}\n"
+                f"Available objects: {', '.join(str(obj) for obj in available_objects[:20])}...\n"
+                f"The ephemeris file may be missing or corrupted, or the object name may be incorrect."
+            )
+            raise ValueError(error_msg) from None
 
     # Calculate apparent position from Earth
     astrometric = earth.at(t).observe(target)
@@ -190,7 +211,10 @@ def is_dynamic_object(object_name: str) -> bool:
     Returns:
         True if object position changes over time (planets, moons)
     """
-    return object_name.lower() in PLANET_NAMES
+    # Ensure object_name is a string (handle cases where it might be an integer)
+    if not object_name:
+        return False
+    return str(object_name).lower() in PLANET_NAMES
 
 
 def get_planet_magnitude(planet_name: str) -> float | None:

@@ -52,9 +52,9 @@ class CelestialObject:
         """Check if object matches search query."""
         query_lower = query.lower()
         return bool(
-            query_lower in self.name.lower()
-            or (self.common_name and query_lower in self.common_name.lower())
-            or (self.description and query_lower in self.description.lower())
+            (self.name and query_lower in str(self.name).lower())
+            or (self.common_name and query_lower in str(self.common_name).lower())
+            or (self.description and query_lower in str(self.description).lower())
         )
 
     def with_current_position(self, dt: datetime | None = None) -> CelestialObject:
@@ -70,7 +70,7 @@ class CelestialObject:
         Returns:
             New CelestialObject with updated coordinates, or self if not dynamic
         """
-        if not is_dynamic_object(self.name):
+        if not is_dynamic_object(str(self.name) if self.name is not None else ""):
             return self
 
         try:
@@ -303,10 +303,12 @@ def search_objects(
         List of tuples (CelestialObject, match_type) sorted by match quality.
         Match types: "exact", "name", "alias", "description"
     """
-    from sqlalchemy import func, select, text
+    from sqlalchemy import select, text
 
     from .database import get_database
 
+    # Ensure query is a string
+    query = str(query) if query is not None else ""
     query_lower = query.lower()
     all_results: list[tuple[int, CelestialObject, str]] = []  # (score, object, match_type)
     exact_match = None
@@ -316,12 +318,14 @@ def search_objects(
         with db._get_session() as session:
             from .models import CelestialObjectModel
 
-            # First, try exact match (case-insensitive)
+            # First, try exact match (case-insensitive) - all filtering in database
+            # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
+            # It handles type coercion automatically and avoids Python-side evaluation
             exact_query = (
                 select(CelestialObjectModel)
                 .filter(
-                    (func.lower(CelestialObjectModel.name) == query_lower)
-                    | (func.lower(CelestialObjectModel.common_name) == query_lower)
+                    (CelestialObjectModel.name.ilike(query))
+                    | (CelestialObjectModel.common_name.ilike(query))
                 )
             )
             if catalog_name:
@@ -334,10 +338,11 @@ def search_objects(
                     exact_obj = exact_obj.with_current_position()
                 return [(exact_obj, "exact")]
 
-            # Search for substring matches in name (score: 0)
+            # Search for substring matches in name (score: 0) - all filtering in database
+            # Use ilike() for case-insensitive substring matching
             name_query = (
                 select(CelestialObjectModel)
-                .filter(func.lower(CelestialObjectModel.name).like(f"%{query_lower}%"))
+                .filter(CelestialObjectModel.name.ilike(f"%{query}%"))
             )
             if catalog_name:
                 name_query = name_query.filter(CelestialObjectModel.catalog == catalog_name)
@@ -348,7 +353,7 @@ def search_objects(
                 if update_positions:
                     obj = obj.with_current_position()
                 # Check if it's an exact match (shouldn't happen, but just in case)
-                if obj.name.lower() == query_lower:
+                if obj and obj.name and str(obj.name).lower() == query_lower:
                     exact_match = (obj, "exact")
                     break
                 all_results.append((0, obj, "name"))
@@ -357,26 +362,29 @@ def search_objects(
             if exact_match:
                 return [exact_match]
 
-            # Search for substring matches in common_name (score: 1)
+            # Search for substring matches in common_name (score: 1) - all filtering in database
+            # Use ilike() for case-insensitive substring matching
             common_query = (
                 select(CelestialObjectModel)
                 .filter(
                     CelestialObjectModel.common_name.isnot(None),
-                    func.lower(CelestialObjectModel.common_name).like(f"%{query_lower}%"),
+                    CelestialObjectModel.common_name.ilike(f"%{query}%"),
                 )
             )
             if catalog_name:
                 common_query = common_query.filter(CelestialObjectModel.catalog == catalog_name)
 
             common_models = session.execute(common_query).scalars().all()
-            seen_names = {obj.name.lower() for _, obj, _ in all_results}
+            seen_names = {str(obj.name).lower() for _, obj, _ in all_results if obj and hasattr(obj, 'name') and obj.name is not None}
             for model in common_models:
                 obj = db._model_to_object(model)
-                if obj.name.lower() not in seen_names:
-                    seen_names.add(obj.name.lower())
+                if obj and obj.name is not None:
+                    obj_name_lower = str(obj.name).lower()
+                    if obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
                     if update_positions:
                         obj = obj.with_current_position()
-                    if obj.common_name and obj.common_name.lower() == query_lower:
+                    if obj.common_name and str(obj.common_name).lower() == query_lower:
                         exact_match = (obj, "exact")
                         break
                     all_results.append((1, obj, "alias"))
@@ -407,19 +415,21 @@ def search_objects(
                 fts_model: CelestialObjectModel | None = session.get(CelestialObjectModel, obj_id)
                 if fts_model is not None:
                     obj = db._model_to_object(fts_model)
-                    if obj.name.lower() not in seen_names:
-                        seen_names.add(obj.name.lower())
-                        if update_positions:
-                            obj = obj.with_current_position()
+                    if obj and obj.name is not None:
+                        obj_name_lower = str(obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                    if update_positions:
+                        obj = obj.with_current_position()
                         # Check if it matches name or common_name (should have been caught above)
-                        if obj.name.lower() == query_lower or (
-                            obj.common_name and obj.common_name.lower() == query_lower
+                        if str(obj.name).lower() == query_lower or (
+                            obj.common_name and str(obj.common_name).lower() == query_lower
                         ):
                             exact_match = (obj, "exact")
                             break
                         # Only add if it's a description match (not already matched above)
-                        if query_lower not in obj.name.lower() and (
-                            not obj.common_name or query_lower not in obj.common_name.lower()
+                        if query_lower not in str(obj.name).lower() and (
+                            not obj.common_name or query_lower not in str(obj.common_name).lower()
                         ):
                             all_results.append((2, obj, "description"))
 
@@ -428,7 +438,17 @@ def search_objects(
                 return [exact_match]
 
     except Exception as e:
-        logger.warning(f"Database search failed: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Database search failed: {e}")
+        logger.error(f"Query was: {query!r} (type: {type(query).__name__})")
+        logger.error(f"Query lower was: {query_lower!r} (type: {type(query_lower).__name__})")
+        logger.error(f"Full traceback: {error_details}")
+        # Also print to stderr for immediate visibility
+        import sys
+        print(f"ERROR: Database search failed: {e}", file=sys.stderr)
+        print(f"Query: {query!r} (type: {type(query).__name__})", file=sys.stderr)
+        print(f"Traceback:\n{error_details}", file=sys.stderr)
         return []
 
     # Sort by score (lower is better) and return
@@ -440,51 +460,42 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
     """
     Get objects by name or common name (fuzzy matching).
 
-    Searches both database and YAML catalogs, prioritizing exact matches.
+    Searches only the database (catalog.yaml is already imported).
 
     Args:
         name: Object name to search for
-        catalog_name: Optional catalog to search within
+        catalog_name: Optional catalog to search within (currently unused, kept for compatibility)
 
     Returns:
         List of matching CelestialObject instances (without match type info)
     """
     from .database import get_database
 
+    # Ensure name is a string
+    name = str(name) if name is not None else ""
+
     all_matches: list[CelestialObject] = []
     seen_names: set[str] = set()
 
-    # First, try exact match in database (highest priority)
+    # Search only in database (catalog.yaml is already imported)
     try:
         db = get_database()
+        # First, try exact match in database (highest priority)
         db_obj = db.get_by_name(name)
         if db_obj:
             all_matches.append(db_obj)
-            seen_names.add(db_obj.name.lower())
+            seen_names.add(str(db_obj.name).lower())
             # If we found an exact match, return it immediately
             return [db_obj]
-    except Exception:
-        pass  # Database might not be available
 
-    # Search YAML catalogs
-    yaml_results = search_objects(name, catalog_name)
-    for obj, match_type in yaml_results:
-        # Skip if we've already seen this object
-        if obj.name.lower() not in seen_names:
-            all_matches.append(obj)
-            seen_names.add(obj.name.lower())
-            # If this is an exact match, prioritize it
-            if match_type == "exact":
-                return [obj]
-
-    # If no exact match yet, try fuzzy search in database
-    try:
-        db = get_database()
+        # If no exact match, try fuzzy search in database
         db_results = db.search(name, limit=20)
         for obj in db_results:
-            if obj.name.lower() not in seen_names:
-                all_matches.append(obj)
-                seen_names.add(obj.name.lower())
+            if obj and obj.name is not None:
+                obj_name_lower = str(obj.name).lower()
+                if obj_name_lower not in seen_names:
+                    all_matches.append(obj)
+                    seen_names.add(obj_name_lower)
     except Exception:
         pass  # Database might not be available
 

@@ -359,8 +359,16 @@ class CatalogDatabase:
 
     def get_by_name(self, name: str) -> CelestialObject | None:
         """Get object by exact name match."""
+        # Ensure name is a string
+        name = str(name) if name is not None else ""
         with self._get_session() as session:
-            model = session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(name)).first()
+            # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
+            # It handles type coercion automatically
+            model = (
+                session.query(CelestialObjectModel)
+                .filter(CelestialObjectModel.name.ilike(name))
+                .first()
+            )
             if model is None:
                 return None
             return self._model_to_object(model)
@@ -376,6 +384,8 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
+        # Ensure query is a string
+        query = str(query) if query is not None else ""
         with self._get_session() as session:
             # FTS5 search requires raw SQL
             result = session.execute(
@@ -517,7 +527,7 @@ class CatalogDatabase:
 
         with self._get_session() as session:
             # Build case-insensitive filter using LIKE for better compatibility
-            prefix_lower = prefix.lower()
+            prefix_lower = str(prefix).lower()
 
             # Query both name and common_name fields, returning the actual values
             # Use a UNION-like approach with separate queries, then combine
@@ -633,9 +643,13 @@ class CatalogDatabase:
 
     def _model_to_object(self, model: CelestialObjectModel) -> CelestialObject:
         """Convert SQLAlchemy model to CelestialObject."""
+        # Ensure name and common_name are strings (handle cases where DB has integers)
+        name = str(model.name) if model.name is not None else None
+        common_name = str(model.common_name) if model.common_name is not None else None
+
         obj = CelestialObject(
-            name=model.name,
-            common_name=model.common_name,
+            name=name,
+            common_name=common_name,
             ra_hours=model.ra_hours,
             dec_degrees=model.dec_degrees,
             magnitude=model.magnitude,
@@ -646,9 +660,10 @@ class CatalogDatabase:
         )
 
         # Handle dynamic objects
-        if model.is_dynamic and is_dynamic_object(model.ephemeris_name or model.name):
+        ephemeris_name = str(model.ephemeris_name) if model.ephemeris_name else str(name) if name else ""
+        if model.is_dynamic and is_dynamic_object(ephemeris_name):
             try:
-                ra, dec = get_planetary_position(model.ephemeris_name or model.name)
+                ra, dec = get_planetary_position(ephemeris_name)
                 from dataclasses import replace
 
                 obj = replace(obj, ra_hours=ra, dec_degrees=dec)
