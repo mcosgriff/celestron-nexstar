@@ -5,6 +5,7 @@ Shows observing conditions and recommended objects for tonight.
 """
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
@@ -60,9 +61,9 @@ def _show_conditions_content(output_console: Console) -> None:
 
         # Display header
         location_name = conditions.location_name or "Current Location"
-        console.print(f"\n[bold cyan]Observing Conditions for {location_name}[/bold cyan]")
+        output_console.print(f"\n[bold cyan]Observing Conditions for {location_name}[/bold cyan]")
         time_str = _format_local_time(conditions.timestamp, conditions.latitude, conditions.longitude)
-        console.print(f"[dim]{time_str}[/dim]\n")
+        output_console.print(f"[dim]{time_str}[/dim]\n")
 
         # Overall quality
         quality = conditions.observing_quality_score
@@ -75,34 +76,34 @@ def _show_conditions_content(output_console: Console) -> None:
         else:
             quality_text = "[red]Poor[/red]"
 
-        console.print(f"Overall Quality (general conditions): {quality_text} ({quality * 100:.0f}/100)\n")
+        output_console.print(f"Overall Quality (general conditions): {quality_text} ({quality * 100:.0f}/100)\n")
 
         # Weather
         weather = conditions.weather
-        console.print("[bold]Weather:[/bold]")
+        output_console.print("[bold]Weather:[/bold]")
         if weather.cloud_cover_percent is not None:
-            console.print(f"  Cloud Cover: {weather.cloud_cover_percent:.0f}%")
+            output_console.print(f"  Cloud Cover: {weather.cloud_cover_percent:.0f}%")
         if weather.temperature_c is not None:
             # API returns Fahrenheit when units=imperial (despite field name)
             # Display directly as Fahrenheit
-            console.print(f"  Temperature: {weather.temperature_c:.1f}°F")
+            output_console.print(f"  Temperature: {weather.temperature_c:.1f}°F")
         if weather.dew_point_f is not None:
-            console.print(f"  Dew Point: {weather.dew_point_f:.1f}°F")
+            output_console.print(f"  Dew Point: {weather.dew_point_f:.1f}°F")
         if weather.humidity_percent is not None:
-            console.print(f"  Humidity: {weather.humidity_percent:.0f}%")
+            output_console.print(f"  Humidity: {weather.humidity_percent:.0f}%")
         if weather.wind_speed_ms is not None:
             # API returns mph when units=imperial (despite field name)
             # Display directly as mph
-            console.print(f"  Wind Speed: {weather.wind_speed_ms:.1f} mph")
+            output_console.print(f"  Wind Speed: {weather.wind_speed_ms:.1f} mph")
         if weather.visibility_km is not None:
             # API returns visibility in meters, convert to miles
             visibility_mi = weather.visibility_km * 0.621371
-            console.print(f"  Visibility: {visibility_mi:.1f} mi")
+            output_console.print(f"  Visibility: {visibility_mi:.1f} mi")
         if weather.condition:
-            console.print(f"  Condition: {weather.condition}")
+            output_console.print(f"  Condition: {weather.condition}")
         if weather.error:
-            console.print(f"  [yellow]Warning: {weather.error}[/yellow]")
-        console.print()
+            output_console.print(f"  [yellow]Warning: {weather.error}[/yellow]")
+        output_console.print()
 
         # Seeing Conditions
         seeing = conditions.seeing_score
@@ -115,18 +116,18 @@ def _show_conditions_content(output_console: Console) -> None:
         else:
             seeing_text = "[red]Poor[/red]"
 
-        console.print("[bold]Seeing Conditions[/bold] (atmospheric steadiness for image sharpness):")
-        console.print(f"  Seeing: {seeing_text} ({seeing:.0f}/100)")
+        output_console.print("[bold]Seeing Conditions[/bold] (atmospheric steadiness for image sharpness):")
+        output_console.print(f"  Seeing: {seeing_text} ({seeing:.0f}/100)")
 
         # Seeing-based recommendations
         if seeing >= 80:
-            console.print("  [dim]✓ Ideal for: High-magnification planetary detail, splitting close doubles, faint deep-sky[/dim]")
+            output_console.print("  [dim]✓ Ideal for: High-magnification planetary detail, splitting close doubles, faint deep-sky[/dim]")
         elif seeing >= 60:
-            console.print("  [dim]✓ Good for: Planetary observing, bright deep-sky, double stars[/dim]")
+            output_console.print("  [dim]✓ Good for: Planetary observing, bright deep-sky, double stars[/dim]")
         elif seeing >= 40:
-            console.print("  [dim]✓ Suitable for: Bright objects, low-power deep-sky, wide doubles[/dim]")
+            output_console.print("  [dim]✓ Suitable for: Bright objects, low-power deep-sky, wide doubles[/dim]")
         else:
-            console.print("  [dim]⚠ Limited to: Bright planets, bright clusters, low-power viewing[/dim]")
+            output_console.print("  [dim]⚠ Limited to: Bright planets, bright clusters, low-power viewing[/dim]")
 
         # Best seeing time windows
         if conditions.best_seeing_windows:
@@ -142,12 +143,12 @@ def _show_conditions_content(output_console: Console) -> None:
                 window_strings.append(f"{start_time} - {end_time}")
 
             windows_text = ", ".join(window_strings)
-            console.print(f"  [dim]Best seeing windows: {windows_text}[/dim]")
+            output_console.print(f"  [dim]Best seeing windows: {windows_text}[/dim]")
 
         # Hourly seeing forecast (if available - uses free Open-Meteo API)
         if conditions.hourly_seeing_forecast:
-            console.print()
-            console.print("[bold]Hourly Seeing Forecast:[/bold]")
+            output_console.print()
+            output_console.print("[bold]Hourly Seeing Forecast:[/bold]")
 
             # Filter forecast to start 1 hour before sunset and go to sunrise
             # All times stored in UTC, converted to local only for display
@@ -278,48 +279,48 @@ def _show_conditions_content(output_console: Console) -> None:
                     else:
                         score_color = "[red]"
 
-                    console.print(
+                    output_console.print(
                         f"  {time_only}: {score_color}{forecast.seeing_score:.0f}/100[/] "
                         f"[dim]({forecast.cloud_cover_percent or 0:.0f}% clouds, "
                         f"{forecast.wind_speed_mph or 0:.1f} mph wind)[/]"
                     )
             else:
-                console.print("  [dim]No forecast data available for observing window[/dim]")
-        console.print()
+                output_console.print("  [dim]No forecast data available for observing window[/dim]")
+        output_console.print()
 
         # Light Pollution
         lp = conditions.light_pollution
-        console.print("[bold]Sky Darkness:[/bold]")
-        console.print(f"  Bortle Class: {lp.bortle_class.value} ({lp.description})")
-        console.print(f"  SQM: {lp.sqm_value:.2f} mag/arcsec²")
-        console.print(f"  Naked Eye Limit: {lp.naked_eye_limiting_magnitude:.1f} mag")
-        console.print(f"  Telescope Limit: {conditions.limiting_magnitude:.1f} mag")
-        console.print()
+        output_console.print("[bold]Sky Darkness:[/bold]")
+        output_console.print(f"  Bortle Class: {lp.bortle_class.value} ({lp.description})")
+        output_console.print(f"  SQM: {lp.sqm_value:.2f} mag/arcsec²")
+        output_console.print(f"  Naked Eye Limit: {lp.naked_eye_limiting_magnitude:.1f} mag")
+        output_console.print(f"  Telescope Limit: {conditions.limiting_magnitude:.1f} mag")
+        output_console.print()
 
         # Moon Events
-        console.print("[bold]Moon Events:[/bold]")
+        output_console.print("[bold]Moon Events:[/bold]")
         if conditions.moon_phase:
-            console.print(f"  Phase: {conditions.moon_phase}")
-        console.print(f"  Illumination: {conditions.moon_illumination * 100:.1f}%")
-        console.print(f"  Altitude: {conditions.moon_altitude:.1f}°")
+            output_console.print(f"  Phase: {conditions.moon_phase}")
+        output_console.print(f"  Illumination: {conditions.moon_illumination * 100:.1f}%")
+        output_console.print(f"  Altitude: {conditions.moon_altitude:.1f}°")
         if conditions.moon_altitude < 0:
-            console.print("  [dim]Below horizon[/dim]")
+            output_console.print("  [dim]Below horizon[/dim]")
         if conditions.moonrise_time:
             moonrise_str = _format_local_time(conditions.moonrise_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = moonrise_str.split()
             moonrise_time = " ".join(parts[1:3]) if len(parts) >= 3 else moonrise_str
-            console.print(f"  Moonrise: {moonrise_time}")
+            output_console.print(f"  Moonrise: {moonrise_time}")
         if conditions.moonset_time:
             moonset_str = _format_local_time(conditions.moonset_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = moonset_str.split()
             moonset_time = " ".join(parts[1:3]) if len(parts) >= 3 else moonset_str
-            console.print(f"  Moonset: {moonset_time}")
-        console.print()
+            output_console.print(f"  Moonset: {moonset_time}")
+        output_console.print()
 
         # Sun Events
-        console.print("[bold]Sun Events:[/bold]")
+        output_console.print("[bold]Sun Events:[/bold]")
 
         # Sunrise/Sunset
         if conditions.sunrise_time:
@@ -327,13 +328,13 @@ def _show_conditions_content(output_console: Console) -> None:
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = sunrise_str.split()
             sunrise_time = " ".join(parts[1:3]) if len(parts) >= 3 else sunrise_str
-            console.print(f"  Sunrise: {sunrise_time}")
+            output_console.print(f"  Sunrise: {sunrise_time}")
         if conditions.sunset_time:
             sunset_str = _format_local_time(conditions.sunset_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = sunset_str.split()
             sunset_time = " ".join(parts[1:3]) if len(parts) >= 3 else sunset_str
-            console.print(f"  Sunset: {sunset_time}")
+            output_console.print(f"  Sunset: {sunset_time}")
 
         # Golden Hour
         if conditions.golden_hour_evening_start and conditions.golden_hour_evening_end:
@@ -344,7 +345,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = gh_evening_end.split()
             gh_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else gh_evening_start
             gh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else gh_evening_end
-            console.print(f"  Golden Hour (evening): {gh_start_time} - {gh_end_time}")
+            output_console.print(f"  Golden Hour (evening): {gh_start_time} - {gh_end_time}")
         if conditions.golden_hour_morning_start and conditions.golden_hour_morning_end:
             gh_morning_start = _format_local_time(conditions.golden_hour_morning_start, conditions.latitude, conditions.longitude)
             gh_morning_end = _format_local_time(conditions.golden_hour_morning_end, conditions.latitude, conditions.longitude)
@@ -353,7 +354,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = gh_morning_end.split()
             gh_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else gh_morning_start
             gh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else gh_morning_end
-            console.print(f"  Golden Hour (morning): {gh_start_time} - {gh_end_time}")
+            output_console.print(f"  Golden Hour (morning): {gh_start_time} - {gh_end_time}")
 
         # Blue Hour
         if conditions.blue_hour_evening_start and conditions.blue_hour_evening_end:
@@ -364,7 +365,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = bh_evening_end.split()
             bh_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else bh_evening_start
             bh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else bh_evening_end
-            console.print(f"  Blue Hour (evening): {bh_start_time} - {bh_end_time}")
+            output_console.print(f"  Blue Hour (evening): {bh_start_time} - {bh_end_time}")
         if conditions.blue_hour_morning_start and conditions.blue_hour_morning_end:
             bh_morning_start = _format_local_time(conditions.blue_hour_morning_start, conditions.latitude, conditions.longitude)
             bh_morning_end = _format_local_time(conditions.blue_hour_morning_end, conditions.latitude, conditions.longitude)
@@ -373,7 +374,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = bh_morning_end.split()
             bh_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else bh_morning_start
             bh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else bh_morning_end
-            console.print(f"  Blue Hour (morning): {bh_start_time} - {bh_end_time}")
+            output_console.print(f"  Blue Hour (morning): {bh_start_time} - {bh_end_time}")
 
         # Astronomical Twilight
         if conditions.astronomical_twilight_evening_start and conditions.astronomical_twilight_evening_end:
@@ -384,7 +385,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = at_evening_end.split()
             at_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else at_evening_start
             at_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else at_evening_end
-            console.print(f"  Astronomical Twilight (evening): {at_start_time} - {at_end_time}")
+            output_console.print(f"  Astronomical Twilight (evening): {at_start_time} - {at_end_time}")
         if conditions.astronomical_twilight_morning_start and conditions.astronomical_twilight_morning_end:
             at_morning_start = _format_local_time(conditions.astronomical_twilight_morning_start, conditions.latitude, conditions.longitude)
             at_morning_end = _format_local_time(conditions.astronomical_twilight_morning_end, conditions.latitude, conditions.longitude)
@@ -393,7 +394,7 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = at_morning_end.split()
             at_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else at_morning_start
             at_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else at_morning_end
-            console.print(f"  Astronomical Twilight (morning): {at_start_time} - {at_end_time}")
+            output_console.print(f"  Astronomical Twilight (morning): {at_start_time} - {at_end_time}")
 
         # Galactic Center Visibility
         if conditions.galactic_center_start and conditions.galactic_center_end:
@@ -404,32 +405,32 @@ def _show_conditions_content(output_console: Console) -> None:
             parts_end = gc_end.split()
             gc_start_time = " ".join(parts_start[1:3]) if len(parts_start) >= 3 else gc_start
             gc_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else gc_end
-            console.print(f"  Galactic Center: {gc_start_time} - {gc_end_time}")
+            output_console.print(f"  Galactic Center: {gc_start_time} - {gc_end_time}")
 
-        console.print()
+        output_console.print()
 
         # Recommendations
         if conditions.recommendations:
-            console.print("[bold green]Recommendations:[/bold green]")
+            output_console.print("[bold green]Recommendations:[/bold green]")
             for rec in conditions.recommendations:
-                console.print(f"  ✓ {rec}")
-            console.print()
+                output_console.print(f"  ✓ {rec}")
+            output_console.print()
 
         # Warnings
         if conditions.warnings:
-            console.print("[bold yellow]Warnings:[/bold yellow]")
+            output_console.print("[bold yellow]Warnings:[/bold yellow]")
             for warn in conditions.warnings:
-                console.print(f"  ⚠ {warn}")
-            console.print()
+                output_console.print(f"  ⚠ {warn}")
+            output_console.print()
 
     except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        output_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from None
     except Exception as e:
-        console.print(f"[red]Error getting conditions:[/red] {e}")
+        output_console.print(f"[red]Error getting conditions:[/red] {e}")
         import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
 
@@ -460,14 +461,14 @@ def _show_objects_content(
             try:
                 target_types = [ObservingTarget(target_type)]
             except ValueError:
-                console.print(f"[red]Invalid target type: {target_type}[/red]")
-                console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
+                output_console.print(f"[red]Invalid target type: {target_type}[/red]")
+                output_console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
                 raise typer.Exit(code=1) from None
 
         objects = planner.get_recommended_objects(conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing)
 
         if not objects:
-            console.print("[yellow]No objects currently visible with current conditions.[/yellow]")
+            output_console.print("[yellow]No objects currently visible with current conditions.[/yellow]")
             return
 
         # Create table
@@ -523,17 +524,17 @@ def _show_objects_content(
                 tips_text,
             )
 
-        console.print(table)
-        console.print(f"\n[dim]Showing top {min(limit, len(objects))} of {len(objects)} visible objects[/dim]")
+        output_console.print(table)
+        output_console.print(f"\n[dim]Showing top {min(limit, len(objects))} of {len(objects)} visible objects[/dim]")
 
     except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        output_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from None
     except Exception as e:
-        console.print(f"[red]Error getting objects:[/red] {e}")
+        output_console.print(f"[red]Error getting objects:[/red] {e}")
         import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
 
@@ -771,17 +772,50 @@ def show_imaging() -> None:
         raise typer.Exit(code=1) from None
 
 
+def _generate_export_filename(viewing_type: str = "telescope", binocular_model: str | None = None, command: str = "tonight") -> Path:
+    """Generate export filename based on viewing type, equipment, location, date, and command."""
+    from datetime import datetime
+    from ...api.observer import get_observer_location
+    from ...api.optics import load_configuration
+    
+    location = get_observer_location()
+    
+    # Get location name (shortened, sanitized)
+    if location.name:
+        location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
+        # Remove common suffixes and limit length
+        location_short = location_short.replace("_(default)", "").replace("_observatory", "")
+        location_short = location_short[:20]  # Limit length
+    else:
+        location_short = "unknown"
+    
+    # Get date
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Generate filename based on viewing type
+    if viewing_type == "telescope":
+        config = load_configuration()
+        if config:
+            telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
+        else:
+            telescope_name = "no_telescope"
+        filename = f"nexstar_{telescope_name}_{location_short}_{date_str}_{command}.txt"
+    elif viewing_type == "binoculars":
+        model_safe = (binocular_model or "10x50").replace("x", "x").replace("/", "_").lower()
+        filename = f"binoculars_{model_safe}_{location_short}_{date_str}_{command}.txt"
+    else:  # naked-eye
+        filename = f"naked_eye_{location_short}_{date_str}_{command}.txt"
+    
+    return Path(filename)
+
+
 @app.command("tonight", rich_help_panel="Viewing Guides")
 def show_tonight(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
-    export: str | None = typer.Option(
-        None,
-        "--export",
-        "-e",
-        help="Export output to text file with ASCII tables (e.g., viewing_guide.txt)",
-    ),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects) for Celestron NexStar 6SE."""
     from pathlib import Path
@@ -789,7 +823,12 @@ def show_tonight(
 
     # Handle export
     if export:
-        export_path = Path(export)
+        if export_path:
+            # User provided a custom path
+            export_path_obj = Path(export_path)
+        else:
+            # Auto-generate filename
+            export_path_obj = _generate_export_filename("telescope", command="tonight")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
@@ -799,8 +838,8 @@ def show_tonight(
         file_console.file.close()
 
         # Export to text file
-        export_to_text(content, export_path)
-        console.print(f"\n[green]✓[/green] Exported to {export_path}")
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
     # Normal console output

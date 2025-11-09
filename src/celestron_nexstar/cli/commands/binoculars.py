@@ -6,6 +6,7 @@ constellations, asterisms, and meteor showers.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
@@ -142,15 +143,38 @@ def _get_visible_stars(
     return visible[:limit]
 
 
+def _generate_export_filename(binocular_model: str, command: str = "tonight") -> Path:
+    """Generate export filename for binocular viewing."""
+    from datetime import datetime
+    from ...api.observer import get_observer_location
+    
+    location = get_observer_location()
+    
+    # Get binocular model (sanitized)
+    model_safe = binocular_model.replace("x", "x").replace("/", "_").lower()
+    
+    # Get location name (shortened, sanitized)
+    if location.name:
+        location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
+        # Remove common suffixes and limit length
+        location_short = location_short.replace("_(default)", "").replace("_observatory", "")
+        location_short = location_short[:20]  # Limit length
+    else:
+        location_short = "unknown"
+    
+    # Get date
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Generate filename
+    filename = f"binoculars_{model_safe}_{location_short}_{date_str}_{command}.txt"
+    return Path(filename)
+
+
 @app.command("tonight")
 def show_tonight(
     binoculars: str = typer.Option("10x50", "--model", "-m", help="Binocular model (e.g., 10x50, 7x50, 15x70)"),
-    export: str | None = typer.Option(
-        None,
-        "--export",
-        "-e",
-        help="Export output to text file with ASCII tables (e.g., viewing_guide.txt)",
-    ),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """
     Show what's visible tonight with binoculars.
@@ -162,7 +186,12 @@ def show_tonight(
 
     # Handle export
     if export:
-        export_path = Path(export)
+        if export_path:
+            # User provided a custom path
+            export_path_obj = Path(export_path)
+        else:
+            # Auto-generate filename
+            export_path_obj = _generate_export_filename(binoculars, "tonight")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
@@ -172,8 +201,8 @@ def show_tonight(
         file_console.file.close()
 
         # Export to text file
-        export_to_text(content, export_path)
-        console.print(f"\n[green]✓[/green] Exported to {export_path}")
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
     # Normal console output

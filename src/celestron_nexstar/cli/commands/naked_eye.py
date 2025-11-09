@@ -7,6 +7,7 @@ without any equipment.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
@@ -142,14 +143,34 @@ def _get_visible_stars(
     return visible[:limit]
 
 
+def _generate_export_filename(command: str = "tonight") -> Path:
+    """Generate export filename for naked-eye viewing."""
+    from datetime import datetime
+    from ...api.observer import get_observer_location
+    
+    location = get_observer_location()
+    
+    # Get location name (shortened, sanitized)
+    if location.name:
+        location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
+        # Remove common suffixes and limit length
+        location_short = location_short.replace("_(default)", "").replace("_observatory", "")
+        location_short = location_short[:20]  # Limit length
+    else:
+        location_short = "unknown"
+    
+    # Get date
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Generate filename
+    filename = f"naked_eye_{location_short}_{date_str}_{command}.txt"
+    return Path(filename)
+
+
 @app.command("tonight")
 def show_tonight(
-    export: str | None = typer.Option(
-        None,
-        "--export",
-        "-e",
-        help="Export output to text file with ASCII tables (e.g., viewing_guide.txt)",
-    ),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """
     Show what's visible tonight with the naked eye.
@@ -161,7 +182,12 @@ def show_tonight(
 
     # Handle export
     if export:
-        export_path = Path(export)
+        if export_path:
+            # User provided a custom path
+            export_path_obj = Path(export_path)
+        else:
+            # Auto-generate filename
+            export_path_obj = _generate_export_filename("tonight")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
@@ -171,8 +197,8 @@ def show_tonight(
         file_console.file.close()
 
         # Export to text file
-        export_to_text(content, export_path)
-        console.print(f"\n[green]✓[/green] Exported to {export_path}")
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
     # Normal console output
