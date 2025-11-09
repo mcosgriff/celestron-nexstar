@@ -100,7 +100,7 @@ nexstar multi-night best-night "Ring Nebula" --days 7
 3. **Light Pollution Integration** - Assesses your location's Bortle class:
    - Displays Bortle scale (1-9) and limiting magnitude
    - Applies penalties based on object sensitivity
-   - Example: Galaxy from Bortle 6 receives ~67% penalty
+   - Example: Galaxy from Bortle 6 receives ~63% penalty
    - Warns when location significantly limits visibility
    - Planets and double stars unaffected by light pollution
 

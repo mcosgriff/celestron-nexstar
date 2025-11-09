@@ -803,56 +803,75 @@ def show_best_night(
                 if sunrise < sunset:
                     sunrise = sunrise + timedelta(days=1)
 
-                if sunset <= transit_time <= sunrise:
-                    # Object transits during observing window
-                    # Calculate altitude at transit
-                    alt, _az = ra_dec_to_alt_az(obj.ra_hours, obj.dec_degrees, lat, lon, transit_time)
+                # Determine observation time
+                observation_time = transit_time
 
-                    # Assess visibility
-                    visibility = assess_visibility(
-                        obj,
-                        observer_lat=lat,
-                        observer_lon=lon,
-                        dt=transit_time,
+                if not (sunset <= transit_time <= sunrise):
+                    # Transit is outside observing window
+                    # Check if object is circumpolar (always above horizon)
+                    # Use midnight (middle of observing window) instead
+                    midnight = sunset + (sunrise - sunset) / 2
+                    alt_at_midnight, _az = ra_dec_to_alt_az(obj.ra_hours, obj.dec_degrees, lat, lon, midnight)
+
+                    if alt_at_midnight > 0:
+                        # Object is visible at midnight - likely circumpolar or visible during night
+                        observation_time = midnight
+                    else:
+                        # Object is not visible during this night
+                        continue
+
+                # Calculate altitude at observation time
+                alt, _az = ra_dec_to_alt_az(obj.ra_hours, obj.dec_degrees, lat, lon, observation_time)
+
+                # Skip if object is below horizon
+                if alt <= 0:
+                    continue
+
+                # Assess visibility
+                visibility = assess_visibility(
+                    obj,
+                    observer_lat=lat,
+                    observer_lon=lon,
+                    dt=observation_time,
+                )
+
+                # Get moon position at observation time
+                moon_info = get_moon_info(lat, lon, observation_time)
+                moon_separation_deg = 0.0
+                moon_separation_score = 1.0  # Default: no interference
+
+                if moon_info:
+                    # Calculate moon-object separation and scoring
+                    moon_separation_score, moon_separation_deg = _calculate_moon_separation_score(
+                        obj.ra_hours,
+                        obj.dec_degrees,
+                        moon_info.ra_hours,
+                        moon_info.dec_degrees,
+                        conditions.moon_illumination,
                     )
 
-                    # Get moon position at transit time
-                    moon_info = get_moon_info(lat, lon, transit_time)
-                    moon_separation_deg = 0.0
-                    moon_separation_score = 1.0  # Default: no interference
+                # Calculate object-type specific score (with light pollution)
+                total_score = _calculate_object_type_score(
+                    obj,
+                    conditions,
+                    visibility,
+                    moon_separation_score,
+                    light_pollution_data,
+                )
 
-                    if moon_info:
-                        # Calculate moon-object separation and scoring
-                        moon_separation_score, moon_separation_deg = _calculate_moon_separation_score(
-                            obj.ra_hours,
-                            obj.dec_degrees,
-                            moon_info.ra_hours,
-                            moon_info.dec_degrees,
-                            conditions.moon_illumination,
-                        )
-
-                    # Calculate object-type specific score (with light pollution)
-                    total_score = _calculate_object_type_score(
-                        obj,
-                        conditions,
-                        visibility,
-                        moon_separation_score,
-                        light_pollution_data,
-                    )
-
-                    nights_data.append({
-                        "date": night_date,
-                        "sunset": sunset,
-                        "transit_time": transit_time,
-                        "altitude": alt,
-                        "conditions": conditions,
-                        "visibility": visibility,
-                        "score": total_score,
-                        "moon_separation_deg": moon_separation_deg,
-                    })
+                nights_data.append({
+                    "date": night_date,
+                    "sunset": sunset,
+                    "transit_time": observation_time,
+                    "altitude": alt,
+                    "conditions": conditions,
+                    "visibility": visibility,
+                    "score": total_score,
+                    "moon_separation_deg": moon_separation_deg,
+                })
 
         if not nights_data:
-            console.print(f"[yellow]Object does not transit during observing hours in the next {days} nights.[/yellow]")
+            console.print(f"[yellow]Object is not visible during observing hours in the next {days} nights.[/yellow]")
             return
 
         # Sort by score (best first)
@@ -1407,8 +1426,8 @@ def _calculate_object_type_score(
 
         # Penalty formula: objects with higher sensitivity get more penalty in poor conditions
         # - Sensitivity 0.0 (planets, double stars): no penalty
-        # - Sensitivity 0.9 (galaxies) in Bortle 5 (0.5 quality): 55% penalty
-        # - Sensitivity 0.8 (nebulae) in Bortle 7 (0.15 quality): 68% penalty
+        # - Sensitivity 0.9 (galaxies) in Bortle 5 (0.5 quality): 45% penalty (score reduced to 55%)
+        # - Sensitivity 0.8 (nebulae) in Bortle 7 (0.15 quality): 68% penalty (score reduced to 32%)
         light_pollution_penalty = 1.0 - (sensitivity * (1.0 - light_pollution_quality))
         final_score = base_score * light_pollution_penalty
     else:
