@@ -15,7 +15,7 @@ from timezonefinder import TimezoneFinder
 from ...api.observation_planner import ObservationPlanner, ObservingTarget
 
 
-app = typer.Typer(help="Tonight's observing plan")
+app = typer.Typer(help="Telescope viewing commands")
 console = Console()
 _tz_finder = TimezoneFinder()
 
@@ -49,6 +49,11 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
 @app.command("conditions", rich_help_panel="Conditions & Forecasts")
 def show_conditions() -> None:
     """Show tonight's observing conditions."""
+    _show_conditions_content(console)
+
+
+def _show_conditions_content(output_console: Console) -> None:
+    """Generate and display conditions content."""
     try:
         planner = ObservationPlanner()
         conditions = planner.get_tonight_conditions()
@@ -435,6 +440,16 @@ def show_objects(
     best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
 ) -> None:
     """Show recommended objects for tonight."""
+    _show_objects_content(console, target_type, limit, best_for_seeing)
+
+
+def _show_objects_content(
+    output_console: Console,
+    target_type: str | None = None,
+    limit: int = 20,
+    best_for_seeing: bool = False,
+) -> None:
+    """Generate and display objects content."""
     try:
         planner = ObservationPlanner()
         conditions = planner.get_tonight_conditions()
@@ -754,6 +769,82 @@ def show_imaging() -> None:
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("tonight", rich_help_panel="Viewing Guides")
+def show_tonight(
+    target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
+    limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
+    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    export: str | None = typer.Option(
+        None,
+        "--export",
+        "-e",
+        help="Export output to text file with ASCII tables (e.g., viewing_guide.txt)",
+    ),
+) -> None:
+    """Show complete observing plan for tonight (conditions + objects) for Celestron NexStar 6SE."""
+    from pathlib import Path
+    from ...cli.utils.export import create_file_console, export_to_text
+
+    # Handle export
+    if export:
+        export_path = Path(export)
+        # Create file console for export (StringIO)
+        file_console = create_file_console()
+        # Use file console for output
+        _show_tonight_content(file_console, target_type, limit, best_for_seeing)
+        # Get content from StringIO
+        content = file_console.file.getvalue()
+        file_console.file.close()
+
+        # Export to text file
+        export_to_text(content, export_path)
+        console.print(f"\n[green]✓[/green] Exported to {export_path}")
+        return
+
+    # Normal console output
+    _show_tonight_content(console, target_type, limit, best_for_seeing)
+
+
+def _show_tonight_content(
+    output_console: Console,
+    target_type: str | None = None,
+    limit: int = 20,
+    best_for_seeing: bool = False,
+) -> None:
+    """Generate and display tonight viewing content for telescope."""
+    from ...api.optics import load_configuration, get_telescope_specs
+    
+    # Check if telescope is configured
+    config = load_configuration()
+    
+    # Add telescope identification header
+    if config:
+        telescope = config.telescope
+        output_console.print(f"\n[bold cyan]{telescope.model.display_name} - Tonight's Viewing Guide[/bold cyan]")
+        output_console.print(f"[dim]Telescope: {telescope.aperture_mm}mm aperture, f/{telescope.focal_ratio:.1f} ({telescope.focal_length_mm}mm focal length)[/dim]")
+        
+        # Determine telescope type for description
+        if telescope.aperture_mm < 125:
+            optimal = "Planetary detail, bright deep-sky objects, double stars, lunar observing"
+        elif telescope.aperture_mm < 200:
+            optimal = "Planetary detail, bright to medium deep-sky objects, double stars, lunar observing"
+        else:
+            optimal = "Planetary detail, deep-sky objects, double stars, lunar observing, faint objects"
+        
+        output_console.print(f"[dim]Optimal for: {optimal}[/dim]\n")
+    else:
+        output_console.print("\n[bold cyan]Telescope Viewing Guide - Tonight[/bold cyan]")
+        output_console.print("[yellow]⚠ No telescope configured[/yellow]")
+        output_console.print("[dim]Configure your telescope using: nexstar optics configure[/dim]")
+        output_console.print("[dim]This guide shows general observing conditions and objects visible with any telescope.[/dim]\n")
+    
+    # Show conditions
+    _show_conditions_content(output_console)
+    output_console.print("\n" + "=" * 80 + "\n")
+    # Show objects
+    _show_objects_content(output_console, target_type, limit, best_for_seeing)
 
 
 @app.command("plan", rich_help_panel="Complete Plans")

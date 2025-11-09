@@ -18,12 +18,13 @@ from ...api.constellations import get_prominent_constellations, get_visible_aste
 from ...api.database import get_database
 from ...api.enums import CelestialObjectType, SkyBrightness
 from ...api.iss_tracking import get_iss_passes_cached
+from ...api.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
 from ...api.models import get_db_session
 from ...api.observer import get_observer_location
-from ...api.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
 from ...api.optics import COMMON_BINOCULARS
 from ...api.sun_moon import calculate_sun_times
 from ...api.utils import ra_dec_to_alt_az
+from ...cli.utils.export import create_file_console, export_to_text
 
 
 app = typer.Typer(help="Binocular viewing commands")
@@ -58,15 +59,15 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
 def _get_current_season(dt: datetime) -> str:
     """
     Get the current season based on date.
-    
+
     Args:
         dt: Datetime to check
-        
+
     Returns:
         Season name: "Spring", "Summer", "Fall", or "Winter"
     """
     month = dt.month
-    
+
     # Simple month-based season determination
     # Spring: Mar, Apr, May
     # Summer: Jun, Jul, Aug
@@ -92,11 +93,11 @@ def _get_visible_stars(
 ) -> list[tuple]:
     """
     Get visible stars above horizon at given time.
-    
+
     Queries the database directly - all star data comes from the database,
     not from YAML files. Stars should be imported via 'nexstar data import yale_bsc'
     or 'nexstar data import custom' before using this command.
-    
+
     Args:
         lat: Observer latitude
         lon: Observer longitude
@@ -104,12 +105,12 @@ def _get_visible_stars(
         min_altitude_deg: Minimum altitude for visibility
         max_magnitude: Maximum magnitude (fainter limit) - higher for binoculars
         limit: Maximum number of stars to return
-        
+
     Returns:
         List of (star_object, altitude_deg, azimuth_deg) tuples sorted by magnitude (brightest first)
     """
     db = get_database()
-    
+
     # Query stars directly from database (not from YAML)
     # Stars must be imported first via: nexstar data import yale_bsc
     stars = db.filter_objects(
@@ -117,12 +118,12 @@ def _get_visible_stars(
         max_magnitude=max_magnitude,
         limit=500,  # Get more than we need to filter by altitude
     )
-    
+
     visible = []
     for star in stars:
         if star.magnitude is None:
             continue
-            
+
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
             star.ra_hours,
@@ -131,19 +132,25 @@ def _get_visible_stars(
             lon,
             observation_time,
         )
-        
+
         if alt >= min_altitude_deg:
             visible.append((star, alt, az))
-    
+
     # Sort by magnitude (brightest first), then by altitude
     visible.sort(key=lambda x: (x[0].magnitude or 99, -x[1]))
-    
+
     return visible[:limit]
 
 
 @app.command("tonight")
 def show_tonight(
     binoculars: str = typer.Option("10x50", "--model", "-m", help="Binocular model (e.g., 10x50, 7x50, 15x70)"),
+    export: str | None = typer.Option(
+        None,
+        "--export",
+        "-e",
+        help="Export output to text file with ASCII tables (e.g., viewing_guide.txt)",
+    ),
 ) -> None:
     """
     Show what's visible tonight with binoculars.
@@ -151,11 +158,41 @@ def show_tonight(
     Displays ISS passes, visible constellations, asterisms, and active meteor showers
     optimized for binocular viewing. Uses your configured location.
     """
+    from pathlib import Path
+
+    # Handle export
+    if export:
+        export_path = Path(export)
+        # Create file console for export (StringIO)
+        file_console = create_file_console()
+        # Use file console for output
+        _show_tonight_content(binoculars, file_console)
+        # Get content from StringIO
+        content = file_console.file.getvalue()
+        file_console.file.close()
+
+        # Export to text file
+        export_to_text(content, export_path)
+        console.print(f"\n[green]✓[/green] Exported to {export_path}")
+        return
+
+    # Normal console output
+    _show_tonight_content(binoculars, console)
+
+
+def _show_tonight_content(binoculars: str, output_console: Console) -> None:
+    """
+    Generate and display tonight viewing content for binoculars.
+
+    Args:
+        binoculars: Binocular model string
+        output_console: Console to write output to (can be file console for export)
+    """
     try:
         # Validate binocular model
         if binoculars not in COMMON_BINOCULARS:
-            console.print(f"[red]Unknown binocular model: {binoculars}[/red]")
-            console.print(f"Available models: {', '.join(COMMON_BINOCULARS.keys())}")
+            output_console.print(f"[red]Unknown binocular model: {binoculars}[/red]")
+            output_console.print(f"Available models: {', '.join(COMMON_BINOCULARS.keys())}")
             raise typer.Exit(code=1)
 
         optics = COMMON_BINOCULARS[binoculars]
@@ -163,7 +200,7 @@ def show_tonight(
         # Get location
         location = get_observer_location()
         if not location:
-            console.print("[red]Error:[/red] No location configured. Use 'nexstar location set' first.")
+            output_console.print("[red]Error:[/red] No location configured. Use 'nexstar location set' first.")
             raise typer.Exit(code=1)
 
         lat, lon = location.latitude, location.longitude
@@ -175,14 +212,17 @@ def show_tonight(
         sunset = sun_times["sunset"]
         sunrise = sun_times["sunrise"]
 
-        # Display header
-        console.print(f"\n[bold cyan]Binocular Viewing for {location_name}[/bold cyan]")
-        console.print(f"[dim]Using: {optics.display_name}[/dim]")
-        console.print(f"[dim]Sunset: {_format_local_time(sunset, lat, lon)} | Sunrise: {_format_local_time(sunrise, lat, lon)}[/dim]\n")
+        # Display header with identification
+        output_console.print(f"\n[bold cyan]Binocular Viewing for {location_name}[/bold cyan]")
+        output_console.print(f"[dim]Viewing Method: Binoculars - {optics.display_name}[/dim]")
+        output_console.print(f"[dim]Specifications: {optics.magnification}x magnification, {optics.aperture_mm}mm aperture, {optics.exit_pupil_mm:.1f}mm exit pupil[/dim]")
+        limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
+        output_console.print(f"[dim]Limiting Magnitude: ~{limiting_mag:.1f} (with good sky conditions)[/dim]")
+        output_console.print(f"[dim]Sunset: {_format_local_time(sunset, lat, lon)} | Sunrise: {_format_local_time(sunrise, lat, lon)}[/dim]\n")
 
         # ISS Passes
-        console.print("[bold green]ISS Visible Passes[/bold green]")
-        console.print("[dim]International Space Station passes visible from your location[/dim]\n")
+        output_console.print("[bold green]ISS Visible Passes[/bold green]")
+        output_console.print("[dim]International Space Station passes visible from your location[/dim]\n")
 
         with get_db_session() as db:
             iss_passes = get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=db)
@@ -236,16 +276,16 @@ def show_tonight(
                     quality_text,
                 )
 
-            console.print(table_iss)
-            console.print("[dim]Quality based on maximum altitude: Excellent >70°, Very Good >50°, Good >30°[/dim]")
+            output_console.print(table_iss)
+            output_console.print("[dim]Quality based on maximum altitude: Excellent >70°, Very Good >50°, Good >30°[/dim]")
         else:
-            console.print("[yellow]No visible ISS passes in the next 7 days[/yellow]")
+            output_console.print("[yellow]No visible ISS passes in the next 7 days[/yellow]")
 
-        console.print()
+        output_console.print()
 
         # Meteor Showers
-        console.print("[bold green]Active Meteor Showers[/bold green]")
-        console.print("[dim]Best viewed with naked eye or binoculars for wide-field sweeping[/dim]\n")
+        output_console.print("[bold green]Active Meteor Showers[/bold green]")
+        output_console.print("[dim]Best viewed with naked eye or binoculars for wide-field sweeping[/dim]\n")
 
         active_showers = get_active_showers(now)
         peak_showers = get_peak_showers(now, tolerance_days=3)
@@ -284,17 +324,17 @@ def show_tonight(
                     notes,
                 )
 
-            console.print(table_showers)
-            console.print("[dim]ZHR = Zenithal Hourly Rate (meteors per hour under ideal conditions)[/dim]")
-            console.print("[dim]Actual rates are typically 25-50% of ZHR due to non-ideal conditions[/dim]")
+            output_console.print(table_showers)
+            output_console.print("[dim]ZHR = Zenithal Hourly Rate (meteors per hour under ideal conditions)[/dim]")
+            output_console.print("[dim]Actual rates are typically 25-50% of ZHR due to non-ideal conditions[/dim]")
         else:
-            console.print("[yellow]No major meteor showers currently active[/yellow]")
+            output_console.print("[yellow]No major meteor showers currently active[/yellow]")
 
-        console.print()
+        output_console.print()
 
         # Visible Constellations
-        console.print("[bold green]Prominent Constellations (Tonight)[/bold green]")
-        console.print("[dim]Best constellations visible from your location[/dim]\n")
+        output_console.print("[bold green]Prominent Constellations (Tonight)[/bold green]")
+        output_console.print("[dim]Best constellations visible from your location[/dim]\n")
 
         # Calculate for midnight
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -303,32 +343,32 @@ def show_tonight(
 
         # Get visible constellations (using lower threshold to catch more)
         visible_constellations = get_visible_constellations(lat, lon, midnight, min_altitude_deg=10.0)
-        
+
         # Track which constellations have low centers (below normal viewing threshold)
         # Normal threshold is 20° for binoculars
         normal_threshold = 20.0
         low_altitude_constellations = set()
-        
+
         # Mark constellations already in the list that are below normal threshold
         for constellation, alt, az in visible_constellations:
             if alt < normal_threshold:
                 low_altitude_constellations.add(constellation.name)
-        
+
         # Also include constellations that have visible stars, even if center is low
         # Get visible stars first to find their constellations
         limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
         visible_stars_for_const = _get_visible_stars(lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=100)
-        
+
         # Find unique constellations from visible stars
         constellations_with_stars = set()
         for star, _, _ in visible_stars_for_const:
             if star.constellation:
                 constellations_with_stars.add(star.constellation)
-        
+
         # Add constellations that have visible stars but aren't already in the list
         all_prominent = get_prominent_constellations()
         existing_names = {c.name for c, _, _ in visible_constellations}
-        
+
         for constellation in all_prominent:
             if constellation.name in constellations_with_stars and constellation.name not in existing_names:
                 # Calculate altitude for this constellation
@@ -345,17 +385,17 @@ def show_tonight(
                     # Mark if center is below normal threshold
                     if alt < normal_threshold:
                         low_altitude_constellations.add(constellation.name)
-        
+
         # Re-sort by altitude
         visible_constellations.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Separate into fully visible and partially visible
         fully_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name not in low_altitude_constellations]
         partially_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name in low_altitude_constellations]
 
         if fully_visible:
             current_season = _get_current_season(now)
-            
+
             table_const = Table(expand=True)
             table_const.add_column("Constellation", style="bold", width=15)
             table_const.add_column("Direction", justify="right", width=10)
@@ -381,19 +421,19 @@ def show_tonight(
                     description,
                 )
 
-            console.print(table_const)
-            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(table_const)
+            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
-            console.print("[yellow]No prominent constellations currently visible[/yellow]")
-        
+            output_console.print("[yellow]No prominent constellations currently visible[/yellow]")
+
         # Partially visible constellations
         if partially_visible:
-            console.print()
-            console.print("[bold yellow]Constellations Partially Visible[/bold yellow]")
-            console.print("[dim]Some stars visible, but whole constellation is low in the sky[/dim]\n")
-            
+            output_console.print()
+            output_console.print("[bold yellow]Constellations Partially Visible[/bold yellow]")
+            output_console.print("[dim]Some stars visible, but whole constellation is low in the sky[/dim]\n")
+
             current_season = _get_current_season(now)
-            
+
             table_partial = Table(expand=True)
             table_partial.add_column("Constellation", style="bold", width=15)
             table_partial.add_column("Direction", justify="right", width=10)
@@ -416,18 +456,18 @@ def show_tonight(
                     direction,
                     f"{alt:.0f}°",
                     season_display,
-                    f"Only some stars visible - whole constellation low",
+                    "Only some stars visible - whole constellation low",
                 )
 
-            console.print(table_partial)
+            output_console.print(table_partial)
 
-        console.print()
+        output_console.print()
 
         # Visible Stars
-        console.print("[bold green]Bright Stars (Tonight)[/bold green]")
+        output_console.print("[bold green]Bright Stars (Tonight)[/bold green]")
         # Calculate limiting magnitude for binoculars (using good sky conditions)
         limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
-        console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.1f})[/dim]\n")
+        output_console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.1f})[/dim]\n")
 
         # Use binocular limiting magnitude (typically 9-10 for 10x50)
         visible_stars = _get_visible_stars(lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=20)
@@ -443,16 +483,16 @@ def show_tonight(
 
             for star, alt, az in visible_stars:
                 direction = azimuth_to_compass_8point(az)
-                
+
                 # Star name (prefer common name if available)
                 star_name = star.common_name or star.name
-                
+
                 # Magnitude
                 mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
-                
+
                 # Constellation
                 constellation = star.constellation or "—"
-                
+
                 # Description/notes
                 notes = star.description or ""
 
@@ -465,16 +505,16 @@ def show_tonight(
                     notes,
                 )
 
-            console.print(table_stars)
-            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(table_stars)
+            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
-            console.print("[yellow]No bright stars currently visible[/yellow]")
+            output_console.print("[yellow]No bright stars currently visible[/yellow]")
 
-        console.print()
+        output_console.print()
 
         # Visible Asterisms
-        console.print("[bold green]Famous Star Patterns (Asterisms)[/bold green]")
-        console.print("[dim]Easily recognizable patterns visible through binoculars[/dim]\n")
+        output_console.print("[bold green]Famous Star Patterns (Asterisms)[/bold green]")
+        output_console.print("[dim]Easily recognizable patterns visible through binoculars[/dim]\n")
 
         visible_asterisms = get_visible_asterisms(lat, lon, midnight, min_altitude_deg=20.0)
 
@@ -499,25 +539,25 @@ def show_tonight(
                     description,
                 )
 
-            console.print(table_ast)
-            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(table_ast)
+            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
-            console.print("[yellow]No prominent asterisms currently visible[/yellow]")
+            output_console.print("[yellow]No prominent asterisms currently visible[/yellow]")
 
-        console.print("\n[bold cyan]Viewing Tips for Binoculars:[/bold cyan]")
-        console.print("  • Allow 20-30 minutes for dark adaptation")
-        console.print("  • Use a tripod or stable support for extended viewing")
-        console.print(f"  • Your {optics.display_name} have a {optics.exit_pupil_mm:.1f}mm exit pupil")
-        console.print(f"  • Light gathering: {optics.light_gathering_power:.0f}x more than naked eye")
-        console.print("  • Start with wide-field asterisms, then zoom in on constellations")
-        console.print("  • For meteor showers, sweep the sky slowly around the radiant\n")
+        output_console.print("\n[bold cyan]Viewing Tips for Binoculars:[/bold cyan]")
+        output_console.print("  • Allow 20-30 minutes for dark adaptation")
+        output_console.print("  • Use a tripod or stable support for extended viewing")
+        output_console.print(f"  • Your {optics.display_name} have a {optics.exit_pupil_mm:.1f}mm exit pupil")
+        output_console.print(f"  • Light gathering: {optics.light_gathering_power:.0f}x more than naked eye")
+        output_console.print("  • Start with wide-field asterisms, then zoom in on constellations")
+        output_console.print("  • For meteor showers, sweep the sky slowly around the radiant\n")
 
     except ValueError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        output_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from None
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
+        output_console.print(f"[red]Error:[/red] {e}")
         import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None

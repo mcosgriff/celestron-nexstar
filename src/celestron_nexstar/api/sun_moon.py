@@ -25,11 +25,11 @@ def calculate_sun_times(lat: float, lon: float, dt: datetime | None = None) -> d
         If times cannot be calculated, returns None values.
     """
     sun_info = get_sun_info(lat, lon, dt)
-    
+
     if sun_info is None:
         # Return None values if calculation fails
         return {"sunset": None, "sunrise": None}
-    
+
     return {
         "sunset": sun_info.sunset_time,
         "sunrise": sun_info.sunrise_time,

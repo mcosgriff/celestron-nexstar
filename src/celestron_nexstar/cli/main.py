@@ -152,14 +152,14 @@ app.add_typer(
 # Planning & Observation
 app.add_typer(
     tonight.app,
-    name="tonight",
-    help="Tonight's observing plan",
+    name="telescope",
+    help="Telescope viewing commands",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
     multi_night.app,
     name="multi-night",
-    help="Multi-night planning and comparison",
+    help="Multi-night planning and comparison (uses telescope configuration)",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(

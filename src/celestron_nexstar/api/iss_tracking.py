@@ -13,8 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from skyfield.api import Topos, load, wgs84
-from skyfield.iokit import parse_tle_file
+from skyfield.api import load, wgs84
 from skyfield.sgp4lib import EarthSatellite
 
 from .compass import azimuth_to_compass_8point
@@ -272,7 +271,7 @@ def get_iss_passes(
                     # Calculate positions
                     difference_rise = satellite - observer
                     topocentric_rise = difference_rise.at(rise_t)
-                    alt_rise, az_rise, _distance = topocentric_rise.altaz()
+                    _alt_rise, az_rise, _distance = topocentric_rise.altaz()
 
                     difference_max = satellite - observer
                     topocentric_max = difference_max.at(max_t)
@@ -280,7 +279,7 @@ def get_iss_passes(
 
                     difference_set = satellite - observer
                     topocentric_set = difference_set.at(set_t)
-                    alt_set, az_set, _distance = topocentric_set.altaz()
+                    _alt_set, az_set, _distance = topocentric_set.altaz()
 
                     max_altitude = alt_max.degrees
 

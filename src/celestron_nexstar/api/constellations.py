@@ -616,7 +616,7 @@ def populate_constellation_database(db_session: Session) -> None:
         side_deg = math.sqrt(constellation.area_sq_deg)
         ra_range_hours = side_deg / 15.0  # 1 hour = 15 degrees
         dec_range_deg = side_deg
-        
+
         model = ConstellationModel(
             name=constellation.name,
             abbreviation=constellation.abbreviation,
