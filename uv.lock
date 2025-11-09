@@ -183,7 +183,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyserial" },
-    { name = "pysqlite3-binary" },
+    { name = "pysqlite3-binary", marker = "sys_platform == 'linux'" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "requests-cache" },
@@ -239,7 +239,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
     { name = "pyserial", specifier = ">=3.5" },
-    { name = "pysqlite3-binary", specifier = ">=0.5.4" },
+    { name = "pysqlite3-binary", marker = "sys_platform == 'linux'", specifier = ">=0.5.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0" },
@@ -257,7 +257,7 @@ requires-dist = [
     { name = "timezonefinder", specifier = ">=6.2.0" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "tqdm", specifier = ">=4.66.0" },
-    { name = "typer", extras = ["all"], specifier = ">=0.12.0" },
+    { name = "typer", specifier = ">=0.12.0" },
 ]
 provides-extras = ["dev"]
 
