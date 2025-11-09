@@ -64,7 +64,7 @@ Best Nights:
 
 ### Best Night for Object
 
-Find the optimal night to observe a specific celestial object:
+Find the optimal night to observe a specific celestial object with intelligent, object-type specific scoring:
 
 ```bash
 nexstar multi-night best-night <OBJECT_NAME> [OPTIONS]
@@ -76,19 +76,87 @@ nexstar multi-night best-night <OBJECT_NAME> [OPTIONS]
 **Example:**
 ```bash
 nexstar multi-night best-night M31 --days 7
+nexstar multi-night best-night Jupiter --days 14
+nexstar multi-night best-night "Ring Nebula" --days 7
 ```
 
-**Output:**
-- Table ranking nights by observation quality score
-- Combines atmospheric conditions with object visibility
-- Shows transit time and altitude for each night
-- Detailed information for the best night
+**Key Features:**
 
-**Scoring Algorithm:**
-- 40% - Overall observing quality (weather, seeing, transparency)
-- 30% - Seeing quality
-- 20% - Object visibility (altitude, magnitude)
-- 10% - Moon interference (less moon = better)
+1. **Object-Type Optimized Scoring** - Different objects have different requirements:
+   - **Planets**: Prioritize seeing quality (45%) and altitude (25%) - moon and light pollution have minimal impact
+   - **Galaxies**: Prioritize moon separation (30%) and dark skies (25%) - very sensitive to light pollution (90%)
+   - **Nebulae**: Prioritize atmospheric conditions (30%) and moon distance (25%) - sensitive to light pollution (80%)
+   - **Clusters**: Prioritize altitude (30%) and conditions (25%) - moderately sensitive to light pollution (40%)
+   - **Double Stars**: Prioritize seeing (50%) and altitude (25%) - unaffected by light pollution
+
+2. **Moon-Object Separation** - Calculates angular distance between object and moon:
+   - <15°: Very poor (moon glare ruins observation)
+   - 15-30°: Poor (significant interference)
+   - 30-60°: Fair (moderate interference)
+   - 60-90°: Good (minimal interference)
+   - >90°: Excellent (opposite sides of sky)
+   - Combined with moon brightness for final moon score
+
+3. **Light Pollution Integration** - Assesses your location's Bortle class:
+   - Displays Bortle scale (1-9) and limiting magnitude
+   - Applies penalties based on object sensitivity
+   - Example: Galaxy from Bortle 6 receives ~67% penalty
+   - Warns when location significantly limits visibility
+   - Planets and double stars unaffected by light pollution
+
+**Output:**
+- Table ranking nights by total score (0-100)
+- Columns: Date, Score, Quality, Seeing, Clouds, Transit Time, Altitude, Moon %, Moon Separation
+- Shows location's Bortle class and description
+- Best night summary with detailed metrics
+- Object-type specific observing notes
+- Light pollution impact warnings (if applicable)
+
+**Example Output:**
+```
+Best Night for M31
+The Andromeda Galaxy
+Type: Galaxy
+Checking next 7 nights with galaxy-optimized scoring...
+Location light pollution: Bortle 5 - Suburban sky. Milky Way washed out near horizon.
+
+┌────────────┬───────┬──────────┬────────┬────────┬──────────┬──────────┬──────┬──────────┐
+│ Date       │ Score │ Quality  │ Seeing │ Clouds │ Transit  │ Altitude │ Moon │ Moon Sep │
+├────────────┼───────┼──────────┼────────┼────────┼──────────┼──────────┼──────┼──────────┤
+│ Sat Nov 09 │ 78    │ Excellent│ 85/100 │ 15%    │ 10:30 PM │ 68°      │ 12%  │ 95°      │
+│ Sun Nov 10 │ 72    │ Good     │ 72/100 │ 25%    │ 10:35 PM │ 67°      │ 20%  │ 85°      │
+└────────────┴───────┴──────────┴────────┴────────┴──────────┴──────────┴──────┴──────────┘
+
+Best Night: Saturday, November 09, 2025
+  Score: 78/100
+  Transit: 10:30 PM at 68° altitude
+  Seeing: 85/100
+  Cloud Cover: 15%
+  Moon: 12% illuminated
+  Moon Separation: 95°
+  Note: Galaxies need dark skies and distance from the moon
+        Your Bortle 5 location is suitable for galaxy observation
+  ✓ Object will be visible
+```
+
+**Scoring Details:**
+
+The algorithm uses weighted scoring based on object type. Base weights:
+
+| Factor | Planets | Galaxies | Nebulae | Clusters | Double Stars |
+|--------|---------|----------|---------|----------|--------------|
+| Seeing | 45% | 10% | 10% | 20% | 50% |
+| Visibility (altitude) | 25% | 25% | 25% | 30% | 25% |
+| Conditions (weather) | 20% | 25% | 30% | 25% | 15% |
+| Moon Separation | 5% | 30% | 25% | 15% | 5% |
+| Moon Brightness | 5% | 10% | 10% | 10% | 5% |
+
+Then applies light pollution penalty:
+```
+final_score = base_score × (1 - sensitivity × (1 - bortle_quality))
+```
+
+Where sensitivity ranges from 0.0 (unaffected) to 0.9 (extremely sensitive).
 
 ### Clear Sky Chart
 

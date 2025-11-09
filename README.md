@@ -108,16 +108,21 @@ Browse and search extensive catalogs:
 
 ### Multi-Night Planning & Clear Sky Charts
 
-Advanced observation planning tools to find the best nights for observing:
+Production-ready observation planning with intelligent, object-type specific recommendations:
 
 - **Week Comparison**: Compare conditions across 7 nights at a glance
-- **Best Night Calculator**: Find optimal night for specific objects (M31, Jupiter, etc.)
+- **Best Night Calculator**: Find optimal night for specific objects with smart scoring
+  - **Object-Type Optimization**: Planets prioritize seeing, galaxies prioritize dark skies
+  - **Moon-Object Separation**: Calculates angular distance between target and moon
+  - **Light Pollution Integration**: Applies Bortle scale penalties based on object sensitivity
+  - **Location Assessment**: Shows your sky quality and warns about visibility limits
+  - Example: Galaxy observing from Bortle 6 location receives appropriate penalty/warning
 - **Clear Sky Chart**: Detailed hourly forecast grid with customizable conditions
   - Filter by nighttime hours only
   - Highlight hours meeting quality thresholds (clouds, seeing, darkness)
   - Export data to CSV/JSON for analysis
   - Customizable condition display (clouds, seeing, darkness, wind, humidity, temp)
-- **Quality Scoring**: Intelligent ranking based on weather, seeing, and object visibility
+- **Smart Scoring**: Weights conditions by object type (planets ≠ galaxies ≠ nebulae)
 
 See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
 
@@ -199,7 +204,9 @@ track get                        # Get current mode
 **Multi-Night Planning** (outside shell)
 ```bash
 nexstar multi-night week                                        # Compare next 7 nights
-nexstar multi-night best-night M31 --days 7                     # Find best night for M31
+nexstar multi-night best-night M31 --days 7                     # Find best night for M31 (galaxy-optimized)
+nexstar multi-night best-night Jupiter --days 14                # Find best night for Jupiter (planet-optimized)
+nexstar multi-night best-night "Ring Nebula" --days 7           # Nebula-optimized with light pollution warning
 nexstar multi-night clear-sky --nighttime-only                  # Detailed hourly forecast
 nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # Advanced usage
 ```
