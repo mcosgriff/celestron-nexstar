@@ -106,6 +106,21 @@ Browse and search extensive catalogs:
 - **Offline ephemeris**: Download JPL data for field use without internet
 - **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
 
+### Multi-Night Planning & Clear Sky Charts
+
+Advanced observation planning tools to find the best nights for observing:
+
+- **Week Comparison**: Compare conditions across 7 nights at a glance
+- **Best Night Calculator**: Find optimal night for specific objects (M31, Jupiter, etc.)
+- **Clear Sky Chart**: Detailed hourly forecast grid with customizable conditions
+  - Filter by nighttime hours only
+  - Highlight hours meeting quality thresholds (clouds, seeing, darkness)
+  - Export data to CSV/JSON for analysis
+  - Customizable condition display (clouds, seeing, darkness, wind, humidity, temp)
+- **Quality Scoring**: Intelligent ranking based on weather, seeing, and object visibility
+
+See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
+
 ## 📚 Interactive Shell Guide
 
 ### Tutorial System
@@ -179,6 +194,14 @@ ephemeris download standard  # ~20MB, includes planets + Jupiter/Saturn moons
 align sync --ra 5.5 --dec 22.5  # Sync to known position
 track set --mode alt_az          # Set tracking mode
 track get                        # Get current mode
+```
+
+**Multi-Night Planning** (outside shell)
+```bash
+nexstar multi-night week                              # Compare next 7 nights
+nexstar multi-night best-night M31 --days 7           # Find best night for M31
+nexstar multi-night clear-sky --nighttime-only        # Detailed hourly forecast
+nexstar multi-night clear-sky -h -c clouds,seeing -e data.csv  # Advanced usage
 ```
 
 ### Shell Tips

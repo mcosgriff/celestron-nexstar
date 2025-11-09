@@ -5,6 +5,7 @@ This directory contains detailed documentation for the Celestron NexStar Python 
 ## Getting Started
 
 - [Installation Guide](INSTALL.md) - How to install and set up the library
+- [CLI Command Reference](CLI.md) - Command-line interface documentation
 
 ## API Documentation
 
@@ -36,6 +37,7 @@ graph TD
 
     subgraph Getting Started
         INSTALL[📦 INSTALL.md<br/>Installation Guide]
+        CLI[💻 CLI.md<br/>CLI Command Reference]
     end
 
     subgraph Core API
@@ -61,6 +63,7 @@ graph TD
     end
 
     INDEX --> INSTALL
+    INDEX --> CLI
     INDEX --> TEL
     INDEX --> EXAMPLES
 
@@ -94,6 +97,7 @@ graph TD
 docs/
 ├── INDEX.md              # This file
 ├── INSTALL.md           # Installation instructions
+├── CLI.md               # CLI command reference
 ├── telescope_docs.md    # NexStarTelescope class documentation
 ├── protocol_docs.md     # NexStarProtocol class documentation
 ├── types_docs.md        # Type definitions (enums, dataclasses)
