@@ -269,6 +269,7 @@ def show_tonight() -> None:
                 )
 
             console.print(table_const)
+            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
             console.print("[yellow]No prominent constellations currently visible[/yellow]")
 
@@ -322,6 +323,7 @@ def show_tonight() -> None:
                     shown.add(asterism.name)
 
             console.print(table_ast)
+            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
             console.print("[yellow]No prominent asterisms currently visible[/yellow]")
 
@@ -332,6 +334,7 @@ def show_tonight() -> None:
         console.print("  • Lie back on a blanket or reclining chair for comfortable viewing")
         console.print("  • Start with bright stars and asterisms, then find fainter objects")
         console.print("  • Use averted vision: look slightly to the side to see fainter objects")
+        console.print("  • [bold]Estimating altitude:[/bold] Hold your arm outstretched - your fist = ~10°, thumb = ~2°, pinky = ~1°")
         console.print("  • Best viewing: New moon or when moon has set\n")
 
     except ValueError as e:

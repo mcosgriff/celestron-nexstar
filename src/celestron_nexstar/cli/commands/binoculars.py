@@ -270,6 +270,7 @@ def show_tonight(
                 )
 
             console.print(table_const)
+            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
             console.print("[yellow]No prominent constellations currently visible[/yellow]")
 
@@ -303,6 +304,7 @@ def show_tonight(
                 )
 
             console.print(table_ast)
+            console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
         else:
             console.print("[yellow]No prominent asterisms currently visible[/yellow]")
 
