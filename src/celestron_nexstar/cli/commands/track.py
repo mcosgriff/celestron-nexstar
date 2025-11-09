@@ -23,7 +23,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Tracking control commands")
 
 
-@app.command()
+@app.command(rich_help_panel="Tracking Control")
 def start(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     mode: Literal["alt-az", "eq-north", "eq-south"] = typer.Option(
@@ -63,7 +63,7 @@ def start(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Tracking Control")
 def stop(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
 ) -> None:
@@ -88,7 +88,7 @@ def stop(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Status")
 def status(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),

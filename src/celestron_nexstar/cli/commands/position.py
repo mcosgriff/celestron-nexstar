@@ -25,7 +25,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Position query commands")
 
 
-@app.command("get")
+@app.command("get", rich_help_panel="Query")
 def get_position(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     format_output: Literal["pretty", "json", "csv", "dms", "hms"] = typer.Option(
@@ -110,7 +110,7 @@ def get_position(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Query")
 def radec(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -143,7 +143,7 @@ def radec(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Query")
 def altaz(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),

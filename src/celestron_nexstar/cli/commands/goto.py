@@ -16,7 +16,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Telescope slew (goto) commands")
 
 
-@app.command()
+@app.command(rich_help_panel="Slew to Coordinates")
 def radec(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     ra: float = typer.Option(..., "--ra", help="Right Ascension in hours (0-24)"),
@@ -81,7 +81,7 @@ def radec(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Slew to Coordinates")
 def altaz(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     az: float = typer.Option(..., "--az", help="Azimuth in degrees (0-360)"),
@@ -146,7 +146,7 @@ def altaz(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Control")
 def cancel(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
 ) -> None:
@@ -175,7 +175,7 @@ def cancel(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Status")
 def status(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
 ) -> None:

@@ -14,7 +14,7 @@ app = typer.Typer(help="Full-screen dashboard commands")
 console = Console()
 
 
-@app.command()
+@app.command(rich_help_panel="Dashboard")
 def show() -> None:
     """
     Launch the full-screen telescope dashboard.

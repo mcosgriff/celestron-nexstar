@@ -46,7 +46,7 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
         return dt.strftime("%Y-%m-%d %I:%M %p UTC")
 
 
-@app.command("conditions")
+@app.command("conditions", rich_help_panel="Conditions & Forecasts")
 def show_conditions() -> None:
     """Show tonight's observing conditions."""
     try:
@@ -428,7 +428,7 @@ def show_conditions() -> None:
         raise typer.Exit(code=1) from None
 
 
-@app.command("objects")
+@app.command("objects", rich_help_panel="Object Recommendations")
 def show_objects(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
@@ -522,7 +522,7 @@ def show_objects(
         raise typer.Exit(code=1) from None
 
 
-@app.command("imaging")
+@app.command("imaging", rich_help_panel="Imaging")
 def show_imaging() -> None:
     """Show imaging forecasts: seeing for planetary, transparency for deep-sky, and exposure suggestions."""
     try:
@@ -756,7 +756,7 @@ def show_imaging() -> None:
         raise typer.Exit(code=1) from None
 
 
-@app.command("plan")
+@app.command("plan", rich_help_panel="Complete Plans")
 def show_plan(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),

@@ -16,7 +16,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Manual movement commands")
 
 
-@app.command()
+@app.command(rich_help_panel="Movement")
 def fixed(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     direction: Literal["up", "down", "left", "right"] = typer.Argument(..., help="Direction to move"),
@@ -66,7 +66,7 @@ def fixed(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Movement")
 def stop(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     axis: Literal["az", "alt", "both"] = typer.Option("both", help="Axis to stop"),

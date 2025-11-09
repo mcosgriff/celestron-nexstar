@@ -31,7 +31,7 @@ from ..utils.output import console, print_error, print_info, print_success, prin
 app = typer.Typer(help="Ephemeris file management")
 
 
-@app.command("list")
+@app.command("list", rich_help_panel="File Management")
 def list_files(
     show_all: bool = typer.Option(False, "--all", "-a", help="Show all available files"),
 ) -> None:
@@ -114,7 +114,7 @@ def list_files(
         raise typer.Exit(code=1) from e
 
 
-@app.command("info")
+@app.command("info", rich_help_panel="File Information")
 def show_info(
     file: str = typer.Argument(..., help="File name (e.g., de440s, jup365)"),
 ) -> None:
@@ -186,7 +186,7 @@ def show_info(
         raise typer.Exit(code=1) from e
 
 
-@app.command("download")
+@app.command("download", rich_help_panel="File Management")
 def download(
     file: str = typer.Argument(..., help="File name or set name (e.g., de440s, standard)"),
     force: bool = typer.Option(False, "--force", "-f", help="Force re-download"),
@@ -261,7 +261,7 @@ def download(
         raise typer.Exit(code=1) from e
 
 
-@app.command("sets")
+@app.command("sets", rich_help_panel="File Information")
 def show_sets() -> None:
     """
     Show predefined ephemeris file sets.
@@ -319,7 +319,7 @@ def show_sets() -> None:
         raise typer.Exit(code=1) from e
 
 
-@app.command("verify")
+@app.command("verify", rich_help_panel="File Management")
 def verify(
     file: str = typer.Argument(None, help="File to verify (or all if not specified)"),
 ) -> None:
@@ -383,7 +383,7 @@ def verify(
         raise typer.Exit(code=1) from e
 
 
-@app.command("delete")
+@app.command("delete", rich_help_panel="File Management")
 def delete_file_cmd(
     file: str = typer.Argument(..., help="File to delete"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),

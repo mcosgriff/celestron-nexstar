@@ -13,7 +13,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Alignment commands")
 
 
-@app.command()
+@app.command(rich_help_panel="Alignment")
 def sync(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     ra: float = typer.Option(..., "--ra", help="Right Ascension in hours (0-24)"),

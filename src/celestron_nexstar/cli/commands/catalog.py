@@ -50,7 +50,7 @@ def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
         return []
 
 
-@app.command()
+@app.command(rich_help_panel="Search & Browse")
 def search(
     query: str = typer.Argument(..., help="Search query (name, type, description)"),
     catalog: str | None = typer.Option(None, help="Catalog to search (messier, bright_stars, planets, or 'all')"),
@@ -185,7 +185,7 @@ def search(
         raise typer.Exit(code=1) from None
 
 
-@app.command("list")
+@app.command("list", rich_help_panel="Search & Browse")
 def list_catalog(
     catalog: Literal[
         "messier", "bright_stars", "asterisms", "ngc", "caldwell", "planets", "moons", "all"
@@ -276,7 +276,7 @@ def list_catalog(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Object Information")
 def info(
     object_name: str = typer.Argument(
         ...,
@@ -366,7 +366,7 @@ def info(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Telescope Control")
 def goto(
     object_name: str = typer.Argument(
         ...,
@@ -421,7 +421,7 @@ def goto(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Catalog Management")
 def catalogs() -> None:
     """
     Show available catalogs and statistics.

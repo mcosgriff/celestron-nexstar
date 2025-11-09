@@ -17,7 +17,7 @@ app = typer.Typer(help="Telescope connection commands")
 console = Console()
 
 
-@app.command()
+@app.command(rich_help_panel="Connection")
 def connect(
     port: str = typer.Argument(..., help="Serial port (e.g., /dev/ttyUSB0, COM3)"),
     baudrate: int = typer.Option(9600, help="Baud rate"),
@@ -52,7 +52,7 @@ def connect(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Connection")
 def disconnect() -> None:
     """
     Disconnect from the telescope.
@@ -74,7 +74,7 @@ def disconnect() -> None:
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Testing")
 def test(
     port: str = typer.Argument(..., help="Serial port to test"),
     char: str = typer.Option("x", help="Character for echo test (single char)"),
@@ -116,7 +116,7 @@ def test(
         raise typer.Exit(code=1) from e
 
 
-@app.command()
+@app.command(rich_help_panel="Status")
 def info(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port (if not already connected)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),

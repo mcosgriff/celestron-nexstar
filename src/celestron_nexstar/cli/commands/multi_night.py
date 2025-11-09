@@ -34,7 +34,7 @@ def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
     return None
 
 
-@app.command("week")
+@app.command("week", rich_help_panel="Night Comparison")
 def show_week() -> None:
     """Compare observing conditions for the next 7 nights."""
     try:
@@ -171,7 +171,7 @@ def show_week() -> None:
         raise typer.Exit(code=1) from None
 
 
-@app.command("best-night")
+@app.command("best-night", rich_help_panel="Object Planning")
 def show_best_night(
     object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
     days: int = typer.Option(7, "--days", "-d", help="Number of days to check (default: 7)"),

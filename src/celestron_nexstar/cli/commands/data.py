@@ -14,7 +14,7 @@ app = typer.Typer(help="Data import and management commands")
 console = Console()
 
 
-@app.command("sources")
+@app.command("sources", rich_help_panel="Data Sources")
 def sources() -> None:
     """
     List available data sources and their import status.
@@ -27,7 +27,7 @@ def sources() -> None:
     list_data_sources()
 
 
-@app.command("import")
+@app.command("import", rich_help_panel="Data Import")
 def import_source(
     source: str = typer.Argument(..., help="Data source to import (e.g., 'openngc')"),
     mag_limit: float = typer.Option(
@@ -70,7 +70,7 @@ def import_source(
         raise typer.Exit(code=1)
 
 
-@app.command("stats")
+@app.command("stats", rich_help_panel="Database Management")
 def stats() -> None:
     """
     Show database statistics.
@@ -198,7 +198,7 @@ def stats() -> None:
         console.print(f"[dim]Database version: {db_stats.database_version}[/dim]")
 
 
-@app.command("vacuum")
+@app.command("vacuum", rich_help_panel="Database Management")
 def vacuum() -> None:
     """
     Reclaim unused space in the database by running VACUUM.
@@ -245,7 +245,7 @@ def vacuum() -> None:
         raise typer.Exit(code=1) from None
 
 
-@app.command("clear-light-pollution")
+@app.command("clear-light-pollution", rich_help_panel="Light Pollution Data")
 def clear_light_pollution(
     confirm: bool = typer.Option(
         False,
@@ -349,7 +349,7 @@ def clear_light_pollution(
         raise typer.Exit(code=1) from None
 
 
-@app.command("download-light-pollution")
+@app.command("download-light-pollution", rich_help_panel="Light Pollution Data")
 def download_light_pollution(
     region: str | None = typer.Option(
         None,

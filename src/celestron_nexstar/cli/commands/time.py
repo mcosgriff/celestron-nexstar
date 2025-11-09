@@ -16,7 +16,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Time and date commands")
 
 
-@app.command("get")
+@app.command("get", rich_help_panel="Query")
 def get_time(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -66,7 +66,7 @@ def get_time(
         raise typer.Exit(code=1) from e
 
 
-@app.command("set")
+@app.command("set", rich_help_panel="Configuration")
 def set_time(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     hour: int = typer.Option(..., help="Hour (0-23)"),
@@ -127,7 +127,7 @@ def set_time(
         raise typer.Exit(code=1) from e
 
 
-@app.command("sync")
+@app.command("sync", rich_help_panel="Configuration")
 def sync_time(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     timezone: int | None = typer.Option(None, help="Timezone offset from GMT (auto-detect if not specified)"),

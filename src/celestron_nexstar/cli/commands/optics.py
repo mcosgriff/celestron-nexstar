@@ -27,7 +27,7 @@ from ..utils.output import console, print_error, print_info, print_json, print_s
 app = typer.Typer(help="Optical configuration commands")
 
 
-@app.command("config")
+@app.command("config", rich_help_panel="Configuration")
 def configure(
     telescope: TelescopeModel = typer.Option(
         TelescopeModel.NEXSTAR_6SE,
@@ -91,7 +91,7 @@ def configure(
         raise typer.Exit(code=1) from e
 
 
-@app.command("show")
+@app.command("show", rich_help_panel="Configuration")
 def show_config(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
@@ -162,7 +162,7 @@ def show_config(
         raise typer.Exit(code=1) from e
 
 
-@app.command("set-eyepiece")
+@app.command("set-eyepiece", rich_help_panel="Configuration")
 def set_eyepiece(
     focal_length_mm: float = typer.Argument(..., help="Eyepiece focal length in mm"),
     fov: float = typer.Option(50.0, "--fov", help="Apparent field of view in degrees"),
@@ -207,7 +207,7 @@ def set_eyepiece(
         raise typer.Exit(code=1) from e
 
 
-@app.command("telescopes")
+@app.command("telescopes", rich_help_panel="Reference Data")
 def list_telescopes() -> None:
     """
     List all supported telescope models and their specifications.
@@ -247,7 +247,7 @@ def list_telescopes() -> None:
         raise typer.Exit(code=1) from e
 
 
-@app.command("eyepieces")
+@app.command("eyepieces", rich_help_panel="Reference Data")
 def list_eyepieces() -> None:
     """
     List common eyepiece configurations.
@@ -293,7 +293,7 @@ def list_eyepieces() -> None:
         raise typer.Exit(code=1) from e
 
 
-@app.command("limiting-mag")
+@app.command("limiting-mag", rich_help_panel="Calculations")
 def show_limiting_magnitude(
     sky_quality: str = typer.Option(
         "good",

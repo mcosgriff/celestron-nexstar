@@ -21,7 +21,7 @@ from ..utils.state import ensure_connected
 app = typer.Typer(help="Observer location commands")
 
 
-@app.command("set")
+@app.command("set", rich_help_panel="Telescope Location")
 def set_location(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     latitude: float = typer.Option(..., "--lat", help="Latitude in degrees (-90 to +90, North is positive)"),
@@ -71,7 +71,7 @@ def set_location(
         raise typer.Exit(code=1) from e
 
 
-@app.command("get")
+@app.command("get", rich_help_panel="Telescope Location")
 def get_location(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
@@ -118,7 +118,7 @@ def get_location(
         raise typer.Exit(code=1) from e
 
 
-@app.command("set-observer")
+@app.command("set-observer", rich_help_panel="Observer Location")
 def set_observer(
     location: str | None = typer.Argument(None, help="City, address, or ZIP code (e.g., 'New York, NY', '90210')"),
     latitude: float | None = typer.Option(None, "--lat", help="Latitude in degrees (-90 to +90)"),
@@ -201,7 +201,7 @@ def set_observer(
         raise typer.Exit(code=1) from e
 
 
-@app.command("get-observer")
+@app.command("get-observer", rich_help_panel="Observer Location")
 def get_observer(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
