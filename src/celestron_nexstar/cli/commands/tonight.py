@@ -48,8 +48,28 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
 
 
 @app.command("conditions", rich_help_panel="Conditions & Forecasts")
-def show_conditions() -> None:
+def show_conditions(
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+) -> None:
     """Show tonight's observing conditions."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            export_path_obj = _generate_export_filename("telescope", command="conditions")
+        
+        file_console = create_file_console()
+        _show_conditions_content(file_console)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
     _show_conditions_content(console)
 
 
@@ -439,8 +459,27 @@ def show_objects(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """Show recommended objects for tonight."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            export_path_obj = _generate_export_filename("telescope", command="objects")
+        
+        file_console = create_file_console()
+        _show_objects_content(file_console, target_type, limit, best_for_seeing)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
     _show_objects_content(console, target_type, limit, best_for_seeing)
 
 
@@ -539,14 +578,39 @@ def _show_objects_content(
 
 
 @app.command("imaging", rich_help_panel="Imaging")
-def show_imaging() -> None:
+def show_imaging(
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+) -> None:
     """Show imaging forecasts: seeing for planetary, transparency for deep-sky, and exposure suggestions."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            export_path_obj = _generate_export_filename("telescope", command="imaging")
+        
+        file_console = create_file_console()
+        _show_imaging_content(file_console)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
+    _show_imaging_content(console)
+
+
+def _show_imaging_content(output_console: Console) -> None:
+    """Generate and display imaging content."""
     try:
         planner = ObservationPlanner()
         conditions = planner.get_tonight_conditions()
 
         if not conditions.hourly_seeing_forecast:
-            console.print("[yellow]Hourly forecast data not available. Weather API may be unavailable.[/yellow]")
+            output_console.print("[yellow]Hourly forecast data not available. Weather API may be unavailable.[/yellow]")
             return
 
         # Filter forecasts to observing window (sunset to sunrise)
@@ -554,7 +618,7 @@ def show_imaging() -> None:
         sunrise_time = conditions.sunrise_time
 
         if sunset_time is None or sunrise_time is None:
-            console.print("[yellow]Sunset/sunrise times not available.[/yellow]")
+            output_console.print("[yellow]Sunset/sunrise times not available.[/yellow]")
             return
 
         # Ensure times are UTC
@@ -580,14 +644,14 @@ def show_imaging() -> None:
                 observing_forecasts.append(forecast)
 
         if not observing_forecasts:
-            console.print("[yellow]No forecast data available for the observing window.[/yellow]")
+            output_console.print("[yellow]No forecast data available for the observing window.[/yellow]")
             return
 
         tz = _get_local_timezone(conditions.latitude, conditions.longitude)
 
         # Planetary Imaging - Seeing Forecast
-        console.print("\n[bold cyan]Planetary Imaging - Seeing Forecast[/bold cyan]")
-        console.print("[dim]Seeing quality affects planetary detail capture. Excellent seeing (≥80) allows shorter exposures.[/dim]\n")
+        output_console.print("\n[bold cyan]Planetary Imaging - Seeing Forecast[/bold cyan]")
+        output_console.print("[dim]Seeing quality affects planetary detail capture. Excellent seeing (≥80) allows shorter exposures.[/dim]\n")
 
         table_planetary = Table()
         table_planetary.add_column("Time", style="cyan", width=12)
@@ -638,11 +702,11 @@ def show_imaging() -> None:
                 exposure,
             )
 
-        console.print(table_planetary)
+        output_console.print(table_planetary)
 
         # Deep-Sky Imaging - Transparency Forecast
-        console.print("\n[bold cyan]Deep-Sky Imaging - Transparency Forecast[/bold cyan]")
-        console.print("[dim]Transparency (cloud cover) affects deep-sky exposure times. Clear skies allow longer exposures.[/dim]\n")
+        output_console.print("\n[bold cyan]Deep-Sky Imaging - Transparency Forecast[/bold cyan]")
+        output_console.print("[dim]Transparency (cloud cover) affects deep-sky exposure times. Clear skies allow longer exposures.[/dim]\n")
 
         table_deepsky = Table()
         table_deepsky.add_column("Time", style="cyan", width=12)
@@ -707,10 +771,10 @@ def show_imaging() -> None:
                 exposure,
             )
 
-        console.print(table_deepsky)
+        output_console.print(table_deepsky)
 
         # Exposure Time Recommendations Summary
-        console.print("\n[bold cyan]Exposure Time Recommendations[/bold cyan]\n")
+        output_console.print("\n[bold cyan]Exposure Time Recommendations[/bold cyan]\n")
 
         # Find best seeing window for planetary
         best_planetary = max(observing_forecasts, key=lambda f: f.seeing_score)
@@ -726,14 +790,14 @@ def show_imaging() -> None:
         else:
             best_planetary_time = best_planetary_ts.strftime("%I:%M %p UTC")
 
-        console.print(f"[bold]Best Planetary Imaging Window:[/bold] {best_planetary_time}")
-        console.print(f"  Seeing: {best_planetary.seeing_score:.0f}/100")
+        output_console.print(f"[bold]Best Planetary Imaging Window:[/bold] {best_planetary_time}")
+        output_console.print(f"  Seeing: {best_planetary.seeing_score:.0f}/100")
         if best_planetary.seeing_score >= 80:
-            console.print("  [green]Recommended: 10-50ms exposures, stack 1000-5000 frames[/green]")
+            output_console.print("  [green]Recommended: 10-50ms exposures, stack 1000-5000 frames[/green]")
         elif best_planetary.seeing_score >= 60:
-            console.print("  [yellow]Recommended: 50-200ms exposures, stack 500-2000 frames[/yellow]")
+            output_console.print("  [yellow]Recommended: 50-200ms exposures, stack 500-2000 frames[/yellow]")
         else:
-            console.print("  [dim]Recommended: 200-500ms exposures, stack 200-1000 frames[/dim]")
+            output_console.print("  [dim]Recommended: 200-500ms exposures, stack 200-1000 frames[/dim]")
 
         # Find best transparency window for deep-sky
         best_deepsky = min(observing_forecasts, key=lambda f: f.cloud_cover_percent or 100.0)
@@ -749,26 +813,26 @@ def show_imaging() -> None:
         else:
             best_deepsky_time = best_deepsky_ts.strftime("%I:%M %p UTC")
 
-        console.print(f"\n[bold]Best Deep-Sky Imaging Window:[/bold] {best_deepsky_time}")
+        output_console.print(f"\n[bold]Best Deep-Sky Imaging Window:[/bold] {best_deepsky_time}")
         clouds = best_deepsky.cloud_cover_percent or 100.0
-        console.print(f"  Cloud Cover: {clouds:.0f}%")
+        output_console.print(f"  Cloud Cover: {clouds:.0f}%")
         if clouds < 10:
             if conditions.moon_illumination < 0.1:
-                console.print("  [green]Recommended: 5-10 min exposures (dark sky, new moon)[/green]")
+                output_console.print("  [green]Recommended: 5-10 min exposures (dark sky, new moon)[/green]")
             else:
-                console.print("  [yellow]Recommended: 2-5 min exposures (bright moon)[/yellow]")
+                output_console.print("  [yellow]Recommended: 2-5 min exposures (bright moon)[/yellow]")
         elif clouds < 30:
-            console.print("  [yellow]Recommended: 1-3 min exposures[/yellow]")
+            output_console.print("  [yellow]Recommended: 1-3 min exposures[/yellow]")
         else:
-            console.print("  [red]Not recommended for deep-sky imaging[/red]")
+            output_console.print("  [red]Not recommended for deep-sky imaging[/red]")
 
-        console.print("\n[dim]Note: Exposure times are general guidelines. Adjust based on your camera, telescope, and target.[/dim]")
+        output_console.print("\n[dim]Note: Exposure times are general guidelines. Adjust based on your camera, telescope, and target.[/dim]")
 
     except Exception as e:
-        console.print(f"[red]Error getting imaging forecast:[/red] {e}")
+        output_console.print(f"[red]Error getting imaging forecast:[/red] {e}")
         import traceback
 
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
 
@@ -891,8 +955,29 @@ def show_plan(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects)."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            export_path_obj = _generate_export_filename("telescope", command="plan")
+        
+        file_console = create_file_console()
+        _show_conditions_content(file_console)
+        file_console.print("\n" + "=" * 80 + "\n")
+        _show_objects_content(file_console, target_type, limit, best_for_seeing)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
     show_conditions()
     console.print("\n" + "=" * 80 + "\n")
     show_objects(target_type=target_type, limit=limit, best_for_seeing=best_for_seeing)

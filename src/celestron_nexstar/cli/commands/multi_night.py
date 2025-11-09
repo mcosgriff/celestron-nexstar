@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 from zoneinfo import ZoneInfo
 
@@ -45,6 +46,37 @@ class NightData(TypedDict):
 app = typer.Typer(help="Multi-night observing planning and comparison")
 console = Console()
 _tz_finder = TimezoneFinder()
+
+
+def _generate_export_filename(command: str = "week") -> Path:
+    """Generate export filename for multi-night commands."""
+    from datetime import datetime
+    from ...api.observer import get_observer_location
+    from ...api.optics import load_configuration
+    
+    location = get_observer_location()
+    
+    # Get location name (shortened, sanitized)
+    if location.name:
+        location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
+        # Remove common suffixes and limit length
+        location_short = location_short.replace("_(default)", "").replace("_observatory", "")
+        location_short = location_short[:20]  # Limit length
+    else:
+        location_short = "unknown"
+    
+    # Get date
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Generate filename (multi-night commands use telescope configuration)
+    config = load_configuration()
+    if config:
+        telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
+    else:
+        telescope_name = "no_telescope"
+    
+    filename = f"nexstar_{telescope_name}_{location_short}_{date_str}_{command}.txt"
+    return Path(filename)
 
 
 # ============================================================================
@@ -575,8 +607,33 @@ def _render_legend(conditions: list[str] | None = None) -> None:
 
 
 @app.command("week", rich_help_panel="Night Comparison")
-def show_week() -> None:
+def show_week(
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+) -> None:
     """Compare observing conditions for the next 7 nights."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            export_path_obj = _generate_export_filename("week")
+        
+        file_console = create_file_console()
+        _show_week_content(file_console)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
+    _show_week_content(console)
+
+
+def _show_week_content(output_console: Console) -> None:
+    """Generate and display week comparison content."""
     try:
         planner = ObservationPlanner()
 
@@ -584,15 +641,15 @@ def show_week() -> None:
         from ...api.observer import get_observer_location
         location = get_observer_location()
         if location is None:
-            console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
+            output_console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
             raise typer.Exit(code=1) from None
 
         assert location is not None
         lat, lon = location.latitude, location.longitude
         tz = _get_local_timezone(lat, lon)
 
-        console.print("\n[bold cyan]What's Good This Week?[/bold cyan]")
-        console.print("[dim]Comparing observing conditions for the next 7 nights...[/dim]\n")
+        output_console.print("\n[bold cyan]What's Good This Week?[/bold cyan]")
+        output_console.print("[dim]Comparing observing conditions for the next 7 nights...[/dim]\n")
 
         # Get conditions for each night (starting at sunset each day)
         nights = []
@@ -616,7 +673,7 @@ def show_week() -> None:
                 nights.append((night_date, sunset, conditions))
 
         if not nights:
-            console.print("[yellow]Could not calculate conditions for any nights.[/yellow]")
+            output_console.print("[yellow]Could not calculate conditions for any nights.[/yellow]")
             return
 
         # Create comparison table
@@ -684,14 +741,14 @@ def show_week() -> None:
                 window_str,
             )
 
-        console.print(table)
+        output_console.print(table)
 
         # Find best nights
         best_quality = max(nights, key=lambda n: n[2].observing_quality_score)
         best_seeing = max(nights, key=lambda n: n[2].seeing_score)
         best_clear = min(nights, key=lambda n: n[2].weather.cloud_cover_percent or 100.0)
 
-        console.print("\n[bold]Best Nights:[/bold]")
+        output_console.print("\n[bold]Best Nights:[/bold]")
         if tz:
             best_quality_date = best_quality[0].astimezone(tz).strftime("%A, %B %d")
             best_seeing_date = best_seeing[0].astimezone(tz).strftime("%A, %B %d")
@@ -701,14 +758,14 @@ def show_week() -> None:
             best_seeing_date = best_seeing[0].strftime("%A, %B %d")
             best_clear_date = best_clear[0].strftime("%A, %B %d")
 
-        console.print(f"  [green]Best Overall:[/green] {best_quality_date} (Quality: {best_quality[2].observing_quality_score*100:.0f}/100)")
-        console.print(f"  [green]Best Seeing:[/green] {best_seeing_date} (Seeing: {best_seeing[2].seeing_score:.0f}/100)")
-        console.print(f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent:.0f}%)")
+        output_console.print(f"  [green]Best Overall:[/green] {best_quality_date} (Quality: {best_quality[2].observing_quality_score*100:.0f}/100)")
+        output_console.print(f"  [green]Best Seeing:[/green] {best_seeing_date} (Seeing: {best_seeing[2].seeing_score:.0f}/100)")
+        output_console.print(f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent:.0f}%)")
 
     except Exception as e:
-        console.print(f"[red]Error comparing nights:[/red] {e}")
+        output_console.print(f"[red]Error comparing nights:[/red] {e}")
         import traceback
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
 
@@ -716,21 +773,67 @@ def show_week() -> None:
 def show_best_night(
     object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
     days: int = typer.Option(7, "--days", "-d", help="Number of days to check (default: 7)"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
 ) -> None:
     """Find the best night to observe a specific object in the next N days."""
+    from ...cli.utils.export import create_file_console, export_to_text
+    
+    if export:
+        if export_path:
+            export_path_obj = Path(export_path)
+        else:
+            # Generate filename with object name
+            from datetime import datetime
+            from ...api.observer import get_observer_location
+            from ...api.optics import load_configuration
+            
+            location = get_observer_location()
+            if location.name:
+                location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
+                location_short = location_short.replace("_(default)", "").replace("_observatory", "")
+                location_short = location_short[:20]
+            else:
+                location_short = "unknown"
+            
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            config = load_configuration()
+            if config:
+                telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
+            else:
+                telescope_name = "no_telescope"
+            
+            # Sanitize object name for filename
+            obj_safe = object_name.lower().replace(" ", "_").replace("/", "_")[:15]
+            export_path_obj = Path(f"nexstar_{telescope_name}_{location_short}_{date_str}_best-night_{obj_safe}.txt")
+        
+        file_console = create_file_console()
+        _show_best_night_content(file_console, object_name, days)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+    
+    _show_best_night_content(console, object_name, days)
+
+
+def _show_best_night_content(output_console: Console, object_name: str, days: int) -> None:
+    """Generate and display best night content."""
     try:
         # Find the object
         matches = get_object_by_name(object_name)
         if not matches:
-            console.print(f"[red]No objects found matching '{object_name}'[/red]")
+            output_console.print(f"[red]No objects found matching '{object_name}'[/red]")
             raise typer.Exit(code=1) from None
 
         # If multiple matches, use the first one (could add selection UI later)
         obj = matches[0]
         if len(matches) > 1:
-            console.print(f"[yellow]Multiple matches found. Using: {obj.name}[/yellow]")
+            output_console.print(f"[yellow]Multiple matches found. Using: {obj.name}[/yellow]")
             if obj.common_name:
-                console.print(f"[dim]Common name: {obj.common_name}[/dim]")
+                output_console.print(f"[dim]Common name: {obj.common_name}[/dim]")
 
         planner = ObservationPlanner()
 
@@ -738,22 +841,22 @@ def show_best_night(
         from ...api.observer import get_observer_location
         location = get_observer_location()
         if location is None:
-            console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
+            output_console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
             raise typer.Exit(code=1) from None
 
         assert location is not None
         lat, lon = location.latitude, location.longitude
         tz = _get_local_timezone(lat, lon)
 
-        console.print(f"\n[bold cyan]Best Night for {obj.name}[/bold cyan]")
+        output_console.print(f"\n[bold cyan]Best Night for {obj.name}[/bold cyan]")
         if obj.common_name:
-            console.print(f"[dim]{obj.common_name}[/dim]")
-        console.print(f"[dim]Type: {obj.object_type.value.title()}[/dim]")
-        console.print(f"[dim]Checking next {days} nights with {obj.object_type.value}-optimized scoring...[/dim]\n")
+            output_console.print(f"[dim]{obj.common_name}[/dim]")
+        output_console.print(f"[dim]Type: {obj.object_type.value.title()}[/dim]")
+        output_console.print(f"[dim]Checking next {days} nights with {obj.object_type.value}-optimized scoring...[/dim]\n")
 
         # Get light pollution data for observer location
         light_pollution_data = get_light_pollution_data(lat, lon)
-        console.print(f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n")
+        output_console.print(f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n")
 
         # Check each night
         nights_data: list[NightData] = []
@@ -871,7 +974,7 @@ def show_best_night(
                 })
 
         if not nights_data:
-            console.print(f"[yellow]Object is not visible during observing hours in the next {days} nights.[/yellow]")
+            output_console.print(f"[yellow]Object is not visible during observing hours in the next {days} nights.[/yellow]")
             return
 
         # Sort by score (best first)
@@ -940,7 +1043,7 @@ def show_best_night(
                 moon_sep_str,
             )
 
-        console.print(table)
+        output_console.print(table)
 
         # Show best night details
         best: NightData = nights_data[0]
@@ -964,52 +1067,52 @@ def show_best_night(
         best_altitude: float = best["altitude"]
         best_score: float = best["score"]
 
-        console.print(f"\n[bold green]Best Night:[/bold green] {best_date_str}")
-        console.print(f"  Score: {best_score*100:.0f}/100")
-        console.print(f"  Transit: {best_transit_str} at {best_altitude:.0f}° altitude")
-        console.print(f"  Seeing: {best_conditions.seeing_score:.0f}/100")
-        console.print(f"  Cloud Cover: {best_conditions.weather.cloud_cover_percent or 100.0:.0f}%")
-        console.print(f"  Moon: {best_conditions.moon_illumination*100:.0f}% illuminated")
+        output_console.print(f"\n[bold green]Best Night:[/bold green] {best_date_str}")
+        output_console.print(f"  Score: {best_score*100:.0f}/100")
+        output_console.print(f"  Transit: {best_transit_str} at {best_altitude:.0f}° altitude")
+        output_console.print(f"  Seeing: {best_conditions.seeing_score:.0f}/100")
+        output_console.print(f"  Cloud Cover: {best_conditions.weather.cloud_cover_percent or 100.0:.0f}%")
+        output_console.print(f"  Moon: {best_conditions.moon_illumination*100:.0f}% illuminated")
 
         # Show moon separation
         best_moon_sep: float = best["moon_separation_deg"]
-        console.print(f"  Moon Separation: {best_moon_sep:.0f}°")
+        output_console.print(f"  Moon Separation: {best_moon_sep:.0f}°")
 
         # Add object-type specific note with light pollution context
         if obj.object_type == CelestialObjectType.PLANET:
-            console.print("  [dim]Note: Planets benefit most from excellent seeing and high altitude[/dim]")
-            console.print("  [dim]      Light pollution has minimal impact on planetary observing[/dim]")
+            output_console.print("  [dim]Note: Planets benefit most from excellent seeing and high altitude[/dim]")
+            output_console.print("  [dim]      Light pollution has minimal impact on planetary observing[/dim]")
         elif obj.object_type == CelestialObjectType.GALAXY:
-            console.print("  [dim]Note: Galaxies need dark skies and distance from the moon[/dim]")
+            output_console.print("  [dim]Note: Galaxies need dark skies and distance from the moon[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_6:
-                console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) significantly reduces galaxy visibility[/yellow]")
+                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) significantly reduces galaxy visibility[/yellow]")
             else:
-                console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for galaxy observation[/dim]")
+                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for galaxy observation[/dim]")
         elif obj.object_type == CelestialObjectType.NEBULA:
-            console.print("  [dim]Note: Nebulae need transparency, darkness, and distance from moon[/dim]")
+            output_console.print("  [dim]Note: Nebulae need transparency, darkness, and distance from moon[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_6:
-                console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) reduces nebula contrast and detail[/yellow]")
+                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) reduces nebula contrast and detail[/yellow]")
             else:
-                console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for nebula observation[/dim]")
+                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for nebula observation[/dim]")
         elif obj.object_type == CelestialObjectType.DOUBLE_STAR:
-            console.print("  [dim]Note: Double stars need excellent seeing to resolve close pairs[/dim]")
-            console.print("  [dim]      Light pollution has minimal impact on double star observing[/dim]")
+            output_console.print("  [dim]Note: Double stars need excellent seeing to resolve close pairs[/dim]")
+            output_console.print("  [dim]      Light pollution has minimal impact on double star observing[/dim]")
         elif obj.object_type == CelestialObjectType.CLUSTER:
-            console.print("  [dim]Note: Clusters benefit most from good altitude and moderate darkness[/dim]")
+            output_console.print("  [dim]Note: Clusters benefit most from good altitude and moderate darkness[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_7:
-                console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) may wash out fainter cluster members[/yellow]")
+                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) may wash out fainter cluster members[/yellow]")
             else:
-                console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is acceptable for cluster observation[/dim]")
+                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is acceptable for cluster observation[/dim]")
 
         if best_visibility.is_visible:
-            console.print("  [green]✓ Object will be visible[/green]")
+            output_console.print("  [green]✓ Object will be visible[/green]")
         else:
-            console.print(f"  [red]✗ Object may not be visible: {', '.join(best_visibility.reasons)}[/red]")
+            output_console.print(f"  [red]✗ Object may not be visible: {', '.join(best_visibility.reasons)}[/red]")
 
     except Exception as e:
-        console.print(f"[red]Error finding best night:[/red] {e}")
+        output_console.print(f"[red]Error finding best night:[/red] {e}")
         import traceback
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
 
