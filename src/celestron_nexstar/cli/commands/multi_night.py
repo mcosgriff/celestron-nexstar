@@ -43,6 +43,232 @@ console = Console()
 _tz_finder = TimezoneFinder()
 
 
+# ============================================================================
+# Configuration Constants
+# ============================================================================
+
+# Scoring weights for best-night calculation
+SCORING_WEIGHTS = {
+    "conditions_quality": 0.4,
+    "seeing": 0.3,
+    "visibility": 0.2,
+    "moon": 0.1,
+}
+
+# Day colors for chart visualization
+DAY_COLORS = [
+    "cyan",
+    "magenta",
+    "yellow",
+    "green",
+    "blue",
+    "bright_cyan",
+    "bright_magenta",
+]
+
+# Quality thresholds
+QUALITY_EXCELLENT = 0.75
+QUALITY_GOOD = 0.60
+QUALITY_FAIR = 0.40
+
+
+# ============================================================================
+# Color Mapping Functions
+# ============================================================================
+
+def _get_cloud_color(clouds: float) -> tuple[str, str]:
+    """Get color for cloud cover - 11-level gradient from dark blue (clear) to white (overcast)."""
+    if clouds >= 90:
+        return ("white", "Overcast")
+    elif clouds >= 80:
+        return ("#F0F0F0", "90%")
+    elif clouds >= 70:
+        return ("#E0E0E0", "80%")
+    elif clouds >= 60:
+        return ("#D0D0D0", "70%")
+    elif clouds >= 50:
+        return ("#C0C0C0", "60%")
+    elif clouds >= 40:
+        return ("#A0A0C0", "50%")
+    elif clouds >= 30:
+        return ("#8080A0", "40%")
+    elif clouds >= 20:
+        return ("#606080", "30%")
+    elif clouds >= 10:
+        return ("#404060", "20%")
+    elif clouds >= 5:
+        return ("#202040", "10%")
+    else:
+        return ("#0000FF", "Clear")
+
+
+def _get_transparency_color(transparency: str) -> tuple[str, str]:
+    """Get color for transparency - 6-level gradient from white (too cloudy) to dark blue (transparent)."""
+    colors = {
+        "too_cloudy": ("white", "Too cloudy to forecast"),
+        "poor": ("#808080", "Poor"),
+        "below_average": ("#4080A0", "Below Average"),
+        "average": ("#0066AA", "Average"),
+        "above_average": ("#0033AA", "Above average"),
+        "transparent": ("#0000FF", "Transparent"),
+    }
+    return colors.get(transparency, ("#0066AA", "Average"))
+
+
+def _get_seeing_color(seeing: float | None) -> tuple[str, str]:
+    """Get color for seeing - 6-level gradient from white (too cloudy) to dark blue (excellent)."""
+    if seeing is None:
+        return ("white", "Too cloudy to forecast")
+    elif seeing >= 80:
+        return ("#0000FF", "Excellent 5/5")
+    elif seeing >= 60:
+        return ("#0033AA", "Good 4/5")
+    elif seeing >= 40:
+        return ("#0066AA", "Average 3/5")
+    elif seeing >= 20:
+        return ("#4080A0", "Poor 2/5")
+    else:
+        return ("#808080", "Bad 1/5")
+
+
+def _get_darkness_color(mag: float | None) -> tuple[str, str]:
+    """Get color for darkness/limiting magnitude - 15-level gradient matching Clear Sky Chart."""
+    if mag is None:
+        return ("white", "Day")
+    elif mag >= 6.5:
+        return ("#000000", "6.5")
+    elif mag >= 6.0:
+        return ("#000010", "6.0")
+    elif mag >= 5.5:
+        return ("#000020", "5.5")
+    elif mag >= 5.0:
+        return ("#000040", "5.0")
+    elif mag >= 4.5:
+        return ("#000060", "4.5")
+    elif mag >= 4.0:
+        return ("#000080", "4.0")
+    elif mag >= 3.5:
+        return ("#0000A0", "3.5")
+    elif mag >= 3.0:
+        return ("#0000C0", "3.0")
+    elif mag >= 2.0:
+        return ("#0080C0", "2.0")
+    elif mag >= 1.0:
+        return ("#00C0C0", "1.0")
+    elif mag >= 0.0:
+        return ("#40E0E0", "0")
+    elif mag >= -1.0:
+        return ("#80E0E0", "-1")
+    elif mag >= -2.0:
+        return ("#C0E0C0", "-2")
+    elif mag >= -3.0:
+        return ("#FFFF80", "-3")
+    elif mag >= -4.0:
+        return ("#FFFFC0", "-4")
+    else:
+        return ("white", "Day")
+
+
+def _get_wind_color(wind: float | None) -> tuple[str, str]:
+    """Get color for wind speed - 6-level gradient matching Clear Sky Chart colors."""
+    if wind is None:
+        return ("dim", "-")
+    elif wind > 45:
+        return ("white", ">45 mph")
+    elif wind >= 29:
+        return ("#E0E0E0", "29-45 mph")
+    elif wind >= 17:
+        return ("#80C0E0", "17-28 mph")
+    elif wind >= 12:
+        return ("#4080C0", "12-16 mph")
+    elif wind >= 6:
+        return ("#2060A0", "6-11 mph")
+    else:
+        return ("#004080", "0-5 mph")
+
+
+def _get_humidity_color(humidity: float | None) -> tuple[str, str]:
+    """Get color for humidity - 16-level gradient matching Clear Sky Chart colors."""
+    if humidity is None:
+        return ("dim", "-")
+    elif humidity >= 95:
+        return ("#800000", "95-100%")
+    elif humidity >= 90:
+        return ("#A00000", "90-95%")
+    elif humidity >= 85:
+        return ("#FF0000", "85-90%")
+    elif humidity >= 80:
+        return ("#FF4400", "80-85%")
+    elif humidity >= 75:
+        return ("#FF8800", "75-80%")
+    elif humidity >= 70:
+        return ("#FFFF00", "70-75%")
+    elif humidity >= 65:
+        return ("#80FF00", "65-70%")
+    elif humidity >= 60:
+        return ("#00FF00", "60-65%")
+    elif humidity >= 55:
+        return ("#00FF80", "55-60%")
+    elif humidity >= 50:
+        return ("#00FFFF", "50-55%")
+    elif humidity >= 45:
+        return ("#00AAFF", "45-50%")
+    elif humidity >= 40:
+        return ("#0080FF", "40-45%")
+    elif humidity >= 35:
+        return ("#0066FF", "35-40%")
+    elif humidity >= 30:
+        return ("#0044FF", "30-35%")
+    elif humidity >= 25:
+        return ("#0022FF", "25-30%")
+    else:
+        return ("#0000FF", "<25%")
+
+
+def _get_temp_color(temp: float | None) -> tuple[str, str]:
+    """Get color for temperature - 19-level gradient matching Clear Sky Chart colors."""
+    if temp is None:
+        return ("dim", "-")
+    elif temp > 113:
+        return ("#808080", ">113°F")
+    elif temp >= 104:
+        return ("#800000", "104-113°F")
+    elif temp >= 95:
+        return ("#A00000", "95-104°F")
+    elif temp >= 86:
+        return ("#FF0000", "86-95°F")
+    elif temp >= 77:
+        return ("#FF4400", "77-86°F")
+    elif temp >= 68:
+        return ("#FF8800", "68-77°F")
+    elif temp >= 59:
+        return ("#FFAA00", "59-68°F")
+    elif temp >= 50:
+        return ("#FFFF00", "50-59°F")
+    elif temp >= 41:
+        return ("#80FF00", "41-50°F")
+    elif temp >= 32:
+        return ("#00FF80", "32-41°F")
+    elif temp >= 23:
+        return ("white", "23-32°F")
+    elif temp >= 14:
+        return ("#00FFAA", "14-23°F")
+    elif temp >= 5:
+        return ("#00FFFF", "5-14°F")
+    elif temp >= -3:
+        return ("#0080FF", "-3-5°F")
+    elif temp >= -12:
+        return ("#0066FF", "-12--3°F")
+    elif temp >= -21:
+        return ("#0044FF", "-21--12°F")
+    elif temp >= -30:
+        return ("#0022FF", "-30--21°F")
+    elif temp >= -40:
+        return ("#0000FF", "-40--31°F")
+    else:
+        return ("#FF00FF", "< -40°F")
+
+
 def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
     """Get timezone for a given latitude and longitude."""
     try:
@@ -52,6 +278,198 @@ def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
     except Exception:
         pass
     return None
+
+
+def _calculate_hours_to_show(
+    day_data: list[dict[str, object]],
+    day_key: str,
+    is_first_day: bool,
+    tz: ZoneInfo | None,
+) -> int:
+    """
+    Calculate how many hours to show for a given day.
+
+    This ensures that day names fit properly in the header and that
+    partial days show at least a minimum number of hours.
+
+    Args:
+        day_data: List of hourly data for the day
+        day_key: ISO format date string (YYYY-MM-DD)
+        is_first_day: Whether this is the first day in the chart
+        tz: Timezone for local time conversion
+
+    Returns:
+        Number of hours to show for this day
+    """
+    hours_available = len(day_data)
+    is_full_day = hours_available >= 24
+
+    # Determine the starting hour for this day
+    day_start_hour: int | None = None
+    if day_data:
+        first_data = day_data[0]
+        if isinstance(first_data.get("timestamp"), datetime):
+            first_ts = first_data["timestamp"]
+            if isinstance(first_ts, datetime):
+                local_first_ts = first_ts.astimezone(tz) if tz else first_ts
+                day_start_hour = local_first_ts.hour
+
+    # Parse the day info for formatting
+    if tz:
+        day_dt = datetime.fromisoformat(day_key).replace(tzinfo=tz)
+    else:
+        day_dt = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
+
+    day_of_week = day_dt.strftime("%A")
+    day_number = day_dt.day
+
+    if is_full_day:
+        # Full day - use long form "Saturday, 8"
+        day_name = f"{day_of_week}, {day_number}"
+        name_length = len(day_name)
+        min_hours_needed = (name_length + 1) // 2  # Round up
+        hours_to_show = max(hours_available, min_hours_needed, 24)
+    elif is_first_day and day_start_hour is not None and day_start_hour <= 10:
+        # First day starting on or before 10 AM - use long form
+        day_name = f"{day_of_week}, {day_number}"
+        name_length = len(day_name)
+        min_hours_needed = (name_length + 1) // 2
+        hours_to_show = max(hours_available, min_hours_needed)
+    else:
+        # Partial day starting after 10 AM - use short form "Sat"
+        # Ensure minimum 3 hours to prevent overlap
+        min_hours_for_short = 3
+        hours_to_show = max(hours_available, min_hours_for_short)
+
+    # Don't exceed available data
+    return min(hours_to_show, len(day_data))
+
+
+# ============================================================================
+# Legend Data Structure
+# ============================================================================
+
+# Define all legend levels in order from worst to best conditions
+LEGEND_DATA = {
+    "Cloud Cover": [
+        ("white", "Overcast"),
+        ("#F0F0F0", "90% covered"),
+        ("#E0E0E0", "80% covered"),
+        ("#D0D0D0", "70% covered"),
+        ("#C0C0C0", "60% covered"),
+        ("#A0A0C0", "50% covered"),
+        ("#8080A0", "40% covered"),
+        ("#606080", "30% covered"),
+        ("#404060", "20% covered"),
+        ("#202040", "10% covered"),
+        ("#0000FF", "Clear"),
+    ],
+    "Transparency": [
+        ("white", "Too cloudy to forecast"),
+        ("#808080", "Poor"),
+        ("#4080A0", "Below Average"),
+        ("#0066AA", "Average"),
+        ("#0033AA", "Above average"),
+        ("#0000FF", "Transparent"),
+    ],
+    "Seeing": [
+        ("white", "Too cloudy to forecast"),
+        ("#808080", "Bad"),
+        ("#4080A0", "Poor"),
+        ("#0066AA", "Average"),
+        ("#0033AA", "Good"),
+        ("#0000FF", "Excellent"),
+    ],
+    "Darkness": [
+        ("white", "Day"),
+        ("#FFFFC0", "-4"),
+        ("#FFFF80", "-3"),
+        ("#C0E0C0", "-2"),
+        ("#80E0E0", "-1"),
+        ("#40E0E0", "0"),
+        ("#00C0C0", "1.0"),
+        ("#0080C0", "2.0"),
+        ("#0000C0", "3.0"),
+        ("#0000A0", "3.5"),
+        ("#000080", "4.0"),
+        ("#000060", "4.5"),
+        ("#000040", "5.0"),
+        ("#000020", "5.5"),
+        ("#000010", "6.0"),
+        ("#000000", "6.5"),
+    ],
+    "Wind": [
+        ("#004080", "0-5 mph"),
+        ("#2060A0", "6-11 mph"),
+        ("#4080C0", "12-16 mph"),
+        ("#80C0E0", "17-28 mph"),
+        ("#E0E0E0", "29-45 mph"),
+        ("white", ">45 mph"),
+    ],
+    "Humidity": [
+        ("#0000FF", "<25%"),
+        ("#0022FF", "25-30%"),
+        ("#0044FF", "30-35%"),
+        ("#0066FF", "35-40%"),
+        ("#0080FF", "40-45%"),
+        ("#00AAFF", "45-50%"),
+        ("#00FFFF", "50-55%"),
+        ("#00FF80", "55-60%"),
+        ("#00FF00", "60-65%"),
+        ("#80FF00", "65-70%"),
+        ("#FFFF00", "70-75%"),
+        ("#FF8800", "75-80%"),
+        ("#FF4400", "80-85%"),
+        ("#FF0000", "85-90%"),
+        ("#A00000", "90-95%"),
+        ("#800000", "95-100%"),
+    ],
+    "Temperature": [
+        ("#FF00FF", "< -40°F"),
+        ("#0000FF", "-40--31°F"),
+        ("#0022FF", "-30--21°F"),
+        ("#0044FF", "-21--12°F"),
+        ("#0066FF", "-12--3°F"),
+        ("#0080FF", "-3-5°F"),
+        ("#00FFFF", "5-14°F"),
+        ("#00FFAA", "14-23°F"),
+        ("white", "23-32°F"),
+        ("#00FF80", "32-41°F"),
+        ("#80FF00", "41-50°F"),
+        ("#FFFF00", "50-59°F"),
+        ("#FFAA00", "59-68°F"),
+        ("#FF8800", "68-77°F"),
+        ("#FF4400", "77-86°F"),
+        ("#FF0000", "86-95°F"),
+        ("#A00000", "95-104°F"),
+        ("#800000", "104-113°F"),
+        ("#808080", ">113°F"),
+    ],
+}
+
+
+def _render_legend() -> None:
+    """Render the legend for all chart conditions using the data-driven structure."""
+    console.print("\n[bold]Legend:[/bold]")
+
+    for condition_name, levels in LEGEND_DATA.items():
+        legend_parts = [f"[dim]{condition_name}:[/dim]"]
+        # Add padding to align with grid (20 chars total for condition name area)
+        padding = 18 - len(f"{condition_name}:")
+        if padding > 0:
+            legend_parts.append(" " * padding)
+
+        for color, label in levels:
+            # Automatically choose black or white text based on background luminance
+            text_color = _get_text_color_for_background(color)
+            legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
+
+        console.print(" ".join(legend_parts))
+
+    console.print(
+        "\n[dim]Note: Each block represents one hour. "
+        "Time shown in 24-hour format (tens digit above, ones digit below).[/dim]"
+    )
 
 
 @app.command("week", rich_help_panel="Night Comparison")
@@ -119,11 +537,11 @@ def show_week() -> None:
 
             # Quality assessment
             quality = conditions.observing_quality_score
-            if quality > 0.75:
+            if quality > QUALITY_EXCELLENT:
                 quality_text = "[green]Excellent[/green]"
-            elif quality > 0.60:
+            elif quality > QUALITY_GOOD:
                 quality_text = "[yellow]Good[/yellow]"
-            elif quality > 0.40:
+            elif quality > QUALITY_FAIR:
                 quality_text = "[dim]Fair[/dim]"
             else:
                 quality_text = "[red]Poor[/red]"
@@ -292,11 +710,10 @@ def show_best_night(
                     )
 
                     # Calculate score combining conditions and visibility
-                    # Weight: 40% conditions quality, 30% seeing, 20% visibility, 10% moon interference
-                    conditions_score = conditions.observing_quality_score * 0.4
-                    seeing_score = (conditions.seeing_score / 100.0) * 0.3
-                    visibility_score = visibility.observability_score * 0.2
-                    moon_score = (1.0 - conditions.moon_illumination) * 0.1  # Less moon = better
+                    conditions_score = conditions.observing_quality_score * SCORING_WEIGHTS["conditions_quality"]
+                    seeing_score = (conditions.seeing_score / 100.0) * SCORING_WEIGHTS["seeing"]
+                    visibility_score = visibility.observability_score * SCORING_WEIGHTS["visibility"]
+                    moon_score = (1.0 - conditions.moon_illumination) * SCORING_WEIGHTS["moon"]  # Less moon = better
 
                     total_score = conditions_score + seeing_score + visibility_score + moon_score
 
@@ -341,11 +758,11 @@ def show_best_night(
 
             # Quality
             quality = night_conditions.observing_quality_score
-            if quality > 0.75:
+            if quality > QUALITY_EXCELLENT:
                 quality_text = "[green]Excellent[/green]"
-            elif quality > 0.60:
+            elif quality > QUALITY_GOOD:
                 quality_text = "[yellow]Good[/yellow]"
-            elif quality > 0.40:
+            elif quality > QUALITY_FAIR:
                 quality_text = "[dim]Fair[/dim]"
             else:
                 quality_text = "[red]Poor[/red]"
@@ -575,6 +992,193 @@ def show_clear_sky_chart(
         raise typer.Exit(code=1) from None
 
 
+def _get_transparency_color_wrapper(value: object) -> tuple[str, str]:
+    """Wrapper to handle transparency color lookup with type checking."""
+    if isinstance(value, str):
+        return _get_transparency_color(value)
+    return ("dim", "-")
+
+
+def _render_day_header(
+    day_labels: list[str],
+    days_data: dict[str, list[dict[str, object]]],
+    tz: ZoneInfo | None,
+) -> None:
+    """Render the day name header row."""
+    from rich.text import Text
+
+    day_header = Text()
+    day_header.append(" " * 20)  # Space for condition labels
+
+    for day_idx, day_key in enumerate(day_labels):
+        day_color = DAY_COLORS[day_idx % len(DAY_COLORS)]
+        day_data = days_data[day_key]
+
+        if tz:
+            day_dt = datetime.fromisoformat(day_key).replace(tzinfo=tz)
+        else:
+            day_dt = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
+
+        # Calculate hours to show for this day
+        is_first_day = day_idx == 0
+        hours_to_show = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+        is_full_day = hours_to_show >= 24
+
+        # Format day name
+        day_number = day_dt.day
+        day_of_week = day_dt.strftime("%A")
+        day_name = f"{day_of_week}, {day_number}" if is_full_day else day_dt.strftime("%a")
+
+        # Display day name
+        day_header.append(day_name, style=f"bold {day_color}")
+
+        # Fill remaining space to match time row width
+        name_length = len(day_name)
+        total_width = hours_to_show * 2 - 1
+        remaining_chars = max(0, total_width - name_length)
+        day_header.append(" " * remaining_chars, style="dim")
+
+        # Add spacing between days
+        if day_idx < len(day_labels) - 1:
+            day_header.append("  ", style="dim")
+
+    console.print(day_header)
+
+
+def _render_time_header(
+    day_labels: list[str],
+    days_data: dict[str, list[dict[str, object]]],
+    tz: ZoneInfo | None,
+) -> None:
+    """Render the time header rows (tens and ones digits)."""
+    from rich.text import Text
+
+    # Tens digit row
+    tens_row = Text()
+    tens_row.append(" " * 20)
+
+    for day_idx, day_key in enumerate(day_labels):
+        day_color = DAY_COLORS[day_idx % len(DAY_COLORS)]
+        day_data = days_data[day_key]
+
+        is_first_day = day_idx == 0
+        hours_to_show = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+
+        for i, data in enumerate(day_data[:hours_to_show]):
+            ts_value = data["timestamp"]
+            if not isinstance(ts_value, datetime):
+                continue
+            local_ts = ts_value.astimezone(tz) if tz else ts_value
+            hour = local_ts.hour
+            tens_digit = hour // 10
+            tens_row.append(f"{tens_digit}", style=f"bold {day_color}")
+            if i < hours_to_show - 1:
+                tens_row.append(" ", style="dim")
+
+        if day_idx < len(day_labels) - 1:
+            tens_row.append("  ", style="dim")
+
+    console.print(tens_row)
+
+    # Ones digit row
+    ones_row = Text()
+    ones_row.append(" " * 20)
+
+    for day_idx, day_key in enumerate(day_labels):
+        day_color = DAY_COLORS[day_idx % len(DAY_COLORS)]
+        day_data = days_data[day_key]
+
+        is_first_day = day_idx == 0
+        hours_to_show = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+
+        for i, data in enumerate(day_data[:hours_to_show]):
+            ts_value = data["timestamp"]
+            if not isinstance(ts_value, datetime):
+                continue
+            local_ts = ts_value.astimezone(tz) if tz else ts_value
+            hour = local_ts.hour
+            ones_digit = hour % 10
+            ones_row.append(f"{ones_digit}", style=f"bold {day_color}")
+            if i < hours_to_show - 1:
+                ones_row.append(" ", style="dim")
+
+        if day_idx < len(day_labels) - 1:
+            ones_row.append("  ", style="dim")
+
+    console.print(ones_row)
+
+
+def _render_condition_row(
+    condition_name: str,
+    field: str,
+    color_func: object,
+    day_labels: list[str],
+    days_data: dict[str, list[dict[str, object]]],
+    tz: ZoneInfo | None,
+) -> None:
+    """Render a single condition row in the chart."""
+    from rich.text import Text
+
+    condition_row = Text()
+    condition_row.append(f"{condition_name:<20}", style="bold")
+
+    for day_idx, day_key in enumerate(day_labels):
+        day_data = days_data[day_key]
+
+        is_first_day = day_idx == 0
+        hours_to_show = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+
+        for i, data in enumerate(day_data[:hours_to_show]):
+            value = data.get(field)
+
+            # Get color based on field type and value
+            if field == "seeing":
+                if value is None:
+                    color, _label = _get_seeing_color(None)
+                elif isinstance(value, (int, float)):
+                    color, _label = _get_seeing_color(float(value))
+                else:
+                    color, _label = ("dim", "-")
+            elif field == "cloud_cover" and isinstance(value, (int, float)):
+                color, _label = _get_cloud_color(float(value))
+            elif field == "darkness":
+                if isinstance(value, (int, float)):
+                    color, _label = _get_darkness_color(float(value))
+                else:
+                    color, _label = _get_darkness_color(None)
+            elif field == "wind":
+                if isinstance(value, (int, float)):
+                    color, _label = _get_wind_color(float(value))
+                else:
+                    color, _label = _get_wind_color(None)
+            elif field == "humidity":
+                if isinstance(value, (int, float)):
+                    color, _label = _get_humidity_color(float(value))
+                else:
+                    color, _label = _get_humidity_color(None)
+            elif field == "temperature":
+                if isinstance(value, (int, float)):
+                    color, _label = _get_temp_color(float(value))
+                else:
+                    color, _label = _get_temp_color(None)
+            elif field == "transparency" and isinstance(value, str):
+                color, _label = _get_transparency_color_wrapper(value)
+            else:
+                color, _label = ("dim", "-")
+
+            # Render the cell
+            condition_row.append("█", style=color)
+
+            if i < hours_to_show - 1:
+                condition_row.append(" ", style="dim")
+
+        # Add spacing between days
+        if day_idx < len(day_labels) - 1:
+            condition_row.append("  ", style="dim")
+
+    console.print(condition_row)
+
+
 def _get_text_color_for_background(bg_color: str) -> str:
     """
     Determine whether to use black or white text based on background color luminance.
@@ -640,220 +1244,6 @@ def _display_clear_sky_chart(
     start_hour: datetime | None = None,
 ) -> None:
     """Display a Clear Sky Chart-style grid visualization."""
-    from rich.text import Text
-
-    # Assign distinct colors to each day for better visual separation
-    day_colors = [
-        "cyan",
-        "magenta",
-        "yellow",
-        "green",
-        "blue",
-        "bright_cyan",
-        "bright_magenta",
-    ]
-
-    # Color mappings for each condition type
-    def get_cloud_color(clouds: float) -> tuple[str, str]:
-        """Get color for cloud cover - 11-level gradient from dark blue (clear) to white (overcast)."""
-        # Gradient: Dark blue (clear) -> lighter blues -> white (overcast)
-        # Colors represent what the sky is likely to be, matching Clear Sky Chart
-        # Clear, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, Overcast
-        if clouds >= 90:
-            return ("white", "Overcast")
-        elif clouds >= 80:
-            return ("#F0F0F0", "90%")
-        elif clouds >= 70:
-            return ("#E0E0E0", "80%")
-        elif clouds >= 60:
-            return ("#D0D0D0", "70%")
-        elif clouds >= 50:
-            return ("#C0C0C0", "60%")
-        elif clouds >= 40:
-            return ("#A0A0C0", "50%")
-        elif clouds >= 30:
-            return ("#8080A0", "40%")
-        elif clouds >= 20:
-            return ("#606080", "30%")
-        elif clouds >= 10:
-            return ("#404060", "20%")
-        elif clouds >= 5:
-            return ("#202040", "10%")
-        else:
-            return ("#0000FF", "Clear")
-
-    def get_transparency_color(transparency: str) -> tuple[str, str]:
-        """Get color for transparency - 6-level gradient from white (too cloudy) to dark blue (transparent)."""
-        # Gradient: White (too cloudy) -> gray -> light blue -> medium blue -> dark blue (transparent)
-        colors = {
-            "too_cloudy": ("white", "Too cloudy to forecast"),  # White
-            "poor": ("#808080", "Poor"),  # Gray
-            "below_average": ("#4080A0", "Below Average"),  # Gray-blue
-            "average": ("#0066AA", "Average"),  # Medium blue
-            "above_average": ("#0033AA", "Above average"),  # Darker blue
-            "transparent": ("#0000FF", "Transparent"),  # Dark blue
-        }
-        return colors.get(transparency, ("#0066AA", "Average"))
-
-    def get_seeing_color(seeing: float | None) -> tuple[str, str]:
-        """Get color for seeing - 6-level gradient from white (too cloudy) to dark blue (excellent)."""
-        # Too cloudy to forecast (cloud cover > 80%)
-        if seeing is None:
-            return ("white", "Too cloudy to forecast")
-        # Excellent 5/5
-        elif seeing >= 80:
-            return ("#0000FF", "Excellent 5/5")  # Dark blue
-        # Good 4/5
-        elif seeing >= 60:
-            return ("#0033AA", "Good 4/5")  # Darker blue
-        # Average 3/5
-        elif seeing >= 40:
-            return ("#0066AA", "Average 3/5")  # Medium blue
-        # Poor 2/5
-        elif seeing >= 20:
-            return ("#4080A0", "Poor 2/5")  # Gray-blue
-        # Bad 1/5
-        else:
-            return ("#808080", "Bad 1/5")  # Gray
-
-    def get_darkness_color(mag: float | None) -> tuple[str, str]:
-        """Get color for darkness/limiting magnitude - 15-level gradient matching Clear Sky Chart."""
-        # Gradient: White (daylight) -> Yellow (dusk) -> Turquoise (twilight) -> Light blue (full moon) -> Deep blue (partial moon) -> Black (dark)
-        if mag is None:
-            return ("white", "Day")
-        elif mag >= 6.5:
-            return ("#000000", "6.5")  # Black - Dark sky
-        elif mag >= 6.0:
-            return ("#000010", "6.0")  # Very dark blue
-        elif mag >= 5.5:
-            return ("#000020", "5.5")  # Dark blue
-        elif mag >= 5.0:
-            return ("#000040", "5.0")  # Medium-dark blue
-        elif mag >= 4.5:
-            return ("#000060", "4.5")  # Medium blue
-        elif mag >= 4.0:
-            return ("#000080", "4.0")  # Blue
-        elif mag >= 3.5:
-            return ("#0000A0", "3.5")  # Light blue
-        elif mag >= 3.0:
-            return ("#0000C0", "3.0")  # Lighter blue
-        elif mag >= 2.0:
-            return ("#0080C0", "2.0")  # Deep blue (partial moon)
-        elif mag >= 1.0:
-            return ("#00C0C0", "1.0")  # Light blue (full moon)
-        elif mag >= 0.0:
-            return ("#40E0E0", "0")  # Turquoise (twilight)
-        elif mag >= -1.0:
-            return ("#80E0E0", "-1")  # Light turquoise
-        elif mag >= -2.0:
-            return ("#C0E0C0", "-2")  # Yellow-turquoise transition
-        elif mag >= -3.0:
-            return ("#FFFF80", "-3")  # Yellow (dusk)
-        elif mag >= -4.0:
-            return ("#FFFFC0", "-4")  # Light yellow
-        else:
-            return ("white", "Day")  # White (daylight)
-
-    def get_wind_color(wind: float | None) -> tuple[str, str]:
-        """Get color for wind speed - 6-level gradient matching Clear Sky Chart colors."""
-        # Gradient: White/light grey (high wind) -> light blue -> medium blue -> dark blue (calm)
-        if wind is None:
-            return ("dim", "-")
-        elif wind > 45:
-            return ("white", ">45 mph")  # White or very light grey
-        elif wind >= 29:
-            return ("#E0E0E0", "29-45 mph")  # Light grey
-        elif wind >= 17:
-            return ("#80C0E0", "17-28 mph")  # Light blue or teal
-        elif wind >= 12:
-            return ("#4080C0", "12-16 mph")  # Medium blue
-        elif wind >= 6:
-            return ("#2060A0", "6-11 mph")  # Darker blue
-        else:
-            return ("#004080", "0-5 mph")  # Darkest blue - Calm
-
-    def get_humidity_color(humidity: float | None) -> tuple[str, str]:
-        """Get color for humidity - 16-level gradient matching Clear Sky Chart colors."""
-        # Gradient: Dark blue (low) -> Blues -> Cyan -> Green -> Yellow -> Orange -> Red (high)
-        if humidity is None:
-            return ("dim", "-")
-        elif humidity >= 95:
-            return ("#800000", "95-100%")  # Deep rich red
-        elif humidity >= 90:
-            return ("#A00000", "90-95%")  # Slightly darker red
-        elif humidity >= 85:
-            return ("#FF0000", "85-90%")  # Pure red
-        elif humidity >= 80:
-            return ("#FF4400", "80-85%")  # Bright red-orange
-        elif humidity >= 75:
-            return ("#FF8800", "75-80%")  # Orange
-        elif humidity >= 70:
-            return ("#FFFF00", "70-75%")  # Bright yellow
-        elif humidity >= 65:
-            return ("#80FF00", "65-70%")  # Yellow-green
-        elif humidity >= 60:
-            return ("#00FF00", "60-65%")  # Vibrant green
-        elif humidity >= 55:
-            return ("#00FF80", "55-60%")  # Light mint green
-        elif humidity >= 50:
-            return ("#00FFFF", "50-55%")  # Bright cyan/turquoise
-        elif humidity >= 45:
-            return ("#00AAFF", "45-50%")  # Light teal/greenish-blue
-        elif humidity >= 40:
-            return ("#0080FF", "40-45%")  # Light blue
-        elif humidity >= 35:
-            return ("#0066FF", "35-40%")  # Lighter medium blue
-        elif humidity >= 30:
-            return ("#0044FF", "30-35%")  # Medium blue
-        elif humidity >= 25:
-            return ("#0022FF", "25-30%")  # Medium-dark blue
-        else:
-            return ("#0000FF", "<25%")  # Very dark blue
-
-    def get_temp_color(temp: float | None) -> tuple[str, str]:
-        """Get color for temperature - 19-level gradient matching Clear Sky Chart colors."""
-        # Gradient: Magenta/Blue (cold) -> Cyan -> Green -> Yellow -> Orange -> Red -> Maroon -> Grey (hot)
-        if temp is None:
-            return ("dim", "-")
-        elif temp > 113:
-            return ("#808080", ">113°F")  # Grey
-        elif temp >= 104:
-            return ("#800000", "104-113°F")  # Maroon
-        elif temp >= 95:
-            return ("#A00000", "95-104°F")  # Dark Red
-        elif temp >= 86:
-            return ("#FF0000", "86-95°F")  # Bright Red
-        elif temp >= 77:
-            return ("#FF4400", "77-86°F")  # Red-Orange
-        elif temp >= 68:
-            return ("#FF8800", "68-77°F")  # Orange
-        elif temp >= 59:
-            return ("#FFAA00", "59-68°F")  # Orange-Yellow
-        elif temp >= 50:
-            return ("#FFFF00", "50-59°F")  # Yellow
-        elif temp >= 41:
-            return ("#80FF00", "41-50°F")  # Lime Green
-        elif temp >= 32:
-            return ("#00FF80", "32-41°F")  # Medium Green
-        elif temp >= 23:
-            return ("white", "23-32°F")  # White
-        elif temp >= 14:
-            return ("#00FFAA", "14-23°F")  # Light Teal
-        elif temp >= 5:
-            return ("#00FFFF", "5-14°F")  # Cyan
-        elif temp >= -3:
-            return ("#0080FF", "-3-5°F")  # Light Blue
-        elif temp >= -12:
-            return ("#0066FF", "-12--3°F")  # Royal Blue
-        elif temp >= -21:
-            return ("#0044FF", "-21--12°F")  # Medium Blue
-        elif temp >= -30:
-            return ("#0022FF", "-30--21°F")  # Deep Blue
-        elif temp >= -40:
-            return ("#0000FF", "-40--31°F")  # Dark Blue
-        else:
-            return ("#FF00FF", "< -40°F")  # Magenta
-
     # Group data by day
     days_data: dict[str, list[dict[str, object]]] = {}
     for data in chart_data:
@@ -869,20 +1259,19 @@ def _display_clear_sky_chart(
 
     # Sort data within each day by timestamp
     for day_key in days_data:
-        days_data[day_key].sort(key=lambda x: x["timestamp"] if isinstance(x["timestamp"], datetime) else datetime.min.replace(tzinfo=UTC))
+        days_data[day_key].sort(
+            key=lambda x: x["timestamp"] if isinstance(x["timestamp"], datetime) else datetime.min.replace(tzinfo=UTC)
+        )
 
-    # Create header with day labels and hour markers
+    # Get sorted day labels
     day_labels = sorted(days_data.keys())[:days]
 
-    # Determine start hour in local time for filtering first day
-    start_hour_local: int | None = None
+    # Filter first day if start_hour is specified
     if start_hour and tz:
         start_hour_local_ts = start_hour.astimezone(tz)
         start_hour_local = start_hour_local_ts.hour
         first_day_key = start_hour_local_ts.strftime("%Y-%m-%d")
 
-        # Filter first day to only show hours >= start_hour
-        # If start_hour is 22 (10pm) or 23 (11pm), we want to show from 21 (9pm) to ensure 3 hours
         if first_day_key in days_data:
             min_hour = 21 if start_hour_local >= 22 else start_hour_local
             days_data[first_day_key] = [
@@ -893,498 +1282,23 @@ def _display_clear_sky_chart(
     # Build the chart
     console.print("[bold]Clear Sky Chart[/bold]\n")
 
-    # Day name header row (above time)
-    day_header = Text()
-    day_header.append(" " * 20)  # Space for condition labels
+    # Render headers
+    _render_day_header(day_labels, days_data, tz)
+    _render_time_header(day_labels, days_data, tz)
 
-    for day_idx, day_key in enumerate(day_labels):
-        day_color = day_colors[day_idx % len(day_colors)]
-        day_data = days_data[day_key]
-
-        if tz:
-            day_dt = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-        else:
-            day_dt = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-
-        # Format: "Sat" or "Saturday, 8"
-        day_number = day_dt.day
-        day_of_week = day_dt.strftime("%A")
-        hours_to_show = len(day_data)
-        is_full_day = hours_to_show >= 24
-
-        # Determine format:
-        # - Full days (24 hours): long form "Saturday, 8"
-        # - Partial days: short form "Sat"
-        if is_full_day:
-            # Long form: "Saturday, 8"
-            day_name = f"{day_of_week}, {day_number}"
-            # Calculate minimum hours needed for the name
-            name_length = len(day_name)
-            min_hours_needed = (name_length + 1) // 2  # Round up
-            hours_to_show = max(hours_to_show, min_hours_needed, 24)
-            hours_to_show = min(hours_to_show, len(day_data))
-        else:
-            # Short form: "Sat" (no day number)
-            day_name = day_dt.strftime("%a")
-            # Ensure minimum 3 hours to prevent overlap
-            min_hours_for_short = 3
-            hours_to_show = max(hours_to_show, min_hours_for_short)
-            hours_to_show = min(hours_to_show, len(day_data))
-
-        # Always start at the beginning of the day (no padding)
-        day_header.append(day_name, style=f"bold {day_color}")
-        # Fill remaining space to match time row width
-        # Time row: hours_to_show digits + (hours_to_show - 1) spaces = hours_to_show * 2 - 1 total
-        name_length = len(day_name)
-        total_width = hours_to_show * 2 - 1
-        remaining_chars = max(0, total_width - name_length)
-        day_header.append(" " * remaining_chars, style="dim")
-
-        # Add spacing between days (constant 2 spaces)
-        if day_idx < len(day_labels) - 1:
-            day_header.append("  ", style="dim")
-
-    console.print(day_header)
-
-    # Create time header rows (tens and ones digits)
-    # First row: tens digits
-    tens_row = Text()
-    tens_row.append(" " * 20)  # Space for condition labels
-
-    for day_idx, day_key in enumerate(day_labels):
-        day_color = day_colors[day_idx % len(day_colors)]
-        day_data = days_data[day_key]
-
-        # Determine how many hours to show (same logic as date header)
-        day_start_hour_for_display: int | None = None
-        if day_data:
-            first_data = day_data[0]
-            if isinstance(first_data["timestamp"], datetime):
-                first_ts = first_data["timestamp"]
-                local_first_ts = first_ts.astimezone(tz) if tz else first_ts
-                day_start_hour_for_display = local_first_ts.hour
-
-        is_first_day_tens = day_idx == 0
-        hours_to_show = len(day_data)
-        is_full_day = hours_to_show >= 24
-
-        # Same logic as date header
-        if is_full_day:
-            # Full day - ensure minimum hours for long form
-            if tz:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-            else:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-            day_of_week_for_calc = day_dt_for_calc.strftime("%A")
-            day_number_for_calc = day_dt_for_calc.day
-            day_name_for_calc = f"{day_of_week_for_calc}, {day_number_for_calc}"
-            name_length = len(day_name_for_calc)
-            min_hours_needed = (name_length + 1) // 2
-            hours_to_show = max(hours_to_show, min_hours_needed, 24)
-            hours_to_show = min(hours_to_show, len(day_data))
-        elif is_first_day_tens and day_start_hour_for_display is not None and day_start_hour_for_display <= 10:
-            # First day starting on or before 10 AM - ensure minimum hours for long form
-            if tz:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-            else:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-            day_of_week_for_calc = day_dt_for_calc.strftime("%A")
-            day_number_for_calc = day_dt_for_calc.day
-            day_name_for_calc = f"{day_of_week_for_calc}, {day_number_for_calc}"
-            name_length = len(day_name_for_calc)
-            min_hours_needed = (name_length + 1) // 2
-            hours_to_show = max(hours_to_show, min_hours_needed)
-            hours_to_show = min(hours_to_show, len(day_data))
-        else:
-            # Day starting after 10 AM - ensure minimum 3 hours for short form
-            min_hours_for_short = 3
-            hours_to_show = max(hours_to_show, min_hours_for_short)
-            hours_to_show = min(hours_to_show, len(day_data))
-
-        # Tens digit row for this day
-        for i, data in enumerate(day_data[:hours_to_show]):
-            ts_value = data["timestamp"]
-            if not isinstance(ts_value, datetime):
-                continue
-            local_ts = ts_value.astimezone(tz) if tz else ts_value
-            hour = local_ts.hour
-            tens_digit = hour // 10
-            tens_row.append(f"{tens_digit}", style=f"bold {day_color}")
-            if i < hours_to_show - 1:  # Add spacing between hours
-                tens_row.append(" ", style="dim")
-
-        # Add spacing between days
-        if day_idx < len(day_labels) - 1:
-            tens_row.append("  ", style="dim")
-
-    console.print(tens_row)
-
-    # Second row: ones digits
-    ones_row = Text()
-    ones_row.append(" " * 20)
-
-    for day_idx, day_key in enumerate(day_labels):
-        day_color = day_colors[day_idx % len(day_colors)]
-        day_data = days_data[day_key]
-
-        # Determine how many hours to show (same logic as date header)
-        day_start_hour_for_ones: int | None = None
-        if day_data:
-            first_data = day_data[0]
-            if isinstance(first_data["timestamp"], datetime):
-                first_ts = first_data["timestamp"]
-                local_first_ts = first_ts.astimezone(tz) if tz else first_ts
-                day_start_hour_for_ones = local_first_ts.hour
-
-        is_first_day_ones = day_idx == 0
-        hours_to_show = len(day_data)
-        is_full_day = hours_to_show >= 24
-
-        # Same logic as date header
-        if is_full_day:
-            # Full day - ensure minimum hours for long form
-            if tz:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-            else:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-            day_of_week_for_calc = day_dt_for_calc.strftime("%A")
-            day_number_for_calc = day_dt_for_calc.day
-            day_name_for_calc = f"{day_of_week_for_calc}, {day_number_for_calc}"
-            name_length = len(day_name_for_calc)
-            min_hours_needed = (name_length + 1) // 2
-            hours_to_show = max(hours_to_show, min_hours_needed, 24)
-            hours_to_show = min(hours_to_show, len(day_data))
-        elif is_first_day_ones and day_start_hour_for_ones is not None and day_start_hour_for_ones <= 10:
-            # First day starting on or before 10 AM - ensure minimum hours for long form
-            if tz:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-            else:
-                day_dt_for_calc = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-            day_of_week_for_calc = day_dt_for_calc.strftime("%A")
-            day_number_for_calc = day_dt_for_calc.day
-            day_name_for_calc = f"{day_of_week_for_calc}, {day_number_for_calc}"
-            name_length = len(day_name_for_calc)
-            min_hours_needed = (name_length + 1) // 2
-            hours_to_show = max(hours_to_show, min_hours_needed)
-            hours_to_show = min(hours_to_show, len(day_data))
-        else:
-            # Day starting after 10 AM - ensure minimum 3 hours for short form
-            min_hours_for_short = 3
-            hours_to_show = max(hours_to_show, min_hours_for_short)
-            hours_to_show = min(hours_to_show, len(day_data))
-
-        # Ones digit row for this day
-        for i, data in enumerate(day_data[:hours_to_show]):
-            ts_value = data["timestamp"]
-            if not isinstance(ts_value, datetime):
-                continue
-            local_ts = ts_value.astimezone(tz) if tz else ts_value
-            hour = local_ts.hour
-            ones_digit = hour % 10
-            ones_row.append(f"{ones_digit}", style=f"bold {day_color}")
-            if i < hours_to_show - 1:  # Add spacing between hours
-                ones_row.append(" ", style="dim")
-
-        # Add spacing between days
-        if day_idx < len(day_labels) - 1:
-            ones_row.append("  ", style="dim")
-
-    console.print(ones_row)
-
-    # Helper function for transparency color
-    def get_transparency_color_wrapper(value: object) -> tuple[str, str]:
-        """Wrapper to handle transparency color lookup."""
-        if isinstance(value, str):
-            return get_transparency_color(value)
-        return ("dim", "-")
-
-    # Condition rows - each cell is uniform size with time visible
+    # Render condition rows
     conditions = [
-        ("Cloud Cover", "cloud_cover", get_cloud_color),
-        ("Transparency", "transparency", get_transparency_color_wrapper),
-        ("Seeing", "seeing", get_seeing_color),
-        ("Darkness", "darkness", get_darkness_color),
-        ("Wind", "wind", get_wind_color),
-        ("Humidity", "humidity", get_humidity_color),
-        ("Temperature", "temperature", get_temp_color),
+        ("Cloud Cover", "cloud_cover", _get_cloud_color),
+        ("Transparency", "transparency", _get_transparency_color_wrapper),
+        ("Seeing", "seeing", _get_seeing_color),
+        ("Darkness", "darkness", _get_darkness_color),
+        ("Wind", "wind", _get_wind_color),
+        ("Humidity", "humidity", _get_humidity_color),
+        ("Temperature", "temperature", _get_temp_color),
     ]
 
     for condition_name, field, color_func in conditions:
-        # Create two rows per condition: one for the condition color, one for spacing
-        condition_row = Text()
-        # Match time header padding: 20 characters total (condition name + padding)
-        # Left-align the condition name and pad to 20 chars total (including trailing space)
-        condition_row.append(f"{condition_name:<20}", style="bold")  # Left-aligned, padded to exactly 20 chars
+        _render_condition_row(condition_name, field, color_func, day_labels, days_data, tz)
 
-        for day_idx, day_key in enumerate(day_labels):
-            day_data = days_data[day_key]
-            day_color = day_colors[day_idx % len(day_colors)]
-
-            # Determine how many hours to show (same logic as date/time headers)
-            day_start_hour_for_grid: int | None = None
-            if day_data:
-                first_data = day_data[0]
-                if isinstance(first_data["timestamp"], datetime):
-                    first_ts = first_data["timestamp"]
-                    local_first_ts = first_ts.astimezone(tz) if tz else first_ts
-                    day_start_hour_for_grid = local_first_ts.hour
-
-            is_first_day_grid = day_idx == 0
-            hours_to_show_grid = len(day_data)
-            is_full_day_grid = hours_to_show_grid >= 24
-
-            if is_full_day_grid:
-                # Full day - ensure minimum hours for long form
-                if tz:
-                    day_dt_for_grid = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-                else:
-                    day_dt_for_grid = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-                day_of_week_for_grid = day_dt_for_grid.strftime("%A")
-                day_number_for_grid = day_dt_for_grid.day
-                day_name_for_grid = f"{day_of_week_for_grid}, {day_number_for_grid}"
-                name_length_grid = len(day_name_for_grid)
-                min_hours_needed_grid = (name_length_grid + 1) // 2
-                hours_to_show_grid = max(hours_to_show_grid, min_hours_needed_grid, 24)
-                hours_to_show_grid = min(hours_to_show_grid, len(day_data))
-            elif is_first_day_grid and day_start_hour_for_grid is not None and day_start_hour_for_grid <= 10:
-                # First day starting on or before 10 AM - ensure minimum hours for long form
-                if tz:
-                    day_dt_for_grid = datetime.fromisoformat(day_key).replace(tzinfo=tz)
-                else:
-                    day_dt_for_grid = datetime.fromisoformat(day_key).replace(tzinfo=UTC)
-                day_of_week_for_grid = day_dt_for_grid.strftime("%A")
-                day_number_for_grid = day_dt_for_grid.day
-                day_name_for_grid = f"{day_of_week_for_grid}, {day_number_for_grid}"
-                name_length_grid = len(day_name_for_grid)
-                min_hours_needed_grid = (name_length_grid + 1) // 2
-                hours_to_show_grid = max(hours_to_show_grid, min_hours_needed_grid)
-                hours_to_show_grid = min(hours_to_show_grid, len(day_data))
-            else:
-                # Day starting after 10 AM - ensure minimum 3 hours for short form
-                min_hours_for_short = 3
-                hours_to_show_grid = max(hours_to_show_grid, min_hours_for_short)
-                hours_to_show_grid = min(hours_to_show_grid, len(day_data))
-
-            # Grid cells should align with time digits
-            # The time header shows tens and ones digits on separate rows
-            # Cells should align with the ones digit row (bottom row)
-
-            for i, data in enumerate(day_data[:hours_to_show_grid]):
-                value = data.get(field)
-                # Handle seeing separately since it can be None (too cloudy)
-                if field == "seeing":
-                    if value is None:
-                        color, _label = get_seeing_color(None)
-                    elif isinstance(value, (int, float)):
-                        color, _label = color_func(float(value))
-                    else:
-                        color, _label = ("dim", "-")
-                elif value is not None:
-                    if field == "cloud_cover" and isinstance(value, (int, float)):
-                        color, _label = color_func(float(value))
-                    elif field == "darkness":
-                        if value is None:
-                            # get_darkness_color accepts None
-                            color, _label = get_darkness_color(None)
-                        elif isinstance(value, (int, float)):
-                            color, _label = color_func(float(value))
-                        else:
-                            color, _label = ("dim", "-")
-                    elif field in ("wind", "humidity", "temperature"):
-                        if value is None:
-                            # These functions accept None
-                            if field == "wind":
-                                color, _label = get_wind_color(None)
-                            elif field == "humidity":
-                                color, _label = get_humidity_color(None)
-                            else:  # temperature
-                                color, _label = get_temp_color(None)
-                        elif isinstance(value, (int, float)):
-                            color, _label = color_func(float(value))
-                        else:
-                            color, _label = ("dim", "-")
-                    else:
-                        # For transparency, value should be a string
-                        if field == "transparency" and isinstance(value, str):
-                            color, _label = get_transparency_color_wrapper(value)
-                        else:
-                            color, _label = ("dim", "-")
-                else:
-                    color, _label = ("dim", "-")
-
-                # Create a uniform cell: use full block with background color
-                # Each cell is 1 character wide, we'll use █ with the condition color
-                condition_row.append("█", style=color)
-
-                if i < hours_to_show_grid - 1:  # Add spacing between hours (match time header spacing)
-                    condition_row.append(" ", style="dim")
-
-            # Add spacing between days
-            if day_idx < len(day_labels) - 1:
-                condition_row.append("  ", style="dim")
-
-        console.print(condition_row)
-
-    # Legend with colored text
-    console.print("\n[bold]Legend:[/bold]")
-
-    # Cloud Cover legend with all 11 levels - background colors with white text
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    cloud_legend_parts = ["[dim]Cloud Cover:[/dim]", " " * (18 - len("Cloud Cover:"))]
-    # Order: Overcast, 90%, 80%, 70%, 60%, 50%, 40%, 30%, 20%, 10%, Clear
-    cloud_levels = [
-        ("white", "Overcast"),
-        ("#F0F0F0", "90% covered"),
-        ("#E0E0E0", "80% covered"),
-        ("#D0D0D0", "70% covered"),
-        ("#C0C0C0", "60% covered"),
-        ("#A0A0C0", "50% covered"),
-        ("#8080A0", "40% covered"),
-        ("#606080", "30% covered"),
-        ("#404060", "20% covered"),
-        ("#202040", "10% covered"),
-        ("#0000FF", "Clear"),
-    ]
-    for color, label in cloud_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        cloud_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(cloud_legend_parts))
-
-    # Transparency legend with all 6 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    transparency_legend_parts = ["[dim]Transparency:[/dim]", " " * (18 - len("Transparency:"))]
-    # Order: Too cloudy, Poor, Below Average, Average, Above average, Transparent
-    transparency_levels = [
-        ("white", "Too cloudy to forecast"),
-        ("#808080", "Poor"),
-        ("#4080A0", "Below Average"),
-        ("#0066AA", "Average"),
-        ("#0033AA", "Above average"),
-        ("#0000FF", "Transparent"),
-    ]
-    for color, label in transparency_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        transparency_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(transparency_legend_parts))
-    # Seeing legend with all 6 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    seeing_legend_parts = ["[dim]Seeing:[/dim]", " " * (18 - len("Seeing:"))]
-    # Order: Too cloudy, Bad, Poor, Average, Good, Excellent
-    seeing_levels = [
-        ("white", "Too cloudy to forecast"),
-        ("#808080", "Bad"),
-        ("#4080A0", "Poor"),
-        ("#0066AA", "Average"),
-        ("#0033AA", "Good"),
-        ("#0000FF", "Excellent"),
-    ]
-    for color, label in seeing_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        seeing_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(seeing_legend_parts))
-    # Darkness legend with all 15 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    darkness_legend_parts = ["[dim]Darkness:[/dim]", " " * (18 - len("Darkness:"))]
-    # Order: -4, -3, -2, -1, 0, 1.0, 2.0, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5
-    darkness_levels = [
-        ("white", "Day"),
-        ("#FFFFC0", "-4"),
-        ("#FFFF80", "-3"),
-        ("#C0E0C0", "-2"),
-        ("#80E0E0", "-1"),
-        ("#40E0E0", "0"),
-        ("#00C0C0", "1.0"),
-        ("#0080C0", "2.0"),
-        ("#0000C0", "3.0"),
-        ("#0000A0", "3.5"),
-        ("#000080", "4.0"),
-        ("#000060", "4.5"),
-        ("#000040", "5.0"),
-        ("#000020", "5.5"),
-        ("#000010", "6.0"),
-        ("#000000", "6.5"),
-    ]
-    for color, label in darkness_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        darkness_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(darkness_legend_parts))
-    # Wind legend with all 6 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    wind_legend_parts = ["[dim]Wind:[/dim]", " " * (18 - len("Wind:"))]
-    # Order: 0-5 mph, 6-11 mph, 12-16 mph, 17-28 mph, 29-45 mph, >45 mph
-    wind_levels = [
-        ("#004080", "0-5 mph"),  # Darkest blue - Calm
-        ("#2060A0", "6-11 mph"),  # Darker blue
-        ("#4080C0", "12-16 mph"),  # Medium blue
-        ("#80C0E0", "17-28 mph"),  # Light blue or teal
-        ("#E0E0E0", "29-45 mph"),  # Light grey
-        ("white", ">45 mph"),  # White or very light grey
-    ]
-    for color, label in wind_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        wind_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(wind_legend_parts))
-    # Humidity legend with all 16 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    humidity_legend_parts = ["[dim]Humidity:[/dim]", " " * (18 - len("Humidity:"))]
-    # Order: <25%, 25-30%, 30-35%, 35-40%, 40-45%, 45-50%, 50-55%, 55-60%, 60-65%, 65-70%, 70-75%, 75-80%, 80-85%, 85-90%, 90-95%, 95-100%
-    humidity_levels = [
-        ("#0000FF", "<25%"),  # Very dark blue
-        ("#0022FF", "25-30%"),  # Medium-dark blue
-        ("#0044FF", "30-35%"),  # Medium blue
-        ("#0066FF", "35-40%"),  # Lighter medium blue
-        ("#0080FF", "40-45%"),  # Light blue
-        ("#00AAFF", "45-50%"),  # Light teal/greenish-blue
-        ("#00FFFF", "50-55%"),  # Bright cyan/turquoise
-        ("#00FF80", "55-60%"),  # Light mint green
-        ("#00FF00", "60-65%"),  # Vibrant green
-        ("#80FF00", "65-70%"),  # Yellow-green
-        ("#FFFF00", "70-75%"),  # Bright yellow
-        ("#FF8800", "75-80%"),  # Orange
-        ("#FF4400", "80-85%"),  # Bright red-orange
-        ("#FF0000", "85-90%"),  # Pure red
-        ("#A00000", "90-95%"),  # Slightly darker red
-        ("#800000", "95-100%"),  # Deep rich red
-    ]
-    for color, label in humidity_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        humidity_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(humidity_legend_parts))
-    # Temperature legend with all 19 levels - background colors with appropriate text colors
-    # Add 20 chars padding to align with grid cells (matching condition name area)
-    temp_legend_parts = ["[dim]Temperature:[/dim]", " " * (18 - len("Temperature:"))]
-    # Order: < -40F, -40F to -31F, -30F to -21F, -21F to -12F, -12F to -3F, -3F to 5F, 5F to 14F, 14F to 23F, 23F to 32F, 32F to 41F, 41F to 50F, 50F to 59F, 59F to 68F, 68F to 77F, 77F to 86F, 86F to 95F, 95F to 104F, 104F to 113F, >113F
-    temp_levels = [
-        ("#FF00FF", "< -40°F"),  # Magenta
-        ("#0000FF", "-40--31°F"),  # Dark Blue
-        ("#0022FF", "-30--21°F"),  # Deep Blue
-        ("#0044FF", "-21--12°F"),  # Medium Blue
-        ("#0066FF", "-12--3°F"),  # Royal Blue
-        ("#0080FF", "-3-5°F"),  # Light Blue
-        ("#00FFFF", "5-14°F"),  # Cyan
-        ("#00FFAA", "14-23°F"),  # Light Teal
-        ("white", "23-32°F"),  # White
-        ("#00FF80", "32-41°F"),  # Medium Green
-        ("#80FF00", "41-50°F"),  # Lime Green
-        ("#FFFF00", "50-59°F"),  # Yellow
-        ("#FFAA00", "59-68°F"),  # Orange-Yellow
-        ("#FF8800", "68-77°F"),  # Orange
-        ("#FF4400", "77-86°F"),  # Red-Orange
-        ("#FF0000", "86-95°F"),  # Bright Red
-        ("#A00000", "95-104°F"),  # Dark Red
-        ("#800000", "104-113°F"),  # Maroon
-        ("#808080", ">113°F"),  # Grey
-    ]
-    for color, label in temp_levels:
-        # Automatically choose black or white text based on background luminance
-        text_color = _get_text_color_for_background(color)
-        temp_legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
-    console.print(" ".join(temp_legend_parts))
-    console.print("\n[dim]Note: Each block represents one hour. Time shown in 24-hour format (tens digit above, ones digit below).[/dim]")
-
+    # Render legend
+    _render_legend()
