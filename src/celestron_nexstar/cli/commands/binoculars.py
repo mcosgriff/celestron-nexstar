@@ -52,6 +52,33 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
         return dt.strftime("%I:%M %p UTC")
 
 
+def _get_current_season(dt: datetime) -> str:
+    """
+    Get the current season based on date.
+    
+    Args:
+        dt: Datetime to check
+        
+    Returns:
+        Season name: "Spring", "Summer", "Fall", or "Winter"
+    """
+    month = dt.month
+    
+    # Simple month-based season determination
+    # Spring: Mar, Apr, May
+    # Summer: Jun, Jul, Aug
+    # Fall: Sep, Oct, Nov
+    # Winter: Dec, Jan, Feb
+    if month in (3, 4, 5):
+        return "Spring"
+    elif month in (6, 7, 8):
+        return "Summer"
+    elif month in (9, 10, 11):
+        return "Fall"
+    else:  # 12, 1, 2
+        return "Winter"
+
+
 @app.command("tonight")
 def show_tonight(
     binoculars: str = typer.Option("10x50", "--model", "-m", help="Binocular model (e.g., 10x50, 7x50, 15x70)"),
@@ -99,13 +126,13 @@ def show_tonight(
             iss_passes = get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=db)
 
         if iss_passes:
-            table_iss = Table()
-            table_iss.add_column("Date", style="cyan")
-            table_iss.add_column("Rise Time", style="green")
-            table_iss.add_column("Max Alt", justify="right")
-            table_iss.add_column("Path", style="dim", width=35)
-            table_iss.add_column("Duration", justify="right")
-            table_iss.add_column("Quality")
+            table_iss = Table(expand=True)
+            table_iss.add_column("Date", style="cyan", width=12)
+            table_iss.add_column("Rise Time", style="green", width=12)
+            table_iss.add_column("Max Alt", justify="right", width=10)
+            table_iss.add_column("Path", style="dim")  # No width - will expand to fill space
+            table_iss.add_column("Duration", justify="right", width=12)
+            table_iss.add_column("Quality", width=12)
 
             for iss_pass in iss_passes[:10]:  # Show next 10 passes
                 # Only show passes that are actually visible (sunlit)
@@ -162,12 +189,12 @@ def show_tonight(
         peak_showers = get_peak_showers(now, tolerance_days=3)
 
         if active_showers:
-            table_showers = Table()
-            table_showers.add_column("Shower", style="bold")
-            table_showers.add_column("Status", style="cyan")
-            table_showers.add_column("ZHR", justify="right")
-            table_showers.add_column("Radiant", style="dim")
-            table_showers.add_column("Notes", style="dim", width=30)
+            table_showers = Table(expand=True)
+            table_showers.add_column("Shower", style="bold", width=20)
+            table_showers.add_column("Status", style="cyan", width=12)
+            table_showers.add_column("ZHR", justify="right", width=8)
+            table_showers.add_column("Radiant", style="dim", width=20)
+            table_showers.add_column("Notes", style="dim")  # No width - will expand to fill space
 
             for shower in active_showers:
                 # Check if at peak
@@ -215,26 +242,30 @@ def show_tonight(
         visible_constellations = get_visible_constellations(lat, lon, midnight, min_altitude_deg=20.0)
 
         if visible_constellations:
-            table_const = Table()
-            table_const.add_column("Constellation", style="bold")
-            table_const.add_column("Direction", justify="right")
-            table_const.add_column("Altitude", justify="right")
-            table_const.add_column("Season", style="dim")
-            table_const.add_column("Highlights", style="dim", width=35)
+            current_season = _get_current_season(now)
+            
+            table_const = Table(expand=True)
+            table_const.add_column("Constellation", style="bold", width=15)
+            table_const.add_column("Direction", justify="right", width=10)
+            table_const.add_column("Altitude", justify="right", width=10)
+            table_const.add_column("Season", style="dim", width=20)
+            table_const.add_column("Highlights", style="dim")  # No width - will expand to fill space
 
             for constellation, alt, az in visible_constellations[:12]:  # Top 12
                 direction = azimuth_to_compass_8point(az)
 
-                # Truncate description if too long
                 description = constellation.description
-                if len(description) > 33:
-                    description = description[:30] + "..."
+
+                # Check if constellation is out of season
+                season_display = constellation.season
+                if constellation.season != current_season:
+                    season_display = f"{constellation.season} (best in {constellation.season.lower()}, visible out of season)"
 
                 table_const.add_row(
                     constellation.name,
                     direction,
                     f"{alt:.0f}°",
-                    constellation.season,
+                    season_display,
                     description,
                 )
 
@@ -251,26 +282,23 @@ def show_tonight(
         visible_asterisms = get_visible_asterisms(lat, lon, midnight, min_altitude_deg=20.0)
 
         if visible_asterisms:
-            table_ast = Table()
-            table_ast.add_column("Asterism", style="bold")
-            table_ast.add_column("Direction", justify="right")
-            table_ast.add_column("Altitude", justify="right")
-            table_ast.add_column("Size", justify="right")
-            table_ast.add_column("Description", style="dim", width=40)
+            table_ast = Table(expand=True)
+            table_ast.add_column("Asterism", style="bold", width=20)
+            table_ast.add_column("Direction", justify="right", width=10)
+            table_ast.add_column("Altitude", justify="right", width=10)
+            table_ast.add_column("Size", justify="right", width=8)
+            table_ast.add_column("Description", style="dim")  # No width - will expand to fill space
 
             for asterism, alt, az in visible_asterisms[:10]:  # Top 10
                 direction = azimuth_to_compass_8point(az)
 
-                # Truncate description if too long
-                description = asterism.description
-                if len(description) > 38:
-                    description = description[:35] + "..."
+                description = asterism.description or ""
 
                 table_ast.add_row(
                     asterism.name,
                     direction,
                     f"{alt:.0f}°",
-                    f"{asterism.size_degrees:.0f}°",
+                    f"{asterism.size_degrees:.0f}°" if asterism.size_degrees else "—",
                     description,
                 )
 
