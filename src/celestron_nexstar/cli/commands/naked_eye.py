@@ -146,10 +146,11 @@ def _get_visible_stars(
 def _generate_export_filename(command: str = "tonight") -> Path:
     """Generate export filename for naked-eye viewing."""
     from datetime import datetime
+
     from ...api.observer import get_observer_location
-    
+
     location = get_observer_location()
-    
+
     # Get location name (shortened, sanitized)
     if location.name:
         location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
@@ -158,10 +159,10 @@ def _generate_export_filename(command: str = "tonight") -> Path:
         location_short = location_short[:20]  # Limit length
     else:
         location_short = "unknown"
-    
+
     # Get date
     date_str = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Generate filename
     filename = f"naked_eye_{location_short}_{date_str}_{command}.txt"
     return Path(filename)
@@ -182,12 +183,7 @@ def show_tonight(
 
     # Handle export
     if export:
-        if export_path:
-            # User provided a custom path
-            export_path_obj = Path(export_path)
-        else:
-            # Auto-generate filename
-            export_path_obj = _generate_export_filename("tonight")
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("tonight")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output

@@ -5,13 +5,15 @@ description = "Python API for controlling Celestron NexStar 6SE telescopes via s
 authors = [{email = "matthew@cosgriff.io"}]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 keywords = ["telescope", "celestron", "nexstar", "astronomy", "serial"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
@@ -115,8 +117,8 @@ directory = "htmlcov"
 [tool.ruff]
 # Set line length to match previous black configuration
 line-length = 120
-# Target Python 3.13+
-target-version = "py313"
+# Target Python 3.11+ (numpy 2.3.4+ requires Python 3.11+)
+target-version = "py311"
 # Exclude patterns
 exclude = [
     ".git",
@@ -161,7 +163,7 @@ line-ending = "auto"
 "src/celestron_nexstar/cli/*" = ["B008"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
 # Strict mode
 strict = true
 warn_return_any = true

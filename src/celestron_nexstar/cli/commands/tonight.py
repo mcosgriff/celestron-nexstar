@@ -54,22 +54,22 @@ def show_conditions(
 ) -> None:
     """Show tonight's observing conditions."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
         if export_path:
             export_path_obj = Path(export_path)
         else:
             export_path_obj = _generate_export_filename("telescope", command="conditions")
-        
+
         file_console = create_file_console()
         _show_conditions_content(file_console)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     _show_conditions_content(console)
 
 
@@ -464,22 +464,22 @@ def show_objects(
 ) -> None:
     """Show recommended objects for tonight."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
         if export_path:
             export_path_obj = Path(export_path)
         else:
             export_path_obj = _generate_export_filename("telescope", command="objects")
-        
+
         file_console = create_file_console()
         _show_objects_content(file_console, target_type, limit, best_for_seeing)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     _show_objects_content(console, target_type, limit, best_for_seeing)
 
 
@@ -584,22 +584,22 @@ def show_imaging(
 ) -> None:
     """Show imaging forecasts: seeing for planetary, transparency for deep-sky, and exposure suggestions."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
         if export_path:
             export_path_obj = Path(export_path)
         else:
             export_path_obj = _generate_export_filename("telescope", command="imaging")
-        
+
         file_console = create_file_console()
         _show_imaging_content(file_console)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     _show_imaging_content(console)
 
 
@@ -839,11 +839,12 @@ def _show_imaging_content(output_console: Console) -> None:
 def _generate_export_filename(viewing_type: str = "telescope", binocular_model: str | None = None, command: str = "tonight") -> Path:
     """Generate export filename based on viewing type, equipment, location, date, and command."""
     from datetime import datetime
+
     from ...api.observer import get_observer_location
     from ...api.optics import load_configuration
-    
+
     location = get_observer_location()
-    
+
     # Get location name (shortened, sanitized)
     if location.name:
         location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
@@ -852,10 +853,10 @@ def _generate_export_filename(viewing_type: str = "telescope", binocular_model: 
         location_short = location_short[:20]  # Limit length
     else:
         location_short = "unknown"
-    
+
     # Get date
     date_str = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Generate filename based on viewing type
     if viewing_type == "telescope":
         config = load_configuration()
@@ -869,7 +870,7 @@ def _generate_export_filename(viewing_type: str = "telescope", binocular_model: 
         filename = f"binoculars_{model_safe}_{location_short}_{date_str}_{command}.txt"
     else:  # naked-eye
         filename = f"naked_eye_{location_short}_{date_str}_{command}.txt"
-    
+
     return Path(filename)
 
 
@@ -883,6 +884,7 @@ def show_tonight(
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects) for Celestron NexStar 6SE."""
     from pathlib import Path
+
     from ...cli.utils.export import create_file_console, export_to_text
 
     # Handle export
@@ -917,17 +919,17 @@ def _show_tonight_content(
     best_for_seeing: bool = False,
 ) -> None:
     """Generate and display tonight viewing content for telescope."""
-    from ...api.optics import load_configuration, get_telescope_specs
-    
+    from ...api.optics import load_configuration
+
     # Check if telescope is configured
     config = load_configuration()
-    
+
     # Add telescope identification header
     if config:
         telescope = config.telescope
         output_console.print(f"\n[bold cyan]{telescope.model.display_name} - Tonight's Viewing Guide[/bold cyan]")
         output_console.print(f"[dim]Telescope: {telescope.aperture_mm}mm aperture, f/{telescope.focal_ratio:.1f} ({telescope.focal_length_mm}mm focal length)[/dim]")
-        
+
         # Determine telescope type for description
         if telescope.aperture_mm < 125:
             optimal = "Planetary detail, bright deep-sky objects, double stars, lunar observing"
@@ -935,14 +937,14 @@ def _show_tonight_content(
             optimal = "Planetary detail, bright to medium deep-sky objects, double stars, lunar observing"
         else:
             optimal = "Planetary detail, deep-sky objects, double stars, lunar observing, faint objects"
-        
+
         output_console.print(f"[dim]Optimal for: {optimal}[/dim]\n")
     else:
         output_console.print("\n[bold cyan]Telescope Viewing Guide - Tonight[/bold cyan]")
         output_console.print("[yellow]⚠ No telescope configured[/yellow]")
         output_console.print("[dim]Configure your telescope using: nexstar optics configure[/dim]")
         output_console.print("[dim]This guide shows general observing conditions and objects visible with any telescope.[/dim]\n")
-    
+
     # Show conditions
     _show_conditions_content(output_console)
     output_console.print("\n" + "=" * 80 + "\n")
@@ -960,24 +962,21 @@ def show_plan(
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects)."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
-        if export_path:
-            export_path_obj = Path(export_path)
-        else:
-            export_path_obj = _generate_export_filename("telescope", command="plan")
-        
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", command="plan")
+
         file_console = create_file_console()
         _show_conditions_content(file_console)
         file_console.print("\n" + "=" * 80 + "\n")
         _show_objects_content(file_console, target_type, limit, best_for_seeing)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     show_conditions()
     console.print("\n" + "=" * 80 + "\n")
     show_objects(target_type=target_type, limit=limit, best_for_seeing=best_for_seeing)

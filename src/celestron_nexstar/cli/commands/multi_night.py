@@ -51,11 +51,12 @@ _tz_finder = TimezoneFinder()
 def _generate_export_filename(command: str = "week") -> Path:
     """Generate export filename for multi-night commands."""
     from datetime import datetime
+
     from ...api.observer import get_observer_location
     from ...api.optics import load_configuration
-    
+
     location = get_observer_location()
-    
+
     # Get location name (shortened, sanitized)
     if location.name:
         location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
@@ -64,17 +65,14 @@ def _generate_export_filename(command: str = "week") -> Path:
         location_short = location_short[:20]  # Limit length
     else:
         location_short = "unknown"
-    
+
     # Get date
     date_str = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Generate filename (multi-night commands use telescope configuration)
     config = load_configuration()
-    if config:
-        telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
-    else:
-        telescope_name = "no_telescope"
-    
+    telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "") if config else "no_telescope"
+
     filename = f"nexstar_{telescope_name}_{location_short}_{date_str}_{command}.txt"
     return Path(filename)
 
@@ -613,22 +611,19 @@ def show_week(
 ) -> None:
     """Compare observing conditions for the next 7 nights."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
-        if export_path:
-            export_path_obj = Path(export_path)
-        else:
-            export_path_obj = _generate_export_filename("week")
-        
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("week")
+
         file_console = create_file_console()
         _show_week_content(file_console)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     _show_week_content(console)
 
 
@@ -778,16 +773,17 @@ def show_best_night(
 ) -> None:
     """Find the best night to observe a specific object in the next N days."""
     from ...cli.utils.export import create_file_console, export_to_text
-    
+
     if export:
         if export_path:
             export_path_obj = Path(export_path)
         else:
             # Generate filename with object name
             from datetime import datetime
+
             from ...api.observer import get_observer_location
             from ...api.optics import load_configuration
-            
+
             location = get_observer_location()
             if location.name:
                 location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
@@ -795,27 +791,27 @@ def show_best_night(
                 location_short = location_short[:20]
             else:
                 location_short = "unknown"
-            
+
             date_str = datetime.now().strftime("%Y-%m-%d")
             config = load_configuration()
             if config:
                 telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
             else:
                 telescope_name = "no_telescope"
-            
+
             # Sanitize object name for filename
             obj_safe = object_name.lower().replace(" ", "_").replace("/", "_")[:15]
             export_path_obj = Path(f"nexstar_{telescope_name}_{location_short}_{date_str}_best-night_{obj_safe}.txt")
-        
+
         file_console = create_file_console()
         _show_best_night_content(file_console, object_name, days)
         content = file_console.file.getvalue()
         file_console.file.close()
-        
+
         export_to_text(content, export_path_obj)
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
-    
+
     _show_best_night_content(console, object_name, days)
 
 

@@ -146,13 +146,14 @@ def _get_visible_stars(
 def _generate_export_filename(binocular_model: str, command: str = "tonight") -> Path:
     """Generate export filename for binocular viewing."""
     from datetime import datetime
+
     from ...api.observer import get_observer_location
-    
+
     location = get_observer_location()
-    
+
     # Get binocular model (sanitized)
     model_safe = binocular_model.replace("x", "x").replace("/", "_").lower()
-    
+
     # Get location name (shortened, sanitized)
     if location.name:
         location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
@@ -161,10 +162,10 @@ def _generate_export_filename(binocular_model: str, command: str = "tonight") ->
         location_short = location_short[:20]  # Limit length
     else:
         location_short = "unknown"
-    
+
     # Get date
     date_str = datetime.now().strftime("%Y-%m-%d")
-    
+
     # Generate filename
     filename = f"binoculars_{model_safe}_{location_short}_{date_str}_{command}.txt"
     return Path(filename)
@@ -186,12 +187,7 @@ def show_tonight(
 
     # Handle export
     if export:
-        if export_path:
-            # User provided a custom path
-            export_path_obj = Path(export_path)
-        else:
-            # Auto-generate filename
-            export_path_obj = _generate_export_filename(binoculars, "tonight")
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename(binoculars, "tonight")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
