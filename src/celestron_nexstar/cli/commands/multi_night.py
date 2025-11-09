@@ -7,6 +7,7 @@ Compare observing conditions across multiple nights and find the best night for 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import TYPE_CHECKING, TypedDict
 from zoneinfo import ZoneInfo
 
@@ -70,6 +71,27 @@ DAY_COLORS = [
 QUALITY_EXCELLENT = 0.75
 QUALITY_GOOD = 0.60
 QUALITY_FAIR = 0.40
+
+# Available conditions for display
+AVAILABLE_CONDITIONS = {
+    "clouds": ("Cloud Cover", "cloud_cover", "_get_cloud_color"),
+    "transparency": ("Transparency", "transparency", "_get_transparency_color_wrapper"),
+    "seeing": ("Seeing", "seeing", "_get_seeing_color"),
+    "darkness": ("Darkness", "darkness", "_get_darkness_color"),
+    "wind": ("Wind", "wind", "_get_wind_color"),
+    "humidity": ("Humidity", "humidity", "_get_humidity_color"),
+    "temperature": ("Temperature", "temperature", "_get_temp_color"),
+}
+
+# Default conditions to show (all)
+DEFAULT_CONDITIONS = list(AVAILABLE_CONDITIONS.keys())
+
+# Threshold defaults for highlighting good observing conditions
+DEFAULT_THRESHOLDS = {
+    "max_clouds": 30.0,  # Highlight if clouds <= 30%
+    "min_darkness": 5.0,  # Highlight if darkness >= 5.0 mag
+    "min_seeing": 60.0,  # Highlight if seeing >= 60/100
+}
 
 
 # ============================================================================
@@ -448,23 +470,45 @@ LEGEND_DATA = {
 }
 
 
-def _render_legend() -> None:
-    """Render the legend for all chart conditions using the data-driven structure."""
+def _render_legend(conditions: list[str] | None = None) -> None:
+    """
+    Render the legend for chart conditions using the data-driven structure.
+
+    Args:
+        conditions: List of condition keys to include in legend. If None, shows all.
+    """
+    if conditions is None:
+        conditions = DEFAULT_CONDITIONS
+
+    # Map condition keys to legend names
+    condition_name_map = {
+        "clouds": "Cloud Cover",
+        "transparency": "Transparency",
+        "seeing": "Seeing",
+        "darkness": "Darkness",
+        "wind": "Wind",
+        "humidity": "Humidity",
+        "temperature": "Temperature",
+    }
+
     console.print("\n[bold]Legend:[/bold]")
 
-    for condition_name, levels in LEGEND_DATA.items():
-        legend_parts = [f"[dim]{condition_name}:[/dim]"]
-        # Add padding to align with grid (20 chars total for condition name area)
-        padding = 18 - len(f"{condition_name}:")
-        if padding > 0:
-            legend_parts.append(" " * padding)
+    for cond_key in conditions:
+        condition_name = condition_name_map.get(cond_key)
+        if condition_name and condition_name in LEGEND_DATA:
+            levels = LEGEND_DATA[condition_name]
+            legend_parts = [f"[dim]{condition_name}:[/dim]"]
+            # Add padding to align with grid (20 chars total for condition name area)
+            padding = 18 - len(f"{condition_name}:")
+            if padding > 0:
+                legend_parts.append(" " * padding)
 
-        for color, label in levels:
-            # Automatically choose black or white text based on background luminance
-            text_color = _get_text_color_for_background(color)
-            legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
+            for color, label in levels:
+                # Automatically choose black or white text based on background luminance
+                text_color = _get_text_color_for_background(color)
+                legend_parts.append(f"[{text_color} on {color}]{label}[/{text_color} on {color}]")
 
-        console.print(" ".join(legend_parts))
+            console.print(" ".join(legend_parts))
 
     console.print(
         "\n[dim]Note: Each block represents one hour. "
@@ -840,12 +884,53 @@ def show_best_night(
 def show_clear_sky_chart(
     days: int = typer.Option(4, "--days", "-d", help="Number of days to show (default: 4, max: 7)"),
     nighttime_only: bool = typer.Option(False, "--nighttime-only", "-n", help="Only show nighttime hours (after sunset, before sunrise)"),
+    conditions: str = typer.Option(
+        ",".join(DEFAULT_CONDITIONS),
+        "--conditions",
+        "-c",
+        help=f"Comma-separated list of conditions to display. Available: {', '.join(AVAILABLE_CONDITIONS.keys())}",
+    ),
+    highlight_good: bool = typer.Option(
+        False,
+        "--highlight-good",
+        "-h",
+        help="Highlight hours with good observing conditions (low clouds, high darkness, good seeing)",
+    ),
+    max_clouds: float = typer.Option(
+        DEFAULT_THRESHOLDS["max_clouds"],
+        "--max-clouds",
+        help="Maximum cloud cover %% for highlighting (used with --highlight-good)",
+    ),
+    min_darkness: float = typer.Option(
+        DEFAULT_THRESHOLDS["min_darkness"],
+        "--min-darkness",
+        help="Minimum darkness (limiting magnitude) for highlighting (used with --highlight-good)",
+    ),
+    min_seeing: float = typer.Option(
+        DEFAULT_THRESHOLDS["min_seeing"],
+        "--min-seeing",
+        help="Minimum seeing score (0-100) for highlighting (used with --highlight-good)",
+    ),
+    export: str | None = typer.Option(
+        None,
+        "--export",
+        "-e",
+        help="Export chart data to file. Supported formats: .csv, .json",
+    ),
 ) -> None:
     """Display a Clear Sky Chart-style forecast grid showing conditions over multiple days."""
     try:
         from ...api.light_pollution import get_light_pollution_data
         from ...api.observer import get_observer_location
         from ...api.weather import fetch_hourly_weather_forecast
+
+        # Parse and validate conditions
+        requested_conditions = [c.strip() for c in conditions.split(",")]
+        invalid_conditions = [c for c in requested_conditions if c not in AVAILABLE_CONDITIONS]
+        if invalid_conditions:
+            console.print(f"[red]Invalid conditions: {', '.join(invalid_conditions)}[/red]")
+            console.print(f"[yellow]Available conditions: {', '.join(AVAILABLE_CONDITIONS.keys())}[/yellow]")
+            raise typer.Exit(code=1) from None
 
         location = get_observer_location()
         if location is None:
@@ -992,15 +1077,134 @@ def show_clear_sky_chart(
                 console.print("[yellow]No forecast data available from current time forward.[/yellow]")
             return
 
+        # Export data if requested
+        if export:
+            _export_chart_data(filtered_chart_data, export, tz)
+            console.print(f"[green]Data exported to {export}[/green]")
+
+        # Prepare threshold dict for highlighting
+        thresholds = None
+        if highlight_good:
+            thresholds = {
+                "max_clouds": max_clouds,
+                "min_darkness": min_darkness,
+                "min_seeing": min_seeing,
+            }
+
         # Group data by day and create grid
         # Create a grid display similar to Clear Sky Chart
-        _display_clear_sky_chart(filtered_chart_data, lat, lon, tz, days, start_hour=start_time_utc)
+        _display_clear_sky_chart(
+            filtered_chart_data,
+            lat,
+            lon,
+            tz,
+            days,
+            start_hour=start_time_utc,
+            conditions=requested_conditions,
+            thresholds=thresholds,
+        )
 
     except Exception as e:
         console.print(f"[red]Error generating chart:[/red] {e}")
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+def _export_chart_data(chart_data: list[dict[str, object]], export_path: str, tz: ZoneInfo | None) -> None:
+    """
+    Export chart data to CSV or JSON format.
+
+    Args:
+        chart_data: List of hourly forecast data
+        export_path: File path to export to (.csv or .json)
+        tz: Timezone for local time conversion
+
+    Raises:
+        ValueError: If export format is not supported
+    """
+    import csv
+    import json
+    from pathlib import Path
+
+    export_file = Path(export_path)
+    extension = export_file.suffix.lower()
+
+    if extension == ".csv":
+        # Export to CSV
+        with export_file.open("w", newline="") as f:
+            if not chart_data:
+                return
+
+            # Get all possible fields from first data point
+            fieldnames = ["timestamp_utc", "timestamp_local"]
+            # Add all data fields
+            for key in chart_data[0]:
+                if key != "timestamp":
+                    fieldnames.append(key)
+
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for data in chart_data:
+                row: dict[str, object] = {}
+                ts = data.get("timestamp")
+                if isinstance(ts, datetime):
+                    row["timestamp_utc"] = ts.isoformat()
+                    local_ts = ts.astimezone(tz) if tz else ts
+                    row["timestamp_local"] = local_ts.isoformat()
+
+                # Add all other fields
+                for key, value in data.items():
+                    if key != "timestamp":
+                        row[key] = value
+
+                writer.writerow(row)
+
+    elif extension == ".json":
+        # Export to JSON
+        export_data = []
+        for data in chart_data:
+            row: dict[str, object] = {}
+            ts = data.get("timestamp")
+            if isinstance(ts, datetime):
+                row["timestamp_utc"] = ts.isoformat()
+                local_ts = ts.astimezone(tz) if tz else ts
+                row["timestamp_local"] = local_ts.isoformat()
+
+            # Add all other fields
+            for key, value in data.items():
+                if key != "timestamp":
+                    row[key] = value
+
+            export_data.append(row)
+
+        with export_file.open("w") as f:
+            json.dump(export_data, f, indent=2)
+
+    else:
+        msg = f"Unsupported export format: {extension}. Use .csv or .json"
+        raise ValueError(msg)
+
+
+@lru_cache(maxsize=256)
+def _is_nighttime_cached(timestamp_iso: str, lat: float, lon: float) -> bool:
+    """
+    Cached version of nighttime check to avoid redundant sun calculations.
+
+    Args:
+        timestamp_iso: ISO format timestamp string (for hashability)
+        lat: Observer latitude
+        lon: Observer longitude
+
+    Returns:
+        True if the sun is below the horizon, False otherwise
+    """
+    timestamp = datetime.fromisoformat(timestamp_iso)
+    sun_info = get_sun_info(lat, lon, timestamp)
+    if sun_info:
+        return sun_info.altitude_deg < 0
+    return False
 
 
 def _is_nighttime(timestamp: datetime, lat: float, lon: float) -> bool:
@@ -1015,10 +1219,34 @@ def _is_nighttime(timestamp: datetime, lat: float, lon: float) -> bool:
     Returns:
         True if the sun is below the horizon, False otherwise
     """
-    sun_info = get_sun_info(lat, lon, timestamp)
-    if sun_info:
-        return sun_info.altitude_deg < 0
-    return False
+    return _is_nighttime_cached(timestamp.isoformat(), lat, lon)
+
+
+def _meets_thresholds(data: dict[str, object], thresholds: dict[str, float]) -> bool:
+    """
+    Check if an hour's data meets the good observing thresholds.
+
+    Args:
+        data: Hour data dictionary with condition values
+        thresholds: Dict with max_clouds, min_darkness, min_seeing
+
+    Returns:
+        True if all thresholds are met
+    """
+    cloud_cover = data.get("cloud_cover")
+    darkness = data.get("darkness")
+    seeing = data.get("seeing")
+
+    # Check cloud cover threshold
+    if isinstance(cloud_cover, (int, float)) and cloud_cover > thresholds["max_clouds"]:
+        return False
+
+    # Check darkness threshold
+    if isinstance(darkness, (int, float)) and darkness < thresholds["min_darkness"]:
+        return False
+
+    # Check seeing threshold - return the negated condition directly
+    return not (isinstance(seeing, (int, float)) and seeing < thresholds["min_seeing"])
 
 
 def _get_transparency_color_wrapper(value: object) -> tuple[str, str]:
@@ -1078,8 +1306,9 @@ def _render_time_header(
     day_labels: list[str],
     days_data: dict[str, list[dict[str, object]]],
     tz: ZoneInfo | None,
+    thresholds: dict[str, float] | None = None,
 ) -> None:
-    """Render the time header rows (tens and ones digits)."""
+    """Render the time header rows (tens and ones digits), with optional highlighting."""
     from rich.text import Text
 
     # Tens digit row
@@ -1135,6 +1364,30 @@ def _render_time_header(
             ones_row.append("  ", style="dim")
 
     console.print(ones_row)
+
+    # Highlight row (if thresholds provided)
+    if thresholds:
+        highlight_row = Text()
+        highlight_row.append(" " * 20)
+
+        for day_idx, day_key in enumerate(day_labels):
+            day_data = days_data[day_key]
+            is_first_day = day_idx == 0
+            hours_to_show = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+
+            for i, data in enumerate(day_data[:hours_to_show]):
+                if _meets_thresholds(data, thresholds):
+                    highlight_row.append("★", style="bold green")
+                else:
+                    highlight_row.append(" ", style="dim")
+
+                if i < hours_to_show - 1:
+                    highlight_row.append(" ", style="dim")
+
+            if day_idx < len(day_labels) - 1:
+                highlight_row.append("  ", style="dim")
+
+        console.print(highlight_row)
 
 
 def _render_condition_row(
@@ -1271,8 +1524,13 @@ def _display_clear_sky_chart(
     tz: ZoneInfo | None,
     days: int,
     start_hour: datetime | None = None,
+    conditions: list[str] | None = None,
+    thresholds: dict[str, float] | None = None,
 ) -> None:
     """Display a Clear Sky Chart-style grid visualization."""
+    if conditions is None:
+        conditions = DEFAULT_CONDITIONS
+
     # Group data by day
     days_data: dict[str, list[dict[str, object]]] = {}
     for data in chart_data:
@@ -1308,26 +1566,32 @@ def _display_clear_sky_chart(
                 if isinstance(data["timestamp"], datetime) and data["timestamp"].astimezone(tz).hour >= min_hour
             ]
 
+    # Pre-calculate hours to show for each day (performance optimization)
+    hours_to_show_cache: dict[str, int] = {}
+    for day_idx, day_key in enumerate(day_labels):
+        is_first_day = day_idx == 0
+        day_data = days_data[day_key]
+        hours_to_show_cache[day_key] = _calculate_hours_to_show(day_data, day_key, is_first_day, tz)
+
     # Build the chart
     console.print("[bold]Clear Sky Chart[/bold]\n")
 
     # Render headers
     _render_day_header(day_labels, days_data, tz)
-    _render_time_header(day_labels, days_data, tz)
+    _render_time_header(day_labels, days_data, tz, thresholds)
+
+    # Build condition rows based on requested conditions
+    condition_rows = []
+    for cond_key in conditions:
+        if cond_key in AVAILABLE_CONDITIONS:
+            name, field, func_name = AVAILABLE_CONDITIONS[cond_key]
+            # Get the actual function from globals
+            color_func = globals()[func_name]
+            condition_rows.append((name, field, color_func))
 
     # Render condition rows
-    conditions = [
-        ("Cloud Cover", "cloud_cover", _get_cloud_color),
-        ("Transparency", "transparency", _get_transparency_color_wrapper),
-        ("Seeing", "seeing", _get_seeing_color),
-        ("Darkness", "darkness", _get_darkness_color),
-        ("Wind", "wind", _get_wind_color),
-        ("Humidity", "humidity", _get_humidity_color),
-        ("Temperature", "temperature", _get_temp_color),
-    ]
-
-    for condition_name, field, color_func in conditions:
+    for condition_name, field, color_func in condition_rows:
         _render_condition_row(condition_name, field, color_func, day_labels, days_data, tz)
 
-    # Render legend
-    _render_legend()
+    # Render legend (only for requested conditions)
+    _render_legend(conditions)
