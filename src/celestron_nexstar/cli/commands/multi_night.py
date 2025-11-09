@@ -839,6 +839,7 @@ def show_best_night(
 @app.command("clear-sky", rich_help_panel="Forecast Visualization")
 def show_clear_sky_chart(
     days: int = typer.Option(4, "--days", "-d", help="Number of days to show (default: 4, max: 7)"),
+    nighttime_only: bool = typer.Option(False, "--nighttime-only", "-n", help="Only show nighttime hours (after sunset, before sunrise)"),
 ) -> None:
     """Display a Clear Sky Chart-style forecast grid showing conditions over multiple days."""
     try:
@@ -977,8 +978,18 @@ def show_clear_sky_chart(
             if isinstance(data["timestamp"], datetime) and data["timestamp"] >= start_time_utc
         ]
 
+        # Apply nighttime-only filter if requested
+        if nighttime_only:
+            filtered_chart_data = [
+                data for data in filtered_chart_data
+                if isinstance(data["timestamp"], datetime) and _is_nighttime(data["timestamp"], lat, lon)
+            ]
+
         if not filtered_chart_data:
-            console.print("[yellow]No forecast data available from current time forward.[/yellow]")
+            if nighttime_only:
+                console.print("[yellow]No nighttime forecast data available. Try without --nighttime-only flag.[/yellow]")
+            else:
+                console.print("[yellow]No forecast data available from current time forward.[/yellow]")
             return
 
         # Group data by day and create grid
@@ -990,6 +1001,24 @@ def show_clear_sky_chart(
         import traceback
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+def _is_nighttime(timestamp: datetime, lat: float, lon: float) -> bool:
+    """
+    Check if a given timestamp is during nighttime (sun below horizon).
+
+    Args:
+        timestamp: The time to check
+        lat: Observer latitude
+        lon: Observer longitude
+
+    Returns:
+        True if the sun is below the horizon, False otherwise
+    """
+    sun_info = get_sun_info(lat, lon, timestamp)
+    if sun_info:
+        return sun_info.altitude_deg < 0
+    return False
 
 
 def _get_transparency_color_wrapper(value: object) -> tuple[str, str]:
