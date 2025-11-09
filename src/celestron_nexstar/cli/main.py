@@ -99,7 +99,7 @@ def main(
             console.print(f"[dim]Using profile: {profile}[/dim]")
 
 
-@app.command()
+@app.command(rich_help_panel="Utilities")
 def version() -> None:
     """Show the CLI version."""
     from celestron_nexstar.cli import __version__
@@ -107,28 +107,109 @@ def version() -> None:
     console.print(f"[bold]Celestron NexStar CLI[/bold] version [cyan]{__version__}[/cyan]")
 
 
-# Register command groups - Phase 2 (Core)
-app.add_typer(connect.app, name="connect", help="Connection commands (deprecated - use subcommands)")
-app.add_typer(position.app, name="position", help="Position query commands")
-app.add_typer(goto.app, name="goto", help="Slew (goto) commands")
-app.add_typer(move.app, name="move", help="Manual movement commands")
-app.add_typer(track.app, name="track", help="Tracking control commands")
-app.add_typer(align.app, name="align", help="Alignment commands")
+# Register command groups organized by category
 
-# Register command groups - Phase 3 (Advanced)
-app.add_typer(location.app, name="location", help="Observer location commands")
-app.add_typer(time.app, name="time", help="Time and date commands")
-app.add_typer(catalog.app, name="catalog", help="Celestial object catalogs")
-app.add_typer(optics.app, name="optics", help="Telescope and eyepiece configuration")
-app.add_typer(ephemeris.app, name="ephemeris", help="Ephemeris file management")
-app.add_typer(data.app, name="data", help="Data import and management")
-app.add_typer(tonight.app, name="tonight", help="Tonight's observing plan")
-app.add_typer(multi_night.app, name="multi-night", help="Multi-night planning and comparison")
-app.add_typer(dashboard.app, name="dashboard", help="Full-screen dashboard")
+# Telescope Control
+app.add_typer(
+    connect.app,
+    name="connect",
+    help="Connection commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    position.app,
+    name="position",
+    help="Position query commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    goto.app,
+    name="goto",
+    help="Slew (goto) commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    move.app,
+    name="move",
+    help="Manual movement commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    track.app,
+    name="track",
+    help="Tracking control commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    align.app,
+    name="align",
+    help="Alignment commands",
+    rich_help_panel="Telescope Control",
+)
+
+# Planning & Observation
+app.add_typer(
+    tonight.app,
+    name="tonight",
+    help="Tonight's observing plan",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    multi_night.app,
+    name="multi-night",
+    help="Multi-night planning and comparison",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    catalog.app,
+    name="catalog",
+    help="Celestial object catalogs",
+    rich_help_panel="Planning & Observation",
+)
+
+# Configuration
+app.add_typer(
+    location.app,
+    name="location",
+    help="Observer location commands",
+    rich_help_panel="Configuration",
+)
+app.add_typer(
+    time.app,
+    name="time",
+    help="Time and date commands",
+    rich_help_panel="Configuration",
+)
+app.add_typer(
+    optics.app,
+    name="optics",
+    help="Telescope and eyepiece configuration",
+    rich_help_panel="Configuration",
+)
+app.add_typer(
+    ephemeris.app,
+    name="ephemeris",
+    help="Ephemeris file management",
+    rich_help_panel="Configuration",
+)
+
+# Data & Management
+app.add_typer(
+    data.app,
+    name="data",
+    help="Data import and management",
+    rich_help_panel="Data & Management",
+)
+app.add_typer(
+    dashboard.app,
+    name="dashboard",
+    help="Full-screen dashboard",
+    rich_help_panel="Data & Management",
+)
 
 
 # Also add connect commands directly to main app for convenience
-@app.command("conn")
+@app.command("conn", rich_help_panel="Utilities")
 def conn(
     port: str = typer.Argument(..., help="Serial port (e.g., /dev/ttyUSB0, COM3)"),
     baudrate: int = typer.Option(9600, help="Baud rate"),
@@ -138,13 +219,13 @@ def conn(
     connect.connect(port, baudrate, timeout)
 
 
-@app.command("disc")
+@app.command("disc", rich_help_panel="Utilities")
 def disc() -> None:
     """Quick disconnect from telescope (shorthand for 'connect disconnect')."""
     connect.disconnect()
 
 
-@app.command()
+@app.command(rich_help_panel="Utilities")
 def shell() -> None:
     """
     Enter interactive shell mode with autocomplete and command history.
