@@ -893,7 +893,6 @@ def show_clear_sky_chart(
     highlight_good: bool = typer.Option(
         False,
         "--highlight-good",
-        "-h",
         help="Highlight hours with good observing conditions (low clouds, high darkness, good seeing)",
     ),
     max_clouds: float = typer.Option(

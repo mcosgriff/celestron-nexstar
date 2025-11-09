@@ -130,10 +130,15 @@ nexstar multi-night clear-sky [OPTIONS]
 
 #### Quality Highlighting
 
-**`--highlight-good`, `-h`**
+**`--highlight-good`**
 - Highlight hours meeting quality thresholds with green stars (★)
-- Stars appear above the time header
-- Combines with threshold options below
+- Stars appear in a row above the time header
+- An hour is marked with ★ only if it meets ALL threshold criteria:
+  - Cloud cover ≤ max-clouds
+  - Darkness ≥ min-darkness
+  - Seeing ≥ min-seeing
+- Makes it easy to identify the best observing hours at a glance
+- Combines with the threshold options below to customize criteria
 
 **`--max-clouds` FLOAT**
 - Maximum cloud cover % for highlighting (default: 30.0)
@@ -213,7 +218,7 @@ nexstar multi-night clear-sky --highlight-good
 
 **Strict quality thresholds:**
 ```bash
-nexstar multi-night clear-sky -h --max-clouds 15 --min-darkness 6.5 --min-seeing 80
+nexstar multi-night clear-sky --highlight-good --max-clouds 15 --min-darkness 6.5 --min-seeing 80
 ```
 
 **Export data for analysis:**
@@ -371,7 +376,7 @@ Currently, the CLI does not use environment variables. All configuration is stor
 
 1. **Use short options for quick commands:**
    ```bash
-   nexstar multi-night clear-sky -n -h -c clouds,seeing -d 7
+   nexstar multi-night clear-sky -n --highlight-good -c clouds,seeing -d 7
    ```
 
 2. **Combine export with filtering:**
@@ -381,7 +386,7 @@ Currently, the CLI does not use environment variables. All configuration is stor
 
 3. **Create aliases for common commands:**
    ```bash
-   alias sky-tonight='nexstar multi-night clear-sky -n -h -c clouds,seeing,darkness'
+   alias sky-tonight='nexstar multi-night clear-sky -n --highlight-good -c clouds,seeing,darkness'
    ```
 
 4. **Check conditions before observing:**

@@ -198,10 +198,10 @@ track get                        # Get current mode
 
 **Multi-Night Planning** (outside shell)
 ```bash
-nexstar multi-night week                              # Compare next 7 nights
-nexstar multi-night best-night M31 --days 7           # Find best night for M31
-nexstar multi-night clear-sky --nighttime-only        # Detailed hourly forecast
-nexstar multi-night clear-sky -h -c clouds,seeing -e data.csv  # Advanced usage
+nexstar multi-night week                                        # Compare next 7 nights
+nexstar multi-night best-night M31 --days 7                     # Find best night for M31
+nexstar multi-night clear-sky --nighttime-only                  # Detailed hourly forecast
+nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # Advanced usage
 ```
 
 ### Shell Tips
