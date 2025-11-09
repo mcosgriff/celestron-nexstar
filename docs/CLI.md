@@ -5,10 +5,18 @@ This document provides comprehensive documentation for the `nexstar` command-lin
 ## Table of Contents
 
 - [Overview](#overview)
+- [Export Functionality](#export-functionality)
+- [Telescope Viewing Commands](#telescope-viewing-commands)
+  - [Conditions](#conditions)
+  - [Objects](#objects)
+  - [Imaging](#imaging)
+  - [Tonight](#tonight)
+  - [Plan](#plan)
 - [Multi-Night Planning](#multi-night-planning)
   - [Week Comparison](#week-comparison)
   - [Best Night for Object](#best-night-for-object)
   - [Clear Sky Chart](#clear-sky-chart)
+- [Binocular & Naked-Eye Viewing](#binocular--naked-eye-viewing)
 - [Location Management](#location-management)
 - [Catalog Commands](#catalog-commands)
 - [Shell](#shell)
@@ -29,6 +37,230 @@ nexstar multi-night --help
 nexstar multi-night clear-sky --help
 ```
 
+## Export Functionality
+
+Many viewing and planning commands support exporting their output to text files for printing or offline reference. Export functionality uses a consistent pattern across all commands.
+
+### Export Options
+
+**`--export`, `-e`**
+- Boolean flag that enables export
+- When used without `--export-path`, automatically generates a filename
+- Example: `nexstar telescope tonight --export`
+
+**`--export-path` PATH**
+- Optional custom file path for export
+- Overrides auto-generated filename when provided
+- Example: `nexstar telescope tonight --export --export-path my_plan.txt`
+
+### Auto-Generated Filenames
+
+When `--export` is used without `--export-path`, filenames are automatically generated using this pattern:
+
+**Telescope Commands:**
+```
+nexstar_{telescope_model}_{location}_{date}_{command}.txt
+```
+
+**Multi-Night Commands:**
+```
+nexstar_{telescope_model}_{location}_{date}_{command}.txt
+```
+
+**Best Night Command:**
+```
+nexstar_{telescope_model}_{location}_{date}_best-night_{object_name}.txt
+```
+
+**Binocular Commands:**
+```
+binoculars_{model}_{location}_{date}_{command}.txt
+```
+
+**Naked-Eye Commands:**
+```
+naked_eye_{location}_{date}_{command}.txt
+```
+
+**Examples:**
+- `nexstar_6se_los_angeles_2024-11-15_tonight.txt`
+- `nexstar_6se_los_angeles_2024-11-15_conditions.txt`
+- `nexstar_6se_los_angeles_2024-11-15_best-night_m31.txt`
+- `binoculars_10x50_los_angeles_2024-11-15_tonight.txt`
+- `naked_eye_los_angeles_2024-11-15_tonight.txt`
+
+### Export Format
+
+Exported files contain:
+- Plain text output with ASCII tables
+- All information from the console output
+- Formatted for readability and printing
+- No color codes (suitable for printing)
+
+### Commands with Export Support
+
+**Telescope Viewing:**
+- `nexstar telescope conditions --export`
+- `nexstar telescope objects --export`
+- `nexstar telescope imaging --export`
+- `nexstar telescope tonight --export`
+- `nexstar telescope plan --export`
+
+**Multi-Night Planning:**
+- `nexstar multi-night week --export`
+- `nexstar multi-night best-night <OBJECT> --export`
+
+**Binocular Viewing:**
+- `nexstar binoculars tonight --export`
+
+**Naked-Eye Viewing:**
+- `nexstar naked-eye tonight --export`
+
+### Usage Examples
+
+**Auto-generate filename:**
+```bash
+nexstar telescope tonight --export
+# Creates: nexstar_6se_los_angeles_2024-11-15_tonight.txt
+```
+
+**Custom filename:**
+```bash
+nexstar telescope tonight --export --export-path observing_plan.txt
+```
+
+**Export with filters:**
+```bash
+nexstar telescope objects --export --type planets --limit 10
+```
+
+**Export best night analysis:**
+```bash
+nexstar multi-night best-night M31 --export --days 7
+# Creates: nexstar_6se_los_angeles_2024-11-15_best-night_m31.txt
+```
+
+## Telescope Viewing Commands
+
+The `telescope` command group provides viewing guides and recommendations for telescope observing sessions.
+
+### Conditions
+
+Show tonight's observing conditions including weather, seeing, light pollution, and moon events:
+
+```bash
+nexstar telescope conditions [OPTIONS]
+```
+
+**Options:**
+- `--export`, `-e` - Export output to text file (auto-generates filename)
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Overall observing quality score
+- Weather conditions (clouds, temperature, wind, etc.)
+- Seeing conditions with hourly forecast
+- Light pollution (Bortle class, SQM, limiting magnitude)
+- Moon phase, illumination, and events
+- Sun events (sunrise, sunset, twilight times)
+- Recommendations and warnings
+
+**Example:**
+```bash
+nexstar telescope conditions
+nexstar telescope conditions --export
+nexstar telescope conditions --export --export-path conditions.txt
+```
+
+### Objects
+
+Show recommended objects for tonight based on visibility and conditions:
+
+```bash
+nexstar telescope objects [OPTIONS]
+```
+
+**Options:**
+- `--type` TEXT - Filter by type (planets, deep_sky, messier, etc.)
+- `--limit` INTEGER - Maximum objects to show (default: 20)
+- `--best-for-seeing` - Show only objects ideal for current seeing conditions
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Example:**
+```bash
+nexstar telescope objects
+nexstar telescope objects --type planets --limit 5
+nexstar telescope objects --best-for-seeing --export
+```
+
+### Imaging
+
+Show imaging forecasts with seeing for planetary imaging and transparency for deep-sky:
+
+```bash
+nexstar telescope imaging [OPTIONS]
+```
+
+**Options:**
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Planetary imaging seeing forecast (hourly)
+- Deep-sky imaging transparency forecast (hourly)
+- Exposure time recommendations
+- Best imaging windows
+
+**Example:**
+```bash
+nexstar telescope imaging
+nexstar telescope imaging --export
+```
+
+### Tonight
+
+Show complete viewing guide for tonight (conditions + objects):
+
+```bash
+nexstar telescope tonight [OPTIONS]
+```
+
+**Options:**
+- `--type` TEXT - Filter objects by type
+- `--limit` INTEGER - Maximum objects to show (default: 20)
+- `--best-for-seeing` - Show only objects ideal for current seeing
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Example:**
+```bash
+nexstar telescope tonight
+nexstar telescope tonight --export
+nexstar telescope tonight --type deep_sky --export --export-path deep_sky_tonight.txt
+```
+
+### Plan
+
+Show complete observing plan (same as `tonight` command):
+
+```bash
+nexstar telescope plan [OPTIONS]
+```
+
+**Options:**
+- `--type` TEXT - Filter objects by type
+- `--limit` INTEGER - Maximum objects to show (default: 20)
+- `--best-for-seeing` - Show only objects ideal for current seeing
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Example:**
+```bash
+nexstar telescope plan
+nexstar telescope plan --export
+```
+
 ## Multi-Night Planning
 
 The `multi-night` command group helps you plan observing sessions by comparing conditions across multiple nights.
@@ -38,8 +270,12 @@ The `multi-night` command group helps you plan observing sessions by comparing c
 Compare observing conditions for the next 7 nights:
 
 ```bash
-nexstar multi-night week
+nexstar multi-night week [OPTIONS]
 ```
+
+**Options:**
+- `--export`, `-e` - Export output to text file (auto-generates filename)
+- `--export-path` PATH - Custom export file path
 
 **Output:**
 - Table showing quality, seeing, clouds, moon phase/illumination for each night
@@ -72,12 +308,16 @@ nexstar multi-night best-night <OBJECT_NAME> [OPTIONS]
 
 **Options:**
 - `--days`, `-d` INTEGER - Number of days to check (default: 7)
+- `--export`, `-e` - Export output to text file (auto-generates filename with object name)
+- `--export-path` PATH - Custom export file path
 
 **Example:**
 ```bash
 nexstar multi-night best-night M31 --days 7
 nexstar multi-night best-night Jupiter --days 14
 nexstar multi-night best-night "Ring Nebula" --days 7
+nexstar multi-night best-night M31 --days 7 --export
+# Creates: nexstar_6se_los_angeles_2024-11-15_best-night_m31.txt
 ```
 
 **Key Features:**
@@ -370,6 +610,64 @@ Note: Each block represents one hour. Time shown in 24-hour format (tens digit a
 - 6-16 mph: Medium blue - Acceptable
 - 17-28 mph: Light blue - May cause vibration
 - 29+ mph: Gray/white - Difficult conditions
+
+## Binocular & Naked-Eye Viewing
+
+### Binocular Viewing
+
+Show what's visible tonight with binoculars:
+
+```bash
+nexstar binoculars tonight [OPTIONS]
+```
+
+**Options:**
+- `--model`, `-m` TEXT - Binocular model (e.g., 10x50, 7x50, 15x70, default: 10x50)
+- `--export`, `-e` - Export output to text file (auto-generates filename)
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- ISS passes visible with binoculars
+- Prominent constellations
+- Constellations partially visible
+- Star patterns (asterisms)
+- Active meteor showers
+- Bright stars visible
+
+**Example:**
+```bash
+nexstar binoculars tonight
+nexstar binoculars tonight --model 15x70
+nexstar binoculars tonight --export
+# Creates: binoculars_10x50_los_angeles_2024-11-15_tonight.txt
+```
+
+### Naked-Eye Viewing
+
+Show what's visible tonight with the naked eye:
+
+```bash
+nexstar naked-eye tonight [OPTIONS]
+```
+
+**Options:**
+- `--export`, `-e` - Export output to text file (auto-generates filename)
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- ISS passes visible to naked eye
+- Prominent constellations
+- Constellations partially visible
+- Star patterns (asterisms)
+- Active meteor showers
+- Bright stars visible
+
+**Example:**
+```bash
+nexstar naked-eye tonight
+nexstar naked-eye tonight --export
+# Creates: naked_eye_los_angeles_2024-11-15_tonight.txt
+```
 
 ## Location Management
 

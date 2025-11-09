@@ -124,6 +124,29 @@ Production-ready observation planning with intelligent, object-type specific rec
   - Customizable condition display (clouds, seeing, darkness, wind, humidity, temp)
 - **Smart Scoring**: Weights conditions by object type (planets ≠ galaxies ≠ nebulae)
 
+### Export Functionality
+
+Export viewing guides and plans to text files for printing or offline reference:
+
+- **Auto-Generated Filenames**: Commands automatically create descriptive filenames
+  - Format: `{equipment}_{location}_{date}_{command}.txt`
+  - Example: `nexstar_6se_los_angeles_2024-11-15_tonight.txt`
+- **Custom Filenames**: Specify your own export path with `--export-path`
+- **Supported Commands**: All viewing and planning commands support export
+  - Telescope viewing: `conditions`, `objects`, `imaging`, `tonight`, `plan`
+  - Multi-night: `week`, `best-night`
+  - Binocular viewing: `tonight`
+  - Naked-eye viewing: `tonight`
+- **Print-Ready**: Plain text with ASCII tables, perfect for printing
+
+**Usage:**
+```bash
+nexstar telescope tonight --export                              # Auto-generate filename
+nexstar telescope conditions --export --export-path conditions.txt  # Custom filename
+nexstar binoculars tonight --export                            # Binocular guide
+nexstar multi-night best-night M31 --export                    # Best night analysis
+```
+
 See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
 
 ## 📚 Interactive Shell Guide
@@ -209,6 +232,16 @@ nexstar multi-night best-night Jupiter --days 14                # Find best nigh
 nexstar multi-night best-night "Ring Nebula" --days 7           # Nebula-optimized with light pollution warning
 nexstar multi-night clear-sky --nighttime-only                  # Detailed hourly forecast
 nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # Advanced usage
+```
+
+**Export Viewing Plans** (print-friendly text files)
+```bash
+nexstar telescope tonight --export                              # Auto-generate filename
+nexstar telescope conditions --export --export-path conditions.txt  # Custom filename
+nexstar binoculars tonight --export                            # Binocular viewing guide
+nexstar naked-eye tonight --export                             # Naked-eye stargazing guide
+nexstar multi-night week --export                              # Week comparison
+nexstar multi-night best-night M31 --export                    # Best night analysis
 ```
 
 ### Shell Tips
