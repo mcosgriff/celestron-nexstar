@@ -19,7 +19,7 @@ from timezonefinder import TimezoneFinder
 from ...api.catalogs import get_object_by_name
 from ...api.observation_planner import ObservationPlanner, ObservingConditions
 from ...api.solar_system import get_moon_info, get_sun_info
-from ...api.utils import calculate_lst, ra_dec_to_alt_az
+from ...api.utils import angular_separation, calculate_lst, ra_dec_to_alt_az
 from ...api.visibility import VisibilityInfo, assess_visibility
 
 
@@ -37,6 +37,7 @@ class NightData(TypedDict):
     conditions: ObservingConditions
     visibility: VisibilityInfo
     score: float
+    moon_separation_deg: float  # Angular separation from moon in degrees
 
 
 app = typer.Typer(help="Multi-night observing planning and comparison")
@@ -50,10 +51,11 @@ _tz_finder = TimezoneFinder()
 
 # Scoring weights for best-night calculation
 SCORING_WEIGHTS = {
-    "conditions_quality": 0.4,
-    "seeing": 0.3,
-    "visibility": 0.2,
-    "moon": 0.1,
+    "conditions_quality": 0.35,  # Overall conditions (clouds, transparency, wind)
+    "seeing": 0.25,              # Atmospheric steadiness
+    "visibility": 0.20,          # Object altitude and observability
+    "moon_separation": 0.15,     # Angular distance from moon (NEW)
+    "moon_brightness": 0.05,     # Moon illumination (reduced from 0.1)
 }
 
 # Day colors for chart visualization
@@ -753,13 +755,31 @@ def show_best_night(
                         dt=transit_time,
                     )
 
-                    # Calculate score combining conditions and visibility
+                    # Get moon position at transit time
+                    moon_info = get_moon_info(lat, lon, transit_time)
+                    moon_separation_deg = 0.0
+                    moon_separation_score = 1.0  # Default: no interference
+
+                    if moon_info:
+                        # Calculate moon-object separation and scoring
+                        moon_separation_score, moon_separation_deg = _calculate_moon_separation_score(
+                            obj.ra_hours,
+                            obj.dec_degrees,
+                            moon_info.ra_hours,
+                            moon_info.dec_degrees,
+                            conditions.moon_illumination,
+                        )
+
+                    # Calculate score combining conditions, visibility, and moon separation
                     conditions_score = conditions.observing_quality_score * SCORING_WEIGHTS["conditions_quality"]
                     seeing_score = (conditions.seeing_score / 100.0) * SCORING_WEIGHTS["seeing"]
                     visibility_score = visibility.observability_score * SCORING_WEIGHTS["visibility"]
-                    moon_score = (1.0 - conditions.moon_illumination) * SCORING_WEIGHTS["moon"]  # Less moon = better
+                    moon_sep_score = moon_separation_score * SCORING_WEIGHTS["moon_separation"]
+                    moon_brightness_score = (1.0 - conditions.moon_illumination) * SCORING_WEIGHTS["moon_brightness"]
 
-                    total_score = conditions_score + seeing_score + visibility_score + moon_score
+                    total_score = (
+                        conditions_score + seeing_score + visibility_score + moon_sep_score + moon_brightness_score
+                    )
 
                     nights_data.append({
                         "date": night_date,
@@ -769,6 +789,7 @@ def show_best_night(
                         "conditions": conditions,
                         "visibility": visibility,
                         "score": total_score,
+                        "moon_separation_deg": moon_separation_deg,
                     })
 
         if not nights_data:
@@ -788,6 +809,7 @@ def show_best_night(
         table.add_column("Transit", width=12)
         table.add_column("Altitude", justify="right", width=10)
         table.add_column("Moon", width=10)
+        table.add_column("Moon Sep", justify="right", width=10)
 
         for night in nights_data:
             date: datetime = night["date"]
@@ -825,6 +847,8 @@ def show_best_night(
             altitude_val: float = night["altitude"]
             altitude = f"{altitude_val:.0f}°"
             moon = f"{night_conditions.moon_illumination * 100:.0f}%"
+            moon_sep: float = night["moon_separation_deg"]
+            moon_sep_str = f"{moon_sep:.0f}°"
 
             table.add_row(
                 date_str,
@@ -835,6 +859,7 @@ def show_best_night(
                 transit_str,
                 altitude,
                 moon,
+                moon_sep_str,
             )
 
         console.print(table)
@@ -1219,6 +1244,69 @@ def _is_nighttime(timestamp: datetime, lat: float, lon: float) -> bool:
         True if the sun is below the horizon, False otherwise
     """
     return _is_nighttime_cached(timestamp.isoformat(), lat, lon)
+
+
+def _calculate_moon_separation_score(
+    object_ra_hours: float,
+    object_dec_degrees: float,
+    moon_ra_hours: float,
+    moon_dec_degrees: float,
+    moon_illumination: float,
+) -> tuple[float, float]:
+    """
+    Calculate moon interference score based on separation and illumination.
+
+    Args:
+        object_ra_hours: Object's RA in hours
+        object_dec_degrees: Object's declination in degrees
+        moon_ra_hours: Moon's RA in hours
+        moon_dec_degrees: Moon's declination in degrees
+        moon_illumination: Moon illumination fraction (0.0-1.0)
+
+    Returns:
+        Tuple of (score, separation_degrees)
+        - score: 0.0 (worst interference) to 1.0 (no interference)
+        - separation_degrees: Angular separation in degrees
+    """
+    # Calculate angular separation between object and moon
+    separation_deg = angular_separation(
+        object_ra_hours,
+        object_dec_degrees,
+        moon_ra_hours,
+        moon_dec_degrees,
+    )
+
+    # Moon interference is combination of:
+    # 1. Angular separation (closer = worse)
+    # 2. Moon brightness (brighter = worse)
+
+    # Separation scoring:
+    # - <15°: Very bad (moon glare ruins observation)
+    # - 15-30°: Poor (significant interference)
+    # - 30-60°: Fair (moderate interference)
+    # - 60-90°: Good (minimal interference)
+    # - >90°: Excellent (opposite sides of sky)
+
+    if separation_deg >= 90:
+        separation_score = 1.0
+    elif separation_deg >= 60:
+        separation_score = 0.8 + 0.2 * ((separation_deg - 60) / 30)
+    elif separation_deg >= 30:
+        separation_score = 0.5 + 0.3 * ((separation_deg - 30) / 30)
+    elif separation_deg >= 15:
+        separation_score = 0.2 + 0.3 * ((separation_deg - 15) / 15)
+    else:
+        separation_score = 0.2 * (separation_deg / 15)
+
+    # Brightness factor: brighter moon = more interference
+    # New moon (0% illumination) = no penalty
+    # Full moon (100% illumination) = maximum penalty
+    brightness_factor = 1.0 - (moon_illumination * 0.5)  # Max 50% reduction
+
+    # Combined score
+    final_score = separation_score * brightness_factor
+
+    return final_score, separation_deg
 
 
 def _meets_thresholds(data: dict[str, object], thresholds: dict[str, float]) -> bool:
