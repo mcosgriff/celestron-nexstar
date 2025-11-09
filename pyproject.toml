@@ -197,6 +197,7 @@ exclude = [
 # Plugins
 plugins = [
     "returns.contrib.mypy.returns_plugin",
+    "sqlalchemy.ext.mypy.plugin",
 ]
 
 # Per-module overrides for libraries without type stubs

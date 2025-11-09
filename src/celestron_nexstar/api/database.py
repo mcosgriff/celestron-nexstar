@@ -10,13 +10,15 @@ Uses SQLAlchemy ORM for type-safe database operations.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session, sessionmaker
 
 from .catalogs import CelestialObject
@@ -557,12 +559,13 @@ class CatalogDatabase:
                 .order_by(func.lower(CelestialObjectModel.common_name))
                 .limit(limit)
             )
-            common_name_results = session.execute(common_name_query).fetchall()
-            for row in common_name_results:
-                if row[0]:
-                    names_set.add(row[0])
-
-            # Return sorted list, limited to requested limit
+            # Fix type incompatibility: Row[tuple[str | None]], be explicit with Optional[str]
+            common_name_results: Sequence[Row[tuple[str | None]]] = session.execute(common_name_query).fetchall()
+            for common_name_row in common_name_results:
+                # Use cast to help mypy understand the type (common_name can be None)
+                val = cast(str | None, common_name_row[0])
+                if val is not None:
+                    names_set.add(val)
             return sorted(names_set, key=str.lower)[:limit]
 
     def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
