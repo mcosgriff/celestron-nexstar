@@ -23,7 +23,7 @@ app = typer.Typer(help="Vacation planning for telescope viewing")
 console = Console()
 
 
-def _generate_export_filename(command: str = "vacation", location: str | None = None, days: int | None = None) -> Path:
+def _generate_export_filename(command: str = "vacation", location: str | None = None, days: int | None = None, date_suffix: str = "") -> Path:
     """Generate export filename for vacation commands."""
     from datetime import datetime
     import re
@@ -42,6 +42,9 @@ def _generate_export_filename(command: str = "vacation", location: str | None = 
     
     if days is not None:
         parts.append(f"{days}days")
+    
+    if date_suffix:
+        parts.append(date_suffix.lstrip("_"))
     
     filename = "_".join(parts) + ".txt"
     return Path(filename)
@@ -234,8 +237,10 @@ def _show_dark_sites_content(output_console: Console, location: ObserverLocation
 @app.command("plan")
 def show_comprehensive_plan(
     location: str = typer.Argument(..., help="Vacation location (city, address, or coordinates)"),
-    days_ahead: int = typer.Option(30, "--days", "-d", help="Days ahead to check for events (default: 30)"),
-    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    start_date: str | None = typer.Option(None, "--start-date", "-s", help="Vacation start date (YYYY-MM-DD)"),
+    end_date: str | None = typer.Option(None, "--end-date", "-e", help="Vacation end date (YYYY-MM-DD)"),
+    days_ahead: int = typer.Option(30, "--days", "-d", help="Days ahead to check for events if dates not specified (default: 30)"),
+    export: bool = typer.Option(False, "--export", "-E", help="Export output to text file (auto-generates filename)"),
     export_path: str | None = typer.Option(
         None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
     ),
@@ -251,7 +256,12 @@ def show_comprehensive_plan(
     - Meteor showers
     - Visible comets
     - Weather considerations
+    
+    Specify either --start-date and --end-date for a specific vacation period,
+    or use --days to check events from today forward.
     """
+    from datetime import datetime
+    
     try:
         # Geocode location
         vacation_location = geocode_location(location)
@@ -259,11 +269,44 @@ def show_comprehensive_plan(
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1)
 
+    # Parse dates if provided
+    start_dt = None
+    end_dt = None
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]Error: Invalid start date format. Use YYYY-MM-DD (e.g., 2025-06-15)[/red]")
+            raise typer.Exit(1)
+    
+    if end_date:
+        try:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            console.print(f"[red]Error: Invalid end date format. Use YYYY-MM-DD (e.g., 2025-06-20)[/red]")
+            raise typer.Exit(1)
+    
+    # Validate date range
+    if start_dt and end_dt:
+        if start_dt >= end_dt:
+            console.print(f"[red]Error: Start date must be before end date[/red]")
+            raise typer.Exit(1)
+        # Calculate days from date range
+        days_ahead = (end_dt - start_dt).days
+    elif start_dt or end_date:
+        console.print(f"[yellow]Warning: Both --start-date and --end-date should be provided. Using --days={days_ahead} instead.[/yellow]")
+        start_dt = None
+        end_dt = None
+
     if export:
         location_name = vacation_location.name or f"{vacation_location.latitude:.1f}N-{vacation_location.longitude:.1f}E"
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("plan", location_name, days_ahead)
+        # Include date range in filename if provided
+        date_suffix = ""
+        if start_dt and end_dt:
+            date_suffix = f"_{start_dt.strftime('%Y%m%d')}-{end_dt.strftime('%Y%m%d')}"
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("plan", location_name, days_ahead, date_suffix)
         file_console = create_file_console()
-        _show_comprehensive_plan_content(file_console, vacation_location, days_ahead)
+        _show_comprehensive_plan_content(file_console, vacation_location, days_ahead, start_dt, end_dt)
         content = file_console.file.getvalue()
         file_console.file.close()
 
@@ -271,16 +314,31 @@ def show_comprehensive_plan(
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
-    _show_comprehensive_plan_content(console, vacation_location, days_ahead)
+    _show_comprehensive_plan_content(console, vacation_location, days_ahead, start_dt, end_dt)
 
 
-def _show_comprehensive_plan_content(output_console: Console, location: ObserverLocation, days_ahead: int) -> None:
+def _show_comprehensive_plan_content(output_console: Console, location: ObserverLocation, days_ahead: int, start_date: datetime | None = None, end_date: datetime | None = None) -> None:
     """Display comprehensive vacation planning information."""
     from datetime import UTC, datetime, timedelta
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
-
-    output_console.print(f"\n[bold cyan]Comprehensive Astronomy Plan for {location_name}[/bold cyan]\n")
+    
+    # Determine the date range to use
+    if start_date and end_date:
+        # Use provided date range
+        from datetime import timezone
+        start_dt = start_date.replace(tzinfo=timezone.utc) if start_date.tzinfo is None else start_date
+        end_dt = end_date.replace(tzinfo=timezone.utc) if end_date.tzinfo is None else end_date
+        date_range_str = f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}"
+        output_console.print(f"\n[bold cyan]Comprehensive Astronomy Plan for {location_name}[/bold cyan]")
+        output_console.print(f"[dim]Vacation Period: {date_range_str} ({(end_dt - start_dt).days + 1} days)[/dim]\n")
+    else:
+        # Use days_ahead from today
+        start_dt = datetime.now(UTC)
+        end_dt = start_dt + timedelta(days=days_ahead)
+        date_range_str = f"next {days_ahead} days"
+        output_console.print(f"\n[bold cyan]Comprehensive Astronomy Plan for {location_name}[/bold cyan]")
+        output_console.print(f"[dim]Checking events for the {date_range_str}[/dim]\n")
 
     # 1. Viewing Conditions
     output_console.print("[bold]1. Viewing Conditions[/bold]")
@@ -300,44 +358,59 @@ def _show_comprehensive_plan_content(output_console: Console, location: Observer
     if location.latitude >= 50.0 or location.latitude <= -50.0:
         output_console.print("\n[bold]3. Aurora Visibility[/bold]")
         try:
-            now = datetime.now(UTC)
-            aurora_forecast = check_aurora_visibility(location, now)
+            # Check aurora for the start of the vacation period
+            check_time = start_dt if start_date else datetime.now(UTC)
+            aurora_forecast = check_aurora_visibility(location, check_time)
             if aurora_forecast.is_visible:
-                output_console.print(f"[green]✓ Aurora may be visible tonight![/green]")
+                output_console.print(f"[green]✓ Aurora may be visible during your vacation![/green]")
                 output_console.print(f"   Kp index: {aurora_forecast.kp_index:.1f}")
                 output_console.print(f"   Visibility: {aurora_forecast.visibility_level}")
             else:
                 output_console.print(f"[yellow]Aurora not currently visible (Kp: {aurora_forecast.kp_index:.1f})[/yellow]")
                 if location.latitude >= 50.0:
                     output_console.print(f"   [dim]For your latitude ({location.latitude:.1f}°N), you typically need Kp ≥ {aurora_forecast.latitude_required:.1f}[/dim]")
-            output_console.print("\n[dim]💡 Tip: Use 'nexstar aurora when' for detailed aurora forecasts[/dim]\n")
+            output_console.print("\n[dim]💡 Tip: Use 'nexstar aurora when' for detailed aurora forecasts during your dates[/dim]\n")
         except Exception as e:
             output_console.print(f"[dim]Could not check aurora visibility: {e}[/dim]\n")
 
     # 4. Upcoming Eclipses
     output_console.print("\n[bold]4. Upcoming Eclipses[/bold]")
     try:
-        end_date = datetime.now(UTC) + timedelta(days=days_ahead * 365 // 30)  # Scale years based on days
-        years_ahead = max(1, days_ahead // 365)
+        # Calculate years to search based on date range
+        if start_date and end_date:
+            # Search from start_date to end_date + 1 year buffer
+            search_end = end_dt + timedelta(days=365)
+            years_ahead = max(1, int((search_end - start_dt).days / 365) + 1)
+        else:
+            years_ahead = max(1, days_ahead // 365)
         
         lunar_eclipses = get_next_lunar_eclipse(location, years_ahead=years_ahead)
         solar_eclipses = get_next_solar_eclipse(location, years_ahead=years_ahead)
         
-        all_eclipses = sorted(
-            (e for e in lunar_eclipses + solar_eclipses if e.date <= end_date),
-            key=lambda e: e.date
-        )[:5]  # Show next 5
+        # Filter eclipses within date range
+        all_eclipses = []
+        for e in lunar_eclipses + solar_eclipses:
+            if start_date and end_date:
+                if start_dt <= e.date <= end_dt:
+                    all_eclipses.append(e)
+            else:
+                # Use days_ahead from now
+                if e.date <= datetime.now(UTC) + timedelta(days=days_ahead * 365 // 30):
+                    all_eclipses.append(e)
+        
+        all_eclipses = sorted(all_eclipses, key=lambda e: e.date)[:5]  # Show next 5
         
         if all_eclipses:
             for eclipse in all_eclipses:
-                eclipse_type = "Lunar" if "Lunar" in eclipse.type else "Solar"
+                eclipse_type_str = str(eclipse.type) if hasattr(eclipse, 'type') else "Eclipse"
+                eclipse_type = "Lunar" if "Lunar" in eclipse_type_str else "Solar"
                 output_console.print(f"  • {eclipse_type} Eclipse: {eclipse.date.strftime('%Y-%m-%d')}")
                 if eclipse.visible:
                     output_console.print(f"    [green]Visible from this location[/green]")
                 else:
                     output_console.print(f"    [dim]Not visible from this location[/dim]")
         else:
-            output_console.print("[dim]No eclipses in the near future[/dim]")
+            output_console.print(f"[dim]No eclipses during your vacation period[/dim]")
         output_console.print("\n[dim]💡 Tip: Use 'nexstar eclipse next' for detailed eclipse information[/dim]\n")
     except Exception as e:
         output_console.print(f"[dim]Could not check eclipses: {e}[/dim]\n")
@@ -345,15 +418,25 @@ def _show_comprehensive_plan_content(output_console: Console, location: Observer
     # 5. Meteor Showers
     output_console.print("\n[bold]5. Upcoming Meteor Showers[/bold]")
     try:
-        months_ahead = max(1, days_ahead // 30)
+        if start_date and end_date:
+            months_ahead = max(1, int((end_dt - start_dt).days / 30) + 1)
+        else:
+            months_ahead = max(1, days_ahead // 30)
+        
         meteor_predictions = get_enhanced_meteor_predictions(location, months_ahead=months_ahead)
+        
+        # Filter by date range
+        if start_date and end_date:
+            meteor_predictions = [p for p in meteor_predictions if start_dt <= p.date <= end_dt]
+        
         if meteor_predictions:
             for pred in meteor_predictions[:5]:  # Show next 5
                 output_console.print(f"  • {pred.shower.name}: {pred.date.strftime('%Y-%m-%d')}")
                 output_console.print(f"    ZHR: {pred.zhr_peak} meteors/hour (adjusted: {pred.zhr_adjusted:.0f})")
                 output_console.print(f"    Quality: {pred.viewing_quality}")
         else:
-            output_console.print(f"[dim]No major meteor showers in the next {days_ahead} days[/dim]")
+            period_str = date_range_str if start_date and end_date else f"next {days_ahead} days"
+            output_console.print(f"[dim]No major meteor showers during {period_str}[/dim]")
         output_console.print("\n[dim]💡 Tip: Use 'nexstar meteors next' for detailed meteor shower forecasts[/dim]\n")
     except Exception as e:
         output_console.print(f"[dim]Could not check meteor showers: {e}[/dim]\n")
@@ -361,16 +444,30 @@ def _show_comprehensive_plan_content(output_console: Console, location: Observer
     # 6. Visible Comets
     output_console.print("\n[bold]6. Visible Comets[/bold]")
     try:
-        months_ahead = max(1, days_ahead // 30)
+        if start_date and end_date:
+            months_ahead = max(1, int((end_dt - start_dt).days / 30) + 1)
+        else:
+            months_ahead = max(1, days_ahead // 30)
+        
         comets = get_visible_comets(location, months_ahead=months_ahead)
+        
+        # Filter comets visible during date range (if we have visibility dates)
+        if start_date and end_date and comets:
+            # Filter comets that might be visible during the period
+            # (This is approximate - comets module would need visibility dates)
+            comets = comets[:5]  # Show top 5
+        
         if comets:
             for comet in comets[:5]:  # Show top 5
-                output_console.print(f"  • {comet.name}")
-                output_console.print(f"    Magnitude: {comet.magnitude:.1f}")
-                if comet.notes:
+                comet_name = comet.name if hasattr(comet, 'name') else str(comet)
+                comet_mag = comet.magnitude if hasattr(comet, 'magnitude') else "N/A"
+                output_console.print(f"  • {comet_name}")
+                output_console.print(f"    Magnitude: {comet_mag}")
+                if hasattr(comet, 'notes') and comet.notes:
                     output_console.print(f"    [dim]{comet.notes}[/dim]")
         else:
-            output_console.print("[dim]No bright comets currently visible[/dim]")
+            period_str = date_range_str if start_date and end_date else "currently"
+            output_console.print(f"[dim]No bright comets visible {period_str}[/dim]")
         output_console.print("\n[dim]💡 Tip: Use 'nexstar comets visible' for detailed comet information[/dim]\n")
     except Exception as e:
         output_console.print(f"[dim]Could not check comets: {e}[/dim]\n")
