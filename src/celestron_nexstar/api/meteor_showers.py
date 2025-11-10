@@ -464,20 +464,18 @@ def populate_meteor_shower_database(db_session: Session) -> None:
     for shower in METEOR_SHOWERS:
         model = MeteorShowerModel(
             name=shower.name,
-            activity_start_month=shower.activity_start_month,
-            activity_start_day=shower.activity_start_day,
-            activity_end_month=shower.activity_end_month,
-            activity_end_day=shower.activity_end_day,
+            start_month=shower.activity_start_month,
+            start_day=shower.activity_start_day,
+            end_month=shower.activity_end_month,
+            end_day=shower.activity_end_day,
             peak_month=shower.peak_month,
             peak_day=shower.peak_day,
-            peak_end_month=shower.peak_end_month,
-            peak_end_day=shower.peak_end_day,
-            zhr_peak=shower.zhr_peak,
-            velocity_km_s=shower.velocity_km_s,
             radiant_ra_hours=shower.radiant_ra_hours,
             radiant_dec_degrees=shower.radiant_dec_degrees,
+            zhr_peak=shower.zhr_peak,
+            velocity_km_s=float(shower.velocity_km_s),
             parent_comet=shower.parent_comet,
-            description=shower.description,
+            notes=shower.description,
         )
         db_session.add(model)
 

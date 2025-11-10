@@ -255,12 +255,22 @@ def populate_dark_sky_sites_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
-    from .models import DarkSkySiteModel
+    from .models import Base, DarkSkySiteModel
 
     logger.info("Populating dark sky sites database...")
 
-    # Clear existing data
-    db_session.query(DarkSkySiteModel).delete()
+    # Ensure table exists (create if it doesn't)
+    try:
+        DarkSkySiteModel.__table__.create(db_session.bind, checkfirst=True)
+    except Exception as e:
+        logger.debug(f"Table creation check: {e}")
+
+    # Clear existing data (if table exists)
+    try:
+        db_session.query(DarkSkySiteModel).delete()
+    except Exception:
+        # Table doesn't exist yet, that's okay
+        pass
 
     # Add dark sky sites
     for site in KNOWN_DARK_SITES:
