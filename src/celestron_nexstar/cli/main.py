@@ -33,6 +33,7 @@ from .commands import (
     time,
     tonight,
     track,
+    zodiacal,
 )
 
 
@@ -214,6 +215,12 @@ app.add_typer(
     satellites.app,
     name="satellites",
     help="Bright satellite passes and flares",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    zodiacal.app,
+    name="zodiacal",
+    help="Zodiacal light and gegenschein viewing",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
