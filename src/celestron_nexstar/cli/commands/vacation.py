@@ -63,7 +63,7 @@ def show_viewing_info(
 @app.command("dark-sites")
 def show_dark_sites(
     location: str = typer.Argument(..., help="Vacation location (city, address, or coordinates)"),
-    max_distance: float = typer.Option(200.0, "--max-distance", help="Maximum distance in km (default: 200)"),
+    max_distance: float = typer.Option(200.0, "--max-distance", help="Maximum distance in miles (default: 200)"),
     min_bortle: int = typer.Option(4, "--min-bortle", help="Minimum Bortle class (1-9, default: 4)"),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
     export_path: str | None = typer.Option(
@@ -83,8 +83,11 @@ def show_dark_sites(
         console.print("[red]Error: min-bortle must be between 1 and 9[/red]")
         raise typer.Exit(1)
 
+    # Convert miles to kilometers for internal calculation
+    max_distance_km = max_distance * 1.60934
+
     min_bortle_class = BortleClass(min_bortle)
-    dark_sites = find_dark_sites_near(vacation_location, max_distance_km=max_distance, min_bortle=min_bortle_class)
+    dark_sites = find_dark_sites_near(vacation_location, max_distance_km=max_distance_km, min_bortle=min_bortle_class)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("dark-sites")
@@ -146,12 +149,12 @@ def _show_viewing_info_content(output_console: Console, location: ObserverLocati
     output_console.print("\n[dim]💡 Tip: Consider visiting a nearby dark sky site for the best viewing experience![/dim]\n")
 
 
-def _show_dark_sites_content(output_console: Console, location: ObserverLocation, dark_sites: list, max_distance: float) -> None:
+def _show_dark_sites_content(output_console: Console, location: ObserverLocation, dark_sites: list, max_distance_miles: float) -> None:
     """Display dark sky sites information."""
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
     output_console.print(f"\n[bold cyan]Dark Sky Sites Near {location_name}[/bold cyan]")
-    output_console.print(f"[dim]Searching within {max_distance:.0f} km[/dim]\n")
+    output_console.print(f"[dim]Searching within {max_distance_miles:.0f} miles[/dim]\n")
 
     if not dark_sites:
         output_console.print("[yellow]No dark sky sites found within the search radius.[/yellow]")
@@ -176,11 +179,12 @@ def _show_dark_sites_content(output_console: Console, location: ObserverLocation
         }
         bortle_str = bortle_colors.get(site.bortle_class, f"Class {site.bortle_class.value}")
 
-        # Format distance
-        if site.distance_km < 1:
+        # Format distance in miles
+        distance_miles = site.distance_km / 1.60934
+        if distance_miles < 1:
             distance_str = f"{site.distance_km * 1000:.0f} m"
         else:
-            distance_str = f"{site.distance_km:.1f} km"
+            distance_str = f"{distance_miles:.1f} mi"
 
         table.add_row(site.name, distance_str, bortle_str, f"{site.sqm_value:.2f}", site.description)
 
@@ -189,8 +193,9 @@ def _show_dark_sites_content(output_console: Console, location: ObserverLocation
     # Show details
     output_console.print("\n[bold]Site Details:[/bold]")
     for site in dark_sites[:10]:  # Show first 10
+        distance_miles = site.distance_km / 1.60934
         output_console.print(f"\n  [bold]{site.name}[/bold]")
-        output_console.print(f"    Distance: {site.distance_km:.1f} km")
+        output_console.print(f"    Distance: {distance_miles:.1f} miles ({site.distance_km:.1f} km)")
         output_console.print(f"    Location: {site.latitude:.4f}°N, {site.longitude:.4f}°E")
         output_console.print(f"    Bortle Class: {site.bortle_class.value} (SQM: {site.sqm_value:.2f})")
         output_console.print(f"    {site.description}")
