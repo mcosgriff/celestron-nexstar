@@ -105,6 +105,9 @@ Browse and search extensive catalogs:
 - **Geocoding**: Set location by address (`location geocode "New York, NY"`)
 - **Offline ephemeris**: Download JPL data for field use without internet
 - **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
+- **Celestial events tracking**: Aurora, eclipses, meteor showers, comets, ISS, and more
+- **Space events calendar**: Planetary Society calendar with viewing location recommendations
+- **Vacation planning**: Plan astronomy viewing for any destination
 
 ### Multi-Night Planning & Clear Sky Charts
 
@@ -124,6 +127,46 @@ Production-ready observation planning with intelligent, object-type specific rec
   - Customizable condition display (clouds, seeing, darkness, wind, humidity, temp)
 - **Smart Scoring**: Weights conditions by object type (planets ≠ galaxies ≠ nebulae)
 
+### Celestial Events & Space Calendar
+
+Comprehensive tracking and prediction of celestial events:
+
+- **Aurora Borealis**: Real-time visibility, short-term forecasts, and long-term probabilistic predictions
+- **Eclipses**: Lunar and solar eclipse predictions with visibility calculations
+- **Planetary Events**: Conjunctions and oppositions with optimal viewing times
+- **Meteor Showers**: Enhanced predictions with moon phase impact analysis
+- **Comets**: Bright comet tracking and visibility forecasts
+- **ISS & Satellites**: Pass predictions for International Space Station and bright satellites
+- **Zodiacal Light**: Optimal viewing windows for zodiacal light and gegenschein
+- **Variable Stars**: Eclipses, maxima, and minima predictions
+- **Space Events Calendar**: Planetary Society calendar with viewing location recommendations
+
+**Usage:**
+```bash
+nexstar aurora tonight                    # Check aurora visibility
+nexstar eclipse next                     # Find next eclipse
+nexstar meteors best                     # Best meteor viewing windows
+nexstar iss passes                       # ISS pass predictions
+nexstar events upcoming                  # Space events calendar
+nexstar events viewing "Geminid"         # Find best viewing location
+```
+
+### Vacation Planning
+
+Plan astronomy viewing for vacation destinations:
+
+- **Viewing Conditions**: Check light pollution and sky quality at any location
+- **Dark Sky Sites**: Find nearby International Dark Sky Places
+- **Comprehensive Plans**: Viewing conditions, dark sites, aurora, eclipses, meteor showers, and comets
+- **Date Range Support**: Plan for specific vacation periods
+
+**Usage:**
+```bash
+nexstar vacation view --location "Fairbanks, AK"
+nexstar vacation dark-sites --location "Moab, UT" --max-distance 200
+nexstar vacation plan --location "Denver, CO" --start-date 2025-12-15 --end-date 2025-12-22
+```
+
 ### Export Functionality
 
 Export viewing guides and plans to text files for printing or offline reference:
@@ -132,11 +175,14 @@ Export viewing guides and plans to text files for printing or offline reference:
   - Format: `{equipment}_{location}_{date}_{command}.txt`
   - Example: `nexstar_6se_los_angeles_2024-11-15_tonight.txt`
 - **Custom Filenames**: Specify your own export path with `--export-path`
-- **Supported Commands**: All viewing and planning commands support export
+- **Supported Commands**: All viewing, planning, and event commands support export
   - Telescope viewing: `conditions`, `objects`, `imaging`, `tonight`, `plan`
   - Multi-night: `week`, `best-night`
   - Binocular viewing: `tonight`
   - Naked-eye viewing: `tonight`
+  - Celestial events: `aurora`, `eclipse`, `planets`, `meteors`, `comets`, `iss`, etc.
+  - Space events: `events upcoming`, `events viewing`
+  - Vacation planning: `vacation view`, `vacation dark-sites`, `vacation plan`
 - **Print-Ready**: Plain text with ASCII tables, perfect for printing
 
 **Usage:**
@@ -145,6 +191,8 @@ nexstar telescope tonight --export                              # Auto-generate 
 nexstar telescope conditions --export --export-path conditions.txt  # Custom filename
 nexstar binoculars tonight --export                            # Binocular guide
 nexstar multi-night best-night M31 --export                    # Best night analysis
+nexstar aurora tonight --export                                # Aurora forecast
+nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
 ```
 
 See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
@@ -234,6 +282,27 @@ nexstar multi-night clear-sky --nighttime-only                  # Detailed hourl
 nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # Advanced usage
 ```
 
+**Celestial Events** (outside shell)
+```bash
+nexstar aurora tonight                                          # Check aurora visibility
+nexstar aurora when --days 14                                   # When will aurora be visible
+nexstar eclipse next                                            # Find next eclipse
+nexstar planets conjunctions                                    # Planetary conjunctions
+nexstar meteors best                                            # Best meteor viewing windows
+nexstar comets visible                                          # Visible comets
+nexstar iss passes                                              # ISS pass predictions
+nexstar events upcoming --days 120                              # Space events calendar
+nexstar events viewing "Geminid"                                # Best viewing location
+```
+
+**Vacation Planning** (outside shell)
+```bash
+nexstar vacation view --location "Fairbanks, AK"                 # Viewing conditions
+nexstar vacation dark-sites --location "Moab, UT"              # Find dark sky sites
+nexstar vacation plan --location "Denver, CO" --days 7          # Comprehensive plan
+nexstar vacation plan --location "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
+```
+
 **Export Viewing Plans** (print-friendly text files)
 ```bash
 nexstar telescope tonight --export                              # Auto-generate filename
@@ -242,6 +311,14 @@ nexstar binoculars tonight --export                            # Binocular viewi
 nexstar naked-eye tonight --export                             # Naked-eye stargazing guide
 nexstar multi-night week --export                              # Week comparison
 nexstar multi-night best-night M31 --export                    # Best night analysis
+nexstar aurora tonight --export                                # Aurora forecast
+nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
+```
+
+**Database Initialization** (one-time setup)
+```bash
+nexstar data init-static                                        # Initialize offline data
+nexstar data stats                                              # Show database statistics
 ```
 
 ### Shell Tips

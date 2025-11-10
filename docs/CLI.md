@@ -17,6 +17,20 @@ This document provides comprehensive documentation for the `nexstar` command-lin
   - [Best Night for Object](#best-night-for-object)
   - [Clear Sky Chart](#clear-sky-chart)
 - [Binocular & Naked-Eye Viewing](#binocular--naked-eye-viewing)
+- [Celestial Events](#celestial-events)
+  - [Aurora](#aurora)
+  - [Eclipses](#eclipses)
+  - [Planetary Events](#planetary-events)
+  - [Meteor Showers](#meteor-showers)
+  - [Comets](#comets)
+  - [ISS Passes](#iss-passes)
+  - [Satellites](#satellites)
+  - [Zodiacal Light](#zodiacal-light)
+  - [Variable Stars](#variable-stars)
+  - [Occultations](#occultations)
+- [Space Events Calendar](#space-events-calendar)
+- [Vacation Planning](#vacation-planning)
+- [Data Management](#data-management)
 - [Location Management](#location-management)
 - [Catalog Commands](#catalog-commands)
 - [Shell](#shell)
@@ -115,6 +129,26 @@ Exported files contain:
 
 **Naked-Eye Viewing:**
 - `nexstar naked-eye tonight --export`
+
+**Celestial Events:**
+- `nexstar aurora tonight --export`
+- `nexstar eclipse next --export`
+- `nexstar planets conjunctions --export`
+- `nexstar meteors next --export`
+- `nexstar comets visible --export`
+- `nexstar iss passes --export`
+- `nexstar satellites bright --export`
+- `nexstar zodiacal zodiacal-light --export`
+- `nexstar variables events --export`
+- `nexstar occultations next --export`
+
+**Space Events:**
+- `nexstar events upcoming --export`
+
+**Vacation Planning:**
+- `nexstar vacation view --export`
+- `nexstar vacation dark-sites --export`
+- `nexstar vacation plan --export`
 
 ### Usage Examples
 
@@ -669,6 +703,480 @@ nexstar naked-eye tonight --export
 # Creates: naked_eye_los_angeles_2024-11-15_tonight.txt
 ```
 
+## Celestial Events
+
+The `nexstar` CLI includes comprehensive tools for tracking and predicting celestial events. All event commands support export functionality and use your configured location.
+
+### Aurora
+
+Track aurora borealis (Northern Lights) visibility:
+
+```bash
+# Check if aurora is visible tonight
+nexstar aurora tonight [OPTIONS]
+
+# Find when aurora will be visible
+nexstar aurora when [OPTIONS]
+
+# Find next viewing opportunities (even months/years ahead)
+nexstar aurora next [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 7 for `when`, 365 for `next`)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Kp index (geomagnetic activity)
+- Visibility probability
+- Cloud cover forecast
+- Moon phase impact
+- Viewing recommendations
+- For `next`: Probabilistic forecasts based on solar cycle
+
+**Example:**
+```bash
+nexstar aurora tonight
+nexstar aurora when --days 14
+nexstar aurora next --days 730  # 2 years ahead
+nexstar aurora tonight --export
+```
+
+### Eclipses
+
+Track lunar and solar eclipses:
+
+```bash
+# Find next eclipse (lunar or solar)
+nexstar eclipse next [OPTIONS]
+
+# Find next lunar eclipse
+nexstar eclipse lunar [OPTIONS]
+
+# Find next solar eclipse
+nexstar eclipse solar [OPTIONS]
+```
+
+**Options:**
+- `--years`, `-y` INTEGER - Years ahead to search (default: 10)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Eclipse type and date/time
+- Visibility from your location
+- Partial/total coverage percentage
+- Maximum eclipse time
+- Viewing recommendations
+
+**Example:**
+```bash
+nexstar eclipse next
+nexstar eclipse lunar --years 5
+nexstar eclipse solar --export
+```
+
+### Planetary Events
+
+Track planetary conjunctions and oppositions:
+
+```bash
+# Find upcoming conjunctions
+nexstar planets conjunctions [OPTIONS]
+
+# Find upcoming oppositions
+nexstar planets oppositions [OPTIONS]
+```
+
+**Options:**
+- `--years`, `-y` INTEGER - Years ahead to search (default: 5)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Event date and time
+- Planets involved
+- Separation angle (for conjunctions)
+- Visibility information
+- Best viewing times
+
+**Example:**
+```bash
+nexstar planets conjunctions
+nexstar planets oppositions --years 10
+nexstar planets conjunctions --export
+```
+
+### Meteor Showers
+
+Enhanced meteor shower predictions with moon phase analysis:
+
+```bash
+# Find upcoming meteor showers
+nexstar meteors next [OPTIONS]
+
+# Find best viewing windows (minimal moon interference)
+nexstar meteors best [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 90)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Shower name and peak date
+- Zenith Hourly Rate (ZHR)
+- Moon phase and illumination
+- Adjusted ZHR (accounting for moon)
+- Best viewing times
+- Viewing recommendations
+
+**Example:**
+```bash
+nexstar meteors next
+nexstar meteors best --days 180
+nexstar meteors next --export
+```
+
+### Comets
+
+Track bright comets and their visibility:
+
+```bash
+# Find visible comets
+nexstar comets visible [OPTIONS]
+
+# Find upcoming bright comets
+nexstar comets next [OPTIONS]
+```
+
+**Options:**
+- `--years`, `-y` INTEGER - Years ahead to search (default: 5)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Comet name and designation
+- Current/peak magnitude
+- Visibility dates
+- Best viewing times
+- Equipment needed
+
+**Example:**
+```bash
+nexstar comets visible
+nexstar comets next --years 10
+nexstar comets visible --export
+```
+
+### ISS Passes
+
+Track International Space Station passes:
+
+```bash
+nexstar iss passes [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 7)
+- `--min-altitude` FLOAT - Minimum altitude in degrees (default: 10.0)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Pass date and time
+- Maximum altitude
+- Duration
+- Direction (appears/disappears)
+- Quality rating
+- Detailed pass information
+
+**Example:**
+```bash
+nexstar iss passes
+nexstar iss passes --days 14 --min-altitude 30
+nexstar iss passes --export
+```
+
+### Satellites
+
+Track bright satellite passes and flares:
+
+```bash
+# Find bright satellite passes
+nexstar satellites bright [OPTIONS]
+
+# Find Starlink train passes (placeholder)
+nexstar satellites starlink [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 7)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Satellite name
+- Pass date and time
+- Maximum altitude
+- Brightness (magnitude)
+- Direction and duration
+
+**Example:**
+```bash
+nexstar satellites bright
+nexstar satellites bright --days 14 --export
+```
+
+### Zodiacal Light
+
+Predict zodiacal light and gegenschein visibility:
+
+```bash
+# Find zodiacal light viewing windows
+nexstar zodiacal zodiacal-light [OPTIONS]
+
+# Find gegenschein viewing windows
+nexstar zodiacal gegenschein [OPTIONS]
+```
+
+**Options:**
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Optimal viewing periods
+- Best times of year
+- Moon phase requirements
+- Viewing recommendations
+
+**Example:**
+```bash
+nexstar zodiacal zodiacal-light
+nexstar zodiacal gegenschein --export
+```
+
+### Variable Stars
+
+Track variable star events (eclipses, maxima, minima):
+
+```bash
+nexstar variables events [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 90)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Star name and type
+- Event type (eclipse, maximum, minimum)
+- Event date and time
+- Magnitude range
+- Visibility information
+
+**Example:**
+```bash
+nexstar variables events
+nexstar variables events --days 180 --export
+```
+
+### Occultations
+
+Track asteroid occultation events:
+
+```bash
+nexstar occultations next [OPTIONS]
+```
+
+**Options:**
+- `--days`, `-d` INTEGER - Days ahead to check (default: 90)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Note:** This is a framework for future occultation data integration. Specialized databases are required for accurate predictions.
+
+**Example:**
+```bash
+nexstar occultations next
+nexstar occultations next --days 365 --export
+```
+
+## Space Events Calendar
+
+The `events` command group provides access to The Planetary Society's space events calendar with viewing location recommendations:
+
+```bash
+# List upcoming space events
+nexstar events upcoming [OPTIONS]
+
+# Find best viewing location for a specific event
+nexstar events viewing <EVENT_NAME> [OPTIONS]
+```
+
+**Options for `upcoming`:**
+- `--days`, `-d` INTEGER - Days ahead to show (default: 90)
+- `--type` TEXT - Filter by event type (meteor_shower, eclipse, etc.)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Options for `viewing`:**
+- `--location`, `-l` TEXT - Location to check (default: your saved location)
+- `--max-distance` FLOAT - Maximum distance to search for better locations in miles (default: 500.0)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+- Event name, date, and type
+- Description and viewing requirements
+- Visibility from your location
+- Current sky conditions (Bortle class, SQM)
+- Recommendations for better viewing locations
+- Nearby dark sky sites if needed
+
+**Example:**
+```bash
+# List upcoming events
+nexstar events upcoming --days 120
+nexstar events upcoming --type meteor_shower
+
+# Find best viewing for Geminid meteor shower
+nexstar events viewing "Geminid"
+nexstar events viewing "Total Lunar Eclipse" --location "Denver, CO"
+nexstar events viewing "Geminid" --export
+```
+
+**Event Types:**
+- `meteor_shower` - Meteor shower peaks
+- `lunar_eclipse` - Lunar eclipses
+- `solar_eclipse` - Solar eclipses
+- `planetary_opposition` - Planetary oppositions
+- `planetary_elongation` - Planetary elongations
+- `planetary_brightness` - Planetary brightness peaks
+- `solstice` - Solstices
+- `equinox` - Equinoxes
+- `space_mission` - Space mission events
+- `other` - Other space events
+
+## Vacation Planning
+
+Plan astronomy viewing for vacation destinations:
+
+```bash
+# Check viewing conditions at a location
+nexstar vacation view --location "LOCATION" [OPTIONS]
+
+# Find nearby dark sky sites
+nexstar vacation dark-sites --location "LOCATION" [OPTIONS]
+
+# Comprehensive vacation astronomy plan
+nexstar vacation plan --location "LOCATION" [OPTIONS]
+```
+
+**Options for `view`:**
+- `--location`, `-l` TEXT - Destination location (required)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Options for `dark-sites`:**
+- `--location`, `-l` TEXT - Destination location (required)
+- `--max-distance` FLOAT - Maximum distance in miles (default: 100.0)
+- `--min-bortle` INTEGER - Minimum Bortle class (1-9, default: 4)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Options for `plan`:**
+- `--location`, `-l` TEXT - Destination location (required)
+- `--days`, `-d` INTEGER - Number of days ahead (default: 7)
+- `--start-date` DATE - Start date (YYYY-MM-DD format)
+- `--end-date` DATE - End date (YYYY-MM-DD format)
+- `--export`, `-e` - Export output to text file
+- `--export-path` PATH - Custom export file path
+
+**Output includes:**
+
+**`view`:**
+- Light pollution (Bortle class, SQM)
+- Viewing recommendations
+- Best times for observing
+
+**`dark-sites`:**
+- List of nearby International Dark Sky Places
+- Distance and direction
+- Bortle class and SQM values
+- Site descriptions
+
+**`plan`:**
+- Viewing conditions summary
+- Nearby dark sky sites
+- Aurora visibility (if applicable)
+- Upcoming eclipses in date range
+- Meteor showers in date range
+- Visible comets
+- Comprehensive recommendations
+
+**Example:**
+```bash
+# Check viewing conditions
+nexstar vacation view --location "Fairbanks, AK"
+nexstar vacation view --location "Moab, UT" --export
+
+# Find dark sky sites
+nexstar vacation dark-sites --location "Denver, CO" --max-distance 200
+nexstar vacation dark-sites --location "Albuquerque, NM" --min-bortle 3 --export
+
+# Comprehensive vacation plan
+nexstar vacation plan --location "Fairbanks, AK" --days 7
+nexstar vacation plan --location "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
+nexstar vacation plan --location "Denver, CO" --days 14 --export
+```
+
+## Data Management
+
+Manage database and static reference data:
+
+```bash
+# Initialize static data (meteor showers, constellations, dark sky sites, space events)
+nexstar data init-static
+
+# Show database statistics
+nexstar data stats
+
+# Import catalog data
+nexstar data import <SOURCE> [OPTIONS]
+
+# List available data sources
+nexstar data sources
+
+# Download light pollution data
+nexstar data download-light-pollution [OPTIONS]
+
+# Clear light pollution data
+nexstar data clear-light-pollution [OPTIONS]
+
+# Vacuum database (reclaim space)
+nexstar data vacuum
+```
+
+**`init-static` Command:**
+Populates the database with static reference data that works offline:
+- Meteor showers calendar
+- Constellations and asterisms
+- Dark sky sites (International Dark Sky Places)
+- Space events calendar (Planetary Society)
+
+This should be run once after database setup to enable offline functionality.
+
+**Example:**
+```bash
+nexstar data init-static
+nexstar data stats
+nexstar data import openngc --mag-limit 12.0
+```
+
 ## Location Management
 
 Set your observing location for accurate calculations:
@@ -781,6 +1289,49 @@ nexstar location set --lat YOUR_LAT --lon YOUR_LON
 - Ensure you have write permissions in the target directory
 - Use absolute paths or ensure working directory is correct
 - Check file extension is `.csv` or `.json`
+
+## Command Groups Summary
+
+The CLI is organized into logical groups:
+
+**Telescope Control:**
+- `connect` - Connection management
+- `position` - Position queries
+- `goto` - Slew commands
+- `move` - Manual movement
+- `track` - Tracking control
+- `align` - Alignment commands
+
+**Planning & Observation:**
+- `telescope` - Telescope viewing guides
+- `multi-night` - Multi-night planning
+- `binoculars` - Binocular viewing
+- `naked-eye` - Naked-eye stargazing
+- `catalog` - Celestial object catalogs
+- `vacation` - Vacation planning
+- `events` - Space events calendar
+
+**Celestial Events:**
+- `aurora` - Aurora borealis visibility
+- `eclipse` - Lunar and solar eclipses
+- `planets` - Planetary events
+- `meteors` - Meteor shower predictions
+- `comets` - Comet tracking
+- `iss` - ISS pass predictions
+- `satellites` - Satellite passes
+- `zodiacal` - Zodiacal light and gegenschein
+- `variables` - Variable star events
+- `occultations` - Asteroid occultations
+
+**Configuration:**
+- `location` - Observer location
+- `time` - Time and date
+- `optics` - Telescope and eyepiece configuration
+- `ephemeris` - Ephemeris file management
+
+**Data & Management:**
+- `data` - Data import and management
+- `dashboard` - Full-screen dashboard
 
 ## Further Reading
 
