@@ -26,6 +26,7 @@ from .commands import (
     move,
     multi_night,
     naked_eye,
+    occultations,
     optics,
     planets,
     position,
@@ -33,6 +34,7 @@ from .commands import (
     time,
     tonight,
     track,
+    variables,
     zodiacal,
 )
 
@@ -221,6 +223,18 @@ app.add_typer(
     zodiacal.app,
     name="zodiacal",
     help="Zodiacal light and gegenschein viewing",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    variables.app,
+    name="variables",
+    help="Variable star events (eclipses, maxima, minima)",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    occultations.app,
+    name="occultations",
+    help="Asteroid occultation predictions",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
