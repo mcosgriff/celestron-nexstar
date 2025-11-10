@@ -11,6 +11,7 @@ from rich.console import Console
 # Import and register subcommands
 from .commands import (
     align,
+    aurora,
     binoculars,
     catalog,
     connect,
@@ -172,6 +173,12 @@ app.add_typer(
     naked_eye.app,
     name="naked-eye",
     help="Naked-eye stargazing (no equipment needed)",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    aurora.app,
+    name="aurora",
+    help="Aurora borealis (Northern Lights) visibility",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
