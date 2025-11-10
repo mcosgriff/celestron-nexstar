@@ -70,6 +70,52 @@ def import_source(
         raise typer.Exit(code=1)
 
 
+@app.command("init-static", rich_help_panel="Database Management")
+def init_static() -> None:
+    """
+    Initialize static reference data in the database.
+
+    Populates the database with static reference data that works offline:
+    - Meteor showers
+    - Constellations and asterisms
+    - Dark sky sites
+
+    This should be run once after database setup to enable offline functionality.
+    """
+    from ...api.constellations import populate_constellation_database
+    from ...api.meteor_showers import populate_meteor_shower_database
+    from ...api.models import get_db_session
+    from ...api.vacation_planning import populate_dark_sky_sites_database
+
+    console.print("\n[bold cyan]Initializing static reference data[/bold cyan]\n")
+
+    try:
+        with get_db_session() as db:
+            # Populate meteor showers
+            console.print("[dim]Populating meteor showers...[/dim]")
+            populate_meteor_shower_database(db)
+            console.print("[green]✓[/green] Meteor showers populated")
+
+            # Populate constellations
+            console.print("[dim]Populating constellations and asterisms...[/dim]")
+            populate_constellation_database(db)
+            console.print("[green]✓[/green] Constellations populated")
+
+            # Populate dark sky sites
+            console.print("[dim]Populating dark sky sites...[/dim]")
+            populate_dark_sky_sites_database(db)
+            console.print("[green]✓[/green] Dark sky sites populated")
+
+        console.print("\n[bold green]✓ All static data initialized![/bold green]")
+        console.print("[dim]These datasets are now available offline.[/dim]\n")
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error initializing static data: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from None
+
+
 @app.command("stats", rich_help_panel="Database Management")
 def stats() -> None:
     """

@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .light_pollution import BortleClass, get_light_pollution_data
+from .models import get_db_session
 from .observer import ObserverLocation, geocode_location
 
 if TYPE_CHECKING:
-    pass
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ __all__ = [
     "VacationViewingInfo",
     "find_dark_sites_near",
     "get_vacation_viewing_info",
+    "populate_dark_sky_sites_database",
 ]
 
 
@@ -170,6 +172,8 @@ def find_dark_sites_near(
     """
     Find dark sky sites near a location.
 
+    Queries from database first (for offline use), falls back to hardcoded list if empty.
+
     Args:
         location: ObserverLocation or location string to geocode
         max_distance_km: Maximum distance to search (default: 200 km)
@@ -183,6 +187,42 @@ def find_dark_sites_near(
         location = geocode_location(location)
 
     sites = []
+
+    # Try database first (offline-capable)
+    try:
+        with get_db_session() as db:
+            from .models import DarkSkySiteModel
+
+            # Query all sites from database
+            db_sites = db.query(DarkSkySiteModel).filter(DarkSkySiteModel.bortle_class <= min_bortle.value).all()
+
+            for db_site in db_sites:
+                distance = _haversine_distance(
+                    location.latitude, location.longitude, db_site.latitude, db_site.longitude
+                )
+
+                if distance <= max_distance_km:
+                    site = DarkSkySite(
+                        name=db_site.name,
+                        latitude=db_site.latitude,
+                        longitude=db_site.longitude,
+                        bortle_class=BortleClass(db_site.bortle_class),
+                        sqm_value=db_site.sqm_value,
+                        distance_km=distance,
+                        description=db_site.description,
+                        notes=db_site.notes,
+                    )
+                    sites.append(site)
+
+            # If database has sites, use them
+            if db_sites:
+                sites.sort(key=lambda s: s.distance_km)
+                return sites
+    except Exception as e:
+        logger.debug(f"Database query failed, using fallback: {e}")
+
+    # Fallback to hardcoded list if database is empty or query fails
+    logger.debug("Using hardcoded dark sky sites list")
     for site in KNOWN_DARK_SITES:
         distance = _haversine_distance(location.latitude, location.longitude, site.latitude, site.longitude)
 
@@ -200,13 +240,43 @@ def find_dark_sites_near(
             )
             sites.append(site_with_distance)
 
-    # Also search for dark areas using light pollution data
-    # This is a simplified grid search - could be enhanced
-    # For now, we'll use the known sites list
-
     # Sort by distance
     sites.sort(key=lambda s: s.distance_km)
     return sites
+
+
+def populate_dark_sky_sites_database(db_session: Session) -> None:
+    """
+    Populate database with dark sky site data.
+
+    This should be called once to initialize the database with static data.
+    Works offline once populated.
+
+    Args:
+        db_session: SQLAlchemy database session
+    """
+    from .models import DarkSkySiteModel
+
+    logger.info("Populating dark sky sites database...")
+
+    # Clear existing data
+    db_session.query(DarkSkySiteModel).delete()
+
+    # Add dark sky sites
+    for site in KNOWN_DARK_SITES:
+        model = DarkSkySiteModel(
+            name=site.name,
+            latitude=site.latitude,
+            longitude=site.longitude,
+            bortle_class=site.bortle_class.value,
+            sqm_value=site.sqm_value,
+            description=site.description,
+            notes=site.notes,
+        )
+        db_session.add(model)
+
+    db_session.commit()
+    logger.info(f"Added {len(KNOWN_DARK_SITES)} dark sky sites to database")
 
 
 def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewingInfo:

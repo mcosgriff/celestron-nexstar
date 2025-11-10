@@ -402,9 +402,49 @@ class MeteorShowerModel(Base):
     # Composite index for finding active showers by date
     __table_args__ = (Index("idx_peak_date", "peak_month", "peak_day"),)
 
+
+class DarkSkySiteModel(Base):
+    """
+    SQLAlchemy model for dark sky viewing sites.
+
+    Stores information about known dark sky locations including
+    International Dark Sky Parks and other notable observing sites.
+    """
+
+    __tablename__ = "dark_sky_sites"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Site identification
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+
+    # Location
+    latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+
+    # Sky quality
+    bortle_class: Mapped[int] = mapped_column(Integer, nullable=False, index=True)  # 1-9
+    sqm_value: Mapped[float] = mapped_column(Float, nullable=False)  # Sky Quality Meter value
+
+    # Description
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Composite index for location queries
+    __table_args__ = (Index("idx_location", "latitude", "longitude"),)
+
     def __repr__(self) -> str:
-        """String representation of meteor shower."""
-        return f"<MeteorShower(id={self.id}, name='{self.name}', peak={self.peak_month}/{self.peak_day})>"
+        """String representation of the site."""
+        return f"<DarkSkySite(id={self.id}, name='{self.name}', bortle={self.bortle_class})>"
 
 
 @contextmanager
