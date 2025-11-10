@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 from timezonefinder import TimezoneFinder
 
+from ...api.catalogs import CelestialObject
 from ...api.compass import azimuth_to_compass_8point, format_object_path
 from ...api.constellations import get_prominent_constellations, get_visible_asterisms, get_visible_constellations
 from ...api.database import get_database
@@ -91,7 +92,7 @@ def _get_visible_stars(
     min_altitude_deg: float,
     max_magnitude: float = 6.0,
     limit: int = 20,
-) -> list[tuple]:
+) -> list[tuple[CelestialObject, float, float]]:
     """
     Get visible stars above horizon at given time.
 
@@ -171,7 +172,9 @@ def _generate_export_filename(command: str = "tonight") -> Path:
 @app.command("tonight")
 def show_tonight(
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """
     Show what's visible tonight with the naked eye.
@@ -228,7 +231,9 @@ def _show_tonight_content(output_console: Console) -> None:
         output_console.print(f"\n[bold cyan]Naked-Eye Stargazing for {location_name}[/bold cyan]")
         output_console.print("[dim]Viewing Method: Naked-eye (no equipment needed)[/dim]")
         output_console.print("[dim]Limiting Magnitude: ~6.0 (varies with sky darkness and dark adaptation)[/dim]")
-        output_console.print(f"[dim]Sunset: {_format_local_time(sunset, lat, lon)} | Sunrise: {_format_local_time(sunrise, lat, lon)}[/dim]\n")
+        sunset_str = _format_local_time(sunset, lat, lon) if sunset else "—"
+        sunrise_str = _format_local_time(sunrise, lat, lon) if sunrise else "—"
+        output_console.print(f"[dim]Sunset: {sunset_str} | Sunrise: {sunrise_str}[/dim]\n")
 
         # ISS Passes
         output_console.print("[bold green]ISS Visible Passes[/bold green]")
@@ -293,7 +298,9 @@ def _show_tonight_content(output_console: Console) -> None:
 
             if shown_count > 0:
                 output_console.print(table_iss)
-                output_console.print("[dim]Only showing passes with max altitude >30° for best naked-eye visibility[/dim]")
+                output_console.print(
+                    "[dim]Only showing passes with max altitude >30° for best naked-eye visibility[/dim]"
+                )
             else:
                 output_console.print("[yellow]No excellent naked-eye ISS passes in the next 7 days[/yellow]")
                 output_console.print("[dim]Try lowering altitude requirement or check back later[/dim]")
@@ -375,7 +382,9 @@ def _show_tonight_content(output_console: Console) -> None:
 
         # Also include constellations that have visible stars, even if center is low
         # Get visible stars first to find their constellations
-        visible_stars_for_const = _get_visible_stars(lat, lon, midnight, min_altitude_deg=30.0, max_magnitude=6.0, limit=100)
+        visible_stars_for_const = _get_visible_stars(
+            lat, lon, midnight, min_altitude_deg=30.0, max_magnitude=6.0, limit=100
+        )
 
         # Find unique constellations from visible stars
         constellations_with_stars = set()
@@ -408,8 +417,12 @@ def _show_tonight_content(output_console: Console) -> None:
         visible_constellations.sort(key=lambda x: x[1], reverse=True)
 
         # Separate into fully visible and partially visible
-        fully_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name not in low_altitude_constellations]
-        partially_visible = [(c, alt, az) for c, alt, az in visible_constellations if c.name in low_altitude_constellations]
+        fully_visible = [
+            (c, alt, az) for c, alt, az in visible_constellations if c.name not in low_altitude_constellations
+        ]
+        partially_visible = [
+            (c, alt, az) for c, alt, az in visible_constellations if c.name in low_altitude_constellations
+        ]
 
         if fully_visible:
             current_season = _get_current_season(now)
@@ -441,7 +454,9 @@ def _show_tonight_content(output_console: Console) -> None:
                 )
 
             output_console.print(table_const)
-            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(
+                "[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]"
+            )
         else:
             output_console.print("[yellow]No prominent constellations currently visible[/yellow]")
 
@@ -508,7 +523,7 @@ def _show_tonight_content(output_console: Console) -> None:
                 mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
 
                 # Constellation
-                constellation = star.constellation or "—"
+                constellation: str = star.constellation or "—"
 
                 # Description/notes
                 notes = star.description or ""
@@ -523,7 +538,9 @@ def _show_tonight_content(output_console: Console) -> None:
                 )
 
             output_console.print(table_stars)
-            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(
+                "[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]"
+            )
         else:
             output_console.print("[yellow]No bright stars currently visible[/yellow]")
 
@@ -577,7 +594,9 @@ def _show_tonight_content(output_console: Console) -> None:
                     shown.add(asterism.name)
 
             output_console.print(table_ast)
-            output_console.print("[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]")
+            output_console.print(
+                "[dim]💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°[/dim]"
+            )
         else:
             output_console.print("[yellow]No prominent asterisms currently visible[/yellow]")
 
@@ -588,7 +607,9 @@ def _show_tonight_content(output_console: Console) -> None:
         output_console.print("  • Lie back on a blanket or reclining chair for comfortable viewing")
         output_console.print("  • Start with bright stars and asterisms, then find fainter objects")
         output_console.print("  • Use averted vision: look slightly to the side to see fainter objects")
-        output_console.print("  • [bold]Estimating altitude:[/bold] Hold your arm outstretched - your fist = ~10°, thumb = ~2°, pinky = ~1°")
+        output_console.print(
+            "  • [bold]Estimating altitude:[/bold] Hold your arm outstretched - your fist = ~10°, thumb = ~2°, pinky = ~1°"
+        )
         output_console.print("  • Best viewing: New moon or when moon has set\n")
 
     except ValueError as e:

@@ -613,6 +613,7 @@ def populate_constellation_database(db_session: Session) -> None:
         # Use a simple square approximation: sqrt(area) gives approximate side length
         # Convert to RA/Dec ranges (rough approximation)
         import math
+
         side_deg = math.sqrt(constellation.area_sq_deg)
         ra_range_hours = side_deg / 15.0  # 1 hour = 15 degrees
         dec_range_deg = side_deg
@@ -634,7 +635,7 @@ def populate_constellation_database(db_session: Session) -> None:
 
     # Add asterisms
     for asterism in FAMOUS_ASTERISMS:
-        model = AsterismModel(
+        asterism_model = AsterismModel(
             name=asterism.name,
             alt_names=",".join(asterism.alt_names),
             ra_hours=asterism.ra_hours,
@@ -645,7 +646,7 @@ def populate_constellation_database(db_session: Session) -> None:
             stars=",".join(asterism.member_stars),
             description=asterism.description,
         )
-        db_session.add(model)
+        db_session.add(asterism_model)
 
     db_session.commit()
     logger.info(

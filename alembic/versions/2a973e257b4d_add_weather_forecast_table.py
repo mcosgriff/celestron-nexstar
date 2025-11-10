@@ -5,6 +5,7 @@ Revises: 2fbc85dc151b
 Create Date: 2025-11-08 15:57:02.567799
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -38,7 +39,9 @@ def upgrade() -> None:
     with op.batch_alter_table("weather_forecast", schema=None) as batch_op:
         batch_op.create_index(batch_op.f("ix_weather_forecast_latitude"), ["latitude"], unique=False)
         batch_op.create_index(batch_op.f("ix_weather_forecast_longitude"), ["longitude"], unique=False)
-        batch_op.create_index(batch_op.f("ix_weather_forecast_forecast_timestamp"), ["forecast_timestamp"], unique=False)
+        batch_op.create_index(
+            batch_op.f("ix_weather_forecast_forecast_timestamp"), ["forecast_timestamp"], unique=False
+        )
         batch_op.create_index(batch_op.f("ix_weather_forecast_fetched_at"), ["fetched_at"], unique=False)
         batch_op.create_index("idx_location_timestamp", ["latitude", "longitude", "forecast_timestamp"], unique=False)
         batch_op.create_index("idx_location_fetched", ["latitude", "longitude", "fetched_at"], unique=False)

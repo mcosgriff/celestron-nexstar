@@ -212,7 +212,9 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
 
     console.print("\n" + "=" * 70)
     console.print("[dim]Press Enter to return...[/dim]")
-    session = PromptSession()
+    from prompt_toolkit import PromptSession as _PromptSession
+
+    session: _PromptSession[str] = _PromptSession()
     session.prompt("")
 
 
@@ -230,7 +232,9 @@ def show_object_detail_interactive() -> None:
         console = Console()
         console.print("\n[red]No object selected[/red]")
         console.print("[dim]Press Enter to return...[/dim]")
-        session = PromptSession()
+        from prompt_toolkit import PromptSession as _PromptSession
+
+        session: _PromptSession[str] = _PromptSession()
         session.prompt("")
         return
 

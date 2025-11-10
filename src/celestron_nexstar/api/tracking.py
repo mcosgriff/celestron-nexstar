@@ -353,8 +353,12 @@ class PositionTracker:
                 # Get current position
                 try:
                     with NexStarTelescope(str(port)) as telescope:
-                        ra_hours, dec_degrees = telescope.get_position_ra_dec()
-                        alt_degrees, az_degrees = telescope.get_position_alt_az()
+                        eq_coords = telescope.get_position_ra_dec()
+                        hor_coords = telescope.get_position_alt_az()
+                        ra_hours = eq_coords.ra_hours
+                        dec_degrees = eq_coords.dec_degrees
+                        alt_degrees = hor_coords.altitude
+                        az_degrees = hor_coords.azimuth
 
                         with self.lock:
                             now = datetime.now()

@@ -97,7 +97,7 @@ class TUIState:
         if not self.visible_objects:
             return
 
-        def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple:
+        def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple[float | int | str, ...]:
             obj, vis_info = item
             if self.sort_by == "altitude":
                 return (vis_info.altitude_deg or -999,)

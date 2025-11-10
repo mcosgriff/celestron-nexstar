@@ -179,8 +179,7 @@ def get_planetary_position(
             available_objects = sorted(eph.names())
             # Filter to strings only and convert to lowercase for comparison
             mars_objects = [
-                str(obj) for obj in available_objects
-                if isinstance(obj, str) and "mars" in str(obj).lower()
+                str(obj) for obj in available_objects if isinstance(obj, str) and "mars" in str(obj).lower()
             ]
             error_msg = (
                 f"Object '{ephemeris_name}' not found in {bsp_file}.\n"

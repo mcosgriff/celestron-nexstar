@@ -147,10 +147,12 @@ class CatalogDatabase:
         # Use pysqlite3 if available (supports SpatiaLite extensions)
         # Fall back to built-in sqlite3 if not available
         try:
-            import pysqlite3  # type: ignore[import-untyped]
+            import pysqlite3  # type: ignore[import-not-found]
+
             dbapi = pysqlite3
         except ImportError:
             import sqlite3
+
             dbapi = sqlite3
 
         self._engine = create_engine(
@@ -366,11 +368,7 @@ class CatalogDatabase:
         with self._get_session() as session:
             # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
             # It handles type coercion automatically
-            model = (
-                session.query(CelestialObjectModel)
-                .filter(CelestialObjectModel.name.ilike(name))
-                .first()
-            )
+            model = session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(name)).first()
             if model is None:
                 return None
             return self._model_to_object(model)

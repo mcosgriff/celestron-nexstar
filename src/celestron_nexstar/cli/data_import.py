@@ -311,7 +311,9 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
                     dec_sign = 1 if not dec_str.startswith("-") else -1
                     dec_str_abs = dec_str.lstrip("+-")
                     dec_parts = dec_str_abs.split(":")
-                    dec_degrees = dec_sign * (float(dec_parts[0]) + float(dec_parts[1]) / 60 + float(dec_parts[2]) / 3600)
+                    dec_degrees = dec_sign * (
+                        float(dec_parts[0]) + float(dec_parts[1]) / 60 + float(dec_parts[2]) / 3600
+                    )
                 except (ValueError, IndexError):
                     skipped += 1
                     progress.advance(task)

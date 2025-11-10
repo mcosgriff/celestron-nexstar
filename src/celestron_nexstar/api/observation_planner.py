@@ -261,9 +261,7 @@ class ObservationPlanner:
         hourly_forecast_tuple = tuple(hourly_forecast)
 
         # Calculate best seeing time windows from hourly forecast
-        best_seeing_windows = self._calculate_best_seeing_windows(
-            hourly_forecast, sunset_time, sunrise_time
-        )
+        best_seeing_windows = self._calculate_best_seeing_windows(hourly_forecast, sunset_time, sunrise_time)
 
         # Get moonrise/moonset from moon_info
         moonrise_time = moon_info.moonrise_time if moon_info else None
@@ -275,9 +273,7 @@ class ObservationPlanner:
         astronomical_twilight = calculate_astronomical_twilight(lat, lon, start_time)
 
         # Calculate galactic center visibility
-        gc_start, gc_end = self._calculate_galactic_center_visibility(
-            lat, lon, start_time, sunset_time, sunrise_time
-        )
+        gc_start, gc_end = self._calculate_galactic_center_visibility(lat, lon, start_time, sunset_time, sunrise_time)
 
         return ObservingConditions(
             timestamp=start_time,
@@ -405,9 +401,8 @@ class ObservationPlanner:
             for obj, vis_info in visible_pairs:
                 # Keep bright objects, planets, and double stars
                 # For very faint objects (mag > 10), skip if seeing is poor
-                if (
-                    obj.object_type.value in ("planet", "moon", "double_star")
-                    or (obj.magnitude is not None and obj.magnitude < 10)
+                if obj.object_type.value in ("planet", "moon", "double_star") or (
+                    obj.magnitude is not None and obj.magnitude < 10
                 ):
                     filtered_pairs.append((obj, vis_info))
             visible_pairs = filtered_pairs
@@ -823,7 +818,9 @@ class ObservationPlanner:
         window_start = None
 
         # Sort forecasts by timestamp to ensure chronological order
-        sorted_forecasts = sorted(forecasts, key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+        sorted_forecasts = sorted(
+            forecasts, key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC)
+        )
 
         for _i, forecast in enumerate(sorted_forecasts):
             forecast_ts = forecast.timestamp

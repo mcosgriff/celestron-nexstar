@@ -34,4 +34,3 @@ def calculate_sun_times(lat: float, lon: float, dt: datetime | None = None) -> d
         "sunset": sun_info.sunset_time,
         "sunrise": sun_info.sunrise_time,
     }
-

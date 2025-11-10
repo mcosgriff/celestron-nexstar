@@ -5,6 +5,7 @@ Revises: 2a973e257b4d
 Create Date: 2025-01-27 12:00:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -149,4 +150,3 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_iss_passes_latitude"))
 
     op.drop_table("iss_passes")
-

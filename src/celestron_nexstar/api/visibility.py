@@ -368,7 +368,6 @@ def filter_visible_objects(
     if observer_lat is None or observer_lon is None:
         location = get_observer_location()
         if location is None:
-            logger.warning("No observer location set, cannot calculate visibility")
             return []
         observer_lat = location.latitude
         observer_lon = location.longitude
@@ -510,12 +509,18 @@ def _filter_visible_objects_vectorized(
         for idx, (_, obj) in enumerate(fixed_objects):
             if is_visible_mask[idx] and scores[idx] >= min_observability_score:
                 alt = float(altitudes[idx])
-                az = float(np.degrees(np.arccos(np.clip(
-                    (np.sin(dec_rad[idx]) - np.sin(lat_rad) * np.sin(alt_rad[idx]))
-                    / (np.cos(lat_rad) * np.cos(alt_rad[idx])),
-                    -1.0,
-                    1.0,
-                ))))
+                az = float(
+                    np.degrees(
+                        np.arccos(
+                            np.clip(
+                                (np.sin(dec_rad[idx]) - np.sin(lat_rad) * np.sin(alt_rad[idx]))
+                                / (np.cos(lat_rad) * np.cos(alt_rad[idx])),
+                                -1.0,
+                                1.0,
+                            )
+                        )
+                    )
+                )
                 if np.sin(ha_rad[idx]) > 0:
                     az = 360.0 - az
 
@@ -523,9 +528,7 @@ def _filter_visible_objects_vectorized(
                 if alt < min_altitude_deg:
                     reasons.append(f"Low altitude (alt: {alt:.1f}°, optimal >{min_altitude_deg:.0f}°)")
                 if apparent_mags[idx] > limiting_mag - 1.0:
-                    reasons.append(
-                        f"Near detection limit (mag {apparent_mags[idx]:.1f}, limit {limiting_mag:.1f})"
-                    )
+                    reasons.append(f"Near detection limit (mag {apparent_mags[idx]:.1f}, limit {limiting_mag:.1f})")
                 else:
                     reasons.append(f"Magnitude {apparent_mags[idx]:.1f} well within limit")
 

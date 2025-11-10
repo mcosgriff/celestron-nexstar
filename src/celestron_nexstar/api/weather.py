@@ -115,7 +115,9 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         WeatherData with current conditions, or error message if failed
     """
     if not OPENMETEO_AVAILABLE:
-        return WeatherData(error="openmeteo-requests library not available. Install with: pip install openmeteo-requests")
+        return WeatherData(
+            error="openmeteo-requests library not available. Install with: pip install openmeteo-requests"
+        )
 
     try:
         # Setup the Open-Meteo API client with cache and retry on error
@@ -316,9 +318,7 @@ def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
     return (status, warning_msg)
 
 
-def calculate_seeing_conditions(
-    weather: WeatherData, temperature_change_per_hour: float = 0.0
-) -> float:
+def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hour: float = 0.0) -> float:
     """
     Calculate astronomical seeing conditions score (0-100).
 
@@ -425,9 +425,7 @@ def calculate_seeing_conditions(
     return max(0.0, min(100.0, total_score))
 
 
-def fetch_hourly_weather_forecast(
-    location: ObserverLocation, hours: int = 24
-) -> list[HourlySeeingForecast]:
+def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
     """
     Fetch hourly weather forecast and calculate seeing conditions for each hour.
 
@@ -462,7 +460,7 @@ def fetch_hourly_weather_forecast(
         inspector = inspect(db._engine)
         if "weather_forecast" not in inspector.get_table_names():
             logger.debug("weather_forecast table not found, creating it...")
-            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])
+            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
 
         existing_forecasts = []
         with db._get_session() as session:
@@ -501,7 +499,9 @@ def fetch_hourly_weather_forecast(
 
                 # If we have enough hours of coverage, use cached data
                 if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
-                    logger.debug(f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)")
+                    logger.debug(
+                        f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)"
+                    )
                     forecasts = []
                     for forecast in existing_forecasts[:hours]:
                         forecasts.append(
@@ -655,7 +655,7 @@ def fetch_hourly_weather_forecast(
                 ).delete()
 
                 # Insert new forecasts
-                for forecast in forecasts:
+                for forecast in forecasts:  # type: ignore[assignment]
                     # Check if forecast already exists for this timestamp
                     existing = (
                         session.query(WeatherForecastModel)

@@ -7,11 +7,12 @@ and automatic migration management with Alembic.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
 
 
 class Base(DeclarativeBase):
@@ -407,7 +408,7 @@ class MeteorShowerModel(Base):
 
 
 @contextmanager
-def get_db_session():
+def get_db_session() -> Iterator[Session]:
     """
     Get a database session as a context manager.
 

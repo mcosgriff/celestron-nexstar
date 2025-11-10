@@ -50,7 +50,9 @@ def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
 @app.command("conditions", rich_help_panel="Conditions & Forecasts")
 def show_conditions(
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Show tonight's observing conditions."""
     from ...cli.utils.export import create_file_console, export_to_text
@@ -141,7 +143,9 @@ def _show_conditions_content(output_console: Console) -> None:
 
         # Seeing-based recommendations
         if seeing >= 80:
-            output_console.print("  [dim]✓ Ideal for: High-magnification planetary detail, splitting close doubles, faint deep-sky[/dim]")
+            output_console.print(
+                "  [dim]✓ Ideal for: High-magnification planetary detail, splitting close doubles, faint deep-sky[/dim]"
+            )
         elif seeing >= 60:
             output_console.print("  [dim]✓ Good for: Planetary observing, bright deep-sky, double stars[/dim]")
         elif seeing >= 40:
@@ -231,20 +235,22 @@ def _show_conditions_content(output_console: Console) -> None:
                 # If no forecasts found and we're past sunset, show from now to sunrise
                 if not forecast_to_show and now_utc > sunset:
                     # We're past sunset, show from now until sunrise (tomorrow if needed)
-                    end_time = sunrise
-                    if end_time < now_utc:
-                        end_time = sunrise + timedelta(days=1)
+                    end_time_dt = sunrise
+                    if end_time_dt < now_utc:
+                        end_time_dt = sunrise + timedelta(days=1)
                     for forecast in conditions.hourly_seeing_forecast:
                         forecast_ts = forecast.timestamp
                         if forecast_ts.tzinfo is None:
                             forecast_ts = forecast_ts.replace(tzinfo=UTC)
                         elif forecast_ts.tzinfo != UTC:
                             forecast_ts = forecast_ts.astimezone(UTC)
-                        if now_utc <= forecast_ts <= end_time:
+                        if now_utc <= forecast_ts <= end_time_dt:
                             forecast_to_show.append(forecast)
 
                 # Sort by timestamp to ensure chronological order
-                forecast_to_show.sort(key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+                forecast_to_show.sort(
+                    key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC)
+                )
             else:
                 # Fallback: show next 12 hours if sunset/sunrise not available
                 # But only show future forecasts
@@ -282,7 +288,9 @@ def _show_conditions_content(output_console: Console) -> None:
                         forecast_ts = forecast_ts.astimezone(UTC)
                     if forecast_start <= forecast_ts <= forecast_end:
                         forecast_to_show.append(forecast)
-                forecast_to_show.sort(key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC))
+                forecast_to_show.sort(
+                    key=lambda f: f.timestamp if f.timestamp.tzinfo else f.timestamp.replace(tzinfo=UTC)
+                )
 
             if forecast_to_show:
                 for forecast in forecast_to_show:
@@ -358,8 +366,12 @@ def _show_conditions_content(output_console: Console) -> None:
 
         # Golden Hour
         if conditions.golden_hour_evening_start and conditions.golden_hour_evening_end:
-            gh_evening_start = _format_local_time(conditions.golden_hour_evening_start, conditions.latitude, conditions.longitude)
-            gh_evening_end = _format_local_time(conditions.golden_hour_evening_end, conditions.latitude, conditions.longitude)
+            gh_evening_start = _format_local_time(
+                conditions.golden_hour_evening_start, conditions.latitude, conditions.longitude
+            )
+            gh_evening_end = _format_local_time(
+                conditions.golden_hour_evening_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = gh_evening_start.split()
             parts_end = gh_evening_end.split()
@@ -367,8 +379,12 @@ def _show_conditions_content(output_console: Console) -> None:
             gh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else gh_evening_end
             output_console.print(f"  Golden Hour (evening): {gh_start_time} - {gh_end_time}")
         if conditions.golden_hour_morning_start and conditions.golden_hour_morning_end:
-            gh_morning_start = _format_local_time(conditions.golden_hour_morning_start, conditions.latitude, conditions.longitude)
-            gh_morning_end = _format_local_time(conditions.golden_hour_morning_end, conditions.latitude, conditions.longitude)
+            gh_morning_start = _format_local_time(
+                conditions.golden_hour_morning_start, conditions.latitude, conditions.longitude
+            )
+            gh_morning_end = _format_local_time(
+                conditions.golden_hour_morning_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = gh_morning_start.split()
             parts_end = gh_morning_end.split()
@@ -378,8 +394,12 @@ def _show_conditions_content(output_console: Console) -> None:
 
         # Blue Hour
         if conditions.blue_hour_evening_start and conditions.blue_hour_evening_end:
-            bh_evening_start = _format_local_time(conditions.blue_hour_evening_start, conditions.latitude, conditions.longitude)
-            bh_evening_end = _format_local_time(conditions.blue_hour_evening_end, conditions.latitude, conditions.longitude)
+            bh_evening_start = _format_local_time(
+                conditions.blue_hour_evening_start, conditions.latitude, conditions.longitude
+            )
+            bh_evening_end = _format_local_time(
+                conditions.blue_hour_evening_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = bh_evening_start.split()
             parts_end = bh_evening_end.split()
@@ -387,8 +407,12 @@ def _show_conditions_content(output_console: Console) -> None:
             bh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else bh_evening_end
             output_console.print(f"  Blue Hour (evening): {bh_start_time} - {bh_end_time}")
         if conditions.blue_hour_morning_start and conditions.blue_hour_morning_end:
-            bh_morning_start = _format_local_time(conditions.blue_hour_morning_start, conditions.latitude, conditions.longitude)
-            bh_morning_end = _format_local_time(conditions.blue_hour_morning_end, conditions.latitude, conditions.longitude)
+            bh_morning_start = _format_local_time(
+                conditions.blue_hour_morning_start, conditions.latitude, conditions.longitude
+            )
+            bh_morning_end = _format_local_time(
+                conditions.blue_hour_morning_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = bh_morning_start.split()
             parts_end = bh_morning_end.split()
@@ -398,8 +422,12 @@ def _show_conditions_content(output_console: Console) -> None:
 
         # Astronomical Twilight
         if conditions.astronomical_twilight_evening_start and conditions.astronomical_twilight_evening_end:
-            at_evening_start = _format_local_time(conditions.astronomical_twilight_evening_start, conditions.latitude, conditions.longitude)
-            at_evening_end = _format_local_time(conditions.astronomical_twilight_evening_end, conditions.latitude, conditions.longitude)
+            at_evening_start = _format_local_time(
+                conditions.astronomical_twilight_evening_start, conditions.latitude, conditions.longitude
+            )
+            at_evening_end = _format_local_time(
+                conditions.astronomical_twilight_evening_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = at_evening_start.split()
             parts_end = at_evening_end.split()
@@ -407,8 +435,12 @@ def _show_conditions_content(output_console: Console) -> None:
             at_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else at_evening_end
             output_console.print(f"  Astronomical Twilight (evening): {at_start_time} - {at_end_time}")
         if conditions.astronomical_twilight_morning_start and conditions.astronomical_twilight_morning_end:
-            at_morning_start = _format_local_time(conditions.astronomical_twilight_morning_start, conditions.latitude, conditions.longitude)
-            at_morning_end = _format_local_time(conditions.astronomical_twilight_morning_end, conditions.latitude, conditions.longitude)
+            at_morning_start = _format_local_time(
+                conditions.astronomical_twilight_morning_start, conditions.latitude, conditions.longitude
+            )
+            at_morning_end = _format_local_time(
+                conditions.astronomical_twilight_morning_end, conditions.latitude, conditions.longitude
+            )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = at_morning_start.split()
             parts_end = at_morning_end.split()
@@ -458,9 +490,13 @@ def _show_conditions_content(output_console: Console) -> None:
 def show_objects(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
-    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    best_for_seeing: bool = typer.Option(
+        False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Show recommended objects for tonight."""
     from ...cli.utils.export import create_file_console, export_to_text
@@ -504,7 +540,9 @@ def _show_objects_content(
                 output_console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
                 raise typer.Exit(code=1) from None
 
-        objects = planner.get_recommended_objects(conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing)
+        objects = planner.get_recommended_objects(
+            conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing
+        )
 
         if not objects:
             output_console.print("[yellow]No objects currently visible with current conditions.[/yellow]")
@@ -580,7 +618,9 @@ def _show_objects_content(
 @app.command("imaging", rich_help_panel="Imaging")
 def show_imaging(
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Show imaging forecasts: seeing for planetary, transparency for deep-sky, and exposure suggestions."""
     from ...cli.utils.export import create_file_console, export_to_text
@@ -651,7 +691,9 @@ def _show_imaging_content(output_console: Console) -> None:
 
         # Planetary Imaging - Seeing Forecast
         output_console.print("\n[bold cyan]Planetary Imaging - Seeing Forecast[/bold cyan]")
-        output_console.print("[dim]Seeing quality affects planetary detail capture. Excellent seeing (≥80) allows shorter exposures.[/dim]\n")
+        output_console.print(
+            "[dim]Seeing quality affects planetary detail capture. Excellent seeing (≥80) allows shorter exposures.[/dim]\n"
+        )
 
         table_planetary = Table()
         table_planetary.add_column("Time", style="cyan", width=12)
@@ -706,7 +748,9 @@ def _show_imaging_content(output_console: Console) -> None:
 
         # Deep-Sky Imaging - Transparency Forecast
         output_console.print("\n[bold cyan]Deep-Sky Imaging - Transparency Forecast[/bold cyan]")
-        output_console.print("[dim]Transparency (cloud cover) affects deep-sky exposure times. Clear skies allow longer exposures.[/dim]\n")
+        output_console.print(
+            "[dim]Transparency (cloud cover) affects deep-sky exposure times. Clear skies allow longer exposures.[/dim]\n"
+        )
 
         table_deepsky = Table()
         table_deepsky.add_column("Time", style="cyan", width=12)
@@ -735,9 +779,9 @@ def _show_imaging_content(output_console: Console) -> None:
                 transparency = "[green]Excellent[/green]"
                 # Exposure times depend on light pollution and moon
                 if conditions.moon_illumination < 0.1:  # New moon
-                    if conditions.light_pollution.bortle_scale <= 3:  # Dark sky
+                    if conditions.light_pollution.bortle_class.value <= 3:  # Dark sky
                         exposure = "[green]5-10 min[/green]"
-                    elif conditions.light_pollution.bortle_scale <= 5:  # Suburban
+                    elif conditions.light_pollution.bortle_class.value <= 5:  # Suburban
                         exposure = "[yellow]3-5 min[/yellow]"
                     else:  # Urban
                         exposure = "[yellow]1-3 min[/yellow]"
@@ -826,7 +870,9 @@ def _show_imaging_content(output_console: Console) -> None:
         else:
             output_console.print("  [red]Not recommended for deep-sky imaging[/red]")
 
-        output_console.print("\n[dim]Note: Exposure times are general guidelines. Adjust based on your camera, telescope, and target.[/dim]")
+        output_console.print(
+            "\n[dim]Note: Exposure times are general guidelines. Adjust based on your camera, telescope, and target.[/dim]"
+        )
 
     except Exception as e:
         output_console.print(f"[red]Error getting imaging forecast:[/red] {e}")
@@ -836,7 +882,9 @@ def _show_imaging_content(output_console: Console) -> None:
         raise typer.Exit(code=1) from None
 
 
-def _generate_export_filename(viewing_type: str = "telescope", binocular_model: str | None = None, command: str = "tonight") -> Path:
+def _generate_export_filename(
+    viewing_type: str = "telescope", binocular_model: str | None = None, command: str = "tonight"
+) -> Path:
     """Generate export filename based on viewing type, equipment, location, date, and command."""
     from datetime import datetime
 
@@ -878,9 +926,13 @@ def _generate_export_filename(viewing_type: str = "telescope", binocular_model: 
 def show_tonight(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
-    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    best_for_seeing: bool = typer.Option(
+        False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects) for Celestron NexStar 6SE."""
     from pathlib import Path
@@ -928,7 +980,9 @@ def _show_tonight_content(
     if config:
         telescope = config.telescope
         output_console.print(f"\n[bold cyan]{telescope.model.display_name} - Tonight's Viewing Guide[/bold cyan]")
-        output_console.print(f"[dim]Telescope: {telescope.aperture_mm}mm aperture, f/{telescope.focal_ratio:.1f} ({telescope.focal_length_mm}mm focal length)[/dim]")
+        output_console.print(
+            f"[dim]Telescope: {telescope.aperture_mm}mm aperture, f/{telescope.focal_ratio:.1f} ({telescope.focal_length_mm}mm focal length)[/dim]"
+        )
 
         # Determine telescope type for description
         if telescope.aperture_mm < 125:
@@ -943,7 +997,9 @@ def _show_tonight_content(
         output_console.print("\n[bold cyan]Telescope Viewing Guide - Tonight[/bold cyan]")
         output_console.print("[yellow]⚠ No telescope configured[/yellow]")
         output_console.print("[dim]Configure your telescope using: nexstar optics configure[/dim]")
-        output_console.print("[dim]This guide shows general observing conditions and objects visible with any telescope.[/dim]\n")
+        output_console.print(
+            "[dim]This guide shows general observing conditions and objects visible with any telescope.[/dim]\n"
+        )
 
     # Show conditions
     _show_conditions_content(output_console)
@@ -956,9 +1012,13 @@ def _show_tonight_content(
 def show_plan(
     target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
-    best_for_seeing: bool = typer.Option(False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"),
+    best_for_seeing: bool = typer.Option(
+        False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Show complete observing plan for tonight (conditions + objects)."""
     from ...cli.utils.export import create_file_console, export_to_text

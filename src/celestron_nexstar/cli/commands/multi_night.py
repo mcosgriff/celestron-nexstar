@@ -84,10 +84,10 @@ def _generate_export_filename(command: str = "week") -> Path:
 # Scoring weights for best-night calculation
 SCORING_WEIGHTS = {
     "conditions_quality": 0.35,  # Overall conditions (clouds, transparency, wind)
-    "seeing": 0.25,              # Atmospheric steadiness
-    "visibility": 0.20,          # Object altitude and observability
-    "moon_separation": 0.15,     # Angular distance from moon (NEW)
-    "moon_brightness": 0.05,     # Moon illumination (reduced from 0.1)
+    "seeing": 0.25,  # Atmospheric steadiness
+    "visibility": 0.20,  # Object altitude and observability
+    "moon_separation": 0.15,  # Angular distance from moon (NEW)
+    "moon_brightness": 0.05,  # Moon illumination (reduced from 0.1)
 }
 
 # Day colors for chart visualization
@@ -131,8 +131,8 @@ DEFAULT_THRESHOLDS = {
 # Different celestial objects have different observing requirements
 OBJECT_TYPE_WEIGHTS = {
     CelestialObjectType.PLANET: {
-        "seeing": 0.45,           # Planets critically need steady air
-        "visibility": 0.25,       # High altitude important for steadiness
+        "seeing": 0.45,  # Planets critically need steady air
+        "visibility": 0.25,  # High altitude important for steadiness
         "conditions_quality": 0.20,  # General conditions matter
         "moon_separation": 0.05,  # Planets tolerate moon well (bright targets)
         "moon_brightness": 0.05,  # Moon brightness less critical
@@ -141,30 +141,30 @@ OBJECT_TYPE_WEIGHTS = {
     CelestialObjectType.GALAXY: {
         "moon_separation": 0.30,  # Galaxies very sensitive to moon proximity
         "conditions_quality": 0.25,  # Need dark, transparent skies
-        "visibility": 0.25,       # Need good altitude
-        "seeing": 0.10,          # Seeing less critical for extended objects
+        "visibility": 0.25,  # Need good altitude
+        "seeing": 0.10,  # Seeing less critical for extended objects
         "moon_brightness": 0.10,  # Also sensitive to moon brightness
         "light_pollution_sensitivity": 0.9,  # Extremely sensitive to light pollution
     },
     CelestialObjectType.NEBULA: {
         "moon_separation": 0.25,  # Nebulae sensitive to moon
         "conditions_quality": 0.30,  # Need transparency and darkness
-        "visibility": 0.25,       # Need good altitude
-        "seeing": 0.10,          # Seeing less critical
+        "visibility": 0.25,  # Need good altitude
+        "seeing": 0.10,  # Seeing less critical
         "moon_brightness": 0.10,  # Moon brightness matters
         "light_pollution_sensitivity": 0.8,  # Very sensitive to light pollution
     },
     CelestialObjectType.CLUSTER: {
-        "visibility": 0.30,       # Altitude very important
+        "visibility": 0.30,  # Altitude very important
         "conditions_quality": 0.25,  # General conditions
-        "seeing": 0.20,          # Some benefit from steady air
+        "seeing": 0.20,  # Some benefit from steady air
         "moon_separation": 0.15,  # Moderate moon sensitivity
         "moon_brightness": 0.10,  # Less sensitive than galaxies
         "light_pollution_sensitivity": 0.4,  # Moderately sensitive to light pollution
     },
     CelestialObjectType.DOUBLE_STAR: {
-        "seeing": 0.50,          # Critical for resolving close pairs
-        "visibility": 0.25,       # High altitude for steadiness
+        "seeing": 0.50,  # Critical for resolving close pairs
+        "visibility": 0.25,  # High altitude for steadiness
         "conditions_quality": 0.15,  # General conditions
         "moon_separation": 0.05,  # Stars tolerate moon well
         "moon_brightness": 0.05,  # Bright targets
@@ -185,6 +185,7 @@ OBJECT_TYPE_WEIGHTS = {
 # ============================================================================
 # Color Mapping Functions
 # ============================================================================
+
 
 def _get_cloud_color(clouds: float) -> tuple[str, str]:
     """Get color for cloud cover - 11-level gradient from dark blue (clear) to white (overcast)."""
@@ -607,7 +608,9 @@ def _render_legend(conditions: list[str] | None = None) -> None:
 @app.command("week", rich_help_panel="Night Comparison")
 def show_week(
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Compare observing conditions for the next 7 nights."""
     from ...cli.utils.export import create_file_console, export_to_text
@@ -634,6 +637,7 @@ def _show_week_content(output_console: Console) -> None:
 
         # Get location
         from ...api.observer import get_observer_location
+
         location = get_observer_location()
         if location is None:
             output_console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
@@ -655,6 +659,7 @@ def _show_week_content(output_console: Console) -> None:
             night_date = now + timedelta(days=day_offset)
             # Get sunset time for this date
             from ...api.solar_system import get_sun_info
+
             sun_info = get_sun_info(lat, lon, night_date)
             if sun_info and sun_info.sunset_time:
                 sunset = sun_info.sunset_time
@@ -753,13 +758,20 @@ def _show_week_content(output_console: Console) -> None:
             best_seeing_date = best_seeing[0].strftime("%A, %B %d")
             best_clear_date = best_clear[0].strftime("%A, %B %d")
 
-        output_console.print(f"  [green]Best Overall:[/green] {best_quality_date} (Quality: {best_quality[2].observing_quality_score*100:.0f}/100)")
-        output_console.print(f"  [green]Best Seeing:[/green] {best_seeing_date} (Seeing: {best_seeing[2].seeing_score:.0f}/100)")
-        output_console.print(f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent:.0f}%)")
+        output_console.print(
+            f"  [green]Best Overall:[/green] {best_quality_date} (Quality: {best_quality[2].observing_quality_score * 100:.0f}/100)"
+        )
+        output_console.print(
+            f"  [green]Best Seeing:[/green] {best_seeing_date} (Seeing: {best_seeing[2].seeing_score:.0f}/100)"
+        )
+        output_console.print(
+            f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent:.0f}%)"
+        )
 
     except Exception as e:
         output_console.print(f"[red]Error comparing nights:[/red] {e}")
         import traceback
+
         output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
@@ -769,7 +781,9 @@ def show_best_night(
     object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
     days: int = typer.Option(7, "--days", "-d", help="Number of days to check (default: 7)"),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
-    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path (overrides auto-generated filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """Find the best night to observe a specific object in the next N days."""
     from ...cli.utils.export import create_file_console, export_to_text
@@ -835,6 +849,7 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
 
         # Get location
         from ...api.observer import get_observer_location
+
         location = get_observer_location()
         if location is None:
             output_console.print("[red]No location set. Use 'nexstar location set' command.[/red]")  # type: ignore[unreachable]
@@ -848,11 +863,15 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
         if obj.common_name:
             output_console.print(f"[dim]{obj.common_name}[/dim]")
         output_console.print(f"[dim]Type: {obj.object_type.value.title()}[/dim]")
-        output_console.print(f"[dim]Checking next {days} nights with {obj.object_type.value}-optimized scoring...[/dim]\n")
+        output_console.print(
+            f"[dim]Checking next {days} nights with {obj.object_type.value}-optimized scoring...[/dim]\n"
+        )
 
         # Get light pollution data for observer location
         light_pollution_data = get_light_pollution_data(lat, lon)
-        output_console.print(f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n")
+        output_console.print(
+            f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n"
+        )
 
         # Check each night
         nights_data: list[NightData] = []
@@ -863,6 +882,7 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
             night_date = now + timedelta(days=day_offset)
             # Get sunset time for this date
             from ...api.solar_system import get_sun_info
+
             sun_info = get_sun_info(lat, lon, night_date)
             if not sun_info or not sun_info.sunset_time:
                 continue
@@ -958,19 +978,23 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
                     light_pollution_data,
                 )
 
-                nights_data.append({
-                    "date": night_date,
-                    "sunset": sunset,
-                    "transit_time": observation_time,
-                    "altitude": alt,
-                    "conditions": conditions,
-                    "visibility": visibility,
-                    "score": total_score,
-                    "moon_separation_deg": moon_separation_deg,
-                })
+                nights_data.append(
+                    {
+                        "date": night_date,
+                        "sunset": sunset,
+                        "transit_time": observation_time,
+                        "altitude": alt,
+                        "conditions": conditions,
+                        "visibility": visibility,
+                        "score": total_score,
+                        "moon_separation_deg": moon_separation_deg,
+                    }
+                )
 
         if not nights_data:
-            output_console.print(f"[yellow]Object is not visible during observing hours in the next {days} nights.[/yellow]")
+            output_console.print(
+                f"[yellow]Object is not visible during observing hours in the next {days} nights.[/yellow]"
+            )
             return
 
         # Sort by score (best first)
@@ -1064,11 +1088,11 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
         best_score: float = best["score"]
 
         output_console.print(f"\n[bold green]Best Night:[/bold green] {best_date_str}")
-        output_console.print(f"  Score: {best_score*100:.0f}/100")
+        output_console.print(f"  Score: {best_score * 100:.0f}/100")
         output_console.print(f"  Transit: {best_transit_str} at {best_altitude:.0f}° altitude")
         output_console.print(f"  Seeing: {best_conditions.seeing_score:.0f}/100")
         output_console.print(f"  Cloud Cover: {best_conditions.weather.cloud_cover_percent or 100.0:.0f}%")
-        output_console.print(f"  Moon: {best_conditions.moon_illumination*100:.0f}% illuminated")
+        output_console.print(f"  Moon: {best_conditions.moon_illumination * 100:.0f}% illuminated")
 
         # Show moon separation
         best_moon_sep: float = best["moon_separation_deg"]
@@ -1081,24 +1105,36 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
         elif obj.object_type == CelestialObjectType.GALAXY:
             output_console.print("  [dim]Note: Galaxies need dark skies and distance from the moon[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_6:
-                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) significantly reduces galaxy visibility[/yellow]")
+                output_console.print(
+                    f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) significantly reduces galaxy visibility[/yellow]"
+                )
             else:
-                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for galaxy observation[/dim]")
+                output_console.print(
+                    f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for galaxy observation[/dim]"
+                )
         elif obj.object_type == CelestialObjectType.NEBULA:
             output_console.print("  [dim]Note: Nebulae need transparency, darkness, and distance from moon[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_6:
-                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) reduces nebula contrast and detail[/yellow]")
+                output_console.print(
+                    f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) reduces nebula contrast and detail[/yellow]"
+                )
             else:
-                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for nebula observation[/dim]")
+                output_console.print(
+                    f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is suitable for nebula observation[/dim]"
+                )
         elif obj.object_type == CelestialObjectType.DOUBLE_STAR:
             output_console.print("  [dim]Note: Double stars need excellent seeing to resolve close pairs[/dim]")
             output_console.print("  [dim]      Light pollution has minimal impact on double star observing[/dim]")
         elif obj.object_type == CelestialObjectType.CLUSTER:
             output_console.print("  [dim]Note: Clusters benefit most from good altitude and moderate darkness[/dim]")
             if light_pollution_data.bortle_class >= BortleClass.CLASS_7:
-                output_console.print(f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) may wash out fainter cluster members[/yellow]")
+                output_console.print(
+                    f"  [yellow]      ⚠ Light pollution (Bortle {light_pollution_data.bortle_class.value}) may wash out fainter cluster members[/yellow]"
+                )
             else:
-                output_console.print(f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is acceptable for cluster observation[/dim]")
+                output_console.print(
+                    f"  [dim]      Your Bortle {light_pollution_data.bortle_class.value} location is acceptable for cluster observation[/dim]"
+                )
 
         if best_visibility.is_visible:
             output_console.print("  [green]✓ Object will be visible[/green]")
@@ -1108,6 +1144,7 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
     except Exception as e:
         output_console.print(f"[red]Error finding best night:[/red] {e}")
         import traceback
+
         output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
@@ -1115,7 +1152,9 @@ def _show_best_night_content(output_console: Console, object_name: str, days: in
 @app.command("clear-sky", rich_help_panel="Forecast Visualization")
 def show_clear_sky_chart(
     days: int = typer.Option(4, "--days", "-d", help="Number of days to show (default: 4, max: 7)"),
-    nighttime_only: bool = typer.Option(False, "--nighttime-only", "-n", help="Only show nighttime hours (after sunset, before sunrise)"),
+    nighttime_only: bool = typer.Option(
+        False, "--nighttime-only", "-n", help="Only show nighttime hours (after sunset, before sunrise)"
+    ),
     conditions: str = typer.Option(
         ",".join(DEFAULT_CONDITIONS),
         "--conditions",
@@ -1258,16 +1297,18 @@ def show_clear_sky_chart(
             if forecast.cloud_cover_percent is not None and forecast.cloud_cover_percent > 80:
                 seeing_value = None  # Mark as too cloudy
 
-            chart_data.append({
-                "timestamp": forecast_ts,
-                "cloud_cover": forecast.cloud_cover_percent or 100.0,
-                "transparency": transparency,
-                "seeing": seeing_value,
-                "darkness": darkness_mag,
-                "wind": forecast.wind_speed_mph,
-                "humidity": forecast.humidity_percent,
-                "temperature": forecast.temperature_f,
-            })
+            chart_data.append(
+                {
+                    "timestamp": forecast_ts,
+                    "cloud_cover": forecast.cloud_cover_percent or 100.0,
+                    "transparency": transparency,
+                    "seeing": seeing_value,
+                    "darkness": darkness_mag,
+                    "wind": forecast.wind_speed_mph,
+                    "humidity": forecast.humidity_percent,
+                    "temperature": forecast.temperature_f,
+                }
+            )
 
         if not chart_data:
             console.print("[yellow]No forecast data available.[/yellow]")
@@ -1290,20 +1331,24 @@ def show_clear_sky_chart(
 
         # Filter chart_data to include data from start_time forward
         filtered_chart_data = [
-            data for data in chart_data
+            data
+            for data in chart_data
             if isinstance(data["timestamp"], datetime) and data["timestamp"] >= start_time_utc
         ]
 
         # Apply nighttime-only filter if requested
         if nighttime_only:
             filtered_chart_data = [
-                data for data in filtered_chart_data
+                data
+                for data in filtered_chart_data
                 if isinstance(data["timestamp"], datetime) and _is_nighttime(data["timestamp"], lat, lon)
             ]
 
         if not filtered_chart_data:
             if nighttime_only:
-                console.print("[yellow]No nighttime forecast data available. Try without --nighttime-only flag.[/yellow]")
+                console.print(
+                    "[yellow]No nighttime forecast data available. Try without --nighttime-only flag.[/yellow]"
+                )
             else:
                 console.print("[yellow]No forecast data available from current time forward.[/yellow]")
             return
@@ -1338,6 +1383,7 @@ def show_clear_sky_chart(
     except Exception as e:
         console.print(f"[red]Error generating chart:[/red] {e}")
         import traceback
+
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
 
@@ -1396,19 +1442,19 @@ def _export_chart_data(chart_data: list[dict[str, object]], export_path: str, tz
         # Export to JSON
         export_data = []
         for data in chart_data:
-            row: dict[str, object] = {}
+            json_row: dict[str, object] = {}
             ts = data.get("timestamp")
             if isinstance(ts, datetime):
-                row["timestamp_utc"] = ts.isoformat()
+                json_row["timestamp_utc"] = ts.isoformat()
                 local_ts = ts.astimezone(tz) if tz else ts
-                row["timestamp_local"] = local_ts.isoformat()
+                json_row["timestamp_local"] = local_ts.isoformat()
 
             # Add all other fields
             for key, value in data.items():
                 if key != "timestamp":
-                    row[key] = value
+                    json_row[key] = value
 
-            export_data.append(row)
+            export_data.append(json_row)
 
         with export_file.open("w") as f:
             json.dump(export_data, f, indent=2)
@@ -1465,15 +1511,15 @@ def _calculate_light_pollution_score(bortle_class: BortleClass) -> float:
     """
     # Map Bortle class to quality score
     bortle_scores = {
-        BortleClass.CLASS_1: 1.0,    # Excellent dark-sky site
-        BortleClass.CLASS_2: 0.95,   # Typical truly dark site
-        BortleClass.CLASS_3: 0.85,   # Rural sky
-        BortleClass.CLASS_4: 0.70,   # Rural/suburban transition
-        BortleClass.CLASS_5: 0.50,   # Suburban sky
-        BortleClass.CLASS_6: 0.30,   # Bright suburban sky
-        BortleClass.CLASS_7: 0.15,   # Suburban/urban transition
-        BortleClass.CLASS_8: 0.05,   # City sky
-        BortleClass.CLASS_9: 0.0,    # Inner-city sky
+        BortleClass.CLASS_1: 1.0,  # Excellent dark-sky site
+        BortleClass.CLASS_2: 0.95,  # Typical truly dark site
+        BortleClass.CLASS_3: 0.85,  # Rural sky
+        BortleClass.CLASS_4: 0.70,  # Rural/suburban transition
+        BortleClass.CLASS_5: 0.50,  # Suburban sky
+        BortleClass.CLASS_6: 0.30,  # Bright suburban sky
+        BortleClass.CLASS_7: 0.15,  # Suburban/urban transition
+        BortleClass.CLASS_8: 0.05,  # City sky
+        BortleClass.CLASS_9: 0.0,  # Inner-city sky
     }
     return bortle_scores.get(bortle_class, 0.5)  # Default to suburban
 
@@ -1939,7 +1985,8 @@ def _display_clear_sky_chart(
         if first_day_key in days_data:
             min_hour = 21 if start_hour_local >= 22 else start_hour_local
             days_data[first_day_key] = [
-                data for data in days_data[first_day_key]
+                data
+                for data in days_data[first_day_key]
                 if isinstance(data["timestamp"], datetime) and data["timestamp"].astimezone(tz).hour >= min_hour
             ]
 

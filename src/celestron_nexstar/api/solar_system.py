@@ -223,7 +223,7 @@ def get_moon_info(
             """Refine horizon crossing time using binary search between two datetimes."""
             # Use 10-minute intervals for better precision
             best_time = start_dt + timedelta(minutes=30)  # Default midpoint
-            min_diff = float('inf')
+            min_diff = float("inf")
 
             for minutes_offset in range(0, 61, 5):  # Check every 5 minutes
                 test_dt = start_dt + timedelta(minutes=minutes_offset)

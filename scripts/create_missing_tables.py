@@ -23,11 +23,11 @@ def create_missing_tables() -> None:
     """Create missing tables if they don't exist."""
     db = get_database()
     engine = db._engine
-    
+
     # Get list of existing tables
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
-    
+
     # Tables we need
     required_tables = {
         "iss_passes": ISSPassModel,
@@ -35,7 +35,7 @@ def create_missing_tables() -> None:
         "asterisms": AsterismModel,
         "meteor_showers": MeteorShowerModel,
     }
-    
+
     # Create missing tables
     tables_to_create = []
     for table_name, model in required_tables.items():
@@ -44,7 +44,7 @@ def create_missing_tables() -> None:
             print(f"Creating table: {table_name}")
         else:
             print(f"Table {table_name} already exists")
-    
+
     if tables_to_create:
         # Create all missing tables at once (checkfirst=True will skip if they exist)
         Base.metadata.create_all(
@@ -55,7 +55,7 @@ def create_missing_tables() -> None:
         print(f"\n✓ Successfully created {len(tables_to_create)} table(s)")
     else:
         print("\n✓ All required tables already exist")
-    
+
     # Verify all tables exist now
     inspector = inspect(engine)
     final_tables = set(inspector.get_table_names())
@@ -75,6 +75,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n✗ Error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
-

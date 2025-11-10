@@ -324,12 +324,8 @@ def search_objects(
             # First, try exact match (case-insensitive) - all filtering in database
             # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
             # It handles type coercion automatically and avoids Python-side evaluation
-            exact_query = (
-                select(CelestialObjectModel)
-                .filter(
-                    (CelestialObjectModel.name.ilike(query))
-                    | (CelestialObjectModel.common_name.ilike(query))
-                )
+            exact_query = select(CelestialObjectModel).filter(
+                (CelestialObjectModel.name.ilike(query)) | (CelestialObjectModel.common_name.ilike(query))
             )
             if catalog_name:
                 exact_query = exact_query.filter(CelestialObjectModel.catalog == catalog_name)
@@ -343,10 +339,7 @@ def search_objects(
 
             # Search for substring matches in name (score: 0) - all filtering in database
             # Use ilike() for case-insensitive substring matching
-            name_query = (
-                select(CelestialObjectModel)
-                .filter(CelestialObjectModel.name.ilike(f"%{query}%"))
-            )
+            name_query = select(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(f"%{query}%"))
             if catalog_name:
                 name_query = name_query.filter(CelestialObjectModel.catalog == catalog_name)
 
@@ -367,18 +360,19 @@ def search_objects(
 
             # Search for substring matches in common_name (score: 1) - all filtering in database
             # Use ilike() for case-insensitive substring matching
-            common_query = (
-                select(CelestialObjectModel)
-                .filter(
-                    CelestialObjectModel.common_name.isnot(None),
-                    CelestialObjectModel.common_name.ilike(f"%{query}%"),
-                )
+            common_query = select(CelestialObjectModel).filter(
+                CelestialObjectModel.common_name.isnot(None),
+                CelestialObjectModel.common_name.ilike(f"%{query}%"),
             )
             if catalog_name:
                 common_query = common_query.filter(CelestialObjectModel.catalog == catalog_name)
 
             common_models = session.execute(common_query).scalars().all()
-            seen_names = {str(obj.name).lower() for _, obj, _ in all_results if obj and hasattr(obj, 'name') and obj.name is not None}
+            seen_names = {
+                str(obj.name).lower()
+                for _, obj, _ in all_results
+                if obj and hasattr(obj, "name") and obj.name is not None
+            }
             for model in common_models:
                 obj = db._model_to_object(model)
                 if obj and obj.name is not None:
@@ -442,6 +436,7 @@ def search_objects(
 
     except Exception as e:
         import traceback
+
         error_details = traceback.format_exc()
         logger.error(f"Database search failed: {e}")
         logger.error(f"Query was: {query!r} (type: {type(query).__name__})")
@@ -449,6 +444,7 @@ def search_objects(
         logger.error(f"Full traceback: {error_details}")
         # Also print to stderr for immediate visibility
         import sys
+
         print(f"ERROR: Database search failed: {e}", file=sys.stderr)
         print(f"Query: {query!r} (type: {type(query).__name__})", file=sys.stderr)
         print(f"Traceback:\n{error_details}", file=sys.stderr)
