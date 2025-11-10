@@ -159,6 +159,9 @@ def _show_passes_content(output_console: Console, location, iss_passes: list, da
             set_time_str = _format_local_time(iss_pass.set_time, location.latitude, location.longitude)
 
             output_console.print(f"\n  [bold]{iss_pass.rise_time.strftime('%B %d, %Y')}[/bold]")
+            duration_min = iss_pass.duration_seconds // 60
+            quality = iss_pass.quality_rating
+
             output_console.print(f"    Rise: {rise_time_str} from {azimuth_to_compass_8point(iss_pass.rise_azimuth_deg)}")
             output_console.print(f"    Max: {max_time_str} at {iss_pass.max_altitude_deg:.0f}° ({azimuth_to_compass_8point(iss_pass.max_azimuth_deg)})")
             output_console.print(f"    Set: {set_time_str} to {azimuth_to_compass_8point(iss_pass.set_azimuth_deg)}")
