@@ -20,6 +20,7 @@ from .commands import (
     data,
     eclipse,
     ephemeris,
+    events,
     goto,
     iss,
     location,
@@ -256,6 +257,12 @@ app.add_typer(
     vacation.app,
     name="vacation",
     help="Vacation planning for telescope viewing",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    events.app,
+    name="events",
+    help="Space events calendar and viewing recommendations",
     rich_help_panel="Planning & Observation",
 )
 
