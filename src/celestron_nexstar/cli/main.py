@@ -25,6 +25,7 @@ from .commands import (
     multi_night,
     naked_eye,
     optics,
+    planets,
     position,
     time,
     tonight,
@@ -186,6 +187,12 @@ app.add_typer(
     eclipse.app,
     name="eclipse",
     help="Lunar and solar eclipse predictions",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    planets.app,
+    name="planets",
+    help="Planetary events (conjunctions, oppositions)",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
