@@ -122,13 +122,22 @@ def show_viewing_recommendations(
     """
     from datetime import UTC, timedelta
 
-    # Get events
-    start_date = datetime.now(UTC)
-    end_date = start_date + timedelta(days=730)  # 2 years
+    # Get events - search a wide range (past and future) to find events by name
+    now = datetime.now(UTC)
+    start_date = now - timedelta(days=365)  # 1 year in the past
+    end_date = now + timedelta(days=730)  # 2 years in the future
     all_events = get_upcoming_events(start_date=start_date, end_date=end_date)
 
-    # Find matching event
-    matching_events = [e for e in all_events if event_name.lower() in e.name.lower()]
+    # Find matching event (case-insensitive, partial match)
+    event_name_lower = event_name.lower()
+    matching_events = [e for e in all_events if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower]
+    
+    # If no matches found, try a broader search (all events, regardless of date)
+    if not matching_events:
+        # Get all events from hardcoded lists as fallback
+        from ...api.space_events import SPACE_EVENTS_2025, SPACE_EVENTS_2026
+        all_events_fallback = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
+        matching_events = [e for e in all_events_fallback if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower]
 
     if not matching_events:
         console.print(f"[red]Error: No event found matching '{event_name}'[/red]")
