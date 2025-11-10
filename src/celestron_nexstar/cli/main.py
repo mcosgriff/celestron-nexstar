@@ -21,6 +21,7 @@ from .commands import (
     ephemeris,
     goto,
     location,
+    meteors,
     move,
     multi_night,
     naked_eye,
@@ -193,6 +194,12 @@ app.add_typer(
     planets.app,
     name="planets",
     help="Planetary events (conjunctions, oppositions)",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    meteors.app,
+    name="meteors",
+    help="Enhanced meteor shower predictions with moon phase",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
