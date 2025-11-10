@@ -183,59 +183,60 @@ app.add_typer(
     help="Naked-eye stargazing (no equipment needed)",
     rich_help_panel="Planning & Observation",
 )
+# Celestial Events
 app.add_typer(
     aurora.app,
     name="aurora",
     help="Aurora borealis (Northern Lights) visibility",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     eclipse.app,
     name="eclipse",
     help="Lunar and solar eclipse predictions",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     planets.app,
     name="planets",
     help="Planetary events (conjunctions, oppositions)",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     meteors.app,
     name="meteors",
     help="Enhanced meteor shower predictions with moon phase",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     comets.app,
     name="comets",
     help="Bright comet tracking and visibility",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     satellites.app,
     name="satellites",
     help="Bright satellite passes and flares",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     zodiacal.app,
     name="zodiacal",
     help="Zodiacal light and gegenschein viewing",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     variables.app,
     name="variables",
     help="Variable star events (eclipses, maxima, minima)",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     occultations.app,
     name="occultations",
     help="Asteroid occultation predictions",
-    rich_help_panel="Planning & Observation",
+    rich_help_panel="Celestial Events",
 )
 app.add_typer(
     catalog.app,
