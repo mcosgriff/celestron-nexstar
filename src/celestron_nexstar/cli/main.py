@@ -21,6 +21,7 @@ from .commands import (
     eclipse,
     ephemeris,
     goto,
+    iss,
     location,
     meteors,
     move,
@@ -212,6 +213,12 @@ app.add_typer(
     comets.app,
     name="comets",
     help="Bright comet tracking and visibility",
+    rich_help_panel="Celestial Events",
+)
+app.add_typer(
+    iss.app,
+    name="iss",
+    help="International Space Station pass predictions",
     rich_help_panel="Celestial Events",
 )
 app.add_typer(
