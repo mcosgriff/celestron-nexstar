@@ -1,0 +1,75 @@
+
+Comprehensive Astronomy Plan for Fairbanks, Fairbanks North Star Borough, Alaska, United States of America
+
+1. Viewing Conditions
+
+Viewing Conditions for Fairbanks, Fairbanks North Star Borough, Alaska, United States of America
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                    ┃ Value              ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ Bortle Scale              │ Class 5 - Suburban │
+│ SQM Value                 │ 20.00 mag/arcsec²  │
+│ Naked Eye Limiting Mag    │ 5.6                │
+│ Milky Way Visible         │ Yes                │
+└───────────────────────────┴────────────────────┘
+
+Description:
+  Suburban sky. Milky Way washed out near horizon.
+
+Recommendations:
+  • Focus on brighter deep-sky objects
+  • Planets and Moon excellent
+
+Next Steps:
+  • Use 'nexstar vacation dark-sites' to find nearby dark sky locations
+  • Use 'nexstar telescope tonight' with this location for detailed viewing
+
+💡 Tip: Consider visiting a nearby dark sky site for the best viewing experience!
+
+
+2. Nearby Dark Sky Sites
+No official dark sky sites found nearby. Check light pollution map for dark areas.
+
+
+3. Aurora Visibility
+Aurora not currently visible (Kp: 3.3)
+   For your latitude (64.8°N), you typically need Kp ≥ 70.0
+
+💡 Tip: Use 'nexstar aurora when' for detailed aurora forecasts
+
+
+4. Upcoming Eclipses
+Could not check eclipses: 'Eclipse' object has no attribute 'type'
+
+
+5. Upcoming Meteor Showers
+  • Northern Taurids: 2025-11-12
+    ZHR: 5 meteors/hour (adjusted: 3)
+    Quality: fair
+  • Leonids: 2025-11-17
+    ZHR: 15 meteors/hour (adjusted: 15)
+    Quality: excellent
+  • Geminids: 2025-12-14
+    ZHR: 150 meteors/hour (adjusted: 150)
+    Quality: good
+  • Ursids: 2025-12-22
+    ZHR: 10 meteors/hour (adjusted: 10)
+    Quality: excellent
+  • Quadrantids: 2026-01-03
+    ZHR: 120 meteors/hour (adjusted: 20)
+    Quality: poor
+
+💡 Tip: Use 'nexstar meteors next' for detailed meteor shower forecasts
+
+
+6. Visible Comets
+Could not check comets: 'CometVisibility' object has no attribute 'name'
+
+
+Summary & Recommendations
+  • Sky Quality: Bortle Class 5 (SQM: 20.00)
+  • Moderate light pollution - consider nearby dark sites
+
+💡 Tip: Use 'nexstar telescope tonight' with this location for detailed viewing plans
+

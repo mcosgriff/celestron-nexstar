@@ -23,12 +23,27 @@ app = typer.Typer(help="Vacation planning for telescope viewing")
 console = Console()
 
 
-def _generate_export_filename(command: str = "vacation") -> Path:
+def _generate_export_filename(command: str = "vacation", location: str | None = None, days: int | None = None) -> Path:
     """Generate export filename for vacation commands."""
     from datetime import datetime
+    import re
 
     date_str = datetime.now().strftime("%Y-%m-%d")
-    filename = f"nexstar_vacation_{date_str}_{command}.txt"
+    
+    parts = [f"nexstar_vacation_{date_str}", command]
+    
+    if location:
+        # Sanitize location for filename (remove special chars, limit length)
+        sanitized = re.sub(r'[^\w\s-]', '', location)
+        sanitized = re.sub(r'[-\s]+', '-', sanitized)
+        sanitized = sanitized[:30]  # Limit length
+        if sanitized:
+            parts.append(sanitized)
+    
+    if days is not None:
+        parts.append(f"{days}days")
+    
+    filename = "_".join(parts) + ".txt"
     return Path(filename)
 
 
@@ -51,7 +66,8 @@ def show_viewing_info(
     viewing_info = get_vacation_viewing_info(vacation_location)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("view")
+        location_name = vacation_location.name or f"{vacation_location.latitude:.1f}N-{vacation_location.longitude:.1f}E"
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("view", location_name)
         file_console = create_file_console()
         _show_viewing_info_content(file_console, vacation_location, viewing_info)
         content = file_console.file.getvalue()
@@ -94,7 +110,8 @@ def show_dark_sites(
     dark_sites = find_dark_sites_near(vacation_location, max_distance_km=max_distance_km, min_bortle=min_bortle_class)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("dark-sites")
+        location_name = vacation_location.name or f"{vacation_location.latitude:.1f}N-{vacation_location.longitude:.1f}E"
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("dark-sites", location_name)
         file_console = create_file_console()
         _show_dark_sites_content(file_console, vacation_location, dark_sites, max_distance)
         content = file_console.file.getvalue()
@@ -243,7 +260,8 @@ def show_comprehensive_plan(
         raise typer.Exit(1)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("plan")
+        location_name = vacation_location.name or f"{vacation_location.latitude:.1f}N-{vacation_location.longitude:.1f}E"
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("plan", location_name, days_ahead)
         file_console = create_file_console()
         _show_comprehensive_plan_content(file_console, vacation_location, days_ahead)
         content = file_console.file.getvalue()
