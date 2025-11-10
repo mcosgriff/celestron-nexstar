@@ -1018,7 +1018,8 @@ nexstar events viewing <EVENT_NAME> [OPTIONS]
 ```
 
 **Options for `upcoming`:**
-- `--days`, `-d` INTEGER - Days ahead to show (default: 90)
+- `--days`, `-d` INTEGER - Days ahead to show (default: 90, ignored if `--date` is used)
+- `--date` DATE - Find events within ±7 days of this date (YYYY-MM-DD format, e.g., 2025-12-14)
 - `--type` TEXT - Filter by event type (meteor_shower, eclipse, etc.)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
@@ -1042,6 +1043,10 @@ nexstar events viewing <EVENT_NAME> [OPTIONS]
 # List upcoming events
 nexstar events upcoming --days 120
 nexstar events upcoming --type meteor_shower
+
+# Find events around a specific date (±7 days)
+nexstar events upcoming --date 2025-12-14
+nexstar events upcoming --date 2025-12-14 --type meteor_shower
 
 # Find best viewing for Geminid meteor shower
 nexstar events viewing "Geminid"
