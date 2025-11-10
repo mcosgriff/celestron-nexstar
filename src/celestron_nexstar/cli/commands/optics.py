@@ -216,6 +216,10 @@ def list_telescopes() -> None:
         nexstar optics telescopes
     """
     try:
+        # Get current configuration to mark configured telescope
+        current_config = get_current_configuration()
+        current_model = current_config.telescope.model
+
         table = Table(
             title="Supported Telescope Models",
             show_header=True,
@@ -231,8 +235,13 @@ def list_telescopes() -> None:
             specs = get_telescope_specs(model)
             dawes = calculate_dawes_limit_arcsec(specs.aperture_mm)
 
+            # Add star indicator if this is the configured telescope
+            model_name = specs.display_name
+            if model == current_model:
+                model_name = f"⭐ {model_name}"
+
             table.add_row(
-                specs.display_name,
+                model_name,
                 f'{specs.aperture_mm}mm ({specs.aperture_inches:.1f}")',
                 f"{specs.focal_length_mm}mm",
                 f"f/{specs.focal_ratio}",
@@ -257,6 +266,7 @@ def list_eyepieces() -> None:
     """
     try:
         config = get_current_configuration()
+        current_eyepiece = config.eyepiece
 
         table = Table(
             title=f"Common Eyepieces for {config.telescope.display_name}",
@@ -276,8 +286,19 @@ def list_eyepieces() -> None:
             exit_pupil = eyepiece.exit_pupil_mm(config.telescope)
             tfov = eyepiece.true_fov_arcmin(config.telescope)
 
+            # Check if this eyepiece matches the current configuration
+            # Match by focal length and apparent FOV (within small tolerance)
+            is_current = (
+                abs(eyepiece.focal_length_mm - current_eyepiece.focal_length_mm) < 0.1
+                and abs(eyepiece.apparent_fov_deg - current_eyepiece.apparent_fov_deg) < 0.1
+            )
+
+            eyepiece_name = eyepiece.name or f"{eyepiece.focal_length_mm}mm"
+            if is_current:
+                eyepiece_name = f"⭐ {eyepiece_name}"
+
             table.add_row(
-                eyepiece.name or f"{eyepiece.focal_length_mm}mm",
+                eyepiece_name,
                 f"{eyepiece.focal_length_mm}mm",
                 f"{eyepiece.apparent_fov_deg}°",
                 f"{mag:.0f}x",
