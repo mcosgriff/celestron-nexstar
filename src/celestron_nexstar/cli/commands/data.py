@@ -79,12 +79,14 @@ def init_static() -> None:
     - Meteor showers
     - Constellations and asterisms
     - Dark sky sites
+    - Space events calendar (Planetary Society)
 
     This should be run once after database setup to enable offline functionality.
     """
     from ...api.constellations import populate_constellation_database
     from ...api.meteor_showers import populate_meteor_shower_database
     from ...api.models import get_db_session
+    from ...api.space_events import populate_space_events_database
     from ...api.vacation_planning import populate_dark_sky_sites_database
 
     console.print("\n[bold cyan]Initializing static reference data[/bold cyan]\n")
@@ -105,6 +107,11 @@ def init_static() -> None:
             console.print("[dim]Populating dark sky sites...[/dim]")
             populate_dark_sky_sites_database(db)
             console.print("[green]✓[/green] Dark sky sites populated")
+
+            # Populate space events
+            console.print("[dim]Populating space events calendar...[/dim]")
+            populate_space_events_database(db)
+            console.print("[green]✓[/green] Space events populated")
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")

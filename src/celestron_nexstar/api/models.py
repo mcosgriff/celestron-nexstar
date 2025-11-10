@@ -447,6 +447,58 @@ class DarkSkySiteModel(Base):
         return f"<DarkSkySite(id={self.id}, name='{self.name}', bortle={self.bortle_class})>"
 
 
+class SpaceEventModel(Base):
+    """
+    SQLAlchemy model for space events calendar.
+    
+    Stores space events from sources like The Planetary Society calendar,
+    including eclipses, meteor showers, planetary events, and space missions.
+    This is static reference data that can be updated periodically.
+    """
+
+    __tablename__ = "space_events"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Event identification
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    
+    # Description
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Viewing requirements
+    min_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dark_sky_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_bortle_class: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    equipment_needed: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    viewing_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    # Source information
+    source: Mapped[str] = mapped_column(String(100), nullable=False, default="Planetary Society")
+    url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Composite index for date queries
+    __table_args__ = (Index("idx_event_date_type", "date", "event_type"),)
+
+    def __repr__(self) -> str:
+        """String representation of the event."""
+        return f"<SpaceEvent(id={self.id}, name='{self.name}', date={self.date})>"
+
+
 @contextmanager
 def get_db_session() -> Iterator[Session]:
     """

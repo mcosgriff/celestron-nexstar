@@ -356,6 +356,57 @@ SPACE_EVENTS_2025 = [
 SPACE_EVENTS_2026: list[SpaceEvent] = []
 
 
+def populate_space_events_database(db_session) -> None:
+    """
+    Populate the database with space events from hardcoded lists.
+    
+    This function should be called during database initialization to ensure
+    space events are available offline.
+    
+    Args:
+        db_session: SQLAlchemy database session
+    """
+    from .models import SpaceEventModel
+    from datetime import timezone
+    
+    # Ensure table exists
+    SpaceEventModel.__table__.create(db_session.bind, checkfirst=True)
+    
+    # Clear existing events (to allow re-population)
+    db_session.query(SpaceEventModel).delete()
+    
+    all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
+    
+    for event in all_events:
+        # Convert naive datetime to timezone-aware if needed
+        event_date = event.date
+        if event_date.tzinfo is None:
+            event_date = event_date.replace(tzinfo=timezone.utc)
+        
+        req = event.viewing_requirements
+        
+        model = SpaceEventModel(
+            name=event.name,
+            event_type=event.event_type.value,
+            date=event_date,
+            description=event.description,
+            min_latitude=req.min_latitude,
+            max_latitude=req.max_latitude,
+            min_longitude=req.min_longitude,
+            max_longitude=req.max_longitude,
+            dark_sky_required=req.dark_sky_required,
+            min_bortle_class=req.min_bortle_class,
+            equipment_needed=req.equipment_needed,
+            viewing_notes=req.notes,
+            source=event.source,
+            url=event.url,
+        )
+        db_session.add(model)
+    
+    db_session.commit()
+    logger.info(f"Added {len(all_events)} space events to database")
+
+
 def get_upcoming_events(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
@@ -363,6 +414,8 @@ def get_upcoming_events(
 ) -> list[SpaceEvent]:
     """
     Get upcoming space events within a date range.
+    
+    Queries from the database first, falls back to hardcoded lists if database is empty.
     
     Args:
         start_date: Start of date range (default: today)
@@ -372,19 +425,70 @@ def get_upcoming_events(
     Returns:
         List of SpaceEvent objects, sorted by date
     """
-    from datetime import UTC, timedelta
+    from datetime import UTC, timedelta, timezone
+    from sqlalchemy import and_
 
     if start_date is None:
         start_date = datetime.now(UTC)
     if end_date is None:
         end_date = start_date + timedelta(days=365)
 
+    # Try to get from database first
+    try:
+        from .models import SpaceEventModel, get_db_session
+        
+        with get_db_session() as db:
+            query = db.query(SpaceEventModel).filter(
+                and_(
+                    SpaceEventModel.date >= start_date,
+                    SpaceEventModel.date <= end_date,
+                )
+            )
+            
+            # Filter by event type if specified
+            if event_types:
+                type_values = [et.value for et in event_types]
+                query = query.filter(SpaceEventModel.event_type.in_(type_values))
+            
+            # Order by date
+            query = query.order_by(SpaceEventModel.date)
+            
+            db_events = query.all()
+            
+            # If we have events in the database, use them
+            if db_events:
+                filtered = []
+                for db_event in db_events:
+                    req = ViewingRequirement(
+                        min_latitude=db_event.min_latitude,
+                        max_latitude=db_event.max_latitude,
+                        min_longitude=db_event.min_longitude,
+                        max_longitude=db_event.max_longitude,
+                        dark_sky_required=db_event.dark_sky_required,
+                        min_bortle_class=db_event.min_bortle_class,
+                        equipment_needed=db_event.equipment_needed,
+                        notes=db_event.viewing_notes,
+                    )
+                    
+                    event = SpaceEvent(
+                        name=db_event.name,
+                        event_type=SpaceEventType(db_event.event_type),
+                        date=db_event.date,
+                        description=db_event.description,
+                        viewing_requirements=req,
+                        source=db_event.source,
+                        url=db_event.url,
+                    )
+                    filtered.append(event)
+                
+                return filtered
+    except Exception as e:
+        logger.debug(f"Could not query space events from database: {e}, falling back to hardcoded lists")
+
+    # Fallback to hardcoded lists
     all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
 
     # Filter by date range
-    # Convert naive datetimes to UTC for comparison
-    from datetime import timezone
-    
     filtered = []
     for e in all_events:
         # Make event date timezone-aware if it's naive
