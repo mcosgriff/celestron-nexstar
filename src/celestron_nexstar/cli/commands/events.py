@@ -52,7 +52,8 @@ def _generate_export_filename(command: str = "events", location: str | None = No
 @app.command("upcoming")
 def show_upcoming_events(
     days_ahead: int = typer.Option(90, "--days", "-d", help="Days ahead to show events (default: 90, ignored if --date is used)"),
-    date: str | None = typer.Option(None, "--date", help="Find events within ±7 days of this date (YYYY-MM-DD format)"),
+    date: str | None = typer.Option(None, "--date", help="Find events around this date (YYYY-MM-DD format)"),
+    range_days: int = typer.Option(7, "--range", "-r", help="Days before and after --date to search (default: 7, only used with --date)"),
     event_type: str | None = typer.Option(None, "--type", "-t", help="Filter by event type (meteor_shower, eclipse, etc.)"),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
@@ -61,13 +62,13 @@ def show_upcoming_events(
     from datetime import UTC, timedelta
 
     if date:
-        # Parse the date and find events within ±7 days
+        # Parse the date and find events within ±range_days
         try:
             target_date = datetime.strptime(date, "%Y-%m-%d")
             # Make it timezone-aware (use UTC midnight)
             target_date = target_date.replace(tzinfo=UTC)
-            start_date = target_date - timedelta(days=7)
-            end_date = target_date + timedelta(days=7)
+            start_date = target_date - timedelta(days=range_days)
+            end_date = target_date + timedelta(days=range_days)
         except ValueError:
             console.print(f"[red]Error: Invalid date format '{date}'. Use YYYY-MM-DD format (e.g., 2025-12-14)[/red]")
             raise typer.Exit(1)
@@ -89,12 +90,12 @@ def show_upcoming_events(
 
     if export:
         if date:
-            date_suffix = f"{date}_±7days"
+            date_suffix = f"{date}_±{range_days}days"
         else:
             date_suffix = f"{days_ahead}days"
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("upcoming", None, date_suffix)
         file_console = create_file_console()
-        _show_events_content(file_console, events, days_ahead, date)
+        _show_events_content(file_console, events, days_ahead, date, range_days)
         content = file_console.file.getvalue()
         file_console.file.close()
 
@@ -102,7 +103,7 @@ def show_upcoming_events(
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
-    _show_events_content(console, events, days_ahead, date)
+    _show_events_content(console, events, days_ahead, date, range_days)
 
 
 @app.command("viewing")
@@ -177,12 +178,12 @@ def show_viewing_recommendations(
     _show_viewing_recommendation_content(console, event, observer_location, recommendation, best_location)
 
 
-def _show_events_content(output_console: Console, events: list, days_ahead: int, date: str | None = None) -> None:
+def _show_events_content(output_console: Console, events: list, days_ahead: int, date: str | None = None, range_days: int = 7) -> None:
     """Display space events."""
     from datetime import UTC
 
     if date:
-        output_console.print(f"\n[bold cyan]Space Events (within ±7 days of {date})[/bold cyan]\n")
+        output_console.print(f"\n[bold cyan]Space Events (within ±{range_days} days of {date})[/bold cyan]\n")
     else:
         output_console.print(f"\n[bold cyan]Upcoming Space Events (next {days_ahead} days)[/bold cyan]\n")
 
