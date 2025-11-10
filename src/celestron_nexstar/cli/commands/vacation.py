@@ -6,6 +6,7 @@ Plan telescope viewing for vacation destinations.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -16,10 +17,15 @@ from rich.table import Table
 from ...api.aurora import check_aurora_visibility
 from ...api.comets import get_visible_comets
 from ...api.eclipses import get_next_lunar_eclipse, get_next_solar_eclipse
+from ...api.iss_tracking import get_iss_passes
 from ...api.light_pollution import BortleClass
 from ...api.meteor_shower_predictions import get_enhanced_meteor_predictions
 from ...api.observer import ObserverLocation, geocode_location
+from ...api.planetary_events import get_planetary_conjunctions, get_planetary_oppositions
+from ...api.solar_system import get_moon_info, get_sun_info
+from ...api.space_events import get_upcoming_events
 from ...api.vacation_planning import find_dark_sites_near, get_vacation_viewing_info
+from ...api.weather import fetch_hourly_weather_forecast
 from ...cli.utils.export import create_file_console, export_to_text
 
 app = typer.Typer(help="Vacation planning for telescope viewing")
@@ -475,7 +481,358 @@ def _show_comprehensive_plan_content(output_console: Console, location: Observer
     except Exception as e:
         output_console.print(f"[dim]Could not check comets: {e}[/dim]\n")
 
-    # 7. Summary and Recommendations
+    # 7. Weather Forecast
+    output_console.print("\n[bold]7. Weather Forecast[/bold]")
+    try:
+        # Calculate hours needed for the vacation period
+        if start_date and end_date:
+            hours_needed = int((end_dt - start_dt).total_seconds() / 3600) + 24  # Add buffer
+        else:
+            hours_needed = days_ahead * 24 + 24
+        
+        # Limit to 7 days (168 hours) - API maximum
+        hours_needed = min(hours_needed, 168)
+        
+        weather_forecast = fetch_hourly_weather_forecast(location, hours=hours_needed)
+        
+        if weather_forecast:
+            # Group by day and show summary
+            daily_weather = defaultdict(list)
+            
+            for forecast in weather_forecast:
+                if forecast.timestamp:
+                    day_key = forecast.timestamp.date()
+                    daily_weather[day_key].append(forecast)
+            
+            # Show forecast for each day in vacation period
+            current_date = start_dt.date() if start_date else datetime.now(UTC).date()
+            end_date_only = end_dt.date() if end_date else (datetime.now(UTC) + timedelta(days=days_ahead)).date()
+            
+            table = Table(expand=True, show_header=True, header_style="bold")
+            table.add_column("Date", style="cyan", width=12)
+            table.add_column("Cloud Cover", width=15)
+            table.add_column("Seeing", width=12)
+            table.add_column("Temp", justify="right", width=8)
+            table.add_column("Conditions", style="dim")
+            
+            days_shown = 0
+            while current_date <= end_date_only and days_shown < 7:
+                day_forecasts = daily_weather.get(current_date, [])
+                if day_forecasts:
+                    # Get nighttime forecasts (after sunset, before sunrise)
+                    nighttime_forecasts = [f for f in day_forecasts if f.timestamp and (20 <= f.timestamp.hour or f.timestamp.hour < 6)]
+                    if not nighttime_forecasts:
+                        nighttime_forecasts = day_forecasts[:3]  # Fallback to first few
+                    
+                    avg_cloud = sum(f.cloud_cover_percent for f in nighttime_forecasts) / len(nighttime_forecasts) if nighttime_forecasts else 0
+                    avg_seeing = sum(f.seeing_score for f in nighttime_forecasts) / len(nighttime_forecasts) if nighttime_forecasts else 50
+                    avg_temp = sum(getattr(f, 'temperature_f', 0) for f in nighttime_forecasts) / len(nighttime_forecasts) if nighttime_forecasts else 0
+                    
+                    # Format cloud cover
+                    if avg_cloud < 20:
+                        cloud_str = f"[green]{avg_cloud:.0f}%[/green]"
+                    elif avg_cloud < 50:
+                        cloud_str = f"[yellow]{avg_cloud:.0f}%[/yellow]"
+                    else:
+                        cloud_str = f"[red]{avg_cloud:.0f}%[/red]"
+                    
+                    # Format seeing
+                    if avg_seeing >= 80:
+                        seeing_str = "[green]Excellent[/green]"
+                    elif avg_seeing >= 60:
+                        seeing_str = "[yellow]Good[/yellow]"
+                    elif avg_seeing >= 40:
+                        seeing_str = "[yellow]Fair[/yellow]"
+                    else:
+                        seeing_str = "[red]Poor[/red]"
+                    
+                    condition = "Clear" if avg_cloud < 30 else "Cloudy" if avg_cloud > 70 else "Partly Cloudy"
+                    
+                    table.add_row(
+                        current_date.strftime("%Y-%m-%d"),
+                        cloud_str,
+                        seeing_str,
+                        f"{avg_temp:.0f}°F" if avg_temp > 0 else "—",
+                        condition
+                    )
+                    days_shown += 1
+                
+                current_date += timedelta(days=1)
+            
+            if days_shown > 0:
+                output_console.print(table)
+            else:
+                output_console.print("[dim]Weather forecast not available for this period[/dim]")
+        else:
+            output_console.print("[dim]Weather forecast not available[/dim]")
+        output_console.print("\n[dim]💡 Tip: Weather forecasts are most accurate within 3-5 days[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not check weather: {e}[/dim]\n")
+
+    # 8. Sun/Moon Calendar
+    output_console.print("\n[bold]8. Sun/Moon Calendar[/bold]")
+    try:
+        current_date = start_dt.date() if start_date else datetime.now(UTC).date()
+        end_date_only = end_dt.date() if end_date else (datetime.now(UTC) + timedelta(days=days_ahead)).date()
+        
+        table = Table(expand=True, show_header=True, header_style="bold")
+        table.add_column("Date", style="cyan", width=12)
+        table.add_column("Sunset", width=10)
+        table.add_column("Sunrise", width=10)
+        table.add_column("Moon Phase", width=15)
+        table.add_column("Moon Illum.", justify="right", width=12)
+        
+        days_shown = 0
+        while current_date <= end_date_only and days_shown < 14:  # Show up to 14 days
+            date_dt = datetime.combine(current_date, datetime.min.time()).replace(tzinfo=UTC)
+            
+            sun_info = get_sun_info(location.latitude, location.longitude, date_dt)
+            moon_info = get_moon_info(location.latitude, location.longitude, date_dt)
+            
+            if sun_info and sun_info.sunset_time:
+                # Convert to local time (simplified - just show UTC for now)
+                sunset_str = sun_info.sunset_time.strftime("%H:%M")
+                sunrise_str = sun_info.sunrise_time.strftime("%H:%M") if sun_info.sunrise_time else "—"
+            else:
+                sunset_str = "—"
+                sunrise_str = "—"
+            
+            if moon_info:
+                # Get moon phase name
+                moon_phase = str(moon_info.phase_name).replace("MoonPhase.", "").replace("_", " ").title()
+                moon_illum = f"{moon_info.illumination * 100:.0f}%"
+            else:
+                moon_phase = "—"
+                moon_illum = "—"
+            
+            table.add_row(
+                current_date.strftime("%Y-%m-%d"),
+                sunset_str,
+                sunrise_str,
+                moon_phase,
+                moon_illum
+            )
+            days_shown += 1
+            current_date += timedelta(days=1)
+        
+        output_console.print(table)
+        output_console.print("\n[dim]💡 Tip: New moon and crescent phases are best for deep-sky observing[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not calculate sun/moon calendar: {e}[/dim]\n")
+
+    # 9. ISS Passes
+    output_console.print("\n[bold]9. ISS Passes[/bold]")
+    try:
+        if start_date and end_date:
+            vacation_days = (end_dt - start_dt).days + 1
+        else:
+            vacation_days = days_ahead
+        
+        iss_passes = get_iss_passes(
+            location.latitude,
+            location.longitude,
+            start_time=start_dt if start_date else datetime.now(UTC),
+            days=min(vacation_days, 14),  # Limit to 14 days
+            min_altitude_deg=10.0
+        )
+        
+        # Filter visible passes and show top 5
+        visible_passes = [p for p in iss_passes if p.is_visible][:5]
+        
+        if visible_passes:
+            for pass_obj in visible_passes:
+                pass_date = pass_obj.rise_time.date() if pass_obj.rise_time else None
+                rise_time = pass_obj.rise_time.strftime("%H:%M") if pass_obj.rise_time else "—"
+                max_alt = f"{pass_obj.max_altitude_deg:.0f}°" if pass_obj.max_altitude_deg else "—"
+                duration = f"{pass_obj.duration_seconds // 60} min" if pass_obj.duration_seconds else "—"
+                
+                output_console.print(f"  • {pass_date}: Rise at {rise_time}, Max altitude {max_alt}, Duration {duration}")
+        else:
+            period_str = date_range_str if start_date and end_date else f"next {days_ahead} days"
+            output_console.print(f"[dim]No visible ISS passes during {period_str}[/dim]")
+        output_console.print("\n[dim]💡 Tip: Use 'nexstar iss passes' for detailed ISS pass information[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not check ISS passes: {e}[/dim]\n")
+
+    # 10. Planetary Events
+    output_console.print("\n[bold]10. Planetary Events[/bold]")
+    try:
+        if start_date and end_date:
+            months_ahead = max(1, int((end_dt - start_dt).days / 30) + 1)
+            years_ahead = max(1, int((end_dt - start_dt).days / 365) + 1)
+        else:
+            months_ahead = max(1, days_ahead // 30)
+            years_ahead = max(1, days_ahead // 365)
+        
+        conjunctions = get_planetary_conjunctions(location, months_ahead=months_ahead)
+        oppositions = get_planetary_oppositions(location, years_ahead=years_ahead)
+        
+        # Filter by date range
+        all_planetary_events = []
+        for event in conjunctions + oppositions:
+            if start_date and end_date:
+                if start_dt <= event.date <= end_dt:
+                    all_planetary_events.append(event)
+            else:
+                if event.date <= datetime.now(UTC) + timedelta(days=days_ahead * 30):
+                    all_planetary_events.append(event)
+        
+        all_planetary_events = sorted(all_planetary_events, key=lambda e: e.date)[:5]
+        
+        if all_planetary_events:
+            for event in all_planetary_events:
+                if event.event_type == "conjunction" and event.planet2:
+                    output_console.print(f"  • {event.planet1.title()} - {event.planet2.title()} Conjunction: {event.date.strftime('%Y-%m-%d')}")
+                    output_console.print(f"    Separation: {event.separation_degrees:.2f}°")
+                elif event.event_type == "opposition":
+                    output_console.print(f"  • {event.planet1.title()} at Opposition: {event.date.strftime('%Y-%m-%d')}")
+                    output_console.print(f"    Best viewing time for this planet")
+                if event.is_visible:
+                    output_console.print(f"    [green]Visible from this location[/green]")
+        else:
+            period_str = date_range_str if start_date and end_date else f"next {days_ahead} days"
+            output_console.print(f"[dim]No major planetary events during {period_str}[/dim]")
+        output_console.print("\n[dim]💡 Tip: Use 'nexstar planets conjunctions' and 'nexstar planets oppositions' for detailed information[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not check planetary events: {e}[/dim]\n")
+
+    # 11. Space Events Calendar
+    output_console.print("\n[bold]11. Space Events Calendar[/bold]")
+    try:
+        space_events = get_upcoming_events(start_date=start_dt, end_date=end_dt)
+        
+        if space_events:
+            for event in space_events[:5]:  # Show top 5
+                output_console.print(f"  • {event.name}: {event.date.strftime('%Y-%m-%d')}")
+                output_console.print(f"    Type: {event.event_type.value if hasattr(event.event_type, 'value') else event.event_type}")
+                if event.description:
+                    desc = event.description[:80] + "..." if len(event.description) > 80 else event.description
+                    output_console.print(f"    [dim]{desc}[/dim]")
+        else:
+            period_str = date_range_str if start_date and end_date else f"next {days_ahead} days"
+            output_console.print(f"[dim]No space events during {period_str}[/dim]")
+        output_console.print("\n[dim]💡 Tip: Use 'nexstar events upcoming' for detailed space event information[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not check space events: {e}[/dim]\n")
+
+    # 12. Best Observing Nights
+    output_console.print("\n[bold]12. Best Observing Nights[/bold]")
+    try:
+        # Get space events and planetary events for scoring (reuse from previous sections)
+        try:
+            space_events_for_scoring = get_upcoming_events(start_date=start_dt, end_date=end_dt)
+        except Exception:
+            space_events_for_scoring = []
+        
+        try:
+            if start_date and end_date:
+                months_ahead = max(1, int((end_dt - start_dt).days / 30) + 1)
+                years_ahead = max(1, int((end_dt - start_dt).days / 365) + 1)
+            else:
+                months_ahead = max(1, days_ahead // 30)
+                years_ahead = max(1, days_ahead // 365)
+            
+            conjunctions = get_planetary_conjunctions(location, months_ahead=months_ahead)
+            oppositions = get_planetary_oppositions(location, years_ahead=years_ahead)
+            all_planetary_events_for_scoring = []
+            for event in conjunctions + oppositions:
+                if start_date and end_date:
+                    if start_dt <= event.date <= end_dt:
+                        all_planetary_events_for_scoring.append(event)
+                else:
+                    if event.date <= datetime.now(UTC) + timedelta(days=days_ahead * 30):
+                        all_planetary_events_for_scoring.append(event)
+        except Exception:
+            all_planetary_events_for_scoring = []
+        
+        # Analyze each night and score them
+        current_date = start_dt.date() if start_date else datetime.now(UTC).date()
+        end_date_only = end_dt.date() if end_date else (datetime.now(UTC) + timedelta(days=days_ahead)).date()
+        
+        night_scores = []
+        days_analyzed = 0
+        
+        # Get weather forecast once for all days
+        weather_forecast_all = fetch_hourly_weather_forecast(location, hours=168)  # 7 days max
+        daily_weather_all = defaultdict(list)
+        for forecast in weather_forecast_all:
+            if forecast.timestamp:
+                daily_weather_all[forecast.timestamp.date()].append(forecast)
+        
+        while current_date <= end_date_only and days_analyzed < 14:
+            date_dt = datetime.combine(current_date, datetime.min.time()).replace(tzinfo=UTC)
+            
+            # Get moon info
+            moon_info = get_moon_info(location.latitude, location.longitude, date_dt)
+            
+            # Calculate score
+            score = 0.0
+            factors = []
+            
+            # Moon phase (0-40 points): New moon = 40, Full moon = 0
+            if moon_info:
+                moon_score = 40 * (1.0 - moon_info.illumination)
+                score += moon_score
+                factors.append(f"Moon: {moon_info.illumination * 100:.0f}%")
+            else:
+                factors.append("Moon: Unknown")
+            
+            # Weather (0-40 points): Clear = 40, Cloudy = 0
+            if daily_weather_all.get(current_date):
+                nighttime_forecasts = [f for f in daily_weather_all[current_date] if f.timestamp and (20 <= f.timestamp.hour or f.timestamp.hour < 6)]
+                if nighttime_forecasts:
+                    avg_cloud = sum(f.cloud_cover_percent for f in nighttime_forecasts) / len(nighttime_forecasts)
+                    weather_score = 40 * (1.0 - avg_cloud / 100.0)
+                    score += weather_score
+                    factors.append(f"Weather: {avg_cloud:.0f}% clouds")
+                else:
+                    factors.append("Weather: Unknown")
+            else:
+                factors.append("Weather: Unknown")
+            
+            # Events bonus (0-20 points): Major events add points
+            event_bonus = 0
+            for event in space_events_for_scoring:
+                if event.date.date() == current_date:
+                    event_bonus += 5
+            for event in all_planetary_events_for_scoring:
+                if event.date.date() == current_date:
+                    event_bonus += 3
+            score += min(event_bonus, 20)
+            if event_bonus > 0:
+                factors.append(f"Events: +{event_bonus}")
+            
+            night_scores.append((current_date, score, factors))
+            days_analyzed += 1
+            current_date += timedelta(days=1)
+        
+        # Sort by score and show top 3
+        night_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        if night_scores:
+            table = Table(expand=True, show_header=True, header_style="bold")
+            table.add_column("Date", style="cyan", width=12)
+            table.add_column("Score", justify="right", width=10)
+            table.add_column("Factors", style="dim")
+            
+            for date, score, factors in night_scores[:5]:  # Top 5
+                if score >= 70:
+                    score_str = f"[green]{score:.0f}/100[/green]"
+                elif score >= 50:
+                    score_str = f"[yellow]{score:.0f}/100[/yellow]"
+                else:
+                    score_str = f"[red]{score:.0f}/100[/red]"
+                
+                table.add_row(date.strftime("%Y-%m-%d"), score_str, ", ".join(factors))
+            
+            output_console.print(table)
+        else:
+            output_console.print("[dim]Could not analyze observing nights[/dim]")
+        output_console.print("\n[dim]💡 Tip: Scores consider moon phase, weather, and special events[/dim]\n")
+    except Exception as e:
+        output_console.print(f"[dim]Could not analyze best nights: {e}[/dim]\n")
+
+    # 13. Summary and Recommendations
     output_console.print("\n[bold]Summary & Recommendations[/bold]")
     output_console.print(f"  • Sky Quality: Bortle Class {viewing_info.bortle_class.value} (SQM: {viewing_info.sqm_value:.2f})")
     if viewing_info.bortle_class <= BortleClass.CLASS_3:
