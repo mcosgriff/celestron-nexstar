@@ -14,6 +14,7 @@ from .commands import (
     aurora,
     binoculars,
     catalog,
+    comets,
     connect,
     dashboard,
     data,
@@ -200,6 +201,12 @@ app.add_typer(
     meteors.app,
     name="meteors",
     help="Enhanced meteor shower predictions with moon phase",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    comets.app,
+    name="comets",
+    help="Bright comet tracking and visibility",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
