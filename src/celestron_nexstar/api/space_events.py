@@ -382,7 +382,18 @@ def get_upcoming_events(
     all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
 
     # Filter by date range
-    filtered = [e for e in all_events if start_date <= e.date <= end_date]
+    # Convert naive datetimes to UTC for comparison
+    from datetime import timezone
+    
+    filtered = []
+    for e in all_events:
+        # Make event date timezone-aware if it's naive
+        event_date = e.date
+        if event_date.tzinfo is None:
+            event_date = event_date.replace(tzinfo=timezone.utc)
+        
+        if start_date <= event_date <= end_date:
+            filtered.append(e)
 
     # Filter by event type if specified
     if event_types:
