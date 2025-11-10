@@ -11,10 +11,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from ...api.compass import azimuth_to_compass_8point
 from ...api.iss_tracking import get_iss_passes_cached
 from ...api.models import get_db_session
 from ...api.observer import get_observer_location
-from ...cli.utils.compass import azimuth_to_compass_8point
 from ...cli.utils.export import create_file_console, export_to_text
 
 app = typer.Typer(help="International Space Station pass predictions")
