@@ -35,6 +35,7 @@ from .commands import (
     time,
     tonight,
     track,
+    vacation,
     variables,
     zodiacal,
 )
@@ -249,6 +250,12 @@ app.add_typer(
     catalog.app,
     name="catalog",
     help="Celestial object catalogs",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    vacation.app,
+    name="vacation",
+    help="Vacation planning for telescope viewing",
     rich_help_panel="Planning & Observation",
 )
 
