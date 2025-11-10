@@ -29,6 +29,7 @@ from .commands import (
     optics,
     planets,
     position,
+    satellites,
     time,
     tonight,
     track,
@@ -207,6 +208,12 @@ app.add_typer(
     comets.app,
     name="comets",
     help="Bright comet tracking and visibility",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    satellites.app,
+    name="satellites",
+    help="Bright satellite passes and flares",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
