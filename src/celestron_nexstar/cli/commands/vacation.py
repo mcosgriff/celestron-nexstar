@@ -4,6 +4,9 @@ Vacation Planning Commands
 Plan telescope viewing for vacation destinations.
 """
 
+from __future__ import annotations
+
+from datetime import datetime
 from pathlib import Path
 
 import typer

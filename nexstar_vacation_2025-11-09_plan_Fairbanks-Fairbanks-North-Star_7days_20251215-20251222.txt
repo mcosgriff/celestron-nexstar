@@ -1,0 +1,74 @@
+
+Comprehensive Astronomy Plan for Fairbanks, Fairbanks North Star Borough, Alaska, United States of America
+Vacation Period: 2025-12-15 to 2025-12-22 (8 days)
+
+1. Viewing Conditions
+
+Viewing Conditions for Fairbanks, Fairbanks North Star Borough, Alaska, United States of America
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                    ┃ Value              ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ Bortle Scale              │ Class 5 - Suburban │
+│ SQM Value                 │ 20.00 mag/arcsec²  │
+│ Naked Eye Limiting Mag    │ 5.6                │
+│ Milky Way Visible         │ Yes                │
+└───────────────────────────┴────────────────────┘
+
+Description:
+  Suburban sky. Milky Way washed out near horizon.
+
+Recommendations:
+  • Focus on brighter deep-sky objects
+  • Planets and Moon excellent
+
+Next Steps:
+  • Use 'nexstar vacation dark-sites' to find nearby dark sky locations
+  • Use 'nexstar telescope tonight' with this location for detailed viewing
+
+💡 Tip: Consider visiting a nearby dark sky site for the best viewing experience!
+
+
+2. Nearby Dark Sky Sites
+No official dark sky sites found nearby. Check light pollution map for dark areas.
+
+
+3. Aurora Visibility
+Aurora not currently visible (Kp: 3.3)
+   For your latitude (64.8°N), you typically need Kp ≥ 70.0
+
+💡 Tip: Use 'nexstar aurora when' for detailed aurora forecasts during your dates
+
+
+4. Upcoming Eclipses
+No eclipses during your vacation period
+
+💡 Tip: Use 'nexstar eclipse next' for detailed eclipse information
+
+
+5. Upcoming Meteor Showers
+No major meteor showers during 2025-12-15 to 2025-12-22
+
+💡 Tip: Use 'nexstar meteors next' for detailed meteor shower forecasts
+
+
+6. Visible Comets
+  • CometVisibility(comet=Comet(name='C/2025 A6 (Lemmon)', designation='C/2025 A6', 
+perihelion_date=datetime.datetime(2025, 10, 21, 0, 0, tzinfo=datetime.timezone.utc), perihelion_distance_au=0.6, 
+peak_magnitude=4.3, peak_date=datetime.datetime(2025, 10, 21, 0, 0, tzinfo=datetime.timezone.utc), is_periodic=False, 
+period_years=None, notes='Non-periodic comet discovered January 2025. May be visible to naked eye.'), 
+date=datetime.datetime(2025, 11, 20, 0, 0, tzinfo=datetime.timezone.utc), magnitude=4.6, altitude=30.0, is_visible=True,
+best_viewing_time=datetime.datetime(2025, 11, 20, 2, 0, tzinfo=datetime.timezone.utc), notes='Magnitude 4.6 - 
+potentially visible to naked eye')
+    Magnitude: 4.6
+    Magnitude 4.6 - potentially visible to naked eye
+
+💡 Tip: Use 'nexstar comets visible' for detailed comet information
+
+
+Summary & Recommendations
+  • Sky Quality: Bortle Class 5 (SQM: 20.00)
+  • Moderate light pollution - consider nearby dark sites
+
+💡 Tip: Use 'nexstar telescope tonight' with this location for detailed viewing plans
+
