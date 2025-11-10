@@ -17,6 +17,7 @@ from .commands import (
     connect,
     dashboard,
     data,
+    eclipse,
     ephemeris,
     goto,
     location,
@@ -179,6 +180,12 @@ app.add_typer(
     aurora.app,
     name="aurora",
     help="Aurora borealis (Northern Lights) visibility",
+    rich_help_panel="Planning & Observation",
+)
+app.add_typer(
+    eclipse.app,
+    name="eclipse",
+    help="Lunar and solar eclipse predictions",
     rich_help_panel="Planning & Observation",
 )
 app.add_typer(
