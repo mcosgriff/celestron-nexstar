@@ -10,6 +10,8 @@ Uses SQLAlchemy ORM for type-safe database operations.
 from __future__ import annotations
 
 import logging
+import shutil
+import time
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -32,9 +34,12 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "CatalogDatabase",
     "DatabaseStats",
+    "backup_database",
     "get_database",
     "init_database",
     "list_ephemeris_files_from_naif",
+    "rebuild_database",
+    "restore_database",
     "sync_ephemeris_files_from_naif",
     "vacuum_database",
 ]
@@ -841,6 +846,247 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     )
 
     return (size_before, size_after)
+
+
+def backup_database(
+    db: CatalogDatabase | None = None,
+    backup_dir: Path | None = None,
+    keep_backups: int = 5,
+) -> Path:
+    """
+    Create a timestamped backup of the database.
+
+    Args:
+        db: Database instance (default: uses get_database())
+        backup_dir: Directory to store backups (default: ~/.nexstar/backups)
+        keep_backups: Number of backups to keep (default: 5)
+
+    Returns:
+        Path to the created backup file
+
+    Raises:
+        FileNotFoundError: If database doesn't exist
+        OSError: If backup directory can't be created
+    """
+    if db is None:
+        db = get_database()
+
+    if not db.db_path.exists():
+        raise FileNotFoundError(f"Database not found: {db.db_path}")
+
+    # Determine backup directory
+    backup_dir = Path.home() / ".nexstar" / "backups" if backup_dir is None else Path(backup_dir)
+
+    # Create backup directory if it doesn't exist
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create timestamped backup filename
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    backup_path = backup_dir / f"catalogs.db.{timestamp}.backup"
+
+    # Copy database file
+    shutil.copy2(db.db_path, backup_path)
+
+    logger.info(f"Backup created: {backup_path} ({backup_path.stat().st_size / (1024 * 1024):.2f} MB)")
+
+    # Clean up old backups (keep only the most recent N)
+    backups = sorted(backup_dir.glob("catalogs.db.*.backup"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old_backup in backups[keep_backups:]:
+        old_backup.unlink()
+        logger.info(f"Removed old backup: {old_backup.name}")
+
+    return backup_path
+
+
+def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> None:
+    """
+    Restore database from a backup file.
+
+    Args:
+        backup_path: Path to backup file
+        db: Database instance (default: uses get_database())
+
+    Raises:
+        FileNotFoundError: If backup file doesn't exist
+    """
+    if db is None:
+        db = get_database()
+
+    backup_path = Path(backup_path)
+    if not backup_path.exists():
+        raise FileNotFoundError(f"Backup file not found: {backup_path}")
+
+    # Close any existing connections
+    db._engine.dispose()
+
+    # Copy backup to database location
+    shutil.copy2(backup_path, db.db_path)
+
+    logger.info(f"Database restored from: {backup_path}")
+
+
+def rebuild_database(
+    backup_dir: Path | None = None,
+    sources: list[str] | None = None,
+    mag_limit: float = 15.0,
+    skip_backup: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """
+    Rebuild database from scratch.
+
+    Steps:
+    1. Backup existing database (if exists and not skipped)
+    2. Drop existing database
+    3. Run Alembic migrations to create fresh schema
+    4. Import all data sources
+    5. Initialize static data
+
+    Args:
+        backup_dir: Directory to store backups (default: ~/.nexstar/backups)
+        sources: List of sources to import (default: all available)
+        mag_limit: Maximum magnitude to import (default: 15.0)
+        skip_backup: Skip backup step (not recommended)
+        dry_run: Show what would be done without actually doing it
+
+    Returns:
+        Dictionary with rebuild statistics:
+        - backup_path: Path to backup (if created)
+        - imported_counts: Dict mapping source to (imported, skipped) counts
+        - static_data: Dict with static data counts
+        - duration_seconds: Time taken for rebuild
+        - database_size_mb: Final database size
+
+    Raises:
+        RuntimeError: If rebuild fails (backup will be restored if available)
+    """
+    start_time = time.time()
+    db = get_database()
+    backup_path: Path | None = None
+
+    try:
+        # Step 1: Backup existing database
+        if not dry_run and not skip_backup and db.db_path.exists():
+            backup_path = backup_database(db, backup_dir)
+            logger.info(f"Backup created: {backup_path}")
+
+        if dry_run:
+            logger.info("[DRY RUN] Would backup database if it exists")
+            return {
+                "backup_path": None,
+                "imported_counts": {},
+                "static_data": {},
+                "duration_seconds": 0,
+                "database_size_mb": 0,
+            }
+
+        # Step 2: Drop existing database
+        if db.db_path.exists():
+            # Close all connections
+            db._engine.dispose()
+            # Remove database file
+            db.db_path.unlink()
+            logger.info("Database dropped")
+
+        # Step 3: Run Alembic migrations to create fresh schema
+        from alembic.config import Config
+
+        from alembic import command
+
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Schema created via Alembic migrations")
+
+        # Get fresh database instance after rebuild
+        db = get_database()
+
+        # Step 4: Import data sources
+        # Import here to avoid circular dependency
+        from celestron_nexstar.cli.data_import import DATA_SOURCES, import_data_source
+
+        if sources is None:
+            sources = list(DATA_SOURCES.keys())
+
+        imported_counts: dict[str, tuple[int, int]] = {}
+        objects_before_import = 0
+
+        for source_id in sources:
+            if source_id not in DATA_SOURCES:
+                logger.warning(f"Unknown source: {source_id}, skipping")
+                continue
+
+            # Get count before import
+            db_stats_before = db.get_stats()
+            objects_before_import = db_stats_before.total_objects
+
+            # Import the source
+            success = import_data_source(source_id, mag_limit)
+            if success:
+                # Get count after import
+                db_stats_after = db.get_stats()
+                imported = db_stats_after.total_objects - objects_before_import
+                imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
+                objects_before_import = db_stats_after.total_objects
+            else:
+                imported_counts[source_id] = (0, 0)
+                logger.warning(f"Failed to import {source_id}")
+
+        # Step 5: Initialize static data
+        from .constellations import populate_constellation_database
+        from .meteor_showers import populate_meteor_shower_database
+        from .models import get_db_session
+        from .space_events import populate_space_events_database
+        from .vacation_planning import populate_dark_sky_sites_database
+
+        static_data: dict[str, int] = {}
+
+        with get_db_session() as session:
+            # Populate meteor showers
+            populate_meteor_shower_database(session)
+            meteor_count = session.execute(text("SELECT COUNT(*) FROM meteor_showers")).scalar() or 0
+            static_data["meteor_showers"] = meteor_count
+
+            # Populate constellations
+            populate_constellation_database(session)
+            constellation_count = session.execute(text("SELECT COUNT(*) FROM constellations")).scalar() or 0
+            asterism_count = session.execute(text("SELECT COUNT(*) FROM asterisms")).scalar() or 0
+            static_data["constellations"] = constellation_count
+            static_data["asterisms"] = asterism_count
+
+            # Populate dark sky sites
+            populate_dark_sky_sites_database(session)
+            dark_sky_count = session.execute(text("SELECT COUNT(*) FROM dark_sky_sites")).scalar() or 0
+            static_data["dark_sky_sites"] = dark_sky_count
+
+            # Populate space events
+            populate_space_events_database(session)
+            space_events_count = session.execute(text("SELECT COUNT(*) FROM space_events")).scalar() or 0
+            static_data["space_events"] = space_events_count
+
+        duration_seconds = time.time() - start_time
+        database_size_mb = db.db_path.stat().st_size / (1024 * 1024) if db.db_path.exists() else 0
+
+        logger.info(f"Database rebuild complete in {duration_seconds:.1f} seconds")
+        logger.info(f"Final database size: {database_size_mb:.2f} MB")
+
+        return {
+            "backup_path": backup_path,
+            "imported_counts": imported_counts,
+            "static_data": static_data,
+            "duration_seconds": duration_seconds,
+            "database_size_mb": database_size_mb,
+        }
+
+    except Exception as e:
+        # Restore backup if available
+        if backup_path and backup_path.exists():
+            logger.error(f"Rebuild failed: {e}. Restoring backup...")
+            try:
+                restore_database(backup_path, db)
+                logger.info("Backup restored successfully")
+            except Exception as restore_error:
+                logger.error(f"Failed to restore backup: {restore_error}")
+        raise RuntimeError(f"Database rebuild failed: {e}") from e
 
 
 def get_ephemeris_files() -> dict[str, dict[str, Any]]:
