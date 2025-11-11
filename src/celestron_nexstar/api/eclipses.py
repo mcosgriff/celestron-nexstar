@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING, Any
 try:
     from skyfield.api import Topos
 
-    from .skyfield_utils import get_skyfield_loader
-
     SKYFIELD_AVAILABLE = True
 except ImportError:
     SKYFIELD_AVAILABLE = False

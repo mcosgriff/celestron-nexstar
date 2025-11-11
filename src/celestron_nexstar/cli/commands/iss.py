@@ -132,13 +132,13 @@ def _show_passes_content(
         return
 
     # Display passes in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=12)
-    table.add_column("Rise Time", style="green", width=12)
-    table.add_column("Max Alt", justify="right", width=10)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Rise Time", style="green")
+    table.add_column("Max Alt", justify="right")
     table.add_column("Path", style="dim")
-    table.add_column("Duration", justify="right", width=12)
-    table.add_column("Quality", width=12)
+    table.add_column("Duration", justify="right")
+    table.add_column("Quality")
 
     for iss_pass in visible_passes[:20]:  # Show first 20
         rise_time_str = _format_local_time(iss_pass.rise_time, location.latitude, location.longitude)

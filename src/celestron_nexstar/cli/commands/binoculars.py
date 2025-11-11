@@ -263,13 +263,13 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
             )
 
         if iss_passes:
-            table_iss = Table(expand=True)
-            table_iss.add_column("Date", style="cyan", width=12)
-            table_iss.add_column("Rise Time", style="green", width=12)
-            table_iss.add_column("Max Alt", justify="right", width=10)
+            table_iss = Table()
+            table_iss.add_column("Date", style="cyan")
+            table_iss.add_column("Rise Time", style="green")
+            table_iss.add_column("Max Alt", justify="right")
             table_iss.add_column("Path", style="dim")  # No width - will expand to fill space
-            table_iss.add_column("Duration", justify="right", width=12)
-            table_iss.add_column("Quality", width=12)
+            table_iss.add_column("Duration", justify="right")
+            table_iss.add_column("Quality")
 
             for iss_pass in iss_passes[:10]:  # Show next 10 passes
                 # Only show passes that are actually visible (sunlit)
@@ -328,11 +328,11 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
         peak_showers = get_peak_showers(now, tolerance_days=3)
 
         if active_showers:
-            table_showers = Table(expand=True)
-            table_showers.add_column("Shower", style="bold", width=20)
-            table_showers.add_column("Status", style="cyan", width=12)
-            table_showers.add_column("ZHR", justify="right", width=8)
-            table_showers.add_column("Radiant", style="dim", width=20)
+            table_showers = Table()
+            table_showers.add_column("Shower", style="bold")
+            table_showers.add_column("Status", style="cyan")
+            table_showers.add_column("ZHR", justify="right")
+            table_showers.add_column("Radiant", style="dim")
             table_showers.add_column("Notes", style="dim")  # No width - will expand to fill space
 
             for shower in active_showers:
@@ -439,11 +439,11 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
         if fully_visible:
             current_season = _get_current_season(now)
 
-            table_const = Table(expand=True)
-            table_const.add_column("Constellation", style="bold", width=15)
-            table_const.add_column("Direction", justify="right", width=10)
-            table_const.add_column("Altitude", justify="right", width=10)
-            table_const.add_column("Season", style="dim", width=20)
+            table_const = Table()
+            table_const.add_column("Constellation", style="bold")
+            table_const.add_column("Direction", justify="right")
+            table_const.add_column("Altitude", justify="right")
+            table_const.add_column("Season", style="dim")
             table_const.add_column("Highlights", style="dim")  # No width - will expand to fill space
 
             for constellation, alt, az in fully_visible[:12]:  # Top 12
@@ -481,11 +481,11 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
 
             current_season = _get_current_season(now)
 
-            table_partial = Table(expand=True)
-            table_partial.add_column("Constellation", style="bold", width=15)
-            table_partial.add_column("Direction", justify="right", width=10)
-            table_partial.add_column("Altitude", justify="right", width=10)
-            table_partial.add_column("Season", style="dim", width=20)
+            table_partial = Table()
+            table_partial.add_column("Constellation", style="bold")
+            table_partial.add_column("Direction", justify="right")
+            table_partial.add_column("Altitude", justify="right")
+            table_partial.add_column("Season", style="dim")
             table_partial.add_column("Note", style="dim")  # No width - will expand to fill space
 
             for constellation, alt, az in partially_visible:
@@ -524,12 +524,12 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
         )
 
         if visible_stars:
-            table_stars = Table(expand=True)
-            table_stars.add_column("Star", style="bold", width=20)
-            table_stars.add_column("Direction", justify="right", width=10)
-            table_stars.add_column("Altitude", justify="right", width=10)
-            table_stars.add_column("Magnitude", justify="right", width=12)
-            table_stars.add_column("Constellation", style="dim", width=15)
+            table_stars = Table()
+            table_stars.add_column("Star", style="bold")
+            table_stars.add_column("Direction", justify="right")
+            table_stars.add_column("Altitude", justify="right")
+            table_stars.add_column("Magnitude", justify="right")
+            table_stars.add_column("Constellation", style="dim")
             table_stars.add_column("Notes", style="dim")  # No width - will expand to fill space
 
             for star, alt, az in visible_stars:
@@ -572,11 +572,11 @@ def _show_tonight_content(binoculars: str, output_console: Console | FileConsole
         visible_asterisms = get_visible_asterisms(lat, lon, midnight, min_altitude_deg=20.0)
 
         if visible_asterisms:
-            table_ast = Table(expand=True)
-            table_ast.add_column("Asterism", style="bold", width=20)
-            table_ast.add_column("Direction", justify="right", width=10)
-            table_ast.add_column("Altitude", justify="right", width=10)
-            table_ast.add_column("Size", justify="right", width=8)
+            table_ast = Table()
+            table_ast.add_column("Asterism", style="bold")
+            table_ast.add_column("Direction", justify="right")
+            table_ast.add_column("Altitude", justify="right")
+            table_ast.add_column("Size", justify="right")
             table_ast.add_column("Description", style="dim")  # No width - will expand to fill space
 
             for asterism, alt, az in visible_asterisms[:10]:  # Top 10

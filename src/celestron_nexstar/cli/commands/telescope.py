@@ -15,6 +15,7 @@ from timezonefinder import TimezoneFinder
 
 from ...api.observation_planner import ObservationPlanner, ObservingTarget
 from ...cli.utils.export import FileConsole
+from ...cli.utils.selection import select_from_list
 
 
 app = typer.Typer(help="Telescope viewing commands")
@@ -531,9 +532,12 @@ def _show_objects_content(
         planner = ObservationPlanner()
         conditions = planner.get_tonight_conditions()
 
-        # Parse target types
-        target_types = None
-        if target_type:
+        # Interactive selection if target_type not provided
+        if target_type is None:
+            target_type = _select_object_type_interactive()
+            target_types = None if target_type is None else [ObservingTarget(target_type)]
+        else:
+            # Parse target types
             try:
                 target_types = [ObservingTarget(target_type)]
             except ValueError:
@@ -1041,3 +1045,34 @@ def show_plan(
     _show_conditions_content(console)
     console.print("\n" + "=" * 80 + "\n")
     _show_objects_content(console, target_type, limit, best_for_seeing)
+
+
+def _select_object_type_interactive() -> str | None:
+    """Interactively select an object type for filtering."""
+    object_types = list(ObservingTarget)
+
+    # Object type descriptions
+    descriptions = {
+        ObservingTarget.PLANETS: "Solar system planets",
+        ObservingTarget.MOON: "Earth's moon",
+        ObservingTarget.DEEP_SKY: "Deep sky objects (galaxies, nebulae, clusters)",
+        ObservingTarget.DOUBLE_STARS: "Double and multiple star systems",
+        ObservingTarget.VARIABLE_STARS: "Variable stars",
+        ObservingTarget.MESSIER: "Messier catalog objects",
+        ObservingTarget.CALDWELL: "Caldwell catalog objects",
+        ObservingTarget.NGC_IC: "NGC and IC catalog objects",
+    }
+
+    def display_object_type(ot: ObservingTarget) -> tuple[str, ...]:
+        display_name = ot.value.replace("_", " ").title()
+        description = descriptions.get(ot, "Object type")
+        return (display_name, description)
+
+    selected = select_from_list(
+        object_types,
+        title="Select Object Type (or 'q' to show all)",
+        display_func=display_object_type,
+        headers=["Object Type", "Description"],
+    )
+
+    return selected.value if selected else None

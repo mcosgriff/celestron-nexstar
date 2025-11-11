@@ -22,8 +22,16 @@ from celestron_nexstar.api.catalogs import (
 from celestron_nexstar.api.database import get_database
 
 from ...cli.utils.export import FileConsole
-from ..utils.output import console, format_dec, format_ra, print_error, print_info, print_json
-from ..utils.selection import select_object
+from ..utils.output import (
+    calculate_panel_width,
+    console,
+    format_dec,
+    format_ra,
+    print_error,
+    print_info,
+    print_json,
+)
+from ..utils.selection import select_from_list, select_object
 from ..utils.state import ensure_connected
 
 
@@ -143,11 +151,14 @@ def search(
                     header_style=match_type_styles.get(match_type, "white"),
                     title_style=match_type_styles.get(match_type, "white"),
                 )
-                table.add_column("Name", style="cyan", width=15)
-                table.add_column("Type", style="yellow", width=10)
-                table.add_column("RA", style="green", width=12)
-                table.add_column("Dec", style="green", width=12)
-                table.add_column("Mag", style="blue", width=6)
+                table.add_column(
+                    "Name",
+                    style="cyan",
+                )
+                table.add_column("Type", style="yellow")
+                table.add_column("RA", style="green")
+                table.add_column("Dec", style="green")
+                table.add_column("Mag", style="blue")
                 table.add_column("Description", style="white")
 
                 for obj, _ in type_results:
@@ -170,11 +181,11 @@ def search(
                         show_header=True,
                         header_style="white",
                     )
-                    table.add_column("Name", style="cyan", width=15)
-                    table.add_column("Type", style="yellow", width=10)
-                    table.add_column("RA", style="green", width=12)
-                    table.add_column("Dec", style="green", width=12)
-                    table.add_column("Mag", style="blue", width=6)
+                    table.add_column("Name", style="cyan")
+                    table.add_column("Type", style="yellow")
+                    table.add_column("RA", style="green")
+                    table.add_column("Dec", style="green")
+                    table.add_column("Mag", style="blue")
                     table.add_column("Description", style="white")
 
                     for obj, _ in type_results:
@@ -198,7 +209,9 @@ def search(
 
 @app.command("list", rich_help_panel="Search & Browse")
 def list_catalog(
-    catalog: str = typer.Option("all", help="Catalog to list (or 'all' for all catalogs)"),
+    catalog: str | None = typer.Option(
+        None, help="Catalog to list (or 'all' for all catalogs). If not provided, will prompt interactively."
+    ),
     object_type: str | None = typer.Option(
         None, "--type", help="Filter by type (star, galaxy, nebula, asterism, etc.)"
     ),
@@ -211,13 +224,27 @@ def list_catalog(
     """
     List objects in a catalog.
 
+    If run without --catalog, you'll be prompted to select from available
+    catalogs interactively.
+
     Example:
+        # Interactive selection
+        nexstar catalog list
+
+        # Direct selection
         nexstar catalog list --catalog messier
         nexstar catalog list --catalog bright_stars
         nexstar catalog list --type nebula
         nexstar catalog list --catalog messier --type galaxy
     """
     try:
+        # Interactive selection if catalog not provided
+        if catalog is None:
+            catalog = _select_catalog_interactive()
+            if catalog is None:
+                print_info("Selection cancelled")
+                return
+
         # Validate catalog name if not "all"
         if catalog != "all":
             db = get_database()
@@ -265,13 +292,13 @@ def list_catalog(
                 show_header=True,
                 header_style="bold magenta",
             )
-            table.add_column("Name", style="cyan", width=15)
-            table.add_column("Type", style="yellow", width=10)
+            table.add_column("Name", style="cyan")
+            table.add_column("Type", style="yellow")
             if catalog_name == "moons":
-                table.add_column("Parent Planet", style="yellow", width=15)
-            table.add_column("RA", style="green", width=12)
-            table.add_column("Dec", style="green", width=12)
-            table.add_column("Mag", style="blue", width=6)
+                table.add_column("Parent Planet", style="yellow")
+            table.add_column("RA", style="green")
+            table.add_column("Dec", style="green")
+            table.add_column("Mag", style="blue")
             table.add_column("Description", style="white")
 
             for obj in objects_list:
@@ -433,7 +460,12 @@ def info(
                 info_text.append("Description:\n", style="bold yellow")
                 info_text.append(f"  {obj.description}\n", style="white")
 
-            panel = Panel(info_text, title=f"[bold]{obj.name}[/bold]", border_style="cyan")
+            panel = Panel(
+                info_text,
+                title=f"[bold]{obj.name}[/bold]",
+                border_style="cyan",
+                width=calculate_panel_width(info_text, console),
+            )
             console.print(panel)
 
             # Show goto hint
@@ -512,8 +544,8 @@ def catalogs() -> None:
         stats = db.get_stats()
 
         table = Table(title="Available Catalogs", show_header=True, header_style="bold magenta")
-        table.add_column("Catalog", style="cyan", width=20)
-        table.add_column("Objects", style="green", width=10)
+        table.add_column("Catalog", style="cyan")
+        table.add_column("Objects", style="green")
         table.add_column("Description", style="white")
 
         # Catalog descriptions
@@ -547,3 +579,38 @@ def catalogs() -> None:
     except Exception as e:
         print_error(f"Failed to show catalogs: {e}")
         raise typer.Exit(code=1) from e
+
+
+def _select_catalog_interactive() -> str | None:
+    """Interactively select a catalog."""
+    db = get_database()
+    stats = db.get_stats()
+    available_catalogs = ["all", *db.get_all_catalogs()]
+
+    # Catalog descriptions
+    descriptions = {
+        "all": "All catalogs combined",
+        "bright_stars": "Bright stars including navigation stars and famous double stars",
+        "messier": "Complete Messier catalog objects visible with 6SE",
+        "asterisms": "Star patterns: Big Dipper, Orion's Belt, Summer Triangle, etc.",
+        "ngc": "Notable NGC deep sky objects visible with 6SE",
+        "ic": "Index Catalog deep sky objects",
+        "caldwell": "Selected Caldwell catalog highlights for amateur telescopes",
+        "planets": "Solar system planets and moons visible with 6SE",
+        "moons": "Planetary moons",
+    }
+
+    def display_catalog(catalog: str) -> tuple[str, ...]:
+        display_name = catalog.replace("_", " ").title()
+        count = stats.objects_by_catalog.get(catalog, 0) if catalog != "all" else stats.total_objects
+        description = descriptions.get(catalog, "Catalog")
+        return (display_name, str(count), description)
+
+    selected = select_from_list(
+        available_catalogs,
+        title="Select Catalog",
+        display_func=display_catalog,
+        headers=["Catalog", "Objects", "Description"],
+    )
+
+    return selected
