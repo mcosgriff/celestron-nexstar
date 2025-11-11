@@ -170,9 +170,9 @@ Plan astronomy viewing for vacation destinations:
 **Usage:**
 
 ```bash
-nexstar vacation view --location "Fairbanks, AK"
-nexstar vacation dark-sites --location "Moab, UT" --max-distance 200
-nexstar vacation plan --location "Denver, CO" --start-date 2025-12-15 --end-date 2025-12-22
+nexstar vacation view "Fairbanks, AK"
+nexstar vacation dark-sites "Moab, UT" --max-distance 200
+nexstar vacation plan "Denver, CO" --start-date 2025-12-15 --end-date 2025-12-22
 ```
 
 ### Export Functionality
@@ -201,7 +201,7 @@ nexstar telescope conditions --export --export-path conditions.txt  # Custom fil
 nexstar binoculars tonight --export                            # Binocular guide
 nexstar multi-night best-night M31 --export                    # Best night analysis
 nexstar aurora tonight --export                                # Aurora forecast
-nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
+nexstar vacation plan "Denver, CO" --export                    # Vacation plan
 ```
 
 See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
@@ -316,10 +316,10 @@ nexstar events viewing "Geminid"                                # Best viewing l
 **Vacation Planning** (outside shell)
 
 ```bash
-nexstar vacation view --location "Fairbanks, AK"                 # Viewing conditions
-nexstar vacation dark-sites --location "Moab, UT"              # Find dark sky sites
-nexstar vacation plan --location "Denver, CO" --days 7          # Comprehensive plan
-nexstar vacation plan --location "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
+nexstar vacation view "Fairbanks, AK"                 # Viewing conditions
+nexstar vacation dark-sites "Moab, UT"                 # Find dark sky sites
+nexstar vacation plan "Denver, CO" --days 7            # Comprehensive plan
+nexstar vacation plan "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
 ```
 
 **Export Viewing Plans** (print-friendly text files)
@@ -332,7 +332,7 @@ nexstar naked-eye tonight --export                             # Naked-eye starg
 nexstar multi-night week --export                              # Week comparison
 nexstar multi-night best-night M31 --export                    # Best night analysis
 nexstar aurora tonight --export                                # Aurora forecast
-nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
+nexstar vacation plan "Denver, CO" --export                   # Vacation plan
 ```
 
 **Database Initialization** (one-time setup)

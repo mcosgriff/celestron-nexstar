@@ -565,14 +565,14 @@ def _show_objects_content(
 
         # Create table
         table = Table(title=f"Recommended Objects for Tonight ({len(objects)} total)")
-        table.add_column("Priority", style="cyan", width=8)
+        table.add_column("Priority", style="cyan")
         table.add_column("Name", style="bold")
         table.add_column("Type", style="dim")
         table.add_column("Mag", justify="right")
         table.add_column("Alt", justify="right")
         table.add_column("Transit", style="dim")
         table.add_column("Moon Sep", justify="right", style="dim")
-        table.add_column("Tips", style="dim", width=35)
+        table.add_column("Tips", style="dim")
 
         for obj_rec in objects[:limit]:
             priority_stars = "★" * (6 - obj_rec.priority)  # Invert: 1 = ★★★★★, 5 = ★
@@ -711,11 +711,11 @@ def _show_imaging_content(output_console: Console | FileConsole) -> None:
         )
 
         table_planetary = Table()
-        table_planetary.add_column("Time", style="cyan", width=12)
-        table_planetary.add_column("Seeing", justify="right", width=10)
-        table_planetary.add_column("Quality", width=15)
-        table_planetary.add_column("Wind", justify="right", width=8)
-        table_planetary.add_column("Exposure", width=20)
+        table_planetary.add_column("Time", style="cyan")
+        table_planetary.add_column("Seeing", justify="right")
+        table_planetary.add_column("Quality")
+        table_planetary.add_column("Wind", justify="right")
+        table_planetary.add_column("Exposure")
 
         for forecast in observing_forecasts:
             forecast_ts = forecast.timestamp
@@ -768,11 +768,11 @@ def _show_imaging_content(output_console: Console | FileConsole) -> None:
         )
 
         table_deepsky = Table()
-        table_deepsky.add_column("Time", style="cyan", width=12)
-        table_deepsky.add_column("Clouds", justify="right", width=10)
-        table_deepsky.add_column("Transparency", width=15)
-        table_deepsky.add_column("Humidity", justify="right", width=10)
-        table_deepsky.add_column("Exposure", width=25)
+        table_deepsky.add_column("Time", style="cyan")
+        table_deepsky.add_column("Clouds", justify="right")
+        table_deepsky.add_column("Transparency")
+        table_deepsky.add_column("Humidity", justify="right")
+        table_deepsky.add_column("Exposure")
 
         for forecast in observing_forecasts:
             forecast_ts = forecast.timestamp

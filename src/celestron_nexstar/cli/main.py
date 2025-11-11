@@ -208,7 +208,7 @@ def show_all_config(
                 header_style="bold magenta",
                 expand=False,
             )
-            optics_table.add_column("Setting", style="cyan", width=25)
+            optics_table.add_column("Setting", style="cyan")
             optics_table.add_column("Value", style="green")
 
             optics_table.add_row("Telescope", optical_config.telescope.display_name)
@@ -239,7 +239,7 @@ def show_all_config(
                 header_style="bold magenta",
                 expand=False,
             )
-            location_table.add_column("Setting", style="cyan", width=25)
+            location_table.add_column("Setting", style="cyan")
             location_table.add_column("Value", style="green")
 
             if observer_location.name:
@@ -263,7 +263,7 @@ def show_all_config(
                 header_style="bold magenta",
                 expand=False,
             )
-            paths_table.add_column("File", style="cyan", width=25)
+            paths_table.add_column("File", style="cyan")
             paths_table.add_column("Path", style="dim")
 
             paths_table.add_row("Config Directory", str(config_dir))

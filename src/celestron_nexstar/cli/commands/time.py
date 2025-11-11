@@ -51,7 +51,7 @@ def get_time(
         else:
             # Create a nice table
             table = Table(title="Telescope Time", show_header=True, header_style="bold magenta")
-            table.add_column("Parameter", style="cyan", width=18)
+            table.add_column("Parameter", style="cyan")
             table.add_column("Value", style="green")
 
             table.add_row("Date", f"{time_info.year}-{time_info.month:02d}-{time_info.day:02d}")

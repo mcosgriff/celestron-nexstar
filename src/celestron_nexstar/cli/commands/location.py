@@ -104,7 +104,7 @@ def get_location(
         else:
             # Create a nice table
             table = Table(title="Observer Location", show_header=True, header_style="bold magenta")
-            table.add_column("Parameter", style="cyan", width=15)
+            table.add_column("Parameter", style="cyan")
             table.add_column("Value", style="green")
 
             lat_dir = "N" if location.latitude >= 0 else "S"
@@ -236,7 +236,7 @@ def get_observer(
         else:
             # Create a nice table
             table = Table(title="CLI Observer Location", show_header=True, header_style="bold magenta")
-            table.add_column("Parameter", style="cyan", width=15)
+            table.add_column("Parameter", style="cyan")
             table.add_column("Value", style="green")
 
             if observer_loc.name:

@@ -176,13 +176,13 @@ def _show_eclipses_content(
         tz = None
 
     # Display eclipses in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Type", width=20)
-    table.add_column("Maximum Time", style="cyan", width=18)
-    table.add_column("Visible", justify="center", width=10)
-    table.add_column("Altitude", justify="right", width=10)
-    table.add_column("Magnitude", justify="right", width=10)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Type")
+    table.add_column("Maximum Time", style="cyan")
+    table.add_column("Visible", justify="center")
+    table.add_column("Altitude", justify="right")
+    table.add_column("Magnitude", justify="right")
 
     for eclipse in eclipses:
         # Format date

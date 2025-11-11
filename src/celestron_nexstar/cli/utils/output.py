@@ -68,7 +68,7 @@ def print_position_table(
         altitude: Altitude in degrees
     """
     table = Table(title="Telescope Position", show_header=True, header_style="bold magenta")
-    table.add_column("Coordinate System", style="cyan", width=20)
+    table.add_column("Coordinate System", style="cyan")
     table.add_column("Value", style="green")
 
     if ra_hours is not None and dec_degrees is not None:

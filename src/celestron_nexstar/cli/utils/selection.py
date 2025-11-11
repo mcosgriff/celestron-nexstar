@@ -39,12 +39,12 @@ def select_object(objects: list[CelestialObject], query: str) -> CelestialObject
     console.print(f"\n[yellow]Multiple objects found matching '{query}':[/yellow]\n")
 
     table = Table(show_header=True, header_style="bold magenta")
-    table.add_column("#", style="cyan", width=5)
-    table.add_column("Name", style="cyan", width=15)
-    table.add_column("Type", style="yellow", width=10)
-    table.add_column("RA", style="green", width=12)
-    table.add_column("Dec", style="green", width=12)
-    table.add_column("Mag", style="blue", width=6)
+    table.add_column("#", style="cyan")
+    table.add_column("Name", style="cyan")
+    table.add_column("Type", style="yellow")
+    table.add_column("RA", style="green")
+    table.add_column("Dec", style="green")
+    table.add_column("Mag", style="blue")
     table.add_column("Description", style="white")
 
     for i, obj in enumerate(objects, 1):

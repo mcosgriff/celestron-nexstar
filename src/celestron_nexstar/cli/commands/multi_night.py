@@ -680,13 +680,13 @@ def _show_week_content(output_console: Console | FileConsole) -> None:
 
         # Create comparison table
         table = Table(title="7-Night Comparison")
-        table.add_column("Date", style="cyan", width=12)
-        table.add_column("Quality", width=12)
-        table.add_column("Seeing", justify="right", width=10)
-        table.add_column("Clouds", justify="right", width=10)
-        table.add_column("Moon", width=15)
-        table.add_column("Moon %", justify="right", width=10)
-        table.add_column("Best Window", width=20)
+        table.add_column("Date", style="cyan")
+        table.add_column("Quality")
+        table.add_column("Seeing", justify="right")
+        table.add_column("Clouds", justify="right")
+        table.add_column("Moon")
+        table.add_column("Moon %", justify="right")
+        table.add_column("Best Window")
 
         for night_date, _sunset, conditions in nights:
             # Format date
@@ -1004,15 +1004,15 @@ def _show_best_night_content(output_console: Console | FileConsole, object_name:
 
         # Create table
         table = Table(title=f"Best Nights for {obj.name}")
-        table.add_column("Date", style="cyan", width=12)
-        table.add_column("Score", justify="right", width=8)
-        table.add_column("Quality", width=12)
-        table.add_column("Seeing", justify="right", width=10)
-        table.add_column("Clouds", justify="right", width=10)
-        table.add_column("Transit", width=12)
-        table.add_column("Altitude", justify="right", width=10)
-        table.add_column("Moon", width=10)
-        table.add_column("Moon Sep", justify="right", width=10)
+        table.add_column("Date", style="cyan")
+        table.add_column("Score", justify="right")
+        table.add_column("Quality")
+        table.add_column("Seeing", justify="right")
+        table.add_column("Clouds", justify="right")
+        table.add_column("Transit")
+        table.add_column("Altitude", justify="right")
+        table.add_column("Moon")
+        table.add_column("Moon Sep", justify="right")
 
         for night in nights_data:
             date: datetime = night["date"]

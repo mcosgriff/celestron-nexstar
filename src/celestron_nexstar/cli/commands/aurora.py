@@ -135,8 +135,8 @@ def _show_aurora_content(
         output_console.print("[dim]○ Aurora Borealis is not visible tonight[/dim]\n")
 
     # Detailed information table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Parameter", style="cyan", width=25)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Parameter", style="cyan")
     table.add_column("Value", style="white")
 
     # Kp Index
@@ -331,12 +331,12 @@ def _show_when_content(
         tz = None
 
     # Display windows in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Start Time", style="cyan", width=20)
-    table.add_column("End Time", style="cyan", width=20)
-    table.add_column("Duration", justify="right", width=12)
-    table.add_column("Max Kp", justify="right", width=10)
-    table.add_column("Visibility", width=15)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Start Time", style="cyan")
+    table.add_column("End Time", style="cyan")
+    table.add_column("Duration", justify="right")
+    table.add_column("Max Kp", justify="right")
+    table.add_column("Visibility")
 
     for start_time, end_time, max_kp, visibility_level in windows:
         # Format times in local timezone
@@ -475,12 +475,12 @@ def _show_next_content(
         return
 
     # Display opportunities table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Month", style="cyan", width=12)
-    table.add_column("Season", width=10)
-    table.add_column("Probability", justify="right", width=12)
-    table.add_column("Expected Max Kp", justify="right", width=14)
-    table.add_column("Confidence", width=12)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Month", style="cyan")
+    table.add_column("Season")
+    table.add_column("Probability", justify="right")
+    table.add_column("Expected Max Kp", justify="right")
+    table.add_column("Confidence")
     table.add_column("Notes", style="dim")
 
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]

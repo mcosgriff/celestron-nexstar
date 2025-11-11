@@ -97,12 +97,12 @@ def _show_events_content(
         tz = None
 
     # Display events in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Star", width=20)
-    table.add_column("Event", width=15)
-    table.add_column("Magnitude", justify="right", width=12)
-    table.add_column("Type", width=20)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Star")
+    table.add_column("Event")
+    table.add_column("Magnitude", justify="right")
+    table.add_column("Type")
 
     for event in events:
         # Format date

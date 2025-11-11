@@ -154,7 +154,7 @@ def _show_viewing_info_content(
 
     # Sky quality table
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Metric", style="cyan", width=25)
+    table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
 
     # Format Bortle class with color
@@ -214,11 +214,11 @@ def _show_dark_sites_content(
         return
 
     # Display sites in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Site Name", style="bold", width=30)
-    table.add_column("Distance", justify="right", width=12)
-    table.add_column("Bortle", width=15)
-    table.add_column("SQM", justify="right", width=10)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Site Name", style="bold")
+    table.add_column("Distance", justify="right")
+    table.add_column("Bortle")
+    table.add_column("SQM", justify="right")
     table.add_column("Description", style="dim")
 
     for site in dark_sites:
@@ -550,11 +550,11 @@ def _show_comprehensive_plan_content(
             current_date = start_dt.date() if start_date else datetime.now(UTC).date()
             end_date_only = end_dt.date() if end_date else (datetime.now(UTC) + timedelta(days=days_ahead)).date()
 
-            table = Table(expand=True, show_header=True, header_style="bold")
-            table.add_column("Date", style="cyan", width=12)
-            table.add_column("Cloud Cover", width=15)
-            table.add_column("Seeing", width=12)
-            table.add_column("Temp", justify="right", width=8)
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Date", style="cyan")
+            table.add_column("Cloud Cover")
+            table.add_column("Seeing")
+            table.add_column("Temp", justify="right")
             table.add_column("Conditions", style="dim")
 
             days_shown = 0
@@ -633,12 +633,12 @@ def _show_comprehensive_plan_content(
         current_date = start_dt.date() if start_date else datetime.now(UTC).date()
         end_date_only = end_dt.date() if end_date else (datetime.now(UTC) + timedelta(days=days_ahead)).date()
 
-        table = Table(expand=True, show_header=True, header_style="bold")
-        table.add_column("Date", style="cyan", width=12)
-        table.add_column("Sunset", width=10)
-        table.add_column("Sunrise", width=10)
-        table.add_column("Moon Phase", width=15)
-        table.add_column("Moon Illum.", justify="right", width=12)
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Date", style="cyan")
+        table.add_column("Sunset")
+        table.add_column("Sunrise")
+        table.add_column("Moon Phase")
+        table.add_column("Moon Illum.", justify="right")
 
         days_shown = 0
         while current_date <= end_date_only and days_shown < 14:  # Show up to 14 days
@@ -879,9 +879,9 @@ def _show_comprehensive_plan_content(
         night_scores.sort(key=lambda x: x[1], reverse=True)
 
         if night_scores:
-            table = Table(expand=True, show_header=True, header_style="bold")
-            table.add_column("Date", style="cyan", width=12)
-            table.add_column("Score", justify="right", width=10)
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Date", style="cyan")
+            table.add_column("Score", justify="right")
             table.add_column("Factors", style="dim")
 
             for date, score, factors in night_scores[:5]:  # Top 5

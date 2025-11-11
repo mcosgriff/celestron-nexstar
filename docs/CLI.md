@@ -1195,36 +1195,45 @@ Plan astronomy viewing for vacation destinations:
 
 ```bash
 # Check viewing conditions at a location
-nexstar vacation view --location "LOCATION" [OPTIONS]
+nexstar vacation view "LOCATION" [OPTIONS]
 
 # Find nearby dark sky sites
-nexstar vacation dark-sites --location "LOCATION" [OPTIONS]
+nexstar vacation dark-sites "LOCATION" [OPTIONS]
 
 # Comprehensive vacation astronomy plan
-nexstar vacation plan --location "LOCATION" [OPTIONS]
+nexstar vacation plan "LOCATION" [OPTIONS]
 ```
+
+**Arguments for `view`:**
+
+- `LOCATION` TEXT - Destination location (required, positional argument)
 
 **Options for `view`:**
 
-- `--location`, `-l` TEXT - Destination location (required)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
+**Arguments for `dark-sites`:**
+
+- `LOCATION` TEXT - Destination location (required, positional argument)
+
 **Options for `dark-sites`:**
 
-- `--location`, `-l` TEXT - Destination location (required)
-- `--max-distance` FLOAT - Maximum distance in miles (default: 100.0)
+- `--max-distance` FLOAT - Maximum distance in miles (default: 200.0)
 - `--min-bortle` INTEGER - Minimum Bortle class (1-9, default: 4)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
+**Arguments for `plan`:**
+
+- `LOCATION` TEXT - Destination location (required, positional argument)
+
 **Options for `plan`:**
 
-- `--location`, `-l` TEXT - Destination location (required)
-- `--days`, `-d` INTEGER - Number of days ahead (default: 7)
-- `--start-date` DATE - Start date (YYYY-MM-DD format)
-- `--end-date` DATE - End date (YYYY-MM-DD format)
-- `--export`, `-e` - Export output to text file
+- `--days`, `-d` INTEGER - Number of days ahead (default: 30)
+- `--start-date`, `-s` DATE - Start date (YYYY-MM-DD format)
+- `--end-date`, `-e` DATE - End date (YYYY-MM-DD format)
+- `--export`, `-E` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
@@ -1256,17 +1265,17 @@ nexstar vacation plan --location "LOCATION" [OPTIONS]
 
 ```bash
 # Check viewing conditions
-nexstar vacation view --location "Fairbanks, AK"
-nexstar vacation view --location "Moab, UT" --export
+nexstar vacation view "Fairbanks, AK"
+nexstar vacation view "Moab, UT" --export
 
 # Find dark sky sites
-nexstar vacation dark-sites --location "Denver, CO" --max-distance 200
-nexstar vacation dark-sites --location "Albuquerque, NM" --min-bortle 3 --export
+nexstar vacation dark-sites "Denver, CO" --max-distance 200
+nexstar vacation dark-sites "Albuquerque, NM" --min-bortle 3 --export
 
 # Comprehensive vacation plan
-nexstar vacation plan --location "Fairbanks, AK" --days 7
-nexstar vacation plan --location "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
-nexstar vacation plan --location "Denver, CO" --days 14 --export
+nexstar vacation plan "Fairbanks, AK" --days 7
+nexstar vacation plan "Moab, UT" --start-date 2025-12-15 --end-date 2025-12-22
+nexstar vacation plan "Denver, CO" --days 14 --export
 ```
 
 ## Data Management

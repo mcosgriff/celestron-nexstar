@@ -54,11 +54,11 @@ def sync_ephemeris_files(
 
             # Create table
             table = Table(title="Ephemeris Files Available from NAIF", show_header=True, header_style="bold magenta")
-            table.add_column("Key", style="cyan", width=15)
-            table.add_column("File", style="green", width=20)
-            table.add_column("Type", style="yellow", width=10)
-            table.add_column("Coverage", style="blue", width=15)
-            table.add_column("Size (MB)", justify="right", style="magenta", width=10)
+            table.add_column("Key", style="cyan")
+            table.add_column("File", style="green")
+            table.add_column("Type", style="yellow")
+            table.add_column("Coverage", style="blue")
+            table.add_column("Size (MB)", justify="right", style="magenta")
             table.add_column("Description", style="white")
 
             for file_info in sorted(files, key=lambda x: (x["file_type"], x["file_key"])):

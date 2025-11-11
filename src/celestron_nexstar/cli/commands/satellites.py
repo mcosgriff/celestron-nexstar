@@ -135,12 +135,12 @@ def _show_passes_content(
         tz = None
 
     # Display passes in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Satellite", width=25)
-    table.add_column("Max Time", style="cyan", width=18)
-    table.add_column("Altitude", justify="right", width=10)
-    table.add_column("Magnitude", justify="right", width=12)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Satellite")
+    table.add_column("Max Time", style="cyan")
+    table.add_column("Altitude", justify="right")
+    table.add_column("Magnitude", justify="right")
 
     for pass_obj in passes:
         # Format date

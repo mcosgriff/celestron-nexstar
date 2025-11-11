@@ -62,9 +62,9 @@ def list_files(
                 show_header=True,
                 header_style="bold magenta",
             )
-            table.add_column("File", style="cyan", width=35)
-            table.add_column("Size", style="green", width=10)
-            table.add_column("Coverage", style="yellow", width=15)
+            table.add_column("File", style="cyan")
+            table.add_column("Size", style="green")
+            table.add_column("Coverage", style="yellow")
             table.add_column("Contents", style="white")
 
             for _, info, path in installed:
@@ -92,10 +92,10 @@ def list_files(
                 show_header=True,
                 header_style="bold magenta",
             )
-            table.add_column("File", style="cyan", width=35)
-            table.add_column("Status", style="green", width=15)
-            table.add_column("Size", style="yellow", width=10)
-            table.add_column("Coverage", style="blue", width=15)
+            table.add_column("File", style="cyan")
+            table.add_column("Status", style="green")
+            table.add_column("Size", style="yellow")
+            table.add_column("Coverage", style="blue")
 
             for key, info in EPHEMERIS_FILES.items():
                 status = "[green]✓ Installed[/green]" if is_file_installed(key) else "[dim]Not installed[/dim]"
@@ -317,10 +317,10 @@ def show_sets() -> None:
             show_header=True,
             header_style="bold magenta",
         )
-        table.add_column("Set", style="cyan", width=12)
-        table.add_column("Files", style="yellow", width=8)
-        table.add_column("Size", style="green", width=10)
-        table.add_column("Status", style="blue", width=12)
+        table.add_column("Set", style="cyan")
+        table.add_column("Files", style="yellow")
+        table.add_column("Size", style="green")
+        table.add_column("Status", style="blue")
         table.add_column("Description", style="white")
 
         set_descriptions = {

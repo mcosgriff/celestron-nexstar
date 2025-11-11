@@ -135,12 +135,12 @@ def _show_conjunctions_content(
         tz = None
 
     # Display conjunctions in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Planets", width=25)
-    table.add_column("Separation", justify="right", width=12)
-    table.add_column("Visible", justify="center", width=10)
-    table.add_column("Altitude", justify="right", width=10)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Planets")
+    table.add_column("Separation", justify="right")
+    table.add_column("Visible", justify="center")
+    table.add_column("Altitude", justify="right")
 
     for event in conjunctions[:20]:  # Show first 20
         # Format date
@@ -218,12 +218,12 @@ def _show_oppositions_content(
         tz = None
 
     # Display oppositions in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Planet", width=15)
-    table.add_column("Elongation", justify="right", width=12)
-    table.add_column("Visible", justify="center", width=10)
-    table.add_column("Altitude", justify="right", width=10)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Planet")
+    table.add_column("Elongation", justify="right")
+    table.add_column("Visible", justify="center")
+    table.add_column("Altitude", justify="right")
 
     for event in oppositions:
         # Format date

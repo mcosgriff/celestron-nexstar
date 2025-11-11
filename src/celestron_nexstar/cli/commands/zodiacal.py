@@ -134,11 +134,11 @@ def _show_windows_content(
         tz = None
 
     # Display windows in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Type", width=12)
-    table.add_column("Window", width=25)
-    table.add_column("Quality", width=12)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Type")
+    table.add_column("Window")
+    table.add_column("Quality")
 
     for window in windows[:30]:  # Show first 30
         # Format date

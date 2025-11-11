@@ -268,11 +268,11 @@ def list_telescopes() -> None:
             show_header=True,
             header_style="bold magenta",
         )
-        table.add_column("Model", style="cyan", width=20)
-        table.add_column("Aperture", style="green", width=12)
-        table.add_column("Focal Length", style="green", width=15)
-        table.add_column("f-ratio", style="yellow", width=10)
-        table.add_column("Resolution", style="blue", width=15)
+        table.add_column("Model", style="cyan")
+        table.add_column("Aperture", style="green")
+        table.add_column("Focal Length", style="green")
+        table.add_column("f-ratio", style="yellow")
+        table.add_column("Resolution", style="blue")
 
         for model in TelescopeModel:
             specs = get_telescope_specs(model)
@@ -395,9 +395,9 @@ def show_limiting_magnitude(
             show_header=True,
             header_style="bold magenta",
         )
-        table.add_column("Sky Condition", style="cyan", width=25)
-        table.add_column("Bortle Scale", style="yellow", width=15)
-        table.add_column("Limiting Mag", style="green", width=15)
+        table.add_column("Sky Condition", style="cyan")
+        table.add_column("Bortle Scale", style="yellow")
+        table.add_column("Limiting Mag", style="green")
 
         conditions_info = {
             SkyBrightness.EXCELLENT: ("1-2", "Dark sky site"),
@@ -449,7 +449,7 @@ def _display_configuration(config: OpticalConfiguration) -> None:
         show_header=True,
         header_style="bold magenta",
     )
-    telescope_table.add_column("Parameter", style="cyan", width=25)
+    telescope_table.add_column("Parameter", style="cyan")
     telescope_table.add_column("Value", style="green")
 
     telescope_table.add_row("Aperture", f'{config.telescope.aperture_mm}mm ({config.telescope.aperture_inches:.1f}")')
@@ -477,7 +477,7 @@ def _display_configuration(config: OpticalConfiguration) -> None:
         show_header=True,
         header_style="bold magenta",
     )
-    performance_table.add_column("Parameter", style="cyan", width=25)
+    performance_table.add_column("Parameter", style="cyan")
     performance_table.add_column("Value", style="green")
 
     performance_table.add_row("Focal Length", f"{config.eyepiece.focal_length_mm}mm")

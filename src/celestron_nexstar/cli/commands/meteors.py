@@ -138,13 +138,13 @@ def _show_predictions_content(
         tz = None
 
     # Display predictions in a table
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", style="cyan", width=18)
-    table.add_column("Shower", width=20)
-    table.add_column("ZHR", justify="right", width=8)
-    table.add_column("Adjusted ZHR", justify="right", width=12)
-    table.add_column("Moon", justify="right", width=10)
-    table.add_column("Quality", width=12)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date", style="cyan")
+    table.add_column("Shower")
+    table.add_column("ZHR", justify="right")
+    table.add_column("Adjusted ZHR", justify="right")
+    table.add_column("Moon", justify="right")
+    table.add_column("Quality")
 
     for pred in predictions:
         # Format date

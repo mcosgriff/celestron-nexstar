@@ -56,7 +56,7 @@ def get_position(
 
                         # Create table for live display
                         table = Table(title="Telescope Position (Live)", show_header=True, header_style="bold magenta")
-                        table.add_column("Coordinate System", style="cyan", width=20)
+                        table.add_column("Coordinate System", style="cyan")
                         table.add_column("Value", style="green")
 
                         table.add_row("Right Ascension", format_ra(radec.ra_hours))
