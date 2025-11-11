@@ -614,3 +614,188 @@ def download_light_pollution(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("rebuild", rich_help_panel="Database Management")
+def rebuild(
+    backup_dir: str | None = typer.Option(
+        None,
+        "--backup-dir",
+        help="Directory to store backups (default: ~/.nexstar/backups)",
+    ),
+    skip_backup: bool = typer.Option(
+        False,
+        "--skip-backup",
+        help="Skip backup step (not recommended)",
+    ),
+    sources: str | None = typer.Option(
+        None,
+        "--sources",
+        help="Comma-separated list of sources to import (default: all)",
+    ),
+    mag_limit: float = typer.Option(
+        15.0,
+        "--mag-limit",
+        "-m",
+        help="Maximum magnitude to import (default: 15.0)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force rebuild even if database exists",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be done without actually doing it",
+    ),
+) -> None:
+    """
+    Rebuild database from scratch and pull fresh data from all sources.
+
+    This command:
+    1. Backs up existing database (if present)
+    2. Drops and recreates database schema using Alembic migrations
+    3. Imports all available data sources in correct order
+    4. Initializes static reference data
+    5. Provides progress feedback and summary statistics
+
+    [bold yellow]Warning:[/bold yellow] This will delete all existing data!
+
+    [bold green]Examples:[/bold green]
+
+        # Full rebuild with backup
+        nexstar data rebuild
+
+        # Rebuild without backup (not recommended)
+        nexstar data rebuild --skip-backup
+
+        # Rebuild only specific sources
+        nexstar data rebuild --sources openngc,custom
+
+        # Dry run to see what would happen
+        nexstar data rebuild --dry-run
+
+        # Rebuild with custom magnitude limit
+        nexstar data rebuild --mag-limit 12.0
+    """
+    from pathlib import Path
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.table import Table
+
+    from ...api.database import get_database, rebuild_database
+
+    console.print("\n[bold cyan]Rebuilding Database[/bold cyan]\n")
+
+    # Parse sources
+    source_list = None
+    if sources:
+        source_list = [s.strip() for s in sources.split(",") if s.strip()]
+
+    # Parse backup directory
+    backup_path = Path(backup_dir) if backup_dir else None
+
+    # Check if database exists and warn
+    db = get_database()
+    if db.db_path.exists() and not force and not dry_run:
+        console.print("[yellow]⚠ Warning:[/yellow] Database already exists and will be replaced!")
+        console.print("[dim]Use --force to proceed or --dry-run to preview[/dim]\n")
+        try:
+            response = typer.prompt("Continue? (yes/no)", default="no")
+            if response.lower() not in ("yes", "y"):
+                console.print("\n[dim]Operation cancelled.[/dim]\n")
+                raise typer.Exit(code=0) from None
+        except typer.Abort:
+            console.print("\n[dim]Operation cancelled.[/dim]\n")
+            raise typer.Exit(code=0) from None
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Rebuilding database...", total=None)
+
+            # Run rebuild
+            result = rebuild_database(
+                backup_dir=backup_path,
+                sources=source_list,
+                mag_limit=mag_limit,
+                skip_backup=skip_backup,
+                dry_run=dry_run,
+            )
+
+            progress.update(task, completed=True)
+
+        if dry_run:
+            console.print("\n[bold yellow][DRY RUN] No changes made[/bold yellow]\n")
+            return
+
+        # Display results
+        console.print("\n[bold green]✓ Database rebuild complete![/bold green]\n")
+
+        # Summary table
+        summary_table = Table(title="Rebuild Summary")
+        summary_table.add_column("Metric", style="cyan")
+        summary_table.add_column("Value", justify="right", style="green")
+
+        summary_table.add_row("Duration", f"{result['duration_seconds']:.1f} seconds")
+        summary_table.add_row("Database size", f"{result['database_size_mb']:.2f} MB")
+
+        if result["backup_path"]:
+            backup_size = result["backup_path"].stat().st_size / (1024 * 1024)
+            summary_table.add_row("Backup location", str(result["backup_path"]))
+            summary_table.add_row("Backup size", f"{backup_size:.2f} MB")
+
+        console.print(summary_table)
+
+        # Imported objects
+        if result["imported_counts"]:
+            console.print("\n[bold]Imported Objects:[/bold]")
+            import_table = Table()
+            import_table.add_column("Source", style="cyan")
+            import_table.add_column("Imported", justify="right", style="green")
+            import_table.add_column("Skipped", justify="right", style="yellow")
+
+            total_imported = 0
+            for source_id, (imported, skipped) in result["imported_counts"].items():
+                import_table.add_row(source_id, f"{imported:,}", f"{skipped:,}")
+                total_imported += imported
+
+            console.print(import_table)
+            console.print(f"\n[bold]Total objects imported:[/bold] [green]{total_imported:,}[/green]")
+
+        # Static data
+        if result["static_data"]:
+            console.print("\n[bold]Static Data:[/bold]")
+            static_table = Table()
+            static_table.add_column("Type", style="cyan")
+            static_table.add_column("Count", justify="right", style="green")
+
+            for data_type, count in result["static_data"].items():
+                static_table.add_row(data_type.replace("_", " ").title(), f"{count:,}")
+
+            console.print(static_table)
+
+        # Final database stats
+        db_stats = db.get_stats()
+        console.print(f"\n[bold]Database now contains {db_stats.total_objects:,} objects[/bold]")
+        console.print("\n[dim]Database rebuild complete![/dim]\n")
+
+    except RuntimeError as e:
+        console.print(f"\n[red]✗[/red] Rebuild failed: {e}\n")
+        if "backup" in str(e).lower() or "restore" in str(e).lower():
+            console.print("[yellow]Note:[/yellow] If a backup was created, it may have been restored.\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Unexpected error: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from None

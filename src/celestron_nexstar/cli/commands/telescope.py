@@ -490,7 +490,9 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
 @app.command("objects", rich_help_panel="Object Recommendations")
 def show_objects(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(
+        None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"
+    ),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -937,7 +939,9 @@ def _generate_export_filename(
 
 @app.command("tonight", rich_help_panel="Viewing Guides")
 def show_tonight(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(
+        None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"
+    ),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -1023,7 +1027,9 @@ def _show_tonight_content(
 
 @app.command("plan", rich_help_panel="Complete Plans")
 def show_plan(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(
+        None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"
+    ),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -1057,9 +1063,11 @@ def show_plan(
 
 def _select_object_type_interactive() -> str | None:
     """Interactively select an object type for filtering."""
+
     # Create a special "all" option
     class AllOption:
         """Special marker for 'all' option."""
+
         value = "all"
         display_name = "All Types"
         description = "Show all object types (no filtering)"
