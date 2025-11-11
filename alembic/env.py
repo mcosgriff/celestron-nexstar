@@ -27,26 +27,12 @@ def get_database_url() -> str:
     """
     Get the database URL for the catalog database.
 
-    Returns the path to the catalogs.db file, automatically detecting
-    whether running in development or installed mode.
+    Returns the path to the catalogs.db file in the user's config directory.
     """
-    # Fallback to development path (most common case)
-    project_root = Path(__file__).parent.parent
-    db_path = project_root / "src" / "celestron_nexstar" / "cli" / "data" / "catalogs.db"
-
-    if not db_path.exists():
-        # Try installed location
-        try:
-            import sys
-
-            import celestron_nexstar.cli
-
-            # Get the actual module path
-            cli_path = Path(celestron_nexstar.cli.__path__[0])
-            db_path = cli_path / "data" / "catalogs.db"
-        except (ImportError, AttributeError, IndexError):
-            pass
-
+    # Store database in user's config directory (~/.config/celestron-nexstar/)
+    config_dir = Path.home() / ".config" / "celestron-nexstar"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    db_path = config_dir / "catalogs.db"
     return f"sqlite:///{db_path}"
 
 

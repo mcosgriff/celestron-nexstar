@@ -261,8 +261,8 @@ TYPER_CLI_IMPLEMENTATION_PLAN.md
 *.bsp
 
 # Database files (generated, should not be in version control)
-#*.db
-#*.db-shm
-#*.db-wal
-#*.db.backup
-#src/celestron_nexstar/cli/data/catalogs.db
+*.db
+*.db-shm
+*.db-wal
+*.db.backup
+src/celestron_nexstar/cli/data/catalogs.db

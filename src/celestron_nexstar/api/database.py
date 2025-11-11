@@ -144,7 +144,7 @@ class CatalogDatabase:
         Initialize database connection.
 
         Args:
-            db_path: Path to database file (default: bundled catalogs.db)
+            db_path: Path to database file (default: ~/.config/celestron-nexstar/catalogs.db)
         """
         if db_path is None:
             db_path = self._get_default_db_path()
@@ -175,26 +175,11 @@ class CatalogDatabase:
         self._configure_optimizations()
 
     def _get_default_db_path(self) -> Path:
-        """Get path to bundled database file."""
-        # Same logic as catalogs.yaml path resolution
-        module_path = Path(__file__).parent
-        parent = module_path.parent
-        db_path = parent / "cli" / "data" / "catalogs.db"
-
-        if db_path.exists():
-            return db_path
-
-        # Fallback for installed package
-        import sys
-
-        if hasattr(sys, "_MEIPASS"):
-            db_path = Path(sys._MEIPASS) / "celestron_nexstar" / "cli" / "data" / "catalogs.db"
-            if db_path.exists():
-                return db_path
-
-        # If database doesn't exist yet, return expected path
-        # (will be created during migration)
-        return parent / "cli" / "data" / "catalogs.db"
+        """Get path to database file in user config directory."""
+        # Store database in user's config directory (~/.config/celestron-nexstar/)
+        config_dir = Path.home() / ".config" / "celestron-nexstar"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir / "catalogs.db"
 
     def _configure_optimizations(self) -> None:
         """Configure SQLite optimizations via engine events."""
