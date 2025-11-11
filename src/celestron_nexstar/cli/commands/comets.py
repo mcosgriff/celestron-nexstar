@@ -103,7 +103,9 @@ def show_next(
     _show_comets_content(console, location, comets, months)
 
 
-def _show_comets_content(output_console: Console | FileConsole, location: ObserverLocation, comets: list[CometVisibility], months: int) -> None:
+def _show_comets_content(
+    output_console: Console | FileConsole, location: ObserverLocation, comets: list[CometVisibility], months: int
+) -> None:
     """Display comet information."""
     from zoneinfo import ZoneInfo
 

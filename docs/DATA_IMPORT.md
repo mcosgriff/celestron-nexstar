@@ -5,6 +5,7 @@ The `data` command group provides tools for importing and managing catalog data 
 ## Overview
 
 The data import system allows you to:
+
 - View available data sources
 - Import catalogs directly from the CLI
 - Monitor database statistics
@@ -19,12 +20,14 @@ All imports happen through the interactive CLI, making it easy to expand your ob
 List all available data sources and their import status.
 
 **Usage:**
+
 ```bash
 nexstar data sources
 ```
 
 **Example Output:**
-```
+
+```text
                      Available Data Sources
 ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃ Name    ┃ Description                  ┃ Available ┃ Imported ┃ License      ┃
@@ -34,9 +37,10 @@ nexstar data sources
 └─────────┴──────────────────────────────┴───────────┴──────────┴──────────────┘
 
 Total objects in database: 9,722
-```
+```text
 
 **Columns:**
+
 - **Name**: Data source identifier
 - **Description**: What the catalog contains
 - **Available**: Total objects in the source
@@ -50,14 +54,17 @@ Total objects in database: 9,722
 Import data from a catalog source.
 
 **Usage:**
+
 ```bash
 nexstar data import <source> [--mag-limit MAGNITUDE]
 ```
 
 **Arguments:**
+
 - `source`: Data source ID (e.g., `openngc`)
 
 **Options:**
+
 - `--mag-limit`, `-m`: Maximum magnitude to import (default: 15.0)
 
 **Examples:**
@@ -84,13 +91,15 @@ nexstar data import openngc --mag-limit 99.0
 **Import Progress:**
 
 The import shows a progress bar with:
+
 - Spinner animation
 - Percentage complete
 - Estimated time remaining
 - Current operation
 
 **Example Output:**
-```
+
+```text
 Importing OpenNGC
 NGC/IC catalog of deep-sky objects
 License: CC-BY-SA-4.0
@@ -107,7 +116,7 @@ Importing with magnitude limit: 15.0
   Skipped:  4,399 (too faint or invalid)
 
 Database now contains 9,722 objects
-```
+```text
 
 ---
 
@@ -116,12 +125,14 @@ Database now contains 9,722 objects
 Show detailed database statistics.
 
 **Usage:**
+
 ```bash
 nexstar data stats
 ```
 
 **Example Output:**
-```
+
+```text
 Database Statistics
 Total objects: 9,722
 Dynamic objects: 26 (planets/moons)
@@ -157,7 +168,7 @@ Magnitude range: -12.6 to 15.8
 
 Last updated: 2025-11-07 00:41:01
 Database version: 1.0.0
-```
+```text
 
 ---
 
@@ -170,6 +181,7 @@ Database version: 1.0.0
 **Attribution**: Mattia Verga and OpenNGC contributors
 
 **Description:**
+
 - Complete NGC (New General Catalogue) and IC (Index Catalogue) data
 - 13,970 total objects
 - Includes galaxies, nebulae, star clusters
@@ -179,12 +191,14 @@ Database version: 1.0.0
 - Constellation assignments
 
 **Object Types:**
+
 - Galaxies (G, GPair, GTrpl, GGroup)
 - Nebulae (PN, HII, EmN, RfN, DrkN, SNR)
 - Star Clusters (OCl, GCl, Cl+N)
-- Stars (*, **, Nova, *Ass)
+- Stars (*, **, Nova,*Ass)
 
 **Typical Import:**
+
 - With mag ≤ 15.0: ~9,570 objects imported
 - With mag ≤ 12.0: ~3,200 objects imported
 - With mag ≤ 10.0: ~1,100 objects imported
@@ -209,6 +223,7 @@ Not all objects in a catalog are visible with your telescope. The magnitude limi
 | 254mm (10")       | 15.0             | 15.0                   |
 
 **Notes:**
+
 - Theoretical limits assume dark skies and perfect seeing
 - Light pollution reduces effective magnitude by 1-3 magnitudes
 - Extended objects (galaxies, nebulae) appear fainter than their listed magnitude
@@ -217,25 +232,31 @@ Not all objects in a catalog are visible with your telescope. The magnitude limi
 ### Choosing Your Magnitude Limit
 
 **Conservative (best for light pollution):**
+
 ```bash
 nexstar data import openngc --mag-limit 12.0
 ```
+
 - Only bright objects
 - Visible from suburban locations
 - ~3,200 objects from OpenNGC
 
 **Recommended (NexStar 6SE in dark skies):**
+
 ```bash
 nexstar data import openngc --mag-limit 15.0
 ```
+
 - Default setting
 - Includes most observable objects
 - ~9,570 objects from OpenNGC
 
 **Comprehensive (all available data):**
+
 ```bash
 nexstar data import openngc --mag-limit 99.0
 ```
+
 - Everything in the catalog
 - Useful for planning future observations
 - ~13,970 objects from OpenNGC
@@ -246,7 +267,7 @@ nexstar data import openngc --mag-limit 99.0
 
 The data commands work seamlessly in the interactive shell:
 
-```
+```bash
 $ nexstar shell
 nexstar> data sources
 [displays available sources]
@@ -267,7 +288,7 @@ nexstar> catalog search "andromeda"
 
 ### Storage Location
 
-```
+```text
 src/celestron_nexstar/cli/data/catalogs.db
 ```
 
@@ -302,6 +323,7 @@ src/celestron_nexstar/cli/data/catalogs.db
 **Problem**: Network issues or GitHub unavailable
 
 **Solution**:
+
 1. Download manually: https://github.com/mattiaverga/OpenNGC/raw/master/database_files/NGC.csv
 2. Save to `/tmp/openngc.csv`
 3. Run import again (will use cached file)
@@ -311,6 +333,7 @@ src/celestron_nexstar/cli/data/catalogs.db
 **Problem**: Processing 13,970 objects takes time
 
 **Solution**:
+
 - Use a stricter magnitude limit to import fewer objects
 - The progress bar shows estimated time remaining
 - Typical import time: 30-60 seconds
@@ -320,6 +343,7 @@ src/celestron_nexstar/cli/data/catalogs.db
 **Problem**: Database file is taking disk space
 
 **Solution**:
+
 - 2.7 MB is very small (3 MP3s worth)
 - Can delete and recreate if needed
 - Re-importing is fast (uses cached download)
@@ -329,6 +353,7 @@ src/celestron_nexstar/cli/data/catalogs.db
 **Problem**: Just imported but can't find objects
 
 **Solution**:
+
 1. Check import was successful (no errors)
 2. Use `data stats` to verify object count
 3. Try different search terms (name, common name)
@@ -359,6 +384,7 @@ Each will have its own `data import <source>` command.
 **Attribution**: Mattia Verga and OpenNGC contributors
 
 **You must**:
+
 - Give appropriate credit to OpenNGC
 - Indicate if changes were made
 - Distribute any derivative works under the same license
@@ -374,35 +400,46 @@ Each will have its own `data import <source>` command.
 ```bash
 # Start CLI
 nexstar shell
+```
 
 # Check what's available
+
 nexstar> data sources
 
 # Import OpenNGC
+
 nexstar> data import openngc
 
 # Verify import
+
 nexstar> data stats
 
 # Search imported objects
+
 nexstar> catalog search "whirlpool"
 nexstar> catalog info "M51"
 
 # Use in GoTo commands
+
 nexstar> goto object M51
-```
+
+```text
 
 ### Custom Magnitude Limits
 
 ```bash
 # For 4.5" telescope in city
 nexstar data import openngc --mag-limit 11.0
+```
 
 # For 6" telescope in dark skies
+
 nexstar data import openngc --mag-limit 14.0
 
 # Import everything for research
+
 nexstar data import openngc --mag-limit 99.0
+
 ```
 
 ### Re-importing with Different Settings

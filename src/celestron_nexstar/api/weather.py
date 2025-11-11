@@ -24,7 +24,7 @@ try:
     OPENMETEO_AVAILABLE = True
 except ImportError:
     OPENMETEO_AVAILABLE = False
-    np = None  # type: ignore[assignment]
+    np = None
 
 
 if TYPE_CHECKING:

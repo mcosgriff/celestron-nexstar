@@ -17,7 +17,8 @@ Match Celestron's NexStar hand controller database of **40,000+ celestial object
 
 ### 1.1 Storage Strategy
 
-**Switch from YAML to SQLite**
+#### Switch from YAML to SQLite
+
 - **Why**: YAML works great for 150 objects, but 40K+ objects need efficient indexing
 - **Benefits**:
   - Fast fuzzy search with FTS5 (Full-Text Search)
@@ -27,6 +28,7 @@ Match Celestron's NexStar hand controller database of **40,000+ celestial object
   - Can still bundle in package as `.db` file
 
 **Schema Design**:
+
 ```sql
 CREATE TABLE objects (
     id INTEGER PRIMARY KEY,
@@ -70,6 +72,7 @@ CREATE VIRTUAL TABLE objects_fts USING fts5(
 ### 1.2 Data Migration
 
 **Create migration script**: `scripts/migrate_catalog_to_sqlite.py`
+
 - Read existing `catalogs.yaml`
 - Populate initial SQLite database
 - Preserve all existing functionality
@@ -81,6 +84,7 @@ CREATE VIRTUAL TABLE objects_fts USING fts5(
 ### 2.1 Deep-Sky Objects (NGC/IC) - ~14,000 objects
 
 **Source**: [OpenNGC](https://github.com/mattiaverga/OpenNGC)
+
 - **License**: CC-BY-SA-4.0 (compatible!)
 - **Objects**: 13,957 NGC + IC objects
 - **Format**: CSV (easily parseable)
@@ -92,6 +96,7 @@ CREATE VIRTUAL TABLE objects_fts USING fts5(
   - Common names
 
 **Implementation**:
+
 ```python
 # scripts/import_openngc.py
 import csv
@@ -113,22 +118,26 @@ def import_openngc(db_path: str, csv_path: str):
 ### 2.2 Bright Stars (SAO Catalog) - ~9,000 objects
 
 **Source**: SAO Star Catalog (public domain)
+
 - **Total stars**: 258,997 (filter to mag <= 9 for practicality)
 - **Filtered count**: ~9,000 stars brighter than magnitude 9
 - **Data**: RA/Dec, proper motion, magnitudes, spectral types
 
 **Why mag 9 cutoff**:
+
 - GoTo mounts typically include stars for alignment
 - Visual limit ~6.5 naked eye, ~13 with 6" telescope
 - Mag 9 covers all alignment stars + visible stars
 
 **Source locations**:
+
 - CDS VizieR: [SAO catalog](https://cdsarc.cds.unistra.fr/viz-bin/cat/I/131A)
 - Format: ASCII or CSV
 
 ### 2.3 Double Stars (WDS) - ~2,000 objects
 
 **Source**: Washington Double Star Catalog
+
 - **Filter**: Mag <= 10, separation > 2" (resolvable with 6")
 - **Count**: ~2,000 interesting doubles
 - **Why include**: Popular observing targets
@@ -136,6 +145,7 @@ def import_openngc(db_path: str, csv_path: str):
 ### 2.4 Variable Stars (GCVS) - ~1,000 objects
 
 **Source**: General Catalogue of Variable Stars
+
 - **Filter**: Bright variables (mag <= 10)
 - **Count**: ~1,000 observable variables
 - **Popular targets**: Mira, Algol, Delta Cephei, etc.
@@ -216,11 +226,13 @@ class CatalogDatabase:
 ### 3.2 CLI Updates
 
 **Maintain backward compatibility**:
+
 - Keep existing `catalog` commands working
 - Add new database-backed implementation
 - Preserve YAML for custom user catalogs (optional)
 
 **New capabilities**:
+
 ```bash
 # Search now handles 40K+ objects efficiently
 catalog search andromeda           # FTS5 fuzzy search
@@ -264,6 +276,7 @@ Downloads and processes:
 ```
 
 **CI/CD Integration**:
+
 - Download sources during package build
 - Generate `catalogs.db`
 - Bundle in package distribution
@@ -276,7 +289,8 @@ Downloads and processes:
 ### 4.1 Database Distribution
 
 **Bundle with package**:
-```
+
+```text
 celestron-nexstar/
 ├── src/
 │   └── celestron_nexstar/
@@ -287,6 +301,7 @@ celestron-nexstar/
 ```
 
 **Package size impact**:
+
 - Current package: ~500 KB
 - With database: ~8-12 MB (uncompressed) or ~4-5 MB (compressed)
 - Still reasonable for Python package
@@ -294,13 +309,15 @@ celestron-nexstar/
 ### 4.2 Ephemeris Integration
 
 **Keep existing JPL ephemeris system**:
+
 - Database stores `is_dynamic` flag
 - Dynamic objects (planets/moons) link to ephemeris via `ephemeris_name`
 - Position calculated on-demand using existing `ephemeris.py` module
 - Fully offline after `ephemeris download` command
 
 **Flow**:
-```
+
+```text
 User: catalog info "Jupiter"
   → Query database: SELECT * WHERE name='Jupiter'
   → Object has is_dynamic=1
@@ -372,7 +389,8 @@ User: catalog info "Jupiter"
 
 ### 6.2 Release Strategy
 
-**Version 0.2.0 - "Catalog Expansion"**
+#### Version 0.2.0 - "Catalog Expansion"
+
 - Add SQLite database with 40K+ objects
 - Maintain YAML backward compatibility (deprecated)
 - Update documentation
@@ -385,7 +403,8 @@ User: catalog info "Jupiter"
 ## Expected Outcomes
 
 ### Final Database Stats
-```
+
+```text
 Total Objects: ~42,000
 ├── NGC Catalog:      7,840 deep-sky objects
 ├── IC Catalog:       5,386 deep-sky objects
@@ -400,12 +419,14 @@ Total Objects: ~42,000
 ```
 
 ### Performance Targets
+
 - Search latency: < 100ms
 - Database size: 8-12 MB
 - Memory footprint: < 50 MB
 - Offline-capable: 100% (with ephemeris downloaded)
 
 ### User Benefits
+
 - **40,000+ objects** vs current 152 (263x increase!)
 - **Fast fuzzy search** with FTS5
 - **Advanced filtering** by magnitude, type, catalog
@@ -446,6 +467,7 @@ Total Objects: ~42,000
 ## Technical Considerations
 
 ### Licensing
+
 - OpenNGC: CC-BY-SA-4.0 ✓
 - SAO: Public domain ✓
 - WDS: Public domain ✓
@@ -453,11 +475,13 @@ Total Objects: ~42,000
 - All compatible with MIT license
 
 ### Dependencies
+
 - No new dependencies needed!
 - sqlite3: Python stdlib
 - Existing: skyfield (ephemeris), pyyaml (config)
 
 ### Backward Compatibility
+
 - Keep `catalogs.yaml` support for custom catalogs
 - Database becomes default
 - Migration script for power users

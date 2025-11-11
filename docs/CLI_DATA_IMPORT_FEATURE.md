@@ -11,6 +11,7 @@ Added a complete data import system to the NexStar CLI, allowing users to import
 **File**: `src/celestron_nexstar/cli/data_import.py`
 
 **Features**:
+
 - Registry of available data sources
 - OpenNGC downloader with progress bar
 - OpenNGC importer with magnitude filtering
@@ -18,6 +19,7 @@ Added a complete data import system to the NexStar CLI, allowing users to import
 - Rich formatting with tables and progress indicators
 
 **Functions**:
+
 ```python
 def list_data_sources() -> None
 def import_data_source(source_id: str, mag_limit: float) -> bool
@@ -30,6 +32,7 @@ def import_openngc(csv_path: Path, mag_limit: float, verbose: bool) -> tuple[int
 **File**: `src/celestron_nexstar/cli/commands/data.py`
 
 **Commands**:
+
 - `nexstar data sources` - List available data sources and import status
 - `nexstar data import <source>` - Import catalog data with magnitude filtering
 - `nexstar data stats` - Show database statistics
@@ -39,6 +42,7 @@ def import_openngc(csv_path: Path, mag_limit: float, verbose: bool) -> tuple[int
 **Modified**: `src/celestron_nexstar/cli/main.py`
 
 **Changes**:
+
 - Imported `data` command module
 - Registered `data.app` with main CLI
 - Added `data` to command group hints in interactive shell
@@ -147,6 +151,7 @@ DATA_SOURCES: dict[str, DataSource] = {
 ### Progress Indicators
 
 Uses Rich library for beautiful CLI output:
+
 - **Download**: Spinner with "Downloading..." message
 - **Import**: Progress bar with percentage and ETA
 - **Success**: Green checkmarks and formatted statistics
@@ -175,11 +180,13 @@ Uses Rich library for beautiful CLI output:
 ### Additional Data Sources
 
 Easy to add new sources by:
+
 1. Writing importer function
 2. Adding entry to `DATA_SOURCES` registry
 3. Done! CLI automatically supports it
 
 **Planned sources**:
+
 - SAO Star Catalog (9,000 bright stars)
 - WDS Double Stars (2,000 visual pairs)
 - GCVS Variable Stars (1,000 bright variables)
@@ -195,12 +202,14 @@ Easy to add new sources by:
 ## Files Modified/Created
 
 ### New Files
+
 1. `src/celestron_nexstar/cli/data_import.py` - Import module (393 lines)
 2. `src/celestron_nexstar/cli/commands/data.py` - CLI commands (116 lines)
 3. `docs/DATA_IMPORT.md` - User guide
 4. `docs/CLI_DATA_IMPORT_FEATURE.md` - This document
 
 ### Modified Files
+
 1. `src/celestron_nexstar/cli/main.py` - Added data command registration
 
 **Total new code**: 509 lines
@@ -229,11 +238,13 @@ Easy to add new sources by:
 ## Documentation
 
 ### User Documentation
+
 - `DATA_IMPORT.md` - Complete user guide with examples
 - Inline help in all commands (`--help`)
 - Rich formatting in terminal output
 
 ### Developer Documentation
+
 - Type hints on all functions
 - Docstrings on all public APIs
 - Code comments for complex logic

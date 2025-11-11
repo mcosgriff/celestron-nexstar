@@ -109,7 +109,9 @@ def show_starlink(
         _show_passes_content(console, location, passes, days)
 
 
-def _show_passes_content(output_console: Console | FileConsole, location: ObserverLocation, passes: list[SatellitePass], days: int) -> None:
+def _show_passes_content(
+    output_console: Console | FileConsole, location: ObserverLocation, passes: list[SatellitePass], days: int
+) -> None:
     """Display satellite pass information."""
     from zoneinfo import ZoneInfo
 

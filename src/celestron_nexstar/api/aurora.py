@@ -342,7 +342,9 @@ def get_aurora_forecast(
     elif cloud_cover_percent is not None and cloud_cover_percent > 50:
         # Heavy cloud cover blocks aurora
         is_visible = False
-        visibility_level = "moderate" if visibility_level in ["very_high", "high"] else "none"  # Still active, just blocked by clouds
+        visibility_level = (
+            "moderate" if visibility_level in ["very_high", "high"] else "none"
+        )  # Still active, just blocked by clouds
 
     # Moon phase affects visibility (bright moon washes out faint aurora)
     if moon_illumination is not None and moon_illumination > 0.7:
@@ -554,7 +556,9 @@ def get_solar_cycle_info(dt: datetime | None = None) -> SolarCycleInfo:
         activity_level = "maximum"
         # Peak phase: high activity with some variation
         peak_distance = abs(years_since_peak)
-        activity_multiplier = 1.0 if peak_distance < 0.5 else max(0.8, 1.0 - (peak_distance - 0.5) * 0.4)  # Within 6 months of peak
+        activity_multiplier = (
+            1.0 if peak_distance < 0.5 else max(0.8, 1.0 - (peak_distance - 0.5) * 0.4)
+        )  # Within 6 months of peak
     elif current_phase < 0.8:
         activity_level = "declining"
         # Declining phase: linear decrease from 1.0 to 0.5

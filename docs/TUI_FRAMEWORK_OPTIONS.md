@@ -33,7 +33,7 @@ from textual.screen import ModalScreen
 
 class LocationInputScreen(ModalScreen):
     """Modal dialog for location input."""
-    
+
     def compose(self) -> ComposeResult:
         yield Container(
             Static("[Location] Enter location to geocode:", classes="title"),
@@ -45,7 +45,7 @@ class LocationInputScreen(ModalScreen):
             ),
             classes="dialog",
         )
-    
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "ok":
             location = self.query_one("#location_input", Input).value
@@ -55,14 +55,14 @@ class LocationInputScreen(ModalScreen):
 
 class TUIApp(App):
     """Main TUI application."""
-    
+
     def compose(self) -> ComposeResult:
         yield Header()
         yield Container(
             # Your panes here
         )
         yield Footer()
-    
+
     async def on_key(self, event) -> None:
         if event.key == "l":
             result = await self.push_screen(LocationInputScreen())
@@ -80,21 +80,25 @@ class TUIApp(App):
 ## Other Framework Options
 
 ### 1. **Rich Live Display**
+
 - **Pros**: Simple, works with existing Rich usage
 - **Cons**: Limited widget support, no modal dialogs
 - **Best for**: Simple status displays, not full applications
 
 ### 2. **Blessed**
+
 - **Pros**: Low-level terminal control, good for games
 - **Cons**: Very low-level, no widget system
 - **Best for**: Terminal games, not business applications
 
 ### 3. **npyscreen**
+
 - **Pros**: Mature, widget-based
 - **Cons**: Older API, less modern, limited styling
 - **Best for**: Legacy applications
 
 ### 4. **urwid**
+
 - **Pros**: Mature, flexible layout system
 - **Cons**: Complex API, less intuitive than Textual
 - **Best for**: Complex layouts, but Textual is easier
@@ -122,4 +126,3 @@ class TUIApp(App):
 - **Textual Documentation**: https://textual.textualize.io/
 - **Textual Examples**: https://github.com/Textualize/textual/tree/main/examples
 - **Textual GitHub**: https://github.com/Textualize/textual
-

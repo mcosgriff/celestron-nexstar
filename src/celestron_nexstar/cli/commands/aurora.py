@@ -112,7 +112,9 @@ def show_tonight(
     _show_aurora_content(console, location, forecast)
 
 
-def _show_aurora_content(output_console: Console | FileConsole, location: ObserverLocation, forecast: AuroraForecast | None) -> None:
+def _show_aurora_content(
+    output_console: Console | FileConsole, location: ObserverLocation, forecast: AuroraForecast | None
+) -> None:
     """Display aurora visibility information."""
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -273,7 +275,12 @@ def show_when(
     _show_when_content(console, location, windows, days)
 
 
-def _show_when_content(output_console: Console | FileConsole, location: ObserverLocation, windows: list[tuple[datetime, datetime, float, str]], days: int) -> None:
+def _show_when_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    windows: list[tuple[datetime, datetime, float, str]],
+    days: int,
+) -> None:
     """Display aurora visibility windows."""
     from zoneinfo import ZoneInfo
 
@@ -411,7 +418,13 @@ def show_next(
     _show_next_content(console, location, opportunities, limit, months)
 
 
-def _show_next_content(output_console: Console | FileConsole, location: ObserverLocation, opportunities: list[AuroraProbability], limit: int, months: int) -> None:
+def _show_next_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    opportunities: list[AuroraProbability],
+    limit: int,
+    months: int,
+) -> None:
     """Display next aurora opportunities with probabilities."""
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"

@@ -143,7 +143,9 @@ def show_dark_sites(
     _show_dark_sites_content(console, vacation_location, dark_sites, max_distance)
 
 
-def _show_viewing_info_content(output_console: Console | FileConsole, location: ObserverLocation, viewing_info: VacationViewingInfo) -> None:
+def _show_viewing_info_content(
+    output_console: Console | FileConsole, location: ObserverLocation, viewing_info: VacationViewingInfo
+) -> None:
     """Display vacation viewing information."""
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
@@ -192,7 +194,10 @@ def _show_viewing_info_content(output_console: Console | FileConsole, location: 
 
 
 def _show_dark_sites_content(
-    output_console: Console | FileConsole, location: ObserverLocation, dark_sites: list[DarkSkySite], max_distance_miles: float
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    dark_sites: list[DarkSkySite],
+    max_distance_miles: float,
 ) -> None:
     """Display dark sky sites information."""
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -557,7 +562,9 @@ def _show_comprehensive_plan_content(
                 if day_forecasts:
                     # Get nighttime forecasts (after sunset, before sunrise)
                     nighttime_forecasts = [
-                        f for f in day_forecasts if f.timestamp is not None and (f.timestamp.hour >= 20 or f.timestamp.hour < 6)
+                        f
+                        for f in day_forecasts
+                        if f.timestamp is not None and (f.timestamp.hour >= 20 or f.timestamp.hour < 6)
                     ]
                     if not nighttime_forecasts:
                         nighttime_forecasts = day_forecasts[:3]  # Fallback to first few
@@ -755,7 +762,11 @@ def _show_comprehensive_plan_content(
                 output_console.print(f"  • {space_event.name}: {space_event.date.strftime('%Y-%m-%d')}")
                 output_console.print(f"    Type: {space_event.event_type.value}")
                 if space_event.description:
-                    desc = space_event.description[:80] + "..." if len(space_event.description) > 80 else space_event.description
+                    desc = (
+                        space_event.description[:80] + "..."
+                        if len(space_event.description) > 80
+                        else space_event.description
+                    )
                     output_console.print(f"    [dim]{desc}[/dim]")
         else:
             period_str = date_range_str if start_date and end_date else f"next {days_ahead} days"

@@ -109,7 +109,9 @@ def show_oppositions(
     _show_oppositions_content(console, location, oppositions, years)
 
 
-def _show_conjunctions_content(output_console: Console | FileConsole, location: ObserverLocation, conjunctions: list[PlanetaryEvent], months: int) -> None:
+def _show_conjunctions_content(
+    output_console: Console | FileConsole, location: ObserverLocation, conjunctions: list[PlanetaryEvent], months: int
+) -> None:
     """Display conjunction information."""
     from zoneinfo import ZoneInfo
 
@@ -177,9 +179,7 @@ def _show_conjunctions_content(output_console: Console | FileConsole, location: 
                 date_str = event.date.strftime("%B %d, %Y at %H:%M UTC")
 
             planet2_str = event.planet2.capitalize() if event.planet2 else "N/A"
-            output_console.print(
-                f"\n  [bold]{event.planet1.capitalize()} - {planet2_str}[/bold] - {date_str}"
-            )
+            output_console.print(f"\n  [bold]{event.planet1.capitalize()} - {planet2_str}[/bold] - {date_str}")
             output_console.print(
                 f"    Separation: {event.separation_degrees:.2f}° at {event.altitude_at_event:.0f}° altitude"
             )
@@ -192,7 +192,9 @@ def _show_conjunctions_content(output_console: Console | FileConsole, location: 
     output_console.print("\n[dim]💡 Tip: Conjunctions are great photo opportunities![/dim]\n")
 
 
-def _show_oppositions_content(output_console: Console | FileConsole, location: ObserverLocation, oppositions: list[PlanetaryEvent], years: int) -> None:
+def _show_oppositions_content(
+    output_console: Console | FileConsole, location: ObserverLocation, oppositions: list[PlanetaryEvent], years: int
+) -> None:
     """Display opposition information."""
     from zoneinfo import ZoneInfo
 

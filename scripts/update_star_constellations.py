@@ -13,19 +13,21 @@ Run this after importing stars to populate the constellation field.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
+
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
 from celestron_nexstar.api.database import get_database
 from celestron_nexstar.api.enums import CelestialObjectType
 from celestron_nexstar.api.models import CelestialObjectModel, ConstellationModel
+
 
 console = Console()
 logger = logging.getLogger(__name__)

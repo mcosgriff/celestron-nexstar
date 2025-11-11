@@ -64,14 +64,16 @@ The tutorial covers everything from basic navigation to advanced tracking featur
 
 The shell is the heart of this project, designed for real observing sessions:
 
-**Real-Time Telescope Control**
+#### Real-Time Telescope Control
+
 - **Arrow Keys** (↑↓←→): Always move telescope in real-time (no mode switching!)
 - **Speed Control**: Press `+` to increase speed, `-` to decrease (0=slowest to 9=fastest, default 5)
 - **Emergency Stop**: Press `ESC` to immediately halt all movement
 - **Visual Feedback**: Status bar shows movement state and current speed (e.g., "Speed:5/9")
 - **Command History**: Press `Ctrl+P` (previous) or `Ctrl+N` (next) to navigate history
 
-**Background Position Tracking**
+#### Background Position Tracking
+
 - Live position updates in status bar (RA/Dec/Alt/Az)
 - Automatic start after alignment
 - Configurable update intervals (0.5-30s)
@@ -80,7 +82,8 @@ The shell is the heart of this project, designed for real observing sessions:
 - Collision detection with configurable alerts
 - CSV/JSON export for analysis
 
-**Advanced Visualizations**
+#### Advanced Visualizations
+
 - ASCII star chart showing compass direction and altitude
 - Multiple status indicators (position, movement, tracking)
 - Color-coded alerts (green=stopped, red=moving)
@@ -89,6 +92,7 @@ The shell is the heart of this project, designed for real observing sessions:
 ### Celestial Object Catalogs
 
 Browse and search extensive catalogs:
+
 - **Deep Sky**: Messier (110 objects), NGC popular objects, Caldwell catalog
 - **Planets**: All major planets with accurate positions
 - **Planetary Moons**: 28 moons including:
@@ -142,6 +146,7 @@ Comprehensive tracking and prediction of celestial events:
 - **Space Events Calendar**: Planetary Society calendar with viewing location recommendations
 
 **Usage:**
+
 ```bash
 nexstar aurora tonight                    # Check aurora visibility
 nexstar eclipse next                     # Find next eclipse
@@ -161,6 +166,7 @@ Plan astronomy viewing for vacation destinations:
 - **Date Range Support**: Plan for specific vacation periods
 
 **Usage:**
+
 ```bash
 nexstar vacation view --location "Fairbanks, AK"
 nexstar vacation dark-sites --location "Moab, UT" --max-distance 200
@@ -186,6 +192,7 @@ Export viewing guides and plans to text files for printing or offline reference:
 - **Print-Ready**: Plain text with ASCII tables, perfect for printing
 
 **Usage:**
+
 ```bash
 nexstar telescope tonight --export                              # Auto-generate filename
 nexstar telescope conditions --export --export-path conditions.txt  # Custom filename
@@ -215,6 +222,7 @@ The shell includes 10 comprehensive lessons:
 10. **Tips & Tricks**: Power user features and shortcuts
 
 **Tutorial Commands:**
+
 ```bash
 tutorial          # Show lesson menu
 tutorial 5        # Run lesson 5 (Celestial Catalogs)
@@ -224,7 +232,8 @@ tutorial all      # Run all lessons in sequence
 
 ### Essential Commands
 
-**Movement & Control**
+#### Movement & Control
+
 ```bash
 # Arrow keys ↑↓←→ ALWAYS move telescope (press and hold)
 # Press +/- to adjust slew speed (0=slowest to 9=fastest, default 5)
@@ -238,7 +247,8 @@ move fixed up --rate 5
 move stop
 ```
 
-**Position Tracking**
+#### Position Tracking
+
 ```bash
 tracking start              # Start background tracking
 tracking interval 1.0       # Set update interval (seconds)
@@ -250,6 +260,7 @@ tracking chart on           # Enable ASCII star chart
 ```
 
 **Catalogs & Objects**
+
 ```bash
 catalog catalogs                      # List all catalogs
 catalog list --catalog messier        # Browse Messier objects
@@ -257,7 +268,8 @@ catalog search "ring nebula"          # Fuzzy search
 catalog info M57                      # Detailed information
 ```
 
-**Configuration**
+#### Configuration
+
 ```bash
 optics config --telescope nexstar_6se --eyepiece 25
 location set --lat 34.05 --lon -118.24 --name "LA"
@@ -265,7 +277,8 @@ location geocode "Griffith Observatory, Los Angeles"
 ephemeris download standard  # ~20MB, includes planets + Jupiter/Saturn moons
 ```
 
-**Alignment & Tracking**
+#### Alignment & Tracking
+
 ```bash
 align sync --ra 5.5 --dec 22.5  # Sync to known position
 track set --mode alt_az          # Set tracking mode
@@ -273,6 +286,7 @@ track get                        # Get current mode
 ```
 
 **Multi-Night Planning** (outside shell)
+
 ```bash
 nexstar multi-night week                                        # Compare next 7 nights
 nexstar multi-night best-night M31 --days 7                     # Find best night for M31 (galaxy-optimized)
@@ -283,6 +297,7 @@ nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # A
 ```
 
 **Celestial Events** (outside shell)
+
 ```bash
 nexstar aurora tonight                                          # Check aurora visibility
 nexstar aurora when --days 14                                   # When will aurora be visible
@@ -296,6 +311,7 @@ nexstar events viewing "Geminid"                                # Best viewing l
 ```
 
 **Vacation Planning** (outside shell)
+
 ```bash
 nexstar vacation view --location "Fairbanks, AK"                 # Viewing conditions
 nexstar vacation dark-sites --location "Moab, UT"              # Find dark sky sites
@@ -304,6 +320,7 @@ nexstar vacation plan --location "Moab, UT" --start-date 2025-12-15 --end-date 2
 ```
 
 **Export Viewing Plans** (print-friendly text files)
+
 ```bash
 nexstar telescope tonight --export                              # Auto-generate filename
 nexstar telescope conditions --export --export-path conditions.txt  # Custom filename
@@ -316,6 +333,7 @@ nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
 ```
 
 **Database Initialization** (one-time setup)
+
 ```bash
 nexstar data init-static                                        # Initialize offline data
 nexstar data stats                                              # Show database statistics
@@ -362,6 +380,7 @@ tutorial
 The shell's background position tracking is a powerful observing companion:
 
 **Core Features:**
+
 - Runs in background thread (non-blocking)
 - Updates UI every 0.5s, polls telescope every 2s (configurable)
 - Automatic start after `align` commands
@@ -369,30 +388,35 @@ The shell's background position tracking is a powerful observing companion:
 - Smart error handling (auto-stop after 3 consecutive errors)
 
 **Position History:**
+
 - Circular buffer stores last 1000 positions
 - Each entry: timestamp, RA, Dec, Alt, Az
 - Filter by time or count
 - Statistics: duration, drift, velocity
 
 **Velocity Tracking:**
+
 - Real-time calculation of angular velocity
 - Components: RA (hours/s), Dec, Alt, Az (deg/s), Total (deg/s)
 - Slewing detection (>0.1°/s threshold)
 - Displayed in status bar during movement
 
 **Export Capabilities:**
+
 - CSV format: timestamp, coordinates (5 columns)
 - JSON format: structured data with metadata
 - Export count, time range, drift statistics
 - Continues tracking during export
 
 **Collision Detection:**
+
 - Configurable threshold (0.1-20.0°/s, default 5.0)
 - Visual alerts: ⚠ in status bar
 - Alert cooldown (5 seconds)
 - Logs unexpected movements in history
 
 **ASCII Star Chart:**
+
 - 16-point compass rose (N, NNE, NE, ENE, E, etc.)
 - Altitude bar graph using Unicode blocks (▁▂▃▄▅▆▇█)
 - Toggle on/off: `tracking chart on`
@@ -401,6 +425,7 @@ The shell's background position tracking is a powerful observing companion:
 ### Movement Control
 
 **Interactive Control (Preferred):**
+
 - **Arrow Keys (↑↓←→)**: Always move the telescope - no mode switching needed!
   - Press and hold to move in any direction
   - No Enter key needed - instant response
@@ -415,6 +440,7 @@ The shell's background position tracking is a powerful observing companion:
   - Works anytime without interfering with movement
 
 **Programmatic Control:**
+
 ```bash
 move fixed up --rate 5 --duration 2.0    # Move for 2 seconds
 move fixed right --rate 7                 # Move until stopped
@@ -456,6 +482,7 @@ open htmlcov/index.html
 ```
 
 **Test Coverage:**
+
 - 86 comprehensive unit tests
 - ~95% coverage on core modules
 - Includes connection, movement, coordinates, calculations
@@ -470,18 +497,21 @@ open htmlcov/index.html
 
 ## 🐛 Troubleshooting
 
-**Connection Issues**
+#### Connection Issues
+
 - Verify USB cable is connected
 - Check no other software is using the port
 - On Linux, ensure user has serial port permissions: `sudo usermod -a -G dialout $USER` (logout/login required)
 
-**Movement Issues**
+#### Movement Issues
+
 - Press ESC to stop if telescope is moving unexpectedly
 - Check tracking mode is appropriate for setup
 - Verify coordinates are within valid ranges
 - Ensure telescope is not at mechanical limit
 
-**Position Tracking Not Working**
+#### Position Tracking Not Working
+
 - Tracking auto-starts after `align` commands
 - Manually start: `tracking start`
 - Check telescope is connected
@@ -525,6 +555,6 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ---
 
-**Happy Observing! 🌟🔭**
+#### Happy Observing! 🌟🔭
 
 _Start with `tutorial` and you'll be controlling your telescope like a pro in minutes!_

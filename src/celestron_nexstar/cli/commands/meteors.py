@@ -11,7 +11,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.meteor_shower_predictions import MeteorShowerPrediction, get_best_viewing_windows, get_enhanced_meteor_predictions
+from ...api.meteor_shower_predictions import (
+    MeteorShowerPrediction,
+    get_best_viewing_windows,
+    get_enhanced_meteor_predictions,
+)
 from ...api.observer import ObserverLocation, get_observer_location
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -105,7 +109,12 @@ def show_best(
     _show_predictions_content(console, location, predictions, months)
 
 
-def _show_predictions_content(output_console: Console | FileConsole, location: ObserverLocation, predictions: list[MeteorShowerPrediction], months: int) -> None:
+def _show_predictions_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    predictions: list[MeteorShowerPrediction],
+    months: int,
+) -> None:
     """Display meteor shower predictions."""
     from zoneinfo import ZoneInfo
 

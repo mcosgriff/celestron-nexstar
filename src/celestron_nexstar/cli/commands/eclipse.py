@@ -149,7 +149,9 @@ def show_solar(
     _show_eclipses_content(console, location, eclipses, years)
 
 
-def _show_eclipses_content(output_console: Console | FileConsole, location: ObserverLocation, eclipses: list[Eclipse], years: int) -> None:
+def _show_eclipses_content(
+    output_console: Console | FileConsole, location: ObserverLocation, eclipses: list[Eclipse], years: int
+) -> None:
     """Display eclipse information."""
     from zoneinfo import ZoneInfo
 

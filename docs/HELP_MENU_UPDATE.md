@@ -10,7 +10,7 @@ Updated the interactive shell help menu to include the new data import commands.
 
 Added `data` to the available command groups:
 
-```
+```text
 Available command groups:
   connect    - Connection commands
   position   - Position query commands
@@ -30,7 +30,7 @@ Available command groups:
 
 Added a new "Data Import Commands" section with all data commands:
 
-```
+```text
 Data Import Commands:
   data sources                    - List available catalog data sources
   data import <source>            - Import catalog data (e.g., data import openngc)
@@ -45,12 +45,14 @@ Data Import Commands:
 **Lines**: 378-423
 
 **Changes**:
+
 1. Added `data` entry to command groups list (line 389)
 2. Added new "Data Import Commands" section (lines 411-415)
 
 ## Testing
 
 Verified by running:
+
 ```bash
 nexstar shell
 help
@@ -61,6 +63,7 @@ Result: ✅ All data commands appear in help menu correctly
 ## User Experience
 
 When users type `help` in the shell, they now see:
+
 1. **data** listed among command groups
 2. Dedicated section showing all data import commands
 3. Clear examples of usage (e.g., "data import openngc")
@@ -70,4 +73,4 @@ This makes the data import feature discoverable without having to consult extern
 
 ---
 
-*Updated: 2025-11-06*
+#### Updated: 2025-11-06

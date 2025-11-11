@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+
 try:
     from skyfield.api import Loader, Topos, load
 
@@ -221,21 +222,25 @@ def get_next_lunar_eclipse(
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
-        if isinstance(eclipse_type, str) and eclipse_type.startswith("lunar") and isinstance(eclipse_date, datetime) and isinstance(magnitude, (int, float)):
-            if now <= eclipse_date <= end_date:
-                eclipse = _calculate_lunar_eclipse(
-                    location.latitude,
-                    location.longitude,
-                    eclipse_date,
-                    eclipse_type,
-                    float(magnitude),
-                    ts,
-                    earth,
-                    sun,
-                    moon,
-                )
-                if eclipse:
-                    eclipses.append(eclipse)
+        if (
+            isinstance(eclipse_type, str)
+            and eclipse_type.startswith("lunar")
+            and isinstance(eclipse_date, datetime)
+            and isinstance(magnitude, (int, float))
+        ) and now <= eclipse_date <= end_date:
+            eclipse = _calculate_lunar_eclipse(
+                location.latitude,
+                location.longitude,
+                eclipse_date,
+                eclipse_type,
+                float(magnitude),
+                ts,
+                earth,
+                sun,
+                moon,
+            )
+            if eclipse:
+                eclipses.append(eclipse)
 
     return eclipses
 
@@ -302,21 +307,25 @@ def get_next_solar_eclipse(
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
-        if isinstance(eclipse_type, str) and eclipse_type.startswith("solar") and isinstance(eclipse_date, datetime) and isinstance(magnitude, (int, float)):
-            if now <= eclipse_date <= end_date:
-                eclipse = _calculate_solar_eclipse(
-                    location.latitude,
-                    location.longitude,
-                    eclipse_date,
-                    eclipse_type,
-                    float(magnitude),
-                    ts,
-                    earth,
-                    sun,
-                    moon,
-                )
-                if eclipse:
-                    eclipses.append(eclipse)
+        if (
+            isinstance(eclipse_type, str)
+            and eclipse_type.startswith("solar")
+            and isinstance(eclipse_date, datetime)
+            and isinstance(magnitude, (int, float))
+        ) and now <= eclipse_date <= end_date:
+            eclipse = _calculate_solar_eclipse(
+                location.latitude,
+                location.longitude,
+                eclipse_date,
+                eclipse_type,
+                float(magnitude),
+                ts,
+                earth,
+                sun,
+                moon,
+            )
+            if eclipse:
+                eclipses.append(eclipse)
 
     return eclipses
 

@@ -204,7 +204,11 @@ def show_viewing_recommendations(
 
 
 def _show_events_content(
-    output_console: Console | FileConsole, events: list[SpaceEvent], days_ahead: int, date: str | None = None, range_days: int = 7
+    output_console: Console | FileConsole,
+    events: list[SpaceEvent],
+    days_ahead: int,
+    date: str | None = None,
+    range_days: int = 7,
 ) -> None:
     """Display space events."""
 

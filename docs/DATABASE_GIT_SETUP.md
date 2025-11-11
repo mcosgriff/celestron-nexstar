@@ -14,6 +14,7 @@ The database file is now excluded from Git version control. Users should generat
 
 1. Clone the repository (database file won't be included)
 2. Import catalogs to generate the database:
+
    ```bash
    nexstar data import openngc
    ```
@@ -32,7 +33,7 @@ git commit -m "Remove database files from version control"
 # Step 3: Remove from Git history (choose one method below)
 ```
 
-**Option 1: Using git-filter-repo (Recommended - Fastest)**
+#### Option 1: Using git-filter-repo (Recommended - Fastest)
 
 ```bash
 # Install git-filter-repo
@@ -48,7 +49,7 @@ git filter-repo --path src/celestron_nexstar/cli/data/catalogs.db.backup --inver
 git push origin --force --all
 ```
 
-**Option 2: Using BFG Repo-Cleaner (Fast)**
+#### Option 2: Using BFG Repo-Cleaner (Fast)
 
 ```bash
 # Download BFG from https://rtyley.github.io/bfg-repo-cleaner/
@@ -68,7 +69,7 @@ git gc --prune=now --aggressive
 git push origin --force --all
 ```
 
-**Option 3: Using git filter-branch (Slow but works without extra tools)**
+#### Option 3: Using git filter-branch (Slow but works without extra tools)
 
 ```bash
 git filter-branch --force --index-filter \
@@ -102,6 +103,7 @@ git add .gitattributes
 ```
 
 However, this is **not recommended** because:
+
 - Git LFS has bandwidth limits
 - Database files change frequently
 - Users should generate their own databases
@@ -109,9 +111,9 @@ However, this is **not recommended** because:
 ## Recommended Approach
 
 **Don't track database files in Git.** Instead:
+
 - Include catalog source files (YAML, etc.)
 - Provide import commands to generate the database
 - Document the setup process
 
 This keeps the repository small and allows users to customize their database.
-

@@ -104,7 +104,13 @@ def show_passes(
     _show_passes_content(console, location, iss_passes, days, min_altitude)
 
 
-def _show_passes_content(output_console: Console | FileConsole, location: ObserverLocation, iss_passes: list[ISSPass], days: int, min_altitude: float) -> None:
+def _show_passes_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    iss_passes: list[ISSPass],
+    days: int,
+    min_altitude: float,
+) -> None:
     """Display ISS pass information."""
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 

@@ -71,7 +71,9 @@ def show_events(
     _show_events_content(console, location, events, months)
 
 
-def _show_events_content(output_console: Console | FileConsole, location: ObserverLocation, events: list[VariableStarEvent], months: int) -> None:
+def _show_events_content(
+    output_console: Console | FileConsole, location: ObserverLocation, events: list[VariableStarEvent], months: int
+) -> None:
     """Display variable star event information."""
     from zoneinfo import ZoneInfo
 

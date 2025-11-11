@@ -77,6 +77,7 @@ This document outlines the plan to migrate the celestron-nexstar database from r
 ## Benefits of SQLAlchemy
 
 ### Type Safety
+
 ```python
 # Before (raw SQL)
 cursor.execute("SELECT * FROM objects WHERE id = ?", (object_id,))
@@ -88,6 +89,7 @@ obj: CelestialObjectModel = session.get(CelestialObjectModel, object_id)
 ```
 
 ### Migrations
+
 ```bash
 # Create migration after model changes
 alembic revision --autogenerate -m "Add new_field to objects"
@@ -100,6 +102,7 @@ alembic downgrade -1
 ```
 
 ### Query Building
+
 ```python
 # Before
 cursor.execute("""
@@ -118,6 +121,7 @@ objects = session.query(CelestialObjectModel)
 ```
 
 ### Relationships (Future)
+
 ```python
 # Can add relationships between tables
 class Observation(Base):
@@ -133,36 +137,44 @@ class Observation(Base):
 ### Strategy A: Stamp Existing Database (RECOMMENDED)
 
 **Pros**:
+
 - No data loss
 - No downtime
 - Existing database continues working
 
 **Cons**:
+
 - Existing schema must exactly match models
 - May need to apply fixes manually
 
 **Steps**:
+
 1. Backup database
 2. Add FTS5 support to initial migration
 3. Mark migration as applied without running it:
+
    ```bash
    alembic stamp head
    ```
+
 4. Refactor code to use SQLAlchemy
 5. Future changes use migrations
 
 ### Strategy B: Fresh Migration
 
 **Pros**:
+
 - Clean schema
 - Guaranteed match with models
 - Good for finding schema issues
 
 **Cons**:
+
 - Need to export/import data
 - More complex process
 
 **Steps**:
+
 1. Export all data from existing database
 2. Drop existing database
 3. Run migration to create new schema
@@ -171,10 +183,12 @@ class Observation(Base):
 ### Strategy C: Parallel Systems
 
 **Pros**:
+
 - Can gradually migrate
 - Test both systems
 
 **Cons**:
+
 - Complex
 - Duplication
 - Hard to maintain
@@ -217,6 +231,7 @@ def downgrade():
 ## Code Refactoring Example
 
 ### Before (database.py)
+
 ```python
 class CatalogDatabase:
     def get_by_id(self, object_id: int) -> CelestialObject | None:
@@ -233,6 +248,7 @@ class CatalogDatabase:
 ```
 
 ### After (database.py with SQLAlchemy)
+
 ```python
 from sqlalchemy.orm import Session
 from .models import CelestialObjectModel
@@ -251,6 +267,7 @@ class CatalogDatabase:
 ## Files Modified/Created
 
 ### Created
+
 - ✅ `src/celestron_nexstar/api/models.py` - SQLAlchemy models
 - ✅ `alembic/` - Migration framework
 - ✅ `alembic.ini` - Alembic configuration
@@ -258,11 +275,13 @@ class CatalogDatabase:
 - ✅ `alembic/versions/565d35ca5a03_*.py` - Initial migration
 
 ### To Modify
+
 - ✅ `src/celestron_nexstar/api/database.py` - Refactored to SQLAlchemy
 - ✅ `src/celestron_nexstar/cli/data_import.py` - Compatible (uses same API)
 - ✅ `scripts/migrate_catalog_to_sqlite.py` - Updated to use SQLAlchemy models
 
 ### To Create
+
 - ✅ Migration with FTS5 support (b5150659897f)
 - ✅ Database session management utilities (in database.py)
 - ⏳ Migration documentation (in progress)
@@ -270,11 +289,13 @@ class CatalogDatabase:
 ## Testing Plan
 
 1. **Backup Current Database**
+
    ```bash
    cp src/celestron_nexstar/cli/data/catalogs.db catalogs.db.backup
    ```
 
 2. **Test Migration on Copy**
+
    ```bash
    cp catalogs.db.backup catalogs.db.test
    # Edit alembic.ini to point to test DB
@@ -282,6 +303,7 @@ class CatalogDatabase:
    ```
 
 3. **Verify Data Integrity**
+
    ```python
    # Compare row counts
    # Verify FTS5 search works
@@ -289,6 +311,7 @@ class CatalogDatabase:
    ```
 
 4. **Performance Testing**
+
    ```python
    # Benchmark common queries
    # Compare SQLAlchemy vs raw SQL
@@ -300,16 +323,19 @@ class CatalogDatabase:
 If migration fails:
 
 1. **Restore Backup**
+
    ```bash
    cp catalogs.db.backup src/celestron_nexstar/cli/data/catalogs.db
    ```
 
 2. **Revert Code Changes**
+
    ```bash
    git revert <commit>
    ```
 
 3. **Remove Alembic**
+
    ```bash
    rm -rf alembic/
    rm alembic.ini
@@ -324,6 +350,7 @@ If migration fails:
    - Test migration on backup
 
 2. **Stamp Existing Database**
+
    ```bash
    alembic stamp head
    ```
@@ -401,11 +428,13 @@ If migration fails:
 ### Next Steps
 
 1. **Run Full Test Suite** (when dependencies installed)
+
    ```bash
    python test_database_refactor.py
    ```
 
 2. **Stamp Existing Database** (if needed)
+
    ```bash
    alembic stamp head
    ```

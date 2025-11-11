@@ -3,6 +3,7 @@
 ## Overview
 
 Create an intelligent observing planner that answers "What can I see tonight?" by combining:
+
 - **Date/Time**: Current or future observing session
 - **Location**: GPS coordinates or saved location
 - **Weather**: Cloud cover, rain, fog forecasts
@@ -15,11 +16,13 @@ Create an intelligent observing planner that answers "What can I see tonight?" b
 ### ✅ Existing Infrastructure
 
 **Location Management** (`observer.py`):
+
 - GPS coordinates (lat/lon)
 - Saved locations with names
 - Geocoding support (address → coordinates)
 
 **Visibility Calculations** (`visibility.py`):
+
 - Altitude/azimuth calculations
 - Atmospheric extinction
 - Limiting magnitude
@@ -27,12 +30,14 @@ Create an intelligent observing planner that answers "What can I see tonight?" b
 - Filter visible objects
 
 **Optical Configuration** (`optics.py`):
+
 - Telescope aperture
 - Eyepiece focal lengths
 - Limiting magnitude calculations
 - Field of view
 
 **Ephemeris** (`ephemeris.py`):
+
 - Planetary positions
 - Moon positions
 - Dynamic object tracking
@@ -200,7 +205,7 @@ async def get_weather_forecast(
         start_time = datetime.now(UTC)
 
     return await _weather_provider.get_forecast(lat, lon, start_time, hours)
-```
+```python
 
 ### 2. Light Pollution Module
 
@@ -441,7 +446,7 @@ def download_light_pollution_data():
     File size target: <5MB
     """
     pass
-```
+```python
 
 ### 3. Observation Planner Module
 
@@ -842,7 +847,7 @@ async def get_tonight_plan(
     conditions = await _planner.get_tonight_conditions(lat, lon)
     objects = await _planner.get_recommended_objects(conditions, target_types)
     return conditions, objects
-```
+```python
 
 ---
 
@@ -995,7 +1000,7 @@ def show_plan():
     show_conditions()
     console.print("\n" + "="*80 + "\n")
     show_objects()
-```
+```python
 
 ### Shell Integration
 
@@ -1053,54 +1058,61 @@ nexstar tonight objects --type planets
 
 # Show everything
 nexstar tonight plan
-```
+```bash
 
 ---
 
 ## Implementation Timeline
 
 ### Phase 1: Weather Integration (3-4 days)
+
 1. Implement `weather.py` module
 2. Integrate Open-Meteo API (free, no key)
 3. Add WeatherAPI.com support (optional, requires key)
 4. Test forecast accuracy
 
 ### Phase 2: Light Pollution (2-3 days)
+
 1. Implement `light_pollution.py` module
 2. Download and process World Atlas 2015 data
 3. Create bundled light pollution grid (GeoJSON)
 4. Test accuracy against known locations
 
 ### Phase 3: Observation Planner (3-4 days)
+
 1. Implement `observation_planner.py` module
 2. Integrate all data sources
 3. Scoring and ranking algorithms
 4. Best viewing time calculations
 
 ### Phase 4: CLI Commands (2 days)
+
 1. Create `tonight` command group
 2. Rich formatting for conditions/objects
 3. Interactive mode updates
 4. Documentation
 
 ### Phase 5: Testing & Polish (2-3 days)
+
 1. End-to-end testing
 2. Performance optimization
 3. Error handling
 4. User documentation
 
-**Total: 12-16 days**
+#### Total: 12-16 days
 
 ---
 
 ## Data Requirements
 
 ### Weather API
+
 - **Free tier**: Open-Meteo (unlimited, no key)
 - **Premium tier**: WeatherAPI.com (1M calls/month free)
 - **Fallback**: Use last known good forecast
 
 ### Light Pollution Map
+
 - **Source**: World Atlas 2015 (public domain)
 - **Format**: GeoJSON grid
 - **Resolution**: ~1km grid cells
@@ -1108,18 +1120,19 @@ nexstar tonight plan
 - **Storage**: Bundle in package
 
 ### Dependencies
+
 ```toml
 [project.optional-dependencies]
 planning = [
     "aiohttp>=3.9.0",  # Async HTTP for weather APIs
 ]
-```
+```toml
 
 ---
 
 ## Expected User Experience
 
-```
+```text
 User: "Should I observe tonight?"
 
 nexstar> tonight plan
@@ -1132,7 +1145,7 @@ User selects: "M42 Orion Nebula" (Priority ★★)
 nexstar> goto object --name M42
 [Telescope slews]
 [Status bar shows: M42 at 45° altitude, best viewed now]
-```
+```text
 
 ---
 

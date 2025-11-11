@@ -102,7 +102,13 @@ def show_gegenschein(
     _show_windows_content(console, location, windows, "Gegenschein", months)
 
 
-def _show_windows_content(output_console: Console | FileConsole, location: ObserverLocation, windows: list[ZodiacalLightWindow], phenomenon: str, months: int) -> None:
+def _show_windows_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    windows: list[ZodiacalLightWindow],
+    phenomenon: str,
+    months: int,
+) -> None:
     """Display viewing window information."""
     from zoneinfo import ZoneInfo
 

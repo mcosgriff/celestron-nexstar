@@ -42,4 +42,3 @@ else
     echo "    --prune-empty --tag-name-filter cat -- --all"
     exit 1
 fi
-

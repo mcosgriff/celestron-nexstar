@@ -11,11 +11,13 @@ Added support for importing user-defined custom catalogs from YAML files into th
 **File**: `src/celestron_nexstar/cli/data_import.py`
 
 **New Functions**:
+
 - `import_custom_yaml()` - Imports YAML catalog into database
 - `parse_catalog_number()` - Extracts catalog numbers from names
 - Updated `import_data_source()` - Handles custom catalog specially
 
 **Features**:
+
 - Reads YAML catalog structure
 - Validates required fields (name, ra_hours, dec_degrees, type)
 - Supports magnitude filtering
@@ -28,6 +30,7 @@ Added support for importing user-defined custom catalogs from YAML files into th
 **Updated**: `DATA_SOURCES` dictionary
 
 **Added**:
+
 ```python
 "custom": DataSource(
     name="Custom YAML",
@@ -38,11 +41,12 @@ Added support for importing user-defined custom catalogs from YAML files into th
     attribution="User-defined",
     importer=import_custom_yaml,
 )
-```
+```python
 
 ### 3. Documentation
 
 **Created Files**:
+
 1. `src/celestron_nexstar/cli/data/catalogs_example.yaml` - Complete example with all fields
 2. `docs/CUSTOM_CATALOG.md` - Comprehensive user guide (500+ lines)
 
@@ -74,7 +78,7 @@ favorites:
     magnitude: 4.0
     type: nebula
     description: Best nebula for small telescopes
-```
+```yaml
 
 ### Import Command
 
@@ -106,14 +110,14 @@ nexstar data import custom --mag-limit 10.0
 
 ### Before
 
-```
+```text
 Available Data Sources:
 - OpenNGC: 13,970 available, 9,570 imported
 ```
 
 ### After
 
-```
+```text
 Available Data Sources:
 - Custom YAML: 152 available, 0 imported  ← NEW!
 - OpenNGC: 13,970 available, 9,570 imported
@@ -139,19 +143,21 @@ Importing with magnitude limit: 15.0
   Skipped:  1 (too faint or invalid)
 
 Database now contains 9,873 objects
-```
+```text
 
 ## Features
 
 ### Supported Fields
 
 **Required**:
+
 - `name` - Object name
 - `ra_hours` - Right ascension (0-24)
 - `dec_degrees` - Declination (-90 to +90)
 - `type` - Object type
 
 **Optional**:
+
 - `common_name` - Popular name
 - `magnitude` - Apparent magnitude
 - `description` - Notes and details
@@ -184,7 +190,7 @@ summer_nebulae:
 my_favorites:
   - name: Custom1
     # ...
-```
+```yaml
 
 Each top-level key becomes a catalog name in the database.
 
@@ -221,7 +227,7 @@ visual_showpieces:
   - name: M13
     description: Best globular for public viewing
     # ...
-```
+```yaml
 
 ### 4. Project Tracking
 
@@ -234,7 +240,7 @@ herschel_400:
 
 double_stars:
   # Beautiful double star targets
-```
+```yaml
 
 ## Benefits
 
@@ -257,9 +263,11 @@ double_stars:
 ## Files Modified/Created
 
 ### Modified
+
 1. `src/celestron_nexstar/cli/data_import.py` - Added YAML import (+150 lines)
 
 ### Created
+
 1. `src/celestron_nexstar/cli/data/catalogs_example.yaml` - Example catalog
 2. `docs/CUSTOM_CATALOG.md` - User guide (500+ lines)
 3. `docs/CUSTOM_YAML_FEATURE.md` - This document
@@ -294,14 +302,16 @@ double_stars:
 ## Database Impact
 
 ### Before Custom Import
-```
+
+```text
 Total objects: 9,722
 - OpenNGC: 9,570
 - Original catalogs: 152
 ```
 
 ### After Custom Import
-```
+
+```text
 Total objects: 9,873
 - OpenNGC: 9,570
 - Custom YAML: 151
@@ -315,18 +325,21 @@ Note: Original 152 objects were from initial YAML. After custom import, they're 
 Users often struggle with coordinates. The guide includes:
 
 ### RA Conversion (HMS → Hours)
-```
+
+```text
 12h 30m 00s → 12.5 hours
 Formula: h + m/60 + s/3600
 ```
 
 ### Dec Conversion (DMS → Degrees)
-```
+
+```text
 45° 30' 00" → 45.5 degrees
 Formula: d + m/60 + s/3600
 ```
 
 ### Python Helper Functions
+
 ```python
 def hms_to_hours(h, m, s):
     return h + m/60 + s/3600
@@ -334,7 +347,7 @@ def hms_to_hours(h, m, s):
 def dms_to_degrees(d, m, s):
     sign = 1 if d >= 0 else -1
     return sign * (abs(d) + m/60 + s/3600)
-```
+```python
 
 ## Best Practices Documented
 
@@ -347,24 +360,28 @@ def dms_to_degrees(d, m, s):
 ## Error Handling
 
 ### Missing Required Fields
-```
+
+```text
 Warning: Missing required fields for M31
 ```
 
 ### Invalid Object Type
-```
+
+```text
 Warning: Unknown object type 'comet' for Halley
 (Falls back to 'star')
 ```
 
 ### File Not Found
-```
+
+```text
 ✗ Custom catalog not found at .../catalogs.yaml
 Create a catalogs.yaml file in src/celestron_nexstar/cli/data/
 ```
 
 ### YAML Syntax Error
-```
+
+```text
 ✗ Import failed: YAML parse error on line 15
 (Shows full traceback)
 ```
@@ -401,7 +418,7 @@ nexstar catalog info "my object"
 
 # List by catalog
 nexstar catalog list my_favorites
-```
+```bash
 
 ### GoTo Commands
 
@@ -412,7 +429,7 @@ nexstar goto object "my object"
 # Works exactly like built-in objects
 nexstar goto object M31
 nexstar goto object "my custom target"
-```
+```bash
 
 ### Data Management
 
@@ -425,11 +442,12 @@ nexstar data import custom
 
 # Check statistics
 nexstar data stats
-```
+```bash
 
 ## Conclusion
 
 The custom YAML catalog feature provides a simple, flexible way for users to:
+
 1. Keep their personal object lists
 2. Import them into the searchable database
 3. Use them with all CLI commands

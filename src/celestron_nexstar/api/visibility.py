@@ -19,7 +19,7 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    np = None  # type: ignore[assignment]
+    np = None
 
 from .catalogs import CelestialObject
 from .enums import SkyBrightness
