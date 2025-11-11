@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from astropy import units as u
-from astropy.coordinates import AltAz, Angle, EarthLocation, ICRS, SkyCoord
+from astropy.coordinates import ICRS, AltAz, Angle, EarthLocation, SkyCoord
 from astropy.time import Time
 
 
