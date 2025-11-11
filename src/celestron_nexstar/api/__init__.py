@@ -152,8 +152,6 @@ from celestron_nexstar.api.weather import (
     HourlySeeingForecast,
     WeatherData,
     assess_observing_conditions,
-    calculate_seeing_conditions,
-    fetch_hourly_weather_forecast,
     fetch_weather,
     get_weather_api_key,
 )

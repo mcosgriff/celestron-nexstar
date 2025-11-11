@@ -12,7 +12,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from .meteor_showers import MeteorShower, get_all_meteor_showers, get_radiant_position
-from .solar_system import get_moon_info
+from .solar_system import MoonInfo, get_moon_info
+
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -21,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "MeteorShowerPrediction",
-    "get_enhanced_meteor_predictions",
-    "get_best_viewing_windows",
     "calculate_moon_adjusted_zhr",
+    "get_best_viewing_windows",
+    "get_enhanced_meteor_predictions",
 ]
 
 
@@ -111,7 +112,9 @@ def get_enhanced_meteor_predictions(
 
                 if moon_info:
                     # Get radiant position at peak time
-                    radiant_alt, _radiant_az = get_radiant_position(shower, location.latitude, location.longitude, peak_date)
+                    radiant_alt, _radiant_az = get_radiant_position(
+                        shower, location.latitude, location.longitude, peak_date
+                    )
 
                     # Calculate adjusted ZHR
                     zhr_adjusted = calculate_moon_adjusted_zhr(
@@ -133,9 +136,7 @@ def get_enhanced_meteor_predictions(
                         notes = "Bright moon will significantly reduce visible meteors"
 
                     # Find best viewing window (when radiant is high and moon is low)
-                    best_start, best_end = _find_best_viewing_window(
-                        shower, location, peak_date, moon_info
-                    )
+                    best_start, best_end = _find_best_viewing_window(shower, location, peak_date, moon_info)
 
                     predictions.append(
                         MeteorShowerPrediction(
@@ -165,7 +166,7 @@ def _find_best_viewing_window(
     shower: MeteorShower,
     location: ObserverLocation,
     peak_date: datetime,
-    moon_info,
+    moon_info: MoonInfo | None,
 ) -> tuple[datetime | None, datetime | None]:
     """
     Find best viewing window when radiant is high and moon is low.
@@ -208,4 +209,3 @@ def get_best_viewing_windows(
     filtered = [p for p in all_predictions if quality_order.get(p.viewing_quality, 3) <= min_quality_level]
 
     return filtered
-

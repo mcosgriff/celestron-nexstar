@@ -29,6 +29,11 @@ config:
   # Keep this enabled but don't be too strict
   MD040: true
 
+  # MD029: Ordered list item prefix
+  # Allow any numbering style
+  MD029:
+    style: "one_or_ordered"
+
   # MD046: Code block style - prefer fenced code blocks
   MD046:
     style: "fenced"

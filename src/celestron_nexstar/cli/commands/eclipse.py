@@ -4,16 +4,17 @@ Eclipse Prediction Commands
 Find upcoming lunar and solar eclipses visible from your location.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.eclipses import get_next_lunar_eclipse, get_next_solar_eclipse, get_upcoming_eclipses
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.eclipses import Eclipse, get_next_lunar_eclipse, get_next_solar_eclipse, get_upcoming_eclipses
+from ...api.observer import ObserverLocation, get_observer_location
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Eclipse prediction commands")
 console = Console()
@@ -21,7 +22,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "eclipse") -> Path:
     """Generate export filename for eclipse commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -63,7 +63,9 @@ def show_next(
     """Find next eclipses visible from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     # Get eclipses
@@ -94,7 +96,9 @@ def show_lunar(
     """Find next lunar eclipses visible from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     eclipses = get_next_lunar_eclipse(location, years_ahead=years)
@@ -124,7 +128,9 @@ def show_solar(
     """Find next solar eclipses visible from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     eclipses = get_next_solar_eclipse(location, years_ahead=years)
@@ -143,12 +149,13 @@ def show_solar(
     _show_eclipses_content(console, location, eclipses, years)
 
 
-def _show_eclipses_content(output_console: Console, location, eclipses: list, years: int) -> None:
+def _show_eclipses_content(
+    output_console: Console | FileConsole, location: ObserverLocation, eclipses: list[Eclipse], years: int
+) -> None:
     """Display eclipse information."""
     from zoneinfo import ZoneInfo
-    from timezonefinder import TimezoneFinder
 
-    from ...api.observer import ObserverLocation
+    from timezonefinder import TimezoneFinder
 
     _tz_finder = TimezoneFinder()
 
@@ -192,10 +199,7 @@ def _show_eclipses_content(output_console: Console, location, eclipses: list, ye
         type_str = _format_eclipse_type(eclipse.eclipse_type)
 
         # Format visibility
-        if eclipse.is_visible:
-            visible_str = "[green]✓ Yes[/green]"
-        else:
-            visible_str = "[dim]✗ No[/dim]"
+        visible_str = "[green]✓ Yes[/green]" if eclipse.is_visible else "[dim]✗ No[/dim]"
 
         # Format altitude
         alt_str = f"{eclipse.altitude_at_maximum:.0f}°"
@@ -241,12 +245,15 @@ def _show_eclipses_content(output_console: Console, location, eclipses: list, ye
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")
     output_console.print("  • [green]Lunar eclipses are safe to view with naked eye or binoculars[/green]")
-    output_console.print("  • [red]⚠ Solar eclipses require special eye protection - NEVER look directly at the sun[/red]")
+    output_console.print(
+        "  • [red]⚠ Solar eclipses require special eye protection - NEVER look directly at the sun[/red]"
+    )
     output_console.print("  • [yellow]For solar eclipses, use ISO 12312-2 certified eclipse glasses[/yellow]")
     output_console.print("  • [green]Check weather forecast for cloud cover during eclipse times[/green]")
-    output_console.print("\n[dim]💡 Tip: Eclipses are rare events - plan ahead for the best viewing experience![/dim]\n")
+    output_console.print(
+        "\n[dim]💡 Tip: Eclipses are rare events - plan ahead for the best viewing experience![/dim]\n"
+    )
 
 
 if __name__ == "__main__":
     app()
-

@@ -11,15 +11,19 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 
 try:
     from skyfield.api import Loader, Topos, load
-    from skyfield.almanac import find_discrete, moon_phases
 
     SKYFIELD_AVAILABLE = True
 except ImportError:
     SKYFIELD_AVAILABLE = False
+    # These will be None if skyfield is not available, but code checks SKYFIELD_AVAILABLE first
+    Loader = None
+    Topos = None
+    load = None
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -39,7 +43,9 @@ __all__ = [
 class Eclipse:
     """Information about a lunar or solar eclipse."""
 
-    eclipse_type: str  # "lunar_total", "lunar_partial", "lunar_penumbral", "solar_total", "solar_partial", "solar_annular"
+    eclipse_type: (
+        str  # "lunar_total", "lunar_partial", "lunar_penumbral", "solar_total", "solar_partial", "solar_annular"
+    )
     date: datetime
     maximum_time: datetime  # Time of maximum eclipse
     duration_minutes: float  # Duration of eclipse in minutes
@@ -67,7 +73,7 @@ def _get_skyfield_directory() -> Path:
     return Path.home() / ".skyfield"
 
 
-def _get_skyfield_objects():
+def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[None, None, None, None, None]:
     """Get Skyfield objects for calculations."""
     if not SKYFIELD_AVAILABLE:
         return None, None, None, None, None
@@ -103,10 +109,10 @@ def _calculate_lunar_eclipse(
     eclipse_time: datetime,
     eclipse_type: str,
     magnitude: float,
-    ts,
-    earth,
-    sun,
-    moon,
+    ts: Any,
+    earth: Any,
+    sun: Any,
+    moon: Any | None,
 ) -> Eclipse | None:
     """
     Calculate lunar eclipse details for a specific time.
@@ -164,7 +170,7 @@ def _calculate_lunar_eclipse(
         return None
 
 
-def _get_moon_phase_at_time(ts, earth, sun, moon, t):
+def _get_moon_phase_at_time(ts: Any, earth: Any, sun: Any, moon: Any | None, t: Any) -> float:
     """Get moon phase (illumination) at a specific time."""
     try:
         import math
@@ -213,22 +219,28 @@ def get_next_lunar_eclipse(
     end_date = now + timedelta(days=365 * years_ahead)
 
     for eclipse_data in KNOWN_ECLIPSES:
-        if eclipse_data["type"].startswith("lunar"):
-            eclipse_date = eclipse_data["date"]
-            if now <= eclipse_date <= end_date:
-                eclipse = _calculate_lunar_eclipse(
-                    location.latitude,
-                    location.longitude,
-                    eclipse_date,
-                    eclipse_data["type"],
-                    eclipse_data["magnitude"],
-                    ts,
-                    earth,
-                    sun,
-                    moon,
-                )
-                if eclipse:
-                    eclipses.append(eclipse)
+        eclipse_type = eclipse_data["type"]
+        eclipse_date = eclipse_data["date"]
+        magnitude = eclipse_data["magnitude"]
+        if (
+            isinstance(eclipse_type, str)
+            and eclipse_type.startswith("lunar")
+            and isinstance(eclipse_date, datetime)
+            and isinstance(magnitude, (int, float))
+        ) and now <= eclipse_date <= end_date:
+            eclipse = _calculate_lunar_eclipse(
+                location.latitude,
+                location.longitude,
+                eclipse_date,
+                eclipse_type,
+                float(magnitude),
+                ts,
+                earth,
+                sun,
+                moon,
+            )
+            if eclipse:
+                eclipses.append(eclipse)
 
     return eclipses
 
@@ -292,22 +304,28 @@ def get_next_solar_eclipse(
     end_date = now + timedelta(days=365 * years_ahead)
 
     for eclipse_data in KNOWN_ECLIPSES:
-        if eclipse_data["type"].startswith("solar"):
-            eclipse_date = eclipse_data["date"]
-            if now <= eclipse_date <= end_date:
-                eclipse = _calculate_solar_eclipse(
-                    location.latitude,
-                    location.longitude,
-                    eclipse_date,
-                    eclipse_data["type"],
-                    eclipse_data["magnitude"],
-                    ts,
-                    earth,
-                    sun,
-                    moon,
-                )
-                if eclipse:
-                    eclipses.append(eclipse)
+        eclipse_type = eclipse_data["type"]
+        eclipse_date = eclipse_data["date"]
+        magnitude = eclipse_data["magnitude"]
+        if (
+            isinstance(eclipse_type, str)
+            and eclipse_type.startswith("solar")
+            and isinstance(eclipse_date, datetime)
+            and isinstance(magnitude, (int, float))
+        ) and now <= eclipse_date <= end_date:
+            eclipse = _calculate_solar_eclipse(
+                location.latitude,
+                location.longitude,
+                eclipse_date,
+                eclipse_type,
+                float(magnitude),
+                ts,
+                earth,
+                sun,
+                moon,
+            )
+            if eclipse:
+                eclipses.append(eclipse)
 
     return eclipses
 
@@ -318,10 +336,10 @@ def _calculate_solar_eclipse(
     eclipse_time: datetime,
     eclipse_type: str,
     magnitude: float,
-    ts,
-    earth,
-    sun,
-    moon,
+    ts: Any,
+    earth: Any,
+    sun: Any,
+    moon: Any | None,
 ) -> Eclipse | None:
     """
     Calculate solar eclipse details for a specific time.
@@ -409,4 +427,3 @@ def get_upcoming_eclipses(
     all_eclipses.sort(key=lambda e: e.date)
 
     return all_eclipses
-

@@ -16,7 +16,7 @@ Based on [prompt_toolkit full-screen applications documentation](https://python-
 
 ## Layout Structure
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Header Bar (Connection Status, Time, Location)              │
 ├──────────────┬──────────────┬───────────────────────────────┤
@@ -36,6 +36,7 @@ Based on [prompt_toolkit full-screen applications documentation](https://python-
 ### Pane 1: Dataset Information (Left, ~30% width)
 
 **Content:**
+
 - Database statistics
   - Total objects in database
   - Objects by catalog (Messier, NGC, IC, etc.)
@@ -49,7 +50,8 @@ Based on [prompt_toolkit full-screen applications documentation](https://python-
 **Update Frequency:** Every 5 seconds or on demand
 
 **Implementation:**
-```python
+
+````python
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.containers import Window
 
@@ -57,7 +59,7 @@ def get_dataset_info() -> FormattedText:
     """Generate formatted text for dataset pane."""
     db = get_database()
     stats = db.get_stats()
-    
+
     return FormattedText([
         ("bold", "Database Statistics\n"),
         ("", f"Total Objects: {stats.total_objects:,}\n"),
@@ -71,11 +73,12 @@ dataset_pane = Window(
     width=Dimension(weight=30),
     wrap_lines=True,
 )
-```
+```python
 
 ### Pane 2: Current Conditions (Middle, ~30% width)
 
 **Content:**
+
 - Weather conditions
   - Cloud cover percentage
   - Temperature
@@ -93,16 +96,17 @@ dataset_pane = Window(
 **Update Frequency:** Every 2 seconds (weather), every 1 second (time)
 
 **Implementation:**
+
 ```python
 def get_conditions_info() -> FormattedText:
     """Generate formatted text for conditions pane."""
     # Get observer location
     location = get_observer_location()
-    
+
     # Get weather (if available)
     # Get moon phase
     # Get time info
-    
+
     return FormattedText([
         ("bold", "Observing Conditions\n"),
         ("", f"Location: {location.name if location else 'Not set'}\n"),
@@ -115,11 +119,12 @@ conditions_pane = Window(
     width=Dimension(weight=30),
     wrap_lines=True,
 )
-```
+```python
 
 ### Pane 3: Visible Objects (Right, ~40% width, scrollable)
 
 **Content:**
+
 - List of currently visible objects
   - Object name and common name
   - Current altitude/azimuth
@@ -138,6 +143,7 @@ conditions_pane = Window(
 **Update Frequency:** Every 3 seconds
 
 **Implementation:**
+
 ```python
 from prompt_toolkit.layout.containers import ScrollablePane
 
@@ -146,11 +152,11 @@ def get_visible_objects() -> FormattedText:
     # Get observer location and time
     location = get_observer_location()
     config = get_current_configuration()
-    
+
     # Query database for objects
     db = get_database()
     all_objects = db.filter_objects(max_magnitude=config.limiting_magnitude)
-    
+
     # Filter visible objects
     visible = filter_visible_objects(
         all_objects,
@@ -158,17 +164,17 @@ def get_visible_objects() -> FormattedText:
         observer_lat=location.latitude_deg if location else None,
         observer_lon=location.longitude_deg if location else None,
     )
-    
+
     # Sort by altitude (highest first)
     visible_sorted = sorted(visible, key=lambda v: v.altitude_deg or 0, reverse=True)
-    
+
     # Format as list
     lines = [("bold", "Currently Visible Objects\n")]
     for obj_info in visible_sorted[:50]:  # Top 50
         lines.append(("", f"{obj_info.object_name:20s} "))
         lines.append(("cyan", f"Alt: {obj_info.altitude_deg:.1f}° "))
         lines.append(("yellow", f"Mag: {obj_info.magnitude or 'N/A'}\n"))
-    
+
     return FormattedText(lines)
 
 visible_pane = ScrollablePane(
@@ -177,7 +183,7 @@ visible_pane = ScrollablePane(
         wrap_lines=False,
     )
 )
-```
+```python
 
 ## Layout Implementation
 
@@ -200,7 +206,7 @@ root_container = HSplit([
         height=Dimension.exact(1),
         char="─",
     ),
-    
+
     # Main content area
     VSplit([
         dataset_pane,
@@ -209,7 +215,7 @@ root_container = HSplit([
         Window(width=1, char="│"),  # Vertical divider
         visible_pane,
     ]),
-    
+
     # Status bar
     Window(
         content=FormattedTextControl(get_status_info),
@@ -219,7 +225,7 @@ root_container = HSplit([
 ])
 
 layout = Layout(root_container)
-```
+```python
 
 ## Key Bindings
 
@@ -274,13 +280,13 @@ def filter_menu(event):
     """Open filter menu for visible objects."""
     # Show filter dialog
     pass
-```
+````
 
 ## Update Mechanism
 
 Use `refresh_interval` in Application to auto-refresh content:
 
-```python
+````python
 app = Application(
     layout=layout,
     key_bindings=kb,
@@ -288,7 +294,7 @@ app = Application(
     refresh_interval=1.0,  # Refresh every second
     # Use a custom refresh handler to update specific panes at different rates
 )
-```
+```python
 
 Or use background threads with `invalidate()`:
 
@@ -304,7 +310,7 @@ def background_updater():
         if app:
             # Invalidate specific panes to trigger refresh
             app.invalidate()
-```
+```python
 
 ## Integration with Existing Code
 
@@ -336,7 +342,7 @@ def background_updater():
 
 ## File Structure
 
-```
+```text
 src/celestron_nexstar/cli/
 ├── tui.py              # Main TUI application
 ├── tui/
@@ -347,34 +353,39 @@ src/celestron_nexstar/cli/
 │   └── updates.py       # Update handlers
 └── commands/
     └── dashboard.py    # CLI command to launch TUI
-```
+````
 
 ## Implementation Phases
 
 ### Phase 1: Basic Layout (Week 1)
+
 - [ ] Create basic Application with three panes
 - [ ] Implement static content in each pane
 - [ ] Add basic key bindings (quit, refresh)
 - [ ] Test layout and sizing
 
 ### Phase 2: Dynamic Content (Week 1-2)
+
 - [ ] Connect dataset pane to database stats
 - [ ] Connect conditions pane to observer/time data
 - [ ] Connect visible objects pane to visibility calculations
 - [ ] Implement auto-refresh mechanism
 
 ### Phase 3: Interactivity (Week 2)
+
 - [ ] Add sorting to visible objects pane
 - [ ] Add filtering to visible objects pane
 - [ ] Add pane focus cycling
 - [ ] Add scroll support for visible objects
 
 ### Phase 4: Weather Integration (Week 2-3)
+
 - [ ] Integrate weather API (if available)
 - [ ] Display weather conditions
 - [ ] Add weather-based visibility warnings
 
 ### Phase 5: Advanced Features (Week 3)
+
 - [ ] Add object selection and goto functionality
 - [ ] Add search dialog
 - [ ] Add settings/configuration dialog
@@ -401,17 +412,20 @@ nexstar dashboard --port /dev/ttyUSB0
 
 ## Technical Considerations
 
-1. **Performance**: 
+1. **Performance**:
+
    - Cache database queries (update every 5s, not every refresh)
    - Limit visible objects list to top 50-100
    - Use lazy evaluation for expensive calculations
 
 2. **Threading**:
+
    - Use background threads for slow operations (weather API)
    - Use `invalidate()` to trigger UI updates from threads
    - Be careful with thread safety
 
 3. **Error Handling**:
+
    - Gracefully handle missing data (no location, no connection, etc.)
    - Show error messages in panes when appropriate
    - Don't crash on API failures
@@ -427,4 +441,3 @@ nexstar dashboard --port /dev/ttyUSB0
 - [prompt_toolkit Full-Screen Applications](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/full_screen_apps.html)
 - [prompt_toolkit Layout Documentation](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/layout.html)
 - [prompt_toolkit Key Bindings](https://python-prompt-toolkit.readthedocs.io/en/stable/pages/key_bindings.html)
-

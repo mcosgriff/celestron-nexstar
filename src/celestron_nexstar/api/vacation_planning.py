@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .light_pollution import BortleClass, get_light_pollution_data
 from .models import get_db_session
 from .observer import ObserverLocation, geocode_location
+
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -526,7 +528,7 @@ def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> f
 
     Returns distance in kilometers.
     """
-    R = 6371.0  # Earth radius in km
+    r = 6371.0  # Earth radius in km
 
     lat1_rad = math.radians(lat1)
     lat2_rad = math.radians(lat2)
@@ -536,7 +538,7 @@ def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> f
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-    return R * c
+    return r * c
 
 
 def find_dark_sites_near(
@@ -630,22 +632,19 @@ def populate_dark_sky_sites_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
-    from .models import Base, DarkSkySiteModel
+    from .models import DarkSkySiteModel
 
     logger.info("Populating dark sky sites database...")
 
     # Ensure table exists (create if it doesn't)
     try:
-        DarkSkySiteModel.__table__.create(db_session.bind, checkfirst=True)
+        DarkSkySiteModel.__table__.create(db_session.bind, checkfirst=True)  # type: ignore[attr-defined]
     except Exception as e:
         logger.debug(f"Table creation check: {e}")
 
     # Clear existing data (if table exists)
-    try:
+    with suppress(Exception):
         db_session.query(DarkSkySiteModel).delete()
-    except Exception:
-        # Table doesn't exist yet, that's okay
-        pass
 
     # Add dark sky sites
     for site in KNOWN_DARK_SITES:
@@ -690,4 +689,3 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
         description=light_data.description,
         recommendations=light_data.recommendations,
     )
-

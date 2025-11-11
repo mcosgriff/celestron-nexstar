@@ -58,11 +58,13 @@ Many viewing and planning commands support exporting their output to text files 
 ### Export Options
 
 **`--export`, `-e`**
+
 - Boolean flag that enables export
 - When used without `--export-path`, automatically generates a filename
 - Example: `nexstar telescope tonight --export`
 
 **`--export-path` PATH**
+
 - Optional custom file path for export
 - Overrides auto-generated filename when provided
 - Example: `nexstar telescope tonight --export --export-path my_plan.txt`
@@ -72,31 +74,37 @@ Many viewing and planning commands support exporting their output to text files 
 When `--export` is used without `--export-path`, filenames are automatically generated using this pattern:
 
 **Telescope Commands:**
-```
+
+```text
 nexstar_{telescope_model}_{location}_{date}_{command}.txt
 ```
 
 **Multi-Night Commands:**
-```
+
+```text
 nexstar_{telescope_model}_{location}_{date}_{command}.txt
 ```
 
 **Best Night Command:**
-```
+
+```text
 nexstar_{telescope_model}_{location}_{date}_best-night_{object_name}.txt
 ```
 
 **Binocular Commands:**
-```
+
+```text
 binoculars_{model}_{location}_{date}_{command}.txt
 ```
 
 **Naked-Eye Commands:**
-```
+
+```text
 naked_eye_{location}_{date}_{command}.txt
 ```
 
 **Examples:**
+
 - `nexstar_6se_los_angeles_2024-11-15_tonight.txt`
 - `nexstar_6se_los_angeles_2024-11-15_conditions.txt`
 - `nexstar_6se_los_angeles_2024-11-15_best-night_m31.txt`
@@ -106,6 +114,7 @@ naked_eye_{location}_{date}_{command}.txt
 ### Export Format
 
 Exported files contain:
+
 - Plain text output with ASCII tables
 - All information from the console output
 - Formatted for readability and printing
@@ -114,6 +123,7 @@ Exported files contain:
 ### Commands with Export Support
 
 **Telescope Viewing:**
+
 - `nexstar telescope conditions --export`
 - `nexstar telescope objects --export`
 - `nexstar telescope imaging --export`
@@ -121,16 +131,20 @@ Exported files contain:
 - `nexstar telescope plan --export`
 
 **Multi-Night Planning:**
+
 - `nexstar multi-night week --export`
 - `nexstar multi-night best-night <OBJECT> --export`
 
 **Binocular Viewing:**
+
 - `nexstar binoculars tonight --export`
 
 **Naked-Eye Viewing:**
+
 - `nexstar naked-eye tonight --export`
 
 **Celestial Events:**
+
 - `nexstar aurora tonight --export`
 - `nexstar eclipse next --export`
 - `nexstar planets conjunctions --export`
@@ -143,9 +157,11 @@ Exported files contain:
 - `nexstar occultations next --export`
 
 **Space Events:**
+
 - `nexstar events upcoming --export`
 
 **Vacation Planning:**
+
 - `nexstar vacation view --export`
 - `nexstar vacation dark-sites --export`
 - `nexstar vacation plan --export`
@@ -153,22 +169,26 @@ Exported files contain:
 ### Usage Examples
 
 **Auto-generate filename:**
+
 ```bash
 nexstar telescope tonight --export
 # Creates: nexstar_6se_los_angeles_2024-11-15_tonight.txt
 ```
 
 **Custom filename:**
+
 ```bash
 nexstar telescope tonight --export --export-path observing_plan.txt
 ```
 
 **Export with filters:**
+
 ```bash
 nexstar telescope objects --export --type planets --limit 10
 ```
 
 **Export best night analysis:**
+
 ```bash
 nexstar multi-night best-night M31 --export --days 7
 # Creates: nexstar_6se_los_angeles_2024-11-15_best-night_m31.txt
@@ -187,10 +207,12 @@ nexstar telescope conditions [OPTIONS]
 ```
 
 **Options:**
+
 - `--export`, `-e` - Export output to text file (auto-generates filename)
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Overall observing quality score
 - Weather conditions (clouds, temperature, wind, etc.)
 - Seeing conditions with hourly forecast
@@ -200,6 +222,7 @@ nexstar telescope conditions [OPTIONS]
 - Recommendations and warnings
 
 **Example:**
+
 ```bash
 nexstar telescope conditions
 nexstar telescope conditions --export
@@ -215,6 +238,7 @@ nexstar telescope objects [OPTIONS]
 ```
 
 **Options:**
+
 - `--type` TEXT - Filter by type (planets, deep_sky, messier, etc.)
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing conditions
@@ -222,6 +246,7 @@ nexstar telescope objects [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Example:**
+
 ```bash
 nexstar telescope objects
 nexstar telescope objects --type planets --limit 5
@@ -237,16 +262,19 @@ nexstar telescope imaging [OPTIONS]
 ```
 
 **Options:**
+
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Planetary imaging seeing forecast (hourly)
 - Deep-sky imaging transparency forecast (hourly)
 - Exposure time recommendations
 - Best imaging windows
 
 **Example:**
+
 ```bash
 nexstar telescope imaging
 nexstar telescope imaging --export
@@ -261,6 +289,7 @@ nexstar telescope tonight [OPTIONS]
 ```
 
 **Options:**
+
 - `--type` TEXT - Filter objects by type
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing
@@ -268,6 +297,7 @@ nexstar telescope tonight [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Example:**
+
 ```bash
 nexstar telescope tonight
 nexstar telescope tonight --export
@@ -283,6 +313,7 @@ nexstar telescope plan [OPTIONS]
 ```
 
 **Options:**
+
 - `--type` TEXT - Filter objects by type
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing
@@ -290,6 +321,7 @@ nexstar telescope plan [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Example:**
+
 ```bash
 nexstar telescope plan
 nexstar telescope plan --export
@@ -308,16 +340,19 @@ nexstar multi-night week [OPTIONS]
 ```
 
 **Options:**
+
 - `--export`, `-e` - Export output to text file (auto-generates filename)
 - `--export-path` PATH - Custom export file path
 
 **Output:**
+
 - Table showing quality, seeing, clouds, moon phase/illumination for each night
 - Best seeing window for each night
 - Summary of best nights for different conditions
 
 **Example:**
-```
+
+```text
 7-Night Comparison
 ┌────────────┬────────────┬────────┬────────┬──────────┬────────┬────────────────────┐
 │ Date       │ Quality    │ Seeing │ Clouds │ Moon     │ Moon % │ Best Window        │
@@ -341,11 +376,13 @@ nexstar multi-night best-night <OBJECT_NAME> [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Number of days to check (default: 7)
 - `--export`, `-e` - Export output to text file (auto-generates filename with object name)
 - `--export-path` PATH - Custom export file path
 
 **Example:**
+
 ```bash
 nexstar multi-night best-night M31 --days 7
 nexstar multi-night best-night Jupiter --days 14
@@ -379,6 +416,7 @@ nexstar multi-night best-night M31 --days 7 --export
    - Planets and double stars unaffected by light pollution
 
 **Output:**
+
 - Table ranking nights by total score (0-100)
 - Columns: Date, Score, Quality, Seeing, Clouds, Transit Time, Altitude, Moon %, Moon Separation
 - Shows location's Bortle class and description
@@ -387,7 +425,8 @@ nexstar multi-night best-night M31 --days 7 --export
 - Light pollution impact warnings (if applicable)
 
 **Example Output:**
-```
+
+```text
 Best Night for M31
 The Andromeda Galaxy
 Type: Galaxy
@@ -426,7 +465,8 @@ The algorithm uses weighted scoring based on object type. Base weights:
 | Moon Brightness | 5% | 10% | 10% | 10% | 5% |
 
 Then applies light pollution penalty:
-```
+
+```text
 final_score = base_score × (1 - sensitivity × (1 - bortle_quality))
 ```
 
@@ -443,10 +483,12 @@ nexstar multi-night clear-sky [OPTIONS]
 #### Basic Options
 
 **`--days`, `-d` INTEGER**
+
 - Number of days to show (1-7, default: 4)
 - Example: `--days 7`
 
 **`--nighttime-only`, `-n`**
+
 - Only show hours when the sun is below the horizon
 - Filters out daytime hours for cleaner charts
 - Example: `-n`
@@ -454,6 +496,7 @@ nexstar multi-night clear-sky [OPTIONS]
 #### Condition Filtering
 
 **`--conditions`, `-c` TEXT**
+
 - Comma-separated list of conditions to display
 - Available conditions:
   - `clouds` - Cloud cover percentage
@@ -465,6 +508,7 @@ nexstar multi-night clear-sky [OPTIONS]
   - `temperature` - Air temperature
 - Default: All conditions
 - Examples:
+
   ```bash
   -c clouds,seeing,darkness
   --conditions clouds,transparency,seeing
@@ -473,6 +517,7 @@ nexstar multi-night clear-sky [OPTIONS]
 #### Quality Highlighting
 
 **`--highlight-good`**
+
 - Highlight hours meeting quality thresholds with green stars (★)
 - Stars appear in a row above the time header
 - An hour is marked with ★ only if it meets ALL threshold criteria:
@@ -483,17 +528,20 @@ nexstar multi-night clear-sky [OPTIONS]
 - Combines with the threshold options below to customize criteria
 
 **`--max-clouds` FLOAT**
+
 - Maximum cloud cover % for highlighting (default: 30.0)
 - Only used with `--highlight-good`
 - Example: `--max-clouds 20`
 
 **`--min-darkness` FLOAT**
+
 - Minimum limiting magnitude for highlighting (default: 5.0)
 - Higher values = darker skies
 - Only used with `--highlight-good`
 - Example: `--min-darkness 6.0`
 
 **`--min-seeing` FLOAT**
+
 - Minimum seeing score (0-100) for highlighting (default: 60.0)
 - Higher values = better seeing
 - Only used with `--highlight-good`
@@ -502,24 +550,28 @@ nexstar multi-night clear-sky [OPTIONS]
 #### Data Export
 
 **`--export`, `-e` PATH**
+
 - Export chart data to file
 - Supported formats: `.csv`, `.json`
 - Includes both UTC and local timestamps
 - Exports all forecast fields
 - Chart is still displayed on screen
 - Examples:
+
   ```bash
   --export forecast.csv
   -e conditions.json
   ```
 
 **CSV Format:**
+
 ```csv
 timestamp_utc,timestamp_local,cloud_cover,transparency,seeing,darkness,wind,humidity,temperature
 2025-11-09T20:00:00+00:00,2025-11-09T12:00:00-08:00,15.0,transparent,85.0,5.8,8.5,45.0,58.0
-```
+```csv
 
 **JSON Format:**
+
 ```json
 [
   {
@@ -539,36 +591,43 @@ timestamp_utc,timestamp_local,cloud_cover,transparency,seeing,darkness,wind,humi
 #### Usage Examples
 
 **Basic chart for next 4 days:**
+
 ```bash
 nexstar multi-night clear-sky
 ```
 
 **Show only nighttime hours:**
+
 ```bash
 nexstar multi-night clear-sky --nighttime-only
 ```
 
 **Focus on key observing conditions:**
+
 ```bash
 nexstar multi-night clear-sky -c clouds,seeing,darkness
 ```
 
 **Highlight excellent observing hours:**
+
 ```bash
 nexstar multi-night clear-sky --highlight-good
 ```
 
 **Strict quality thresholds:**
+
 ```bash
 nexstar multi-night clear-sky --highlight-good --max-clouds 15 --min-darkness 6.5 --min-seeing 80
 ```
 
 **Export data for analysis:**
+
 ```bash
 nexstar multi-night clear-sky --export forecast.csv --days 7
 ```
 
 **Comprehensive example:**
+
 ```bash
 nexstar multi-night clear-sky \
   --days 7 \
@@ -584,7 +643,7 @@ nexstar multi-night clear-sky \
 
 The clear-sky chart displays conditions in a grid format:
 
-```
+```text
 Clear Sky Chart
 
            Saturday, 9    Sunday, 10
@@ -612,6 +671,7 @@ Note: Each block represents one hour. Time shown in 24-hour format (tens digit a
 ```
 
 **Legend:**
+
 - Each colored block (█) represents one hour
 - Colors range from optimal (dark blue) to poor (white/gray/red)
 - Green stars (★) indicate hours meeting quality thresholds
@@ -621,18 +681,21 @@ Note: Each block represents one hour. Time shown in 24-hour format (tens digit a
 #### Color Interpretations
 
 **Cloud Cover:** Dark blue (clear) → White (overcast)
+
 - Clear skies: Deep blue
 - Light clouds (10-30%): Medium blue
 - Moderate clouds (40-60%): Light blue/gray
 - Heavy clouds (70%+): Light gray/white
 
 **Seeing:** Dark blue (excellent) → White (too cloudy)
+
 - Excellent (80-100): Deep blue - Ideal for planetary observation
 - Good (60-80): Medium blue - Good for most targets
 - Average (40-60): Light blue - Acceptable conditions
 - Poor (<40): Gray - Challenging conditions
 
 **Darkness:** Black (dark sky) → White (daylight)
+
 - 6.5+ mag: Black - Darkest skies, faintest objects visible
 - 5.0-6.5 mag: Dark blue - Excellent for deep sky
 - 3.0-5.0 mag: Medium blue - Good conditions
@@ -640,6 +703,7 @@ Note: Each block represents one hour. Time shown in 24-hour format (tens digit a
 - Negative: Yellow/white - Dusk/day
 
 **Wind:** Dark blue (calm) → White (high)
+
 - 0-5 mph: Dark blue - Calm, ideal conditions
 - 6-16 mph: Medium blue - Acceptable
 - 17-28 mph: Light blue - May cause vibration
@@ -656,11 +720,13 @@ nexstar binoculars tonight [OPTIONS]
 ```
 
 **Options:**
+
 - `--model`, `-m` TEXT - Binocular model (e.g., 10x50, 7x50, 15x70, default: 10x50)
 - `--export`, `-e` - Export output to text file (auto-generates filename)
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - ISS passes visible with binoculars
 - Prominent constellations
 - Constellations partially visible
@@ -669,6 +735,7 @@ nexstar binoculars tonight [OPTIONS]
 - Bright stars visible
 
 **Example:**
+
 ```bash
 nexstar binoculars tonight
 nexstar binoculars tonight --model 15x70
@@ -685,10 +752,12 @@ nexstar naked-eye tonight [OPTIONS]
 ```
 
 **Options:**
+
 - `--export`, `-e` - Export output to text file (auto-generates filename)
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - ISS passes visible to naked eye
 - Prominent constellations
 - Constellations partially visible
@@ -697,6 +766,7 @@ nexstar naked-eye tonight [OPTIONS]
 - Bright stars visible
 
 **Example:**
+
 ```bash
 nexstar naked-eye tonight
 nexstar naked-eye tonight --export
@@ -723,11 +793,13 @@ nexstar aurora next [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 7 for `when`, 365 for `next`)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Kp index (geomagnetic activity)
 - Visibility probability
 - Cloud cover forecast
@@ -736,6 +808,7 @@ nexstar aurora next [OPTIONS]
 - For `next`: Probabilistic forecasts based on solar cycle
 
 **Example:**
+
 ```bash
 nexstar aurora tonight
 nexstar aurora when --days 14
@@ -759,11 +832,13 @@ nexstar eclipse solar [OPTIONS]
 ```
 
 **Options:**
+
 - `--years`, `-y` INTEGER - Years ahead to search (default: 10)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Eclipse type and date/time
 - Visibility from your location
 - Partial/total coverage percentage
@@ -771,6 +846,7 @@ nexstar eclipse solar [OPTIONS]
 - Viewing recommendations
 
 **Example:**
+
 ```bash
 nexstar eclipse next
 nexstar eclipse lunar --years 5
@@ -790,11 +866,13 @@ nexstar planets oppositions [OPTIONS]
 ```
 
 **Options:**
+
 - `--years`, `-y` INTEGER - Years ahead to search (default: 5)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Event date and time
 - Planets involved
 - Separation angle (for conjunctions)
@@ -802,6 +880,7 @@ nexstar planets oppositions [OPTIONS]
 - Best viewing times
 
 **Example:**
+
 ```bash
 nexstar planets conjunctions
 nexstar planets oppositions --years 10
@@ -821,11 +900,13 @@ nexstar meteors best [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 90)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Shower name and peak date
 - Zenith Hourly Rate (ZHR)
 - Moon phase and illumination
@@ -834,6 +915,7 @@ nexstar meteors best [OPTIONS]
 - Viewing recommendations
 
 **Example:**
+
 ```bash
 nexstar meteors next
 nexstar meteors best --days 180
@@ -853,11 +935,13 @@ nexstar comets next [OPTIONS]
 ```
 
 **Options:**
+
 - `--years`, `-y` INTEGER - Years ahead to search (default: 5)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Comet name and designation
 - Current/peak magnitude
 - Visibility dates
@@ -865,6 +949,7 @@ nexstar comets next [OPTIONS]
 - Equipment needed
 
 **Example:**
+
 ```bash
 nexstar comets visible
 nexstar comets next --years 10
@@ -880,12 +965,14 @@ nexstar iss passes [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 7)
 - `--min-altitude` FLOAT - Minimum altitude in degrees (default: 10.0)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Pass date and time
 - Maximum altitude
 - Duration
@@ -894,6 +981,7 @@ nexstar iss passes [OPTIONS]
 - Detailed pass information
 
 **Example:**
+
 ```bash
 nexstar iss passes
 nexstar iss passes --days 14 --min-altitude 30
@@ -913,11 +1001,13 @@ nexstar satellites starlink [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 7)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Satellite name
 - Pass date and time
 - Maximum altitude
@@ -925,6 +1015,7 @@ nexstar satellites starlink [OPTIONS]
 - Direction and duration
 
 **Example:**
+
 ```bash
 nexstar satellites bright
 nexstar satellites bright --days 14 --export
@@ -943,16 +1034,19 @@ nexstar zodiacal gegenschein [OPTIONS]
 ```
 
 **Options:**
+
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Optimal viewing periods
 - Best times of year
 - Moon phase requirements
 - Viewing recommendations
 
 **Example:**
+
 ```bash
 nexstar zodiacal zodiacal-light
 nexstar zodiacal gegenschein --export
@@ -967,11 +1061,13 @@ nexstar variables events [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 90)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Star name and type
 - Event type (eclipse, maximum, minimum)
 - Event date and time
@@ -979,6 +1075,7 @@ nexstar variables events [OPTIONS]
 - Visibility information
 
 **Example:**
+
 ```bash
 nexstar variables events
 nexstar variables events --days 180 --export
@@ -993,6 +1090,7 @@ nexstar occultations next [OPTIONS]
 ```
 
 **Options:**
+
 - `--days`, `-d` INTEGER - Days ahead to check (default: 90)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
@@ -1000,6 +1098,7 @@ nexstar occultations next [OPTIONS]
 **Note:** This is a framework for future occultation data integration. Specialized databases are required for accurate predictions.
 
 **Example:**
+
 ```bash
 nexstar occultations next
 nexstar occultations next --days 365 --export
@@ -1018,6 +1117,7 @@ nexstar events viewing <EVENT_NAME> [OPTIONS]
 ```
 
 **Options for `upcoming`:**
+
 - `--days`, `-d` INTEGER - Days ahead to show (default: 90, ignored if `--date` is used)
 - `--date` DATE - Find events around this date (YYYY-MM-DD format, e.g., 2025-12-14)
 - `--range`, `-r` INTEGER - Days before and after `--date` to search (default: 7, only used with `--date`)
@@ -1026,12 +1126,14 @@ nexstar events viewing <EVENT_NAME> [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Options for `viewing`:**
+
 - `--location`, `-l` TEXT - Location to check (default: your saved location)
 - `--max-distance` FLOAT - Maximum distance to search for better locations in miles (default: 500.0)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Output includes:**
+
 - Event name, date, and type
 - Description and viewing requirements
 - Visibility from your location
@@ -1040,6 +1142,7 @@ nexstar events viewing <EVENT_NAME> [OPTIONS]
 - Nearby dark sky sites if needed
 
 **Example:**
+
 ```bash
 # List upcoming events
 nexstar events upcoming --days 120
@@ -1058,6 +1161,7 @@ nexstar events viewing "Geminid" --export
 ```
 
 **Event Types:**
+
 - `meteor_shower` - Meteor shower peaks
 - `lunar_eclipse` - Lunar eclipses
 - `solar_eclipse` - Solar eclipses
@@ -1085,11 +1189,13 @@ nexstar vacation plan --location "LOCATION" [OPTIONS]
 ```
 
 **Options for `view`:**
+
 - `--location`, `-l` TEXT - Destination location (required)
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
 **Options for `dark-sites`:**
+
 - `--location`, `-l` TEXT - Destination location (required)
 - `--max-distance` FLOAT - Maximum distance in miles (default: 100.0)
 - `--min-bortle` INTEGER - Minimum Bortle class (1-9, default: 4)
@@ -1097,6 +1203,7 @@ nexstar vacation plan --location "LOCATION" [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Options for `plan`:**
+
 - `--location`, `-l` TEXT - Destination location (required)
 - `--days`, `-d` INTEGER - Number of days ahead (default: 7)
 - `--start-date` DATE - Start date (YYYY-MM-DD format)
@@ -1107,17 +1214,20 @@ nexstar vacation plan --location "LOCATION" [OPTIONS]
 **Output includes:**
 
 **`view`:**
+
 - Light pollution (Bortle class, SQM)
 - Viewing recommendations
 - Best times for observing
 
 **`dark-sites`:**
+
 - List of nearby International Dark Sky Places
 - Distance and direction
 - Bortle class and SQM values
 - Site descriptions
 
 **`plan`:**
+
 - Viewing conditions summary
 - Nearby dark sky sites
 - Aurora visibility (if applicable)
@@ -1127,6 +1237,7 @@ nexstar vacation plan --location "LOCATION" [OPTIONS]
 - Comprehensive recommendations
 
 **Example:**
+
 ```bash
 # Check viewing conditions
 nexstar vacation view --location "Fairbanks, AK"
@@ -1171,6 +1282,7 @@ nexstar data vacuum
 
 **`init-static` Command:**
 Populates the database with static reference data that works offline:
+
 - Meteor showers calendar
 - Constellations and asterisms
 - Dark sky sites (International Dark Sky Places)
@@ -1179,6 +1291,7 @@ Populates the database with static reference data that works offline:
 This should be run once after database setup to enable offline functionality.
 
 **Example:**
+
 ```bash
 nexstar data init-static
 nexstar data stats
@@ -1257,21 +1370,25 @@ Currently, the CLI does not use environment variables. All configuration is stor
 ## Tips
 
 1. **Use short options for quick commands:**
+
    ```bash
    nexstar multi-night clear-sky -n --highlight-good -c clouds,seeing -d 7
    ```
 
 2. **Combine export with filtering:**
+
    ```bash
    nexstar multi-night clear-sky -n -c darkness,seeing -e nighttime.csv
    ```
 
 3. **Create aliases for common commands:**
+
    ```bash
    alias sky-tonight='nexstar multi-night clear-sky -n --highlight-good -c clouds,seeing,darkness'
    ```
 
 4. **Check conditions before observing:**
+
    ```bash
    nexstar multi-night clear-sky --days 1 --nighttime-only --highlight-good
    ```
@@ -1279,21 +1396,25 @@ Currently, the CLI does not use environment variables. All configuration is stor
 ## Troubleshooting
 
 **"No location set" error:**
+
 ```bash
 nexstar location set --lat YOUR_LAT --lon YOUR_LON
 ```
 
 **"No nighttime forecast data available":**
+
 - Try without `--nighttime-only` flag
 - Check if you're in polar regions during summer/winter
 - Verify your location is set correctly
 
 **Empty or incomplete charts:**
+
 - Check internet connection (weather data requires API access)
 - Verify location is set correctly
 - Try reducing `--days` parameter
 
 **Export file issues:**
+
 - Ensure you have write permissions in the target directory
 - Use absolute paths or ensure working directory is correct
 - Check file extension is `.csv` or `.json`
@@ -1303,6 +1424,7 @@ nexstar location set --lat YOUR_LAT --lon YOUR_LON
 The CLI is organized into logical groups:
 
 **Telescope Control:**
+
 - `connect` - Connection management
 - `position` - Position queries
 - `goto` - Slew commands
@@ -1311,6 +1433,7 @@ The CLI is organized into logical groups:
 - `align` - Alignment commands
 
 **Planning & Observation:**
+
 - `telescope` - Telescope viewing guides
 - `multi-night` - Multi-night planning
 - `binoculars` - Binocular viewing
@@ -1320,6 +1443,7 @@ The CLI is organized into logical groups:
 - `events` - Space events calendar
 
 **Celestial Events:**
+
 - `aurora` - Aurora borealis visibility
 - `eclipse` - Lunar and solar eclipses
 - `planets` - Planetary events
@@ -1332,12 +1456,14 @@ The CLI is organized into logical groups:
 - `occultations` - Asteroid occultations
 
 **Configuration:**
+
 - `location` - Observer location
 - `time` - Time and date
 - `optics` - Telescope and eyepiece configuration
 - `ephemeris` - Ephemeris file management
 
 **Data & Management:**
+
 - `data` - Data import and management
 - `dashboard` - Full-screen dashboard
 

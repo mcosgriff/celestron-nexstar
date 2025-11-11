@@ -1,4 +1,4 @@
-# Fresh Database Migration Complete!
+# Fresh Database Migration Complete
 
 ## Summary
 
@@ -7,12 +7,14 @@ Successfully completed a fresh database migration using SQLAlchemy models and Al
 ## What Was Done
 
 ### 1. ✅ Setup SQLAlchemy & Alembic
+
 - Installed SQLAlchemy 2.0.44
 - Installed Alembic 1.17.1
 - Created SQLAlchemy models in `src/celestron_nexstar/api/models.py`
 - Configured Alembic environment
 
 ### 2. ✅ Created Fresh Migration
+
 - **File**: `alembic/versions/b5150659897f_initial_schema_with_fts5_support.py`
 - Complete schema definition with:
   - Objects table with all fields
@@ -22,6 +24,7 @@ Successfully completed a fresh database migration using SQLAlchemy models and Al
   - 3 triggers to keep FTS5 in sync
 
 ### 3. ✅ Executed Fresh Migration
+
 ```bash
 # Backup
 cp catalogs.db catalogs.db.backup
@@ -32,18 +35,20 @@ rm catalogs.db
 # Run migration
 alembic upgrade head
 # Creates empty database with schema
-```
+```bash
 
 ### 4. ✅ Re-imported All Data
+
 ```bash
 # Import custom catalog (151 objects)
 nexstar data import custom
 
 # Import OpenNGC (9,570 objects)
 nexstar data import openngc
-```
+```bash
 
 ### 5. ✅ Verified Data Integrity
+
 - Total objects: 9,721 ✓
 - FTS5 search working ✓
 - All catalogs present ✓
@@ -54,7 +59,7 @@ nexstar data import openngc
 
 ### Database Statistics
 
-```
+```text
 Total objects: 9,721
 Dynamic objects: 25 (planets/moons)
 Magnitude range: -12.6 to 15.0
@@ -78,7 +83,7 @@ Objects by Type:
   nebula         :    376
   planet         :      7
   star           :    559
-```
+```text
 
 ### Database Size
 
@@ -88,6 +93,7 @@ Objects by Type:
 | After (SQLAlchemy) | 2.9 MB | +200 KB (+7%) |
 
 Slight size increase is due to:
+
 - Better index organization
 - Proper type definitions
 - Metadata tracking
@@ -108,11 +114,12 @@ Slight size increase is due to:
 # Filter NGC galaxies (mag < 8)
 ✓ 5 results found
 ✓ All within magnitude range
-```
+```text
 
 ## Migration Benefits
 
 ### 1. Type Safety
+
 ```python
 # Before (raw SQL - no type checking)
 row = cursor.fetchone()  # Returns tuple/dict
@@ -120,9 +127,10 @@ row = cursor.fetchone()  # Returns tuple/dict
 # After (SQLAlchemy - full type checking)
 obj: CelestialObjectModel = session.get(CelestialObjectModel, id)
 # IDE autocomplete, validation, type hints
-```
+```python
 
 ### 2. Schema Migrations
+
 ```bash
 # Make changes to models
 # Generate migration automatically
@@ -133,9 +141,10 @@ alembic upgrade head
 
 # Rollback if needed
 alembic downgrade -1
-```
+```bash
 
 ### 3. Better Queries
+
 ```python
 # Before (error-prone string concatenation)
 cursor.execute(f"SELECT * FROM objects WHERE magnitude <= {mag}")
@@ -144,9 +153,10 @@ cursor.execute(f"SELECT * FROM objects WHERE magnitude <= {mag}")
 query = session.query(CelestialObjectModel)
     .filter(CelestialObjectModel.magnitude <= mag)
     .order_by(CelestialObjectModel.magnitude)
-```
+```python
 
 ### 4. Relationships (Future)
+
 ```python
 # Can now add related tables easily
 class Observation(Base):
@@ -157,6 +167,7 @@ class Observation(Base):
 ## Migration Files
 
 ### Created
+
 1. ✅ `src/celestron_nexstar/api/models.py` - SQLAlchemy models
 2. ✅ `alembic/` - Migration framework
 3. ✅ `alembic.ini` - Configuration
@@ -165,12 +176,14 @@ class Observation(Base):
 6. ✅ `src/celestron_nexstar/cli/data/catalogs.db` - Fresh database (2.9 MB)
 
 ### Preserved
+
 - ✅ `src/celestron_nexstar/cli/data/catalogs.db.backup` - Original backup
 - ✅ `src/celestron_nexstar/cli/data/catalogs.yaml` - Custom catalog source
 
 ## Schema Details
 
 ### Objects Table
+
 ```sql
 CREATE TABLE objects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,9 +204,10 @@ CREATE TABLE objects (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-```
+```sql
 
 ### Indexes
+
 ```sql
 CREATE INDEX ix_objects_name ON objects(name);
 CREATE INDEX ix_objects_catalog ON objects(catalog);
@@ -203,9 +217,10 @@ CREATE INDEX ix_objects_constellation ON objects(constellation);
 CREATE INDEX ix_objects_is_dynamic ON objects(is_dynamic);
 CREATE INDEX idx_catalog_number ON objects(catalog, catalog_number);
 CREATE INDEX idx_type_magnitude ON objects(object_type, magnitude);
-```
+```sql
 
 ### FTS5 Table
+
 ```sql
 CREATE VIRTUAL TABLE objects_fts USING fts5(
     name,
@@ -214,9 +229,10 @@ CREATE VIRTUAL TABLE objects_fts USING fts5(
     content=objects,
     content_rowid=id
 );
-```
+```sql
 
 ### Triggers
+
 ```sql
 -- Insert trigger
 CREATE TRIGGER objects_ai AFTER INSERT ON objects BEGIN
@@ -237,7 +253,7 @@ CREATE TRIGGER objects_au AFTER UPDATE ON objects BEGIN
         description = new.description
     WHERE rowid = new.id;
 END;
-```
+```sql
 
 ## Future Schema Changes
 
@@ -246,6 +262,7 @@ Now that Alembic is set up, future schema changes are easy:
 ### Example: Adding a New Field
 
 1. **Modify the model**:
+
 ```python
 # In models.py
 class CelestialObjectModel(Base):
@@ -254,11 +271,13 @@ class CelestialObjectModel(Base):
 ```
 
 2. **Generate migration**:
+
 ```bash
 alembic revision --autogenerate -m "Add surface_brightness field"
 ```
 
 3. **Review generated migration**:
+
 ```python
 # alembic/versions/xxxxx_add_surface_brightness_field.py
 def upgrade():
@@ -266,16 +285,18 @@ def upgrade():
 
 def downgrade():
     op.drop_column('objects', 'surface_brightness')
-```
+```python
 
 4. **Apply migration**:
+
 ```bash
 alembic upgrade head
-```
+```bash
 
 ### Example: Adding a New Table
 
 1. **Create model**:
+
 ```python
 class ObservationLog(Base):
     __tablename__ = "observations"
@@ -284,13 +305,14 @@ class ObservationLog(Base):
     object_id: Mapped[int] = mapped_column(ForeignKey("objects.id"))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-```
+```python
 
 2. **Generate and apply**:
+
 ```bash
 alembic revision --autogenerate -m "Add observation log"
 alembic upgrade head
-```
+```bash
 
 ## Testing
 
@@ -311,11 +333,13 @@ All functionality verified:
 ## Next Steps
 
 ### Immediate
+
 - ✅ Migration complete
 - ✅ Data verified
 - ✅ All tests passing
 
 ### Future (Optional)
+
 1. **Refactor database.py** to use SQLAlchemy sessions
 2. **Add relationships** between tables
 3. **Create observation log** table
@@ -323,6 +347,7 @@ All functionality verified:
 5. **Implement proper session management**
 
 ### Long Term
+
 - Consider using SQLAlchemy throughout codebase
 - Add database connection pooling
 - Implement query caching

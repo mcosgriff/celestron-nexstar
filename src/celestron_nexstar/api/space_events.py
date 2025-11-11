@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from .observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -22,8 +25,8 @@ __all__ = [
     "SpaceEvent",
     "SpaceEventType",
     "ViewingRequirement",
-    "get_upcoming_events",
     "find_best_viewing_location",
+    "get_upcoming_events",
 ]
 
 
@@ -356,35 +359,35 @@ SPACE_EVENTS_2025 = [
 SPACE_EVENTS_2026: list[SpaceEvent] = []
 
 
-def populate_space_events_database(db_session) -> None:
+def populate_space_events_database(db_session: Session) -> None:
     """
     Populate the database with space events from hardcoded lists.
-    
+
     This function should be called during database initialization to ensure
     space events are available offline.
-    
+
     Args:
         db_session: SQLAlchemy database session
     """
+
     from .models import SpaceEventModel
-    from datetime import timezone
-    
+
     # Ensure table exists
-    SpaceEventModel.__table__.create(db_session.bind, checkfirst=True)
-    
+    SpaceEventModel.__table__.create(db_session.bind, checkfirst=True)  # type: ignore[attr-defined]
+
     # Clear existing events (to allow re-population)
     db_session.query(SpaceEventModel).delete()
-    
+
     all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
-    
+
     for event in all_events:
         # Convert naive datetime to timezone-aware if needed
         event_date = event.date
         if event_date.tzinfo is None:
-            event_date = event_date.replace(tzinfo=timezone.utc)
-        
+            event_date = event_date.replace(tzinfo=UTC)
+
         req = event.viewing_requirements
-        
+
         model = SpaceEventModel(
             name=event.name,
             event_type=event.event_type.value,
@@ -402,7 +405,7 @@ def populate_space_events_database(db_session) -> None:
             url=event.url,
         )
         db_session.add(model)
-    
+
     db_session.commit()
     logger.info(f"Added {len(all_events)} space events to database")
 
@@ -414,18 +417,19 @@ def get_upcoming_events(
 ) -> list[SpaceEvent]:
     """
     Get upcoming space events within a date range.
-    
+
     Queries from the database first, falls back to hardcoded lists if database is empty.
-    
+
     Args:
         start_date: Start of date range (default: today)
         end_date: End of date range (default: 1 year from start)
         event_types: Filter by event types (default: all types)
-    
+
     Returns:
         List of SpaceEvent objects, sorted by date
     """
-    from datetime import UTC, timedelta, timezone
+    from datetime import UTC, timedelta
+
     from sqlalchemy import and_
 
     if start_date is None:
@@ -436,7 +440,7 @@ def get_upcoming_events(
     # Try to get from database first
     try:
         from .models import SpaceEventModel, get_db_session
-        
+
         with get_db_session() as db:
             query = db.query(SpaceEventModel).filter(
                 and_(
@@ -444,17 +448,17 @@ def get_upcoming_events(
                     SpaceEventModel.date <= end_date,
                 )
             )
-            
+
             # Filter by event type if specified
             if event_types:
                 type_values = [et.value for et in event_types]
                 query = query.filter(SpaceEventModel.event_type.in_(type_values))
-            
+
             # Order by date
             query = query.order_by(SpaceEventModel.date)
-            
+
             db_events = query.all()
-            
+
             # If we have events in the database, use them
             if db_events:
                 filtered = []
@@ -469,7 +473,7 @@ def get_upcoming_events(
                         equipment_needed=db_event.equipment_needed,
                         notes=db_event.viewing_notes,
                     )
-                    
+
                     event = SpaceEvent(
                         name=db_event.name,
                         event_type=SpaceEventType(db_event.event_type),
@@ -480,7 +484,7 @@ def get_upcoming_events(
                         url=db_event.url,
                     )
                     filtered.append(event)
-                
+
                 return filtered
     except Exception as e:
         logger.debug(f"Could not query space events from database: {e}, falling back to hardcoded lists")
@@ -490,21 +494,21 @@ def get_upcoming_events(
 
     # Filter by date range
     filtered = []
-    for e in all_events:
+    for event in all_events:
         # Make event date timezone-aware if it's naive
-        event_date = e.date
+        event_date = event.date
         if event_date.tzinfo is None:
-            event_date = event_date.replace(tzinfo=timezone.utc)
-        
+            event_date = event_date.replace(tzinfo=UTC)
+
         if start_date <= event_date <= end_date:
-            filtered.append(e)
+            filtered.append(event)
 
     # Filter by event type if specified
     if event_types:
-        filtered = [e for e in filtered if e.event_type in event_types]
+        filtered = [evt for evt in filtered if evt.event_type in event_types]
 
     # Sort by date
-    filtered.sort(key=lambda e: e.date)
+    filtered.sort(key=lambda evt: evt.date)
 
     return filtered
 
@@ -512,11 +516,11 @@ def get_upcoming_events(
 def is_event_visible_from_location(event: SpaceEvent, location: ObserverLocation) -> bool:
     """
     Check if an event is visible from a given location.
-    
+
     Args:
         event: Space event to check
         location: Observer location
-    
+
     Returns:
         True if event should be visible from this location
     """
@@ -531,10 +535,7 @@ def is_event_visible_from_location(event: SpaceEvent, location: ObserverLocation
     # Check longitude bounds
     if req.min_longitude is not None and location.longitude < req.min_longitude:
         return False
-    if req.max_longitude is not None and location.longitude > req.max_longitude:
-        return False
-
-    return True
+    return not (req.max_longitude is not None and location.longitude > req.max_longitude)
 
 
 def find_best_viewing_location(
@@ -544,18 +545,17 @@ def find_best_viewing_location(
 ) -> tuple[ObserverLocation | None, str]:
     """
     Find the best viewing location for an event based on current location.
-    
+
     Args:
         event: Space event to view
         current_location: User's current location
         max_distance_km: Maximum distance to search for better locations
-    
+
     Returns:
         Tuple of (best_location, recommendation_message)
         If current location is good, returns (None, message)
     """
-    from .light_pollution import get_light_pollution_data
-    from .light_pollution import BortleClass
+    from .light_pollution import BortleClass, get_light_pollution_data
     from .vacation_planning import find_dark_sites_near
 
     req = event.viewing_requirements
@@ -566,7 +566,7 @@ def find_best_viewing_location(
         # For now, return a message - could be enhanced with geocoding
         return (
             None,
-            f"Event is not visible from your current location. You may need to travel to a different region.",
+            "Event is not visible from your current location. You may need to travel to a different region.",
         )
 
     # Check if dark sky is required
@@ -602,6 +602,5 @@ def find_best_viewing_location(
     # Current location is good
     return (
         None,
-        f"Your current location should provide good viewing for this event.",
+        "Your current location should provide good viewing for this event.",
     )
-

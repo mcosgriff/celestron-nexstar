@@ -26,7 +26,7 @@ from ...api.observer import get_observer_location
 from ...api.optics import COMMON_BINOCULARS
 from ...api.sun_moon import calculate_sun_times
 from ...api.utils import ra_dec_to_alt_az
-from ...cli.utils.export import create_file_console, export_to_text
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
 
 app = typer.Typer(help="Binocular viewing commands")
@@ -208,7 +208,7 @@ def show_tonight(
     _show_tonight_content(binoculars, console)
 
 
-def _show_tonight_content(binoculars: str, output_console: Console) -> None:
+def _show_tonight_content(binoculars: str, output_console: Console | FileConsole) -> None:
     """
     Generate and display tonight viewing content for binoculars.
 
@@ -384,7 +384,7 @@ def _show_tonight_content(binoculars: str, output_console: Console) -> None:
         low_altitude_constellations = set()
 
         # Mark constellations already in the list that are below normal threshold
-        for constellation, alt, az in visible_constellations:
+        for constellation, alt, _az in visible_constellations:
             if alt < normal_threshold:
                 low_altitude_constellations.add(constellation.name)
 
@@ -539,7 +539,7 @@ def _show_tonight_content(binoculars: str, output_console: Console) -> None:
                 mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
 
                 # Constellation
-                constellation: str = star.constellation or "—"
+                constellation_name: str = star.constellation or "—"
 
                 # Description/notes
                 notes = star.description or ""
@@ -549,7 +549,7 @@ def _show_tonight_content(binoculars: str, output_console: Console) -> None:
                     direction,
                     f"{alt:.0f}°",
                     mag_str,
-                    constellation,
+                    constellation_name,
                     notes,
                 )
 

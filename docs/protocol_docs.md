@@ -111,22 +111,22 @@ The protocol includes static methods for handling the NexStar coordinate format.
 
 The following methods implement specific NexStar protocol commands:
 
-| Method | Description | Command | Response |
-| --- | --- | --- | --- |
-| `echo(char: str)` | Tests the connection. | `K<char>#` | `<char>#` |
-| `get_version()` | Gets the firmware version. | `V#` | `<major><minor>#` |
-| `get_model()` | Gets the telescope model number. | `m#` | `<model>#` |
-| `get_ra_dec_precise()` | Gets the precise RA/Dec position. | `E#` | `RRRRRRR,DDDDDDDDD#` |
-| `get_alt_az_precise()` | Gets the precise Alt/Az position. | `Z#` | `AAAAAAAA,EEEEEEEE#` |
-| `goto_ra_dec_precise(ra, dec)` | Slews to RA/Dec coordinates. | `R<RA>,<DEC>#` | `#` |
-| `goto_alt_az_precise(az, alt)` | Slews to Alt/Az coordinates. | `B<AZ>,<ALT>#` | `#` |
-| `sync_ra_dec_precise(ra, dec)` | Syncs to RA/Dec coordinates. | `S<RA>,<DEC>#` | `#` |
-| `is_goto_in_progress()` | Checks if a goto is in progress. | `L#` | `0#` or `1#` |
-| `cancel_goto()` | Cancels the current goto. | `M#` | `#` |
-| `variable_rate_motion(...)` | Initiates variable rate motion. | `P<params>#` | `#` |
-| `get_tracking_mode()` | Gets the tracking mode. | `t#` | `<mode>#` |
-| `set_tracking_mode(mode)` | Sets the tracking mode. | `T<mode>#` | `#` |
-| `get_location()` | Gets the observer's location. | `w#` | `<lat><lon>#` |
-| `set_location(lat, lon)` | Sets the observer's location. | `W<lat>,<lon>#` | `#` |
-| `get_time()` | Gets the date and time. | `h#` | `<time_bytes>#` |
-| `set_time(...)` | Sets the date and time. | `H<time_bytes>#` | `#` |
+| Method                         | Description                       | Command          | Response             |
+| ------------------------------ | --------------------------------- | ---------------- | -------------------- |
+| `echo(char: str)`              | Tests the connection.             | `K<char>#`       | `<char>#`            |
+| `get_version()`                | Gets the firmware version.        | `V#`             | `<major><minor>#`    |
+| `get_model()`                  | Gets the telescope model number.  | `m#`             | `<model>#`           |
+| `get_ra_dec_precise()`         | Gets the precise RA/Dec position. | `E#`             | `RRRRRRR,DDDDDDDDD#` |
+| `get_alt_az_precise()`         | Gets the precise Alt/Az position. | `Z#`             | `AAAAAAAA,EEEEEEEE#` |
+| `goto_ra_dec_precise(ra, dec)` | Slews to RA/Dec coordinates.      | `R<RA>,<DEC>#`   | `#`                  |
+| `goto_alt_az_precise(az, alt)` | Slews to Alt/Az coordinates.      | `B<AZ>,<ALT>#`   | `#`                  |
+| `sync_ra_dec_precise(ra, dec)` | Syncs to RA/Dec coordinates.      | `S<RA>,<DEC>#`   | `#`                  |
+| `is_goto_in_progress()`        | Checks if a goto is in progress.  | `L#`             | `0#` or `1#`         |
+| `cancel_goto()`                | Cancels the current goto.         | `M#`             | `#`                  |
+| `variable_rate_motion(...)`    | Initiates variable rate motion.   | `P<params>#`     | `#`                  |
+| `get_tracking_mode()`          | Gets the tracking mode.           | `t#`             | `<mode>#`            |
+| `set_tracking_mode(mode)`      | Sets the tracking mode.           | `T<mode>#`       | `#`                  |
+| `get_location()`               | Gets the observer's location.     | `w#`             | `<lat><lon>#`        |
+| `set_location(lat, lon)`       | Sets the observer's location.     | `W<lat>,<lon>#`  | `#`                  |
+| `get_time()`                   | Gets the date and time.           | `h#`             | `<time_bytes>#`      |
+| `set_time(...)`                | Sets the date and time.           | `H<time_bytes>#` | `#`                  |

@@ -11,21 +11,24 @@ This document lists online sources for astronomical data that can be imported in
 
 ### 1. Bright Stars (Navigation Stars)
 
-**Yale Bright Star Catalog (BSC)**
+#### Yale Bright Star Catalog (BSC)
+
 - **Source**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/bsc5p.html
 - **Format**: ASCII/FITS
 - **Objects**: ~9,000 stars brighter than magnitude 6.5
 - **License**: Public domain
 - **Notes**: Includes proper names, Bayer/Flamsteed designations, magnitudes, coordinates
 
-**Alternative: Hipparcos Catalog**
+#### Alternative: Hipparcos Catalog
+
 - **Source**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/hip.html
 - **Format**: ASCII/FITS
 - **Objects**: ~118,000 stars with high-precision astrometry
 - **License**: Public domain
 - **Notes**: More comprehensive but larger; may want to filter by magnitude
 
-**Alternative: SIMBAD**
+#### Alternative: SIMBAD
+
 - **Source**: http://simbad.u-strasbg.fr/simbad/
 - **Format**: API/CSV export
 - **License**: Free for non-commercial use
@@ -33,16 +36,19 @@ This document lists online sources for astronomical data that can be imported in
 
 ### 2. Messier Objects
 
-**Already Covered by OpenNGC**
+#### Already Covered by OpenNGC
+
 - OpenNGC includes all 110 Messier objects
 - No separate import needed if OpenNGC is imported
 
-**Alternative: Dedicated Messier Lists**
+#### Alternative: Dedicated Messier Lists
+
 - Various sources maintain Messier-only lists, but OpenNGC is more comprehensive
 
 ### 3. NGC/IC Objects
 
 **OpenNGC** (Already Implemented)
+
 - **Source**: https://github.com/mattiaverga/OpenNGC
 - **Format**: CSV
 - **Objects**: 13,970 NGC/IC objects
@@ -52,17 +58,20 @@ This document lists online sources for astronomical data that can be imported in
 ### 4. Caldwell Objects
 
 **OpenNGC** (Partial)
+
 - OpenNGC includes many Caldwell objects (they're NGC objects)
 - May need to add Caldwell designations separately
 
-**Alternative: Manual List**
+#### Alternative: Manual List
+
 - Caldwell catalog is small (109 objects)
 - Could be added as a mapping table (Caldwell number → NGC number)
 - Source: Various astronomy websites maintain lists
 
 ### 5. Planets and Moons
 
-**Dynamic Objects - Not Suitable for Static Database**
+#### Dynamic Objects - Not Suitable for Static Database
+
 - Planets and moons have changing positions
 - Already handled via ephemeris calculations in `api/ephemeris.py` and `api/solar_system.py`
 - **Recommendation**: Keep planet/moon entries in YAML as reference only (magnitude, descriptions)
@@ -70,7 +79,8 @@ This document lists online sources for astronomical data that can be imported in
 
 ### 6. Asterisms
 
-**Custom Groupings - Keep in YAML**
+#### Custom Groupings - Keep in YAML
+
 - Asterisms are custom star patterns, not official catalog objects
 - **Recommendation**: Keep in `catalogs.yaml` as they're user-defined groupings
 
@@ -126,12 +136,14 @@ This document lists online sources for astronomical data that can be imported in
 ## Example: Yale Bright Star Catalog Format
 
 The BSC5P catalog format:
-```
+
+```text
 HR  Number | Name | RA (hours) | Dec (degrees) | Vmag | ...
 ```
 
 Typical entry:
-```
+
+```text
 1|Alp And|0.13979167|29.090556|2.07|...
 ```
 
@@ -150,4 +162,3 @@ Typical entry:
 - **OpenNGC**: https://github.com/mattiaverga/OpenNGC
 - **SIMBAD**: http://simbad.u-strasbg.fr/simbad/
 - **VizieR**: https://vizier.cds.unistra.fr/ (catalog search service)
-

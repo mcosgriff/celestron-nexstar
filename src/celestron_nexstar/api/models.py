@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -450,7 +450,7 @@ class DarkSkySiteModel(Base):
 class SpaceEventModel(Base):
     """
     SQLAlchemy model for space events calendar.
-    
+
     Stores space events from sources like The Planetary Society calendar,
     including eclipses, meteor showers, planetary events, and space missions.
     This is static reference data that can be updated periodically.
@@ -465,10 +465,10 @@ class SpaceEventModel(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    
+
     # Description
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    
+
     # Viewing requirements
     min_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -478,7 +478,7 @@ class SpaceEventModel(Base):
     min_bortle_class: Mapped[int | None] = mapped_column(Integer, nullable=True)
     equipment_needed: Mapped[str | None] = mapped_column(String(50), nullable=True)
     viewing_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Source information
     source: Mapped[str] = mapped_column(String(100), nullable=False, default="Planetary Society")
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)

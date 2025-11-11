@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+
 try:
     from skyfield.api import load, wgs84
     from skyfield.sgp4lib import EarthSatellite
@@ -106,7 +107,7 @@ def get_bright_satellite_passes(
     end_time = start_time + timedelta(days=days)
 
     # For each bright satellite, get passes
-    for sat_key, (norad_id, name, magnitude) in BRIGHT_SATELLITES.items():
+    for _sat_key, (norad_id, name, magnitude) in BRIGHT_SATELLITES.items():
         if magnitude > min_magnitude:
             continue
 
@@ -154,7 +155,7 @@ def get_bright_satellite_passes(
                                     max_altitude_deg=max_alt,
                                     magnitude=magnitude,
                                     is_visible=True,
-                                    notes=f"Bright satellite pass - visible to naked eye",
+                                    notes="Bright satellite pass - visible to naked eye",
                                 )
                             )
                         i += 3
@@ -192,4 +193,3 @@ def get_starlink_passes(
     # For now, return empty list with note
     logger.info("Starlink tracking requires fetching TLE for many satellites - not yet fully implemented")
     return []
-

@@ -24,7 +24,7 @@ try:
     OPENMETEO_AVAILABLE = True
 except ImportError:
     OPENMETEO_AVAILABLE = False
-    np = None  # type: ignore[assignment]
+    np = None
 
 
 if TYPE_CHECKING:
@@ -484,38 +484,37 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
         # If we have enough recent forecasts covering the requested hours, return them
         # Check if we have forecasts covering at least the requested number of hours
-        if existing_forecasts and len(existing_forecasts) >= hours:
+        if existing_forecasts and len(existing_forecasts) >= hours and len(existing_forecasts) > 0:
             # Check if the forecasts cover a sufficient time range
             # Get the time span of cached forecasts
-            if len(existing_forecasts) > 0:
-                first_ts = existing_forecasts[0].forecast_timestamp
-                last_ts = existing_forecasts[-1].forecast_timestamp
-                if first_ts.tzinfo is None:
-                    first_ts = first_ts.replace(tzinfo=UTC)
-                if last_ts.tzinfo is None:
-                    last_ts = last_ts.replace(tzinfo=UTC)
+            first_ts = existing_forecasts[0].forecast_timestamp
+            last_ts = existing_forecasts[-1].forecast_timestamp
+            if first_ts.tzinfo is None:
+                first_ts = first_ts.replace(tzinfo=UTC)
+            if last_ts.tzinfo is None:
+                last_ts = last_ts.replace(tzinfo=UTC)
 
-                time_span_hours = (last_ts - first_ts).total_seconds() / 3600
+            time_span_hours = (last_ts - first_ts).total_seconds() / 3600
 
-                # If we have enough hours of coverage, use cached data
-                if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
-                    logger.debug(
-                        f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)"
-                    )
-                    forecasts = []
-                    for forecast in existing_forecasts[:hours]:
-                        forecasts.append(
-                            HourlySeeingForecast(
-                                timestamp=forecast.forecast_timestamp,
-                                seeing_score=forecast.seeing_score or 50.0,
-                                temperature_f=forecast.temperature_f,
-                                dew_point_f=forecast.dew_point_f,
-                                humidity_percent=forecast.humidity_percent,
-                                wind_speed_mph=forecast.wind_speed_mph,
-                                cloud_cover_percent=forecast.cloud_cover_percent,
-                            )
+            # If we have enough hours of coverage, use cached data
+            if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
+                logger.debug(
+                    f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)"
+                )
+                forecasts = []
+                for forecast in existing_forecasts[:hours]:
+                    forecasts.append(
+                        HourlySeeingForecast(
+                            timestamp=forecast.forecast_timestamp,
+                            seeing_score=forecast.seeing_score or 50.0,
+                            temperature_f=forecast.temperature_f,
+                            dew_point_f=forecast.dew_point_f,
+                            humidity_percent=forecast.humidity_percent,
+                            wind_speed_mph=forecast.wind_speed_mph,
+                            cloud_cover_percent=forecast.cloud_cover_percent,
                         )
-                    return forecasts
+                    )
+                return forecasts
 
         # If we get here, we need to fetch from API (either no cache, stale cache, or insufficient coverage)
         if existing_forecasts:
@@ -655,7 +654,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 ).delete()
 
                 # Insert new forecasts
-                for forecast in forecasts:  # type: ignore[assignment]
+                for forecast_item in forecasts:
                     # Check if forecast already exists for this timestamp
                     existing = (
                         session.query(WeatherForecastModel)
@@ -663,7 +662,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                             and_(
                                 WeatherForecastModel.latitude == location.latitude,
                                 WeatherForecastModel.longitude == location.longitude,
-                                WeatherForecastModel.forecast_timestamp == forecast.timestamp,
+                                WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
                             )
                         )
                         .first()
@@ -671,25 +670,25 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
                     if existing:
                         # Update existing forecast
-                        existing.temperature_f = forecast.temperature_f
-                        existing.dew_point_f = forecast.dew_point_f
-                        existing.humidity_percent = forecast.humidity_percent
-                        existing.cloud_cover_percent = forecast.cloud_cover_percent
-                        existing.wind_speed_mph = forecast.wind_speed_mph
-                        existing.seeing_score = forecast.seeing_score
+                        existing.temperature_f = forecast_item.temperature_f
+                        existing.dew_point_f = forecast_item.dew_point_f
+                        existing.humidity_percent = forecast_item.humidity_percent
+                        existing.cloud_cover_percent = forecast_item.cloud_cover_percent
+                        existing.wind_speed_mph = forecast_item.wind_speed_mph
+                        existing.seeing_score = forecast_item.seeing_score
                         existing.fetched_at = now
                     else:
                         # Insert new forecast
                         db_forecast = WeatherForecastModel(
                             latitude=location.latitude,
                             longitude=location.longitude,
-                            forecast_timestamp=forecast.timestamp,
-                            temperature_f=forecast.temperature_f,
-                            dew_point_f=forecast.dew_point_f,
-                            humidity_percent=forecast.humidity_percent,
-                            cloud_cover_percent=forecast.cloud_cover_percent,
-                            wind_speed_mph=forecast.wind_speed_mph,
-                            seeing_score=forecast.seeing_score,
+                            forecast_timestamp=forecast_item.timestamp,
+                            temperature_f=forecast_item.temperature_f,
+                            dew_point_f=forecast_item.dew_point_f,
+                            humidity_percent=forecast_item.humidity_percent,
+                            cloud_cover_percent=forecast_item.cloud_cover_percent,
+                            wind_speed_mph=forecast_item.wind_speed_mph,
+                            seeing_score=forecast_item.seeing_score,
                             fetched_at=now,
                         )
                         session.add(db_forecast)

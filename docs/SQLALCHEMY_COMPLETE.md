@@ -11,12 +11,14 @@ Successfully integrated SQLAlchemy ORM with Alembic migrations, added new tables
 **File**: `src/celestron_nexstar/api/models.py`
 
 **Models Created**:
+
 - ✅ `CelestialObjectModel` - Main objects table (existing, updated with relationships)
 - ✅ `MetadataModel` - Database metadata
 - ✅ `ObservationModel` - Observation logs (NEW)
 - ✅ `UserPreferenceModel` - User preferences (NEW)
 
 **Relationships Added**:
+
 ```python
 class CelestialObjectModel(Base):
     # One-to-many relationship
@@ -32,11 +34,12 @@ class ObservationModel(Base):
         "CelestialObjectModel",
         back_populates="observations"
     )
-```
+```python
 
 ### 2. Observations Table
 
 Complete observation logging with:
+
 - **Foreign key** to celestial objects
 - **Location**: lat/lon, location name
 - **Viewing conditions**: seeing quality (1-5), transparency (1-5), sky brightness (SQM)
@@ -48,6 +51,7 @@ Complete observation logging with:
 ### 3. User Preferences Table
 
 Flexible key-value store for user settings:
+
 - **Key**: Preference identifier (primary key)
 - **Value**: JSON string for flexibility
 - **Category**: Grouping (e.g., "telescope", "display", "location")
@@ -57,10 +61,12 @@ Flexible key-value store for user settings:
 ### 4. Migrations
 
 **Initial Migration**: `b5150659897f_initial_schema_with_fts5_support.py`
+
 - Created fresh schema with FTS5
 - All indexes and triggers
 
 **Second Migration**: `24a9158bd045_add_observations_and_user_preferences_.py`
+
 - Added observations table
 - Added user_preferences table
 - Preserved FTS5 tables
@@ -68,7 +74,8 @@ Flexible key-value store for user settings:
 ### 5. Database State
 
 **Current Schema**:
-```
+
+```text
 Tables:
   ✅ objects (9,721 rows)
   ✅ metadata
@@ -87,6 +94,7 @@ Foreign Keys: 1 (observations → objects)
 ## 📊 Schema Overview
 
 ### CelestialObjectModel
+
 ```python
 id: int (PK)
 name: str
@@ -106,9 +114,10 @@ parent_planet: str | None
 created_at: datetime
 updated_at: datetime
 observations: list[ObservationModel]  # Relationship
-```
+```python
 
 ### ObservationModel
+
 ```python
 id: int (PK)
 object_id: int (FK → objects.id)
@@ -130,9 +139,10 @@ sketch_path: str | None
 created_at: datetime
 updated_at: datetime
 celestial_object: CelestialObjectModel  # Relationship
-```
+```python
 
 ### UserPreferenceModel
+
 ```python
 key: str (PK)
 value: str  # JSON
@@ -140,7 +150,7 @@ category: str
 description: str | None
 created_at: datetime
 updated_at: datetime
-```
+```python
 
 ## 🔨 Next Steps (To Complete)
 
@@ -160,9 +170,10 @@ def get_by_id(self, object_id: int) -> CelestialObject | None:
     with self.Session() as session:
         model = session.get(CelestialObjectModel, object_id)
         return self._model_to_object(model) if model else None
-```
+```python
 
 **Benefits**:
+
 - Type safety
 - Better error handling
 - Automatic relationship loading
@@ -190,7 +201,7 @@ obj = CelestialObjectModel(
 )
 session.add(obj)
 session.commit()
-```
+```python
 
 ### Step 3: Add Observation Management
 
@@ -208,7 +219,7 @@ nexstar observation show 123
 
 # Export observations
 nexstar observation export observations.csv
-```
+```bash
 
 ### Step 4: Add Preferences Management
 
@@ -227,7 +238,7 @@ nexstar prefs list
 # Export/import
 nexstar prefs export my_settings.json
 nexstar prefs import my_settings.json
-```
+```bash
 
 ## 💡 Usage Examples
 
@@ -268,7 +279,7 @@ with db.Session() as session:
     print(f"{obj.name} has {len(obj.observations)} observations")
     for obs in obj.observations:
         print(f"  - {obs.observed_at}: {obs.rating}/5 stars")
-```
+```python
 
 ### Working with Preferences (Future)
 
@@ -300,31 +311,36 @@ with db.Session() as session:
     equipment_prefs = session.query(UserPreferenceModel)
         .filter(UserPreferenceModel.category == "equipment")
         .all()
-```
+```python
 
 ## 🎯 Benefits Achieved
 
 ### 1. Type Safety
+
 - Full type hints on all models
 - IDE autocomplete
 - Compile-time error checking
 
 ### 2. Relationships
+
 - Easy navigation: `object.observations`
 - Automatic join queries
 - Cascade deletes
 
 ### 3. Migrations
+
 - Automatic schema change detection
 - Version control for database
 - Easy rollback
 
 ### 4. Query Building
+
 - Safe, composable queries
 - No SQL injection risks
 - Readable code
 
 ### 5. Flexibility
+
 - Easy to add new tables
 - Easy to add new fields
 - Easy to change relationships
@@ -332,6 +348,7 @@ with db.Session() as session:
 ## 📈 Performance
 
 All existing performance maintained:
+
 - ✅ FTS5 search: <10ms
 - ✅ Filter queries: <20ms
 - ✅ Database size: 2.9 MB
@@ -360,16 +377,18 @@ alembic upgrade head --sql
 
 # Auto-generate migration after model changes
 alembic revision --autogenerate -m "Description"
-```
+```bash
 
 ## 📝 Files Created/Modified
 
 ### Created
+
 1. ✅ `src/celestron_nexstar/api/models.py` - Complete models with relationships
 2. ✅ `alembic/versions/b5150659897f_*.py` - Initial migration
 3. ✅ `alembic/versions/24a9158bd045_*.py` - Observations & preferences migration
 
 ### Ready for Update
+
 - ⏳ `src/celestron_nexstar/api/database.py` - Refactor to use sessions
 - ⏳ `src/celestron_nexstar/cli/data_import.py` - Use SQLAlchemy models
 - ⏳ Add observation management CLI
@@ -408,6 +427,7 @@ alembic revision --autogenerate -m "Description"
 The database is fully functional and ready to use! The models, relationships, and migrations are all in place. The existing API in `database.py` continues to work with the raw SQL approach while we have the foundation ready for a gradual migration to pure SQLAlchemy.
 
 You can start using the new tables immediately:
+
 - Log observations of your favorite objects
 - Store your telescope preferences
 - Track viewing conditions

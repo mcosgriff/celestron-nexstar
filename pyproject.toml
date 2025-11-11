@@ -32,6 +32,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "cachetools>=5.3.0",
     "skyfield>=1.49",
+    "astropy>=6.0.0",
     "geopy>=2.4.0",
     "prompt-toolkit>=3.0.0",
     "sqlalchemy>=2.0.0",
@@ -221,12 +222,42 @@ module = [
     "prompt_toolkit.*",
     "alembic",
     "alembic.*",
+    "astropy",
+    "astropy.*",
+    "retry_requests",
+    "retry_requests.*",
+    "pysqlite3",
+    "pysqlite3.*",
+    "openmeteo_requests",
+    "openmeteo_requests.*",
+    "aiohttp",
+    "aiohttp.*",
+    "nest_asyncio",
+    "timezonefinder",
+    "timezonefinder.*",
+    "requests_cache",
+    "requests_cache.*",
+    "dotenv",
+    "dotenv.*",
+    "sphinx",
+    "sphinx.*",
+    "PIL",
+    "PIL.*",
+    "numpy",
+    "numpy.*",
+    "pandas",
+    "pandas.*",
 ]
 ignore_missing_imports = true
 
 # Allow untyped decorators in CLI code (typer decorators don't have stubs)
 [[tool.mypy.overrides]]
 module = "celestron_nexstar.cli.*"
+disallow_untyped_decorators = false
+
+# Allow untyped decorators for cachetools.cached (doesn't preserve types)
+[[tool.mypy.overrides]]
+module = "celestron_nexstar.api.catalogs"
 disallow_untyped_decorators = false
 
 [dependency-groups]

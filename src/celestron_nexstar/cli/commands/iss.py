@@ -12,10 +12,11 @@ from rich.console import Console
 from rich.table import Table
 
 from ...api.compass import azimuth_to_compass_8point
-from ...api.iss_tracking import get_iss_passes_cached
+from ...api.iss_tracking import ISSPass, get_iss_passes_cached
 from ...api.models import get_db_session
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.observer import ObserverLocation, get_observer_location
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="International Space Station pass predictions")
 console = Console()
@@ -24,6 +25,7 @@ console = Console()
 def _generate_export_filename(command: str = "iss") -> Path:
     """Generate export filename for ISS commands."""
     from datetime import datetime
+
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -43,6 +45,7 @@ def _generate_export_filename(command: str = "iss") -> Path:
 def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
     """Format datetime in local timezone."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     try:
@@ -70,7 +73,9 @@ def show_passes(
     """Find ISS passes visible from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     now = datetime.now(UTC)
@@ -99,7 +104,13 @@ def show_passes(
     _show_passes_content(console, location, iss_passes, days, min_altitude)
 
 
-def _show_passes_content(output_console: Console, location, iss_passes: list, days: int, min_altitude: float) -> None:
+def _show_passes_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    iss_passes: list[ISSPass],
+    days: int,
+    min_altitude: float,
+) -> None:
     """Display ISS pass information."""
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
@@ -162,10 +173,16 @@ def _show_passes_content(output_console: Console, location, iss_passes: list, da
             duration_min = iss_pass.duration_seconds // 60
             quality = iss_pass.quality_rating
 
-            output_console.print(f"    Rise: {rise_time_str} from {azimuth_to_compass_8point(iss_pass.rise_azimuth_deg)}")
-            output_console.print(f"    Max: {max_time_str} at {iss_pass.max_altitude_deg:.0f}° ({azimuth_to_compass_8point(iss_pass.max_azimuth_deg)})")
+            output_console.print(
+                f"    Rise: {rise_time_str} from {azimuth_to_compass_8point(iss_pass.rise_azimuth_deg)}"
+            )
+            output_console.print(
+                f"    Max: {max_time_str} at {iss_pass.max_altitude_deg:.0f}° ({azimuth_to_compass_8point(iss_pass.max_azimuth_deg)})"
+            )
             output_console.print(f"    Set: {set_time_str} to {azimuth_to_compass_8point(iss_pass.set_azimuth_deg)}")
-            output_console.print(f"    Duration: {duration_min}m {iss_pass.duration_seconds % 60}s | Quality: {quality}")
+            output_console.print(
+                f"    Duration: {duration_min}m {iss_pass.duration_seconds % 60}s | Quality: {quality}"
+            )
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")
     output_console.print("  • [green]ISS is visible to naked eye - no equipment needed![/green]")
@@ -178,4 +195,3 @@ def _show_passes_content(output_console: Console, location, iss_passes: list, da
 
 if __name__ == "__main__":
     app()
-

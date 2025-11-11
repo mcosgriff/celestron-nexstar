@@ -4,16 +4,17 @@ Comet Tracking Commands
 Find bright comets visible from your location.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.comets import get_upcoming_comets, get_visible_comets
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.comets import CometVisibility, get_upcoming_comets, get_visible_comets
+from ...api.observer import ObserverLocation, get_observer_location
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Comet tracking commands")
 console = Console()
@@ -21,7 +22,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "comets") -> Path:
     """Generate export filename for comet commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -50,7 +50,9 @@ def show_visible(
     """Find bright comets visible from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     comets = get_visible_comets(location, months_ahead=months, max_magnitude=max_magnitude)
@@ -80,7 +82,9 @@ def show_next(
     """Find upcoming bright comets."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     comets = get_upcoming_comets(location, months_ahead=months)
@@ -99,9 +103,12 @@ def show_next(
     _show_comets_content(console, location, comets, months)
 
 
-def _show_comets_content(output_console: Console, location, comets: list, months: int) -> None:
+def _show_comets_content(
+    output_console: Console | FileConsole, location: ObserverLocation, comets: list[CometVisibility], months: int
+) -> None:
     """Display comet information."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -152,10 +159,7 @@ def _show_comets_content(output_console: Console, location, comets: list, months
             mag_str = f"[dim]{vis.magnitude:.1f}[/dim]"
 
         # Format visibility
-        if vis.is_visible:
-            visible_str = "[green]✓ Yes[/green]"
-        else:
-            visible_str = "[dim]✗ No[/dim]"
+        visible_str = "[green]✓ Yes[/green]" if vis.is_visible else "[dim]✗ No[/dim]"
 
         # Format altitude
         alt_str = f"{vis.altitude:.0f}°"
@@ -195,4 +199,3 @@ def _show_comets_content(output_console: Console, location, comets: list, months
 
 if __name__ == "__main__":
     app()
-

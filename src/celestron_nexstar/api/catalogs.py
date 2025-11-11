@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import yaml
 from cachetools import TTLCache, cached
@@ -201,7 +202,7 @@ def get_all_catalogs_dict() -> dict[str, list[CelestialObject]]:
     Returns:
         Dictionary mapping catalog names to lists of CelestialObject instances
     """
-    return _load_all_catalogs()
+    return cast(dict[str, list[CelestialObject]], _load_all_catalogs())
 
 
 # Module-level cached reference for backwards compatibility
@@ -258,7 +259,7 @@ def get_catalog(catalog_name: str) -> list[CelestialObject]:
     Returns:
         List of CelestialObject instances from the catalog
     """
-    return _load_catalog_from_yaml(catalog_name)
+    return cast(list[CelestialObject], _load_catalog_from_yaml(catalog_name))
 
 
 def get_all_objects() -> list[CelestialObject]:

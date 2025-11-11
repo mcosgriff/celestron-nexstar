@@ -11,6 +11,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 **File**: `src/celestron_nexstar/api/database.py` (663 lines)
 
 **Schema Features**:
+
 - Main `objects` table with 18 columns
 - 6 indexes for fast lookups (name, catalog, magnitude, type, constellation, dynamic)
 - **FTS5 full-text search** for fuzzy matching
@@ -18,6 +19,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 - Metadata table for versioning
 
 **Key Fields**:
+
 ```sql
 - id, name, common_name
 - catalog, catalog_number
@@ -26,13 +28,14 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 - description, constellation
 - is_dynamic, ephemeris_name, parent_planet
 - timestamps (created_at, updated_at)
-```
+```text
 
 ### 2. Database API
 
 **Class**: `CatalogDatabase`
 
 **Methods**:
+
 - `get_by_id(id)` - Get object by ID
 - `get_by_name(name)` - Exact name match
 - `search(query, limit)` - **FTS5 fuzzy search**
@@ -42,6 +45,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 - `get_stats()` - Database statistics
 
 **Features**:
+
 - Connection pooling with WAL mode
 - 64MB cache for performance
 - Context manager support
@@ -52,6 +56,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 **File**: `scripts/migrate_catalog_to_sqlite.py` (234 lines)
 
 **Features**:
+
 - Reads existing `catalogs.yaml`
 - Parses catalog numbers (M31 → 31, NGC 224 → 224)
 - Detects dynamic objects (planets/moons)
@@ -60,6 +65,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 - Statistics and validation
 
 **Usage**:
+
 ```bash
 python scripts/migrate_catalog_to_sqlite.py --verbose
 ```
@@ -67,6 +73,7 @@ python scripts/migrate_catalog_to_sqlite.py --verbose
 ## Migration Results
 
 ### Before (YAML)
+
 - **Format**: YAML text file
 - **Size**: 1,268 lines
 - **Objects**: 152
@@ -74,6 +81,7 @@ python scripts/migrate_catalog_to_sqlite.py --verbose
 - **Memory**: Load entire file
 
 ### After (SQLite)
+
 - **Format**: SQLite database
 - **Size**: 0.11 MB (110 KB)
 - **Objects**: 152
@@ -82,7 +90,7 @@ python scripts/migrate_catalog_to_sqlite.py --verbose
 
 ### Database Statistics
 
-```
+```text
 Total Objects: 152
 Dynamic Objects: 26 (planets + moons)
 Magnitude Range: -12.6 to 15.8
@@ -111,13 +119,15 @@ Objects by Type:
 
 All tests **passed** ✓
 
-### Test Results:
+### Test Results
+
 1. **Get by name**: M31 retrieved instantly
 2. **FTS5 search**: "nebula" → 5 results in <1ms
 3. **Filter by catalog**: Messier objects retrieved and sorted
 4. **Filter by magnitude**: Bright objects (mag < 2.0) → 10 results
 
-### Search Examples:
+### Search Examples
+
 ```python
 # Fuzzy search - "andromeda"
 db.search("andromeda")
@@ -134,34 +144,38 @@ db.search("jupiter")
 → Io (Jupiter I)
 → Europa (Jupiter II)
 → Callisto (Jupiter IV)
-```
+```text
 
 ## Technical Achievements
 
 ### ✅ Full-Text Search (FTS5)
+
 - **SQLite FTS5** extension for fuzzy matching
 - Indexes: name, common_name, description
 - Automatic ranking by relevance
 - Sub-millisecond search times
 
 ### ✅ Smart Indexing
+
 - 6 B-tree indexes for common queries
 - Catalog + catalog_number composite index
 - Optimal query planning
 
 ### ✅ Dynamic Object Support
+
 - `is_dynamic` flag for planets/moons
 - Ephemeris integration ready
 - Parent planet tracking for moons
 
 ### ✅ Backward Compatible
+
 - Original YAML still exists
 - No breaking API changes
 - Migration is non-destructive
 
 ## Database File Location
 
-```
+```text
 src/celestron_nexstar/cli/data/
 ├── catalogs.yaml     # Original (preserved)
 └── catalogs.db       # New database (110 KB)
@@ -169,9 +183,10 @@ src/celestron_nexstar/cli/data/
 
 ## Next Steps: Phase 2
 
-**Ready to import 40,000+ objects!**
+#### Ready to import 40,000+ objects
 
 Phase 2 will add:
+
 - OpenNGC catalog (13,957 objects)
 - SAO star catalog (9,000 filtered)
 - Double stars (2,000)
@@ -222,7 +237,7 @@ db = get_database()
 print(f'Objects: {db.get_stats().total_objects}')
 print(f'Catalogs: {db.get_all_catalogs()}')
 "
-```
+```text
 
 ## Key Learnings
 

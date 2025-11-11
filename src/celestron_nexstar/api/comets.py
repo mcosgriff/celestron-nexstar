@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+
 try:
-    from skyfield.api import Loader, Topos, load
-    from skyfield.searchlib import find_minima
+    # Import skyfield to check availability (imports not used directly in this module)
+    import skyfield.api  # noqa: F401
 
     SKYFIELD_AVAILABLE = True
 except ImportError:
@@ -27,8 +29,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "Comet",
     "CometVisibility",
-    "get_visible_comets",
     "get_upcoming_comets",
+    "get_visible_comets",
 ]
 
 
@@ -99,10 +101,8 @@ KNOWN_COMETS = [
 ]
 
 
-def _get_skyfield_directory():
+def _get_skyfield_directory() -> Path:
     """Get the Skyfield cache directory."""
-    from pathlib import Path
-
     return Path.home() / ".skyfield"
 
 
@@ -229,4 +229,3 @@ def get_upcoming_comets(
         List of CometVisibility objects, sorted by peak date
     """
     return get_visible_comets(location, months_ahead=months_ahead, max_magnitude=10.0)
-

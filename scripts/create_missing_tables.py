@@ -9,6 +9,7 @@ Run this if migrations aren't available or haven't been run yet.
 import sys
 from pathlib import Path
 
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
@@ -16,7 +17,7 @@ sys.path.insert(0, str(project_root / "src"))
 from sqlalchemy import inspect
 
 from celestron_nexstar.api.database import get_database
-from celestron_nexstar.api.models import Base, ISSPassModel, ConstellationModel, AsterismModel, MeteorShowerModel
+from celestron_nexstar.api.models import AsterismModel, Base, ConstellationModel, ISSPassModel, MeteorShowerModel
 
 
 def create_missing_tables() -> None:
@@ -59,7 +60,7 @@ def create_missing_tables() -> None:
     # Verify all tables exist now
     inspector = inspect(engine)
     final_tables = set(inspector.get_table_names())
-    missing = [name for name in required_tables.keys() if name not in final_tables]
+    missing = [name for name in required_tables if name not in final_tables]
     if missing:
         print(f"\n⚠ Warning: Some tables are still missing: {missing}")
         print("You may need to run Alembic migrations manually:")

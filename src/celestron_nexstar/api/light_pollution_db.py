@@ -28,7 +28,7 @@ import asyncio
 import logging
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib import request
 
 from sqlalchemy import text
@@ -485,12 +485,12 @@ def _process_png_to_database(
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
-        img = Image.open(png_path)
+        img: Any = Image.open(png_path)
     width, height = img.size
 
     # Convert to RGB if needed
     if img.mode != "RGB":
-        img = img.convert("RGB")  # type: ignore[assignment]
+        img = cast(Any, img.convert("RGB"))
 
     # Calculate lat/lon step per pixel
     lat_step = (lat_max - lat_min) / height
@@ -522,7 +522,7 @@ def _process_png_to_database(
         numpy_available = True
     except ImportError:
         numpy_available = False
-        np = None  # type: ignore[assignment]
+        np = cast(Any, None)
 
     # Calculate sampling step
     y_step = max(1, int(grid_resolution / lat_step))

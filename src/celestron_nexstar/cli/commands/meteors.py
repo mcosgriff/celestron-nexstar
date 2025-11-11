@@ -4,16 +4,21 @@ Enhanced Meteor Shower Commands
 Find meteor showers with moon phase predictions and best viewing windows.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.meteor_shower_predictions import get_best_viewing_windows, get_enhanced_meteor_predictions
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.meteor_shower_predictions import (
+    MeteorShowerPrediction,
+    get_best_viewing_windows,
+    get_enhanced_meteor_predictions,
+)
+from ...api.observer import ObserverLocation, get_observer_location
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Enhanced meteor shower predictions")
 console = Console()
@@ -21,7 +26,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "meteors") -> Path:
     """Generate export filename for meteor commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -49,7 +53,9 @@ def show_next(
     """Find upcoming meteor showers with moon phase predictions."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     predictions = get_enhanced_meteor_predictions(location, months_ahead=months)
@@ -71,7 +77,9 @@ def show_next(
 @app.command("best")
 def show_best(
     months: int = typer.Option(12, "--months", "-m", help="Number of months ahead to search (default: 12)"),
-    min_quality: str = typer.Option("good", "--min-quality", help="Minimum viewing quality: excellent, good, fair, poor (default: good)"),
+    min_quality: str = typer.Option(
+        "good", "--min-quality", help="Minimum viewing quality: excellent, good, fair, poor (default: good)"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
     export_path: str | None = typer.Option(
         None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
@@ -80,7 +88,9 @@ def show_best(
     """Find meteor showers with best viewing conditions (minimal moonlight)."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     predictions = get_best_viewing_windows(location, months_ahead=months, min_quality=min_quality)
@@ -99,9 +109,15 @@ def show_best(
     _show_predictions_content(console, location, predictions, months)
 
 
-def _show_predictions_content(output_console: Console, location, predictions: list, months: int) -> None:
+def _show_predictions_content(
+    output_console: Console | FileConsole,
+    location: ObserverLocation,
+    predictions: list[MeteorShowerPrediction],
+    months: int,
+) -> None:
     """Display meteor shower predictions."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -169,7 +185,9 @@ def _show_predictions_content(output_console: Console, location, predictions: li
 
         output_console.print(f"\n  [bold]{pred.shower.name}[/bold] - {date_str}")
         output_console.print(f"    Peak ZHR: {pred.zhr_peak} → Adjusted: {pred.zhr_adjusted:.0f} (moon impact)")
-        output_console.print(f"    Moon: {pred.moon_illumination:.0%} illuminated at {pred.moon_altitude:.0f}° altitude")
+        output_console.print(
+            f"    Moon: {pred.moon_illumination:.0%} illuminated at {pred.moon_altitude:.0f}° altitude"
+        )
         output_console.print(f"    Radiant: {pred.radiant_altitude:.0f}° altitude")
         output_console.print(f"    Quality: {pred.viewing_quality.capitalize()} - {pred.notes}")
 
@@ -184,4 +202,3 @@ def _show_predictions_content(output_console: Console, location, predictions: li
 
 if __name__ == "__main__":
     app()
-

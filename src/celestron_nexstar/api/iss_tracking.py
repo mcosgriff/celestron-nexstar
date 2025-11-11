@@ -166,7 +166,7 @@ def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
                 return (line1, line2, fetch_time)
             else:
                 msg = "Invalid TLE format from CelesTrak"
-                raise RuntimeError(msg)
+                raise RuntimeError(msg) from None
 
     except Exception as e:
         msg = f"Failed to fetch ISS TLE: {e}"
