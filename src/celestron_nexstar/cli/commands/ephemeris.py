@@ -225,10 +225,11 @@ def download(
     files and sets interactively.
 
     File sets:
-      minimal  - Planets + Jupiter moons (~20 MB)
-      standard - Planets + Jupiter & Saturn moons (~47 MB)
-      complete - All major moons except Mars (~60 MB)
-      full     - Everything including Mars moons (~63 MB)
+      recommended - Skyfield's default (DE421 + Jupiter moons) (~20 MB) [RECOMMENDED]
+      minimal     - Same as recommended (alias) (~20 MB)
+      standard    - Planets + Jupiter & Saturn moons (~47 MB)
+      complete    - All major moons except Mars (~60 MB)
+      full        - Everything including Mars moons (~63 MB)
 
     Examples:
         # Interactive selection
@@ -238,7 +239,8 @@ def download(
         nexstar ephemeris download de440s
         nexstar ephemeris download jup365
 
-        # Download file set
+        # Download file set (recommended is Skyfield's default)
+        nexstar ephemeris download recommended
         nexstar ephemeris download standard
         nexstar ephemeris download complete
 
@@ -260,7 +262,9 @@ def download(
             )
 
             with console.status(f"[bold green]Downloading {file} set..."):
-                downloaded = download_set(cast(Literal["minimal", "standard", "complete", "full"], file), force=force)
+                downloaded = download_set(
+                    cast(Literal["recommended", "minimal", "standard", "complete", "full"], file), force=force
+                )
 
             print_success(f"Downloaded {len(downloaded)} files")
             for path in downloaded:
@@ -320,13 +324,14 @@ def show_sets() -> None:
         table.add_column("Description", style="white")
 
         set_descriptions = {
-            "minimal": "Planets + Jupiter moons (good for casual use)",
-            "standard": "Planets + Jupiter & Saturn moons (recommended)",
+            "recommended": "Skyfield's default recommendation (DE421 + Jupiter moons)",
+            "minimal": "Same as recommended (alias for backwards compatibility)",
+            "standard": "Planets + Jupiter & Saturn moons",
             "complete": "All major planet moons except Mars",
             "full": "Everything including challenging Mars moons",
         }
 
-        for set_name in ["minimal", "standard", "complete", "full"]:
+        for set_name in ["recommended", "minimal", "standard", "complete", "full"]:
             info = get_set_info(set_name)
             installed_count = cast(int, info["installed_count"])
             file_count = cast(int, info["file_count"])
@@ -339,8 +344,10 @@ def show_sets() -> None:
             else:
                 status = "[dim]Not installed[/dim]"
 
+            # Highlight recommended set
+            set_name_display = f"[bold green]★ {set_name}[/bold green]" if set_name == "recommended" else set_name
             table.add_row(
-                set_name,
+                set_name_display,
                 str(info["file_count"]),
                 f"{info['total_size_mb']:.0f} MB",
                 status,
@@ -521,9 +528,12 @@ def _select_ephemeris_download_interactive() -> str | None:
         else:
             # It's a set
             set_info_dict = info
-            name = f"{key.title()} Set"
+            # Highlight recommended set
+            name = "[bold green]★ Recommended Set[/bold green]" if key == "recommended" else f"{key.title()} Set"
             size = f"{set_info_dict['total_size_mb']:.0f} MB"
-            description = f"{set_info_dict['file_count']} files"
+            description = (
+                "[dim]Skyfield's default[/dim]" if key == "recommended" else f"{set_info_dict['file_count']} files"
+            )
 
         return (name, "[cyan]File[/cyan]" if item_type == "file" else "[yellow]Set[/yellow]", size, description)
 
