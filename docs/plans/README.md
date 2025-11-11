@@ -1,14 +1,12 @@
 # Future Plans and Roadmaps
 
-This directory contains planning documents for future features and enhancements.
+**Note**: Planning documents have been moved to GitHub Issues for better tracking and collaboration.
 
-## Contents
+See [GitHub Issues](https://github.com/mcosgriff/celestron-nexstar/issues) for current plans and feature requests.
 
-- **CATALOG_EXPANSION_PLAN.md** - Plan to expand from 9,722 to 40,000+ objects (Phase 1 & 2 complete)
-- **WHATS_VISIBLE_TONIGHT_PLAN.md** - Plan for intelligent observing planner feature
-- **FULL_SCREEN_TUI_PLAN.md** - Plan for full-screen terminal user interface
+## Previous Plans (Now Tracked as Issues)
 
-## Status
-
-These are planning documents. Implementation status may vary. Check individual documents for current status.
+- **Catalog Expansion** - Issues #9, #10, #11, #12
+- **Full-Screen TUI** - Issues #13, #14, #15, #16, #17
+- **What's Visible Tonight?** - ✅ Implemented (see `nexstar tonight` command)
 
