@@ -66,16 +66,22 @@ def upgrade() -> None:
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
 
-    if "objects_fts" in existing_tables:
-        op.drop_table("objects_fts")
-    if "objects_fts_config" in existing_tables:
-        op.drop_table("objects_fts_config")
-    if "objects_fts_data" in existing_tables:
-        op.drop_table("objects_fts_data")
-    if "objects_fts_idx" in existing_tables:
-        op.drop_table("objects_fts_idx")
-    if "objects_fts_docsize" in existing_tables:
-        op.drop_table("objects_fts_docsize")
+    # FTS5 creates these internal tables automatically - only drop if they exist
+    fts_tables = [
+        "objects_fts",
+        "objects_fts_config",
+        "objects_fts_data",
+        "objects_fts_idx",
+        "objects_fts_docsize",
+    ]
+    
+    for fts_table in fts_tables:
+        if fts_table in existing_tables:
+            try:
+                op.execute(f"DROP TABLE IF EXISTS {fts_table}")
+            except Exception:
+                # Ignore errors - table might be locked or already dropped
+                pass
 
     # Drop light_pollution_grid if it exists
     if "light_pollution_grid" in existing_tables:
@@ -85,13 +91,26 @@ def upgrade() -> None:
             if "idx_lp_region" in [idx["name"] for idx in inspector.get_indexes("light_pollution_grid")]:
                 batch_op.drop_index(batch_op.f("idx_lp_region"))
         op.drop_table("light_pollution_grid")
-    with op.batch_alter_table("iss_passes", schema=None) as batch_op:
-        batch_op.create_index("idx_location_fetched", ["latitude", "longitude", "fetched_at"], unique=False)
-        batch_op.create_index("idx_location_rise_time", ["latitude", "longitude", "rise_time"], unique=False)
-        batch_op.create_index(batch_op.f("ix_iss_passes_fetched_at"), ["fetched_at"], unique=False)
-        batch_op.create_index(batch_op.f("ix_iss_passes_latitude"), ["latitude"], unique=False)
-        batch_op.create_index(batch_op.f("ix_iss_passes_longitude"), ["longitude"], unique=False)
-        batch_op.create_index(batch_op.f("ix_iss_passes_rise_time"), ["rise_time"], unique=False)
+    # Create indexes on iss_passes if they don't exist (may have been created by a1b2c3d4e5f6)
+    if "iss_passes" in existing_tables:
+        existing_indexes = [idx["name"] for idx in inspector.get_indexes("iss_passes")]
+        indexes_to_create = [
+            ("idx_location_fetched", ["latitude", "longitude", "fetched_at"]),
+            ("idx_location_rise_time", ["latitude", "longitude", "rise_time"]),
+            ("ix_iss_passes_fetched_at", ["fetched_at"]),
+            ("ix_iss_passes_latitude", ["latitude"]),
+            ("ix_iss_passes_longitude", ["longitude"]),
+            ("ix_iss_passes_rise_time", ["rise_time"]),
+        ]
+        
+        for index_name, columns in indexes_to_create:
+            if index_name not in existing_indexes:
+                try:
+                    columns_str = ", ".join(columns)
+                    op.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON iss_passes ({columns_str})")
+                except Exception:
+                    # Index might have been created, ignore
+                    pass
 
     with op.batch_alter_table("objects", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("idx_common_name"))

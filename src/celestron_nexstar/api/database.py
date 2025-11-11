@@ -351,6 +351,47 @@ class CatalogDatabase:
                 session.commit()
                 logger.info("FTS table created and populated")
 
+    def repopulate_fts_table(self) -> None:
+        """
+        Repopulate the FTS table with all existing objects.
+
+        Useful if objects were inserted before the FTS table was created,
+        or if the FTS table got out of sync.
+
+        Note: For external content tables (content=objects), we need to use
+        INSERT OR REPLACE to properly sync the FTS table.
+        """
+        self.ensure_fts_table()  # Make sure table exists
+
+        with self._get_session() as session:
+            # For external content FTS tables, we need to rebuild the index
+            # Delete all existing FTS data first
+            try:
+                session.execute(text("DELETE FROM objects_fts"))
+                session.commit()
+            except Exception:
+                pass  # Table might be empty or not exist
+
+            # Repopulate from objects table
+            # For external content tables, use INSERT OR REPLACE
+            session.execute(
+                text("""
+                    INSERT OR REPLACE INTO objects_fts(rowid, name, common_name, description)
+                    SELECT id, name, common_name, description FROM objects
+                    WHERE name IS NOT NULL
+                """)
+            )
+            session.commit()
+
+            # Verify the repopulation
+            fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
+            objects_count = session.execute(text("SELECT COUNT(*) FROM objects WHERE name IS NOT NULL")).scalar() or 0
+
+            logger.info(f"FTS table repopulated: {fts_count} entries (expected {objects_count})")
+
+            if fts_count != objects_count:
+                logger.warning(f"FTS table count mismatch: {fts_count} vs {objects_count} objects")
+
     def insert_object(
         self,
         name: str,
@@ -390,6 +431,9 @@ class CatalogDatabase:
         Returns:
             ID of inserted object
         """
+        # Ensure FTS table exists before inserting (triggers depend on it)
+        self.ensure_fts_table()
+
         # Convert object_type to string if needed
         if isinstance(object_type, CelestialObjectType):
             object_type = object_type.value
@@ -426,16 +470,55 @@ class CatalogDatabase:
             return self._model_to_object(model)
 
     def get_by_name(self, name: str) -> CelestialObject | None:
-        """Get object by exact name match."""
+        """
+        Get object by exact name match (checks both name and common_name fields).
+
+        Returns the first exact match found in either name or common_name field.
+        This allows finding stars by common name (e.g., "Capella") even if stored
+        as catalog number in name field (e.g., "HR 1708").
+        """
         # Ensure name is a string
         name = str(name) if name is not None else ""
+        if not name:
+            return None
+
         with self._get_session() as session:
-            # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
-            # It handles type coercion automatically
+            # Check name field first (most common case)
             model = session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(name)).first()
-            if model is None:
-                return None
-            return self._model_to_object(model)
+            if model:
+                return self._model_to_object(model)
+
+            # If not found in name, check common_name field (exact match only)
+            model = (
+                session.query(CelestialObjectModel)
+                .filter(
+                    CelestialObjectModel.common_name.isnot(None),
+                    CelestialObjectModel.common_name.ilike(name),
+                )
+                .first()
+            )
+            if model:
+                return self._model_to_object(model)
+
+            return None
+
+    def get_common_name_by_hr(self, hr_number: int) -> str | None:
+        """
+        Get common name for a given HR number from star_name_mappings table.
+
+        Args:
+            hr_number: HR catalog number
+
+        Returns:
+            Common name if found, None otherwise
+        """
+        with self._get_session() as session:
+            from .models import StarNameMappingModel
+
+            mapping = session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
+            if mapping and mapping.common_name and mapping.common_name.strip():
+                return mapping.common_name.strip()
+            return None
 
     def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
@@ -450,28 +533,47 @@ class CatalogDatabase:
         """
         # Ensure query is a string
         query = str(query) if query is not None else ""
+        if not query:
+            return []
+
+        # Ensure FTS table exists
+        self.ensure_fts_table()
+
         with self._get_session() as session:
             # FTS5 search requires raw SQL
-            result = session.execute(
-                text("""
-                    SELECT objects.id FROM objects
-                    JOIN objects_fts ON objects.id = objects_fts.rowid
-                    WHERE objects_fts MATCH :query
-                    ORDER BY rank
-                    LIMIT :limit
-                """),
-                {"query": query, "limit": limit},
-            )
+            # FTS5 query syntax: simple word queries work directly
+            # For multi-word queries, FTS5 uses AND by default
+            # Escape special characters that FTS5 treats as operators
+            fts_query = query.strip()
 
-            # Get IDs and fetch models
-            object_ids = [row[0] for row in result]
-            objects = []
-            for obj_id in object_ids:
-                model = session.get(CelestialObjectModel, obj_id)
-                if model:
-                    objects.append(self._model_to_object(model))
+            # FTS5 special characters: " AND OR NOT ( ) [ ] { } * : ^
+            # If query contains these, we need to escape or quote them
+            # For simple word searches, just use the word directly
+            try:
+                result = session.execute(
+                    text("""
+                        SELECT objects.id FROM objects
+                        JOIN objects_fts ON objects.id = objects_fts.rowid
+                        WHERE objects_fts MATCH :query
+                        ORDER BY rank
+                        LIMIT :limit
+                    """),
+                    {"query": fts_query, "limit": limit},
+                )
 
-            return objects
+                # Get IDs and fetch models
+                object_ids = [row[0] for row in result]
+                objects = []
+                for obj_id in object_ids:
+                    model = session.get(CelestialObjectModel, obj_id)
+                    if model:
+                        objects.append(self._model_to_object(model))
+
+                return objects
+            except Exception as e:
+                logger.error(f"FTS5 search failed for query '{query}': {e}")
+                # Return empty list - no fallback
+                return []
 
     def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
@@ -985,7 +1087,24 @@ def rebuild_database(
         # Get fresh database instance after rebuild
         db = get_database()
 
-        # Step 4: Import data sources
+        # Ensure FTS table exists (migrations should create it, but ensure it's there)
+        db.ensure_fts_table()
+
+        # Step 4: Populate star name mappings BEFORE importing catalogs that need them
+        # This ensures Yale BSC import can look up common names
+        logger.info("Populating star name mappings...")
+        from .models import get_db_session
+        from .star_name_mappings import populate_star_name_mappings_database
+
+        with get_db_session() as session:
+            # Force refresh to ensure we have the latest mappings
+            populate_star_name_mappings_database(session, force_refresh=True)
+            star_mapping_count = session.execute(text("SELECT COUNT(*) FROM star_name_mappings")).scalar() or 0
+            logger.info(f"Added {star_mapping_count} star name mappings")
+            if star_mapping_count == 0:
+                logger.error("WARNING: No star name mappings were added! Yale BSC imports will not have common names.")
+
+        # Step 5: Import data sources
         # Import here to avoid circular dependency
         from celestron_nexstar.cli.data_import import DATA_SOURCES, import_data_source
 
@@ -1000,53 +1119,206 @@ def rebuild_database(
                 logger.warning(f"Unknown source: {source_id}, skipping")
                 continue
 
+            logger.info(f"Importing {source_id}...")
             # Get count before import
-            db_stats_before = db.get_stats()
-            objects_before_import = db_stats_before.total_objects
+            try:
+                db_stats_before = db.get_stats()
+                objects_before_import = db_stats_before.total_objects
+            except Exception as e:
+                logger.warning(f"Failed to get stats before import: {e}")
+                objects_before_import = 0
 
             # Import the source
-            success = import_data_source(source_id, mag_limit)
-            if success:
-                # Get count after import
-                db_stats_after = db.get_stats()
-                imported = db_stats_after.total_objects - objects_before_import
-                imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
-                objects_before_import = db_stats_after.total_objects
-            else:
+            try:
+                logger.info(f"Calling import_data_source for {source_id}...")
+                # import_data_source prints to console, so output should be visible
+                success = import_data_source(source_id, mag_limit)
+                logger.info(f"import_data_source returned: {success}")
+                if success:
+                    # Get count after import
+                    try:
+                        db_stats_after = db.get_stats()
+                        imported = db_stats_after.total_objects - objects_before_import
+                        imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
+                        objects_before_import = db_stats_after.total_objects
+                        logger.info(f"Successfully imported {source_id}: {imported} objects")
+                        if imported == 0:
+                            logger.warning(f"Import reported success but no objects were added for {source_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get stats after import: {e}")
+                        imported_counts[source_id] = (0, 0)
+                else:
+                    imported_counts[source_id] = (0, 0)
+                    logger.warning(f"import_data_source returned False for {source_id}")
+            except Exception as e:
+                logger.error(f"Exception importing {source_id}: {e}", exc_info=True)
                 imported_counts[source_id] = (0, 0)
-                logger.warning(f"Failed to import {source_id}")
+                # Continue with other sources even if one fails
+                # Re-raise if it's a critical error
+                if "database" in str(e).lower() or "schema" in str(e).lower():
+                    raise
 
-        # Step 5: Initialize static data
+        # Repopulate FTS table after all imports to ensure all objects are searchable
+        logger.info("Repopulating FTS search index...")
+        try:
+            db.repopulate_fts_table()
+        except Exception as e:
+            logger.warning(f"Failed to repopulate FTS table: {e}")
+            # Continue - search will fall back to direct queries
+
+        # Step 6: Initialize other static data
         from .constellations import populate_constellation_database
         from .meteor_showers import populate_meteor_shower_database
-        from .models import get_db_session
         from .space_events import populate_space_events_database
         from .vacation_planning import populate_dark_sky_sites_database
 
+        logger.info("Initializing static reference data...")
         static_data: dict[str, int] = {}
 
         with get_db_session() as session:
             # Populate meteor showers
+            logger.info("Populating meteor showers...")
             populate_meteor_shower_database(session)
             meteor_count = session.execute(text("SELECT COUNT(*) FROM meteor_showers")).scalar() or 0
             static_data["meteor_showers"] = meteor_count
+            logger.info(f"Added {meteor_count} meteor showers")
 
             # Populate constellations
+            logger.info("Populating constellations and asterisms...")
             populate_constellation_database(session)
             constellation_count = session.execute(text("SELECT COUNT(*) FROM constellations")).scalar() or 0
             asterism_count = session.execute(text("SELECT COUNT(*) FROM asterisms")).scalar() or 0
             static_data["constellations"] = constellation_count
             static_data["asterisms"] = asterism_count
+            logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
 
             # Populate dark sky sites
+            logger.info("Populating dark sky sites...")
             populate_dark_sky_sites_database(session)
             dark_sky_count = session.execute(text("SELECT COUNT(*) FROM dark_sky_sites")).scalar() or 0
             static_data["dark_sky_sites"] = dark_sky_count
+            logger.info(f"Added {dark_sky_count} dark sky sites")
 
             # Populate space events
+            logger.info("Populating space events...")
             populate_space_events_database(session)
             space_events_count = session.execute(text("SELECT COUNT(*) FROM space_events")).scalar() or 0
             static_data["space_events"] = space_events_count
+            logger.info(f"Added {space_events_count} space events")
+
+        # Step 6: Download and process World Atlas light pollution data
+        logger.info("Downloading and processing World Atlas light pollution data...")
+        try:
+            import asyncio
+
+            from .light_pollution_db import download_world_atlas_data
+
+            # Download all regions (no state filter = all data)
+            # Use a coarser grid resolution (0.2°) for faster processing during setup
+            # Users can re-download with finer resolution later if needed
+            logger.info("Downloading World Atlas PNG files (this may take a while)...")
+            light_pollution_results = asyncio.run(
+                download_world_atlas_data(
+                    regions=None,  # All regions
+                    grid_resolution=0.2,  # 0.2° ≈ 22km resolution for faster initial setup
+                    force=False,  # Use cached files if available
+                    state_filter=None,  # No filter - process all data
+                )
+            )
+
+            total_grid_points = sum(light_pollution_results.values())
+            logger.info(
+                f"Processed {total_grid_points:,} light pollution grid points from {len(light_pollution_results)} regions"
+            )
+            static_data["light_pollution_grid_points"] = total_grid_points
+
+            # Log per-region counts
+            for region, count in light_pollution_results.items():
+                logger.info(f"  {region}: {count:,} points")
+        except Exception as e:
+            logger.warning(f"Failed to download light pollution data: {e}")
+            logger.warning(
+                "Light pollution data can be downloaded later with: nexstar vacation download-light-pollution"
+            )
+            static_data["light_pollution_grid_points"] = 0
+
+        # Step 7: Pre-fetch 3 days of weather forecast data (if location is configured)
+        logger.info("Pre-fetching 3-day weather forecast data...")
+        try:
+            import asyncio
+
+            from .observer import geocode_location, get_observer_location, set_observer_location
+            from .weather import fetch_hourly_weather_forecast
+
+            location = get_observer_location()
+
+            # If no location is set, prompt user to set one
+            if not location:
+                logger.info("No observer location configured")
+                # Try to get location interactively (only if running from CLI)
+                # Check if we're in an interactive environment
+                try:
+                    import sys
+
+                    if sys.stdin.isatty():
+                        # We're in an interactive terminal, prompt for location
+                        from rich.console import Console
+                        from rich.prompt import Prompt
+
+                        console = Console()
+                        console.print("\n[cyan]Observer Location Required[/cyan]")
+                        console.print(
+                            "[dim]Your location is needed for weather forecasts and accurate calculations.[/dim]\n"
+                        )
+
+                        location_query = Prompt.ask("Enter your location", default="", console=console)
+
+                        if location_query:
+                            try:
+                                console.print(f"[dim]Geocoding: {location_query}...[/dim]")
+                                location = asyncio.run(geocode_location(location_query))
+                                set_observer_location(location, save=True)
+                                console.print(f"[green]✓[/green] Location set to: {location.name}")
+                                console.print(
+                                    f"[dim]  Coordinates: {location.latitude:.4f}°, {location.longitude:.4f}°[/dim]\n"
+                                )
+                            except ValueError as e:
+                                logger.warning(f"Failed to geocode location '{location_query}': {e}")
+                                logger.warning(
+                                    "Skipping weather forecast pre-fetch. Set location later with: nexstar location set-observer <location>"
+                                )
+                                location = None
+                        else:
+                            logger.info("Location input skipped - weather forecast will be fetched on-demand")
+                            location = None
+                    else:
+                        # Non-interactive environment, skip
+                        logger.info("Non-interactive environment - skipping location prompt")
+                        logger.info("Set your location with: nexstar location set-observer <location>")
+                        location = None
+                except Exception as e:
+                    logger.debug(f"Could not prompt for location interactively: {e}")
+                    logger.info("Set your location with: nexstar location set-observer <location>")
+                    location = None
+
+            if location:
+                logger.info(
+                    f"Fetching weather forecast for {location.name} ({location.latitude:.2f}°, {location.longitude:.2f}°)"
+                )
+                # Fetch 3 days = 72 hours of weather forecast
+                weather_forecasts = fetch_hourly_weather_forecast(location, hours=72)
+                if weather_forecasts:
+                    logger.info(f"Pre-fetched {len(weather_forecasts)} hours of weather forecast data")
+                    static_data["weather_forecast_hours"] = len(weather_forecasts)
+                else:
+                    logger.warning("No weather forecast data was fetched")
+                    static_data["weather_forecast_hours"] = 0
+            else:
+                static_data["weather_forecast_hours"] = 0
+        except Exception as e:
+            logger.warning(f"Failed to pre-fetch weather forecast data: {e}")
+            logger.warning("Weather forecasts will be fetched on-demand when needed")
+            static_data["weather_forecast_hours"] = 0
 
         duration_seconds = time.time() - start_time
         database_size_mb = db.db_path.stat().st_size / (1024 * 1024) if db.db_path.exists() else 0

@@ -334,8 +334,10 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
                 # Build star name (use HR number as primary identifier)
                 star_name = f"HR {hr_number}"
 
-                # Common name (none in this format)
-                common_name = None
+                # Look up common name from database star_name_mappings table
+                common_name = db.get_common_name_by_hr(hr_number)
+                if verbose and hr_number in [1708, 424, 2491]:  # Log for well-known stars
+                    console.print(f"[dim]HR {hr_number}: common_name={common_name}[/dim]")
 
                 # Build description
                 description_parts = [f"HR {hr_number}"]
@@ -415,12 +417,18 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
     db = get_database()
 
     # Load YAML
-    with open(yaml_path, encoding="utf-8") as f:
-        catalogs_data = yaml.safe_load(f)
+    try:
+        with open(yaml_path, encoding="utf-8") as f:
+            catalogs_data = yaml.safe_load(f)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to read YAML file: {e}")
+        return 0, 0
 
     if not catalogs_data:
         console.print("[yellow]Warning: Empty YAML file[/yellow]")
         return 0, 0
+
+    console.print(f"[dim]Loaded {len(catalogs_data)} catalog(s) from YAML[/dim]")
 
     imported = 0
     skipped = 0
@@ -428,6 +436,11 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
     # Count total objects for progress bar
     total_objects = sum(len(objects) for objects in catalogs_data.values() if isinstance(objects, list))
+    console.print(f"[dim]Found {total_objects} total object(s) to process[/dim]")
+
+    if total_objects == 0:
+        console.print("[yellow]⚠[/yellow] No objects found in YAML file. Check the file format.")
+        return 0, 0
 
     with Progress(
         SpinnerColumn(),
@@ -442,13 +455,19 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
         # Migrate each catalog
         for catalog_name, objects in catalogs_data.items():
             if not isinstance(objects, list):
+                console.print(
+                    f"[yellow]⚠[/yellow] Skipping '{catalog_name}': not a list (type: {type(objects).__name__})"
+                )
                 continue
+
+            console.print(f"[dim]Processing catalog '{catalog_name}' with {len(objects)} object(s)[/dim]")
 
             for obj in objects:
                 # Extract fields
                 name = obj.get("name")
                 if not name:
                     errors += 1
+                    console.print(f"[yellow]⚠[/yellow] Skipping object without name: {obj}")
                     progress.advance(task)
                     continue
 
@@ -461,15 +480,24 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
                 # Validate required fields
                 if ra_hours is None or dec_degrees is None or not object_type_str:
-                    if verbose:
-                        console.print(f"[yellow]Warning: Missing required fields for {name}[/yellow]")
-                    errors += 1
+                    skipped += 1
+                    missing_fields = []
+                    if ra_hours is None:
+                        missing_fields.append("ra_hours")
+                    if dec_degrees is None:
+                        missing_fields.append("dec_degrees")
+                    if not object_type_str:
+                        missing_fields.append("type")
+                    console.print(
+                        f"[yellow]⚠[/yellow] Skipping {name}: Missing required fields: {', '.join(missing_fields)}"
+                    )
                     progress.advance(task)
                     continue
 
                 # Filter by magnitude
                 if magnitude is not None and magnitude > mag_limit:
                     skipped += 1
+                    console.print(f"[dim]Skipping {name}: magnitude {magnitude} > limit {mag_limit}[/dim]")
                     progress.advance(task)
                     continue
 
@@ -494,16 +522,14 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 existing = db.get_by_name(name)
                 if existing:
                     skipped += 1
-                    if verbose:
-                        console.print(f"[dim]Skipping duplicate: {name}[/dim]")
+                    console.print(f"[dim]Skipping duplicate: {name} (already exists)[/dim]")
                     progress.advance(task)
                     continue
 
                 # Also check by catalog + catalog_number if available
                 if catalog_number is not None and db.exists_by_catalog_number(catalog_name, catalog_number):
                     skipped += 1
-                    if verbose:
-                        console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number}[/dim]")
+                    console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number} (already exists)[/dim]")
                     progress.advance(task)
                     continue
 
@@ -531,9 +557,13 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     imported += 1
 
                 except Exception as e:
-                    if verbose:
-                        console.print(f"[yellow]Warning: Error importing {name}: {e}[/yellow]")
                     errors += 1
+                    # Always show errors, not just in verbose mode
+                    console.print(f"[red]✗[/red] Error importing {name}: {e}")
+                    if verbose:
+                        import traceback
+
+                        console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
                 progress.advance(task)
 

@@ -22,6 +22,7 @@ from celestron_nexstar.api.catalogs import (
 from celestron_nexstar.api.database import get_database
 
 from ...cli.utils.export import FileConsole
+from ..utils.database import check_database_setup
 from ..utils.output import (
     calculate_panel_width,
     console,
@@ -85,6 +86,9 @@ def search(
         nexstar catalog search orion --catalog messier
     """
     try:
+        # Check database setup first
+        check_database_setup()
+
         # Search for objects
         catalog_name = None if catalog == "all" else catalog
         results = search_objects(query, catalog_name)
@@ -238,6 +242,9 @@ def list_catalog(
         nexstar catalog list --catalog messier --type galaxy
     """
     try:
+        # Check database setup first
+        check_database_setup()
+
         # Interactive selection if catalog not provided
         if catalog is None:
             catalog = _select_catalog_interactive()
@@ -403,6 +410,9 @@ def info(
         nexstar catalog info M42 --json
     """
     try:
+        # Check database setup first
+        check_database_setup()
+
         # Get matching objects (fuzzy search)
         matches = get_object_by_name(object_name)
 
@@ -501,6 +511,9 @@ def goto(
         nexstar catalog goto Vega --no-wait
     """
     try:
+        # Check database setup first
+        check_database_setup()
+
         # Look up objects (fuzzy search)
         matches = get_object_by_name(object_name)
 
@@ -540,6 +553,9 @@ def catalogs() -> None:
         nexstar catalog catalogs
     """
     try:
+        # Check database setup first
+        check_database_setup()
+
         db = get_database()
         stats = db.get_stats()
 

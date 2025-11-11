@@ -551,6 +551,39 @@ class EphemerisFileModel(Base):
         return f"<EphemerisFile(file_key='{self.file_key}', filename='{self.filename}')>"
 
 
+class StarNameMappingModel(Base):
+    """
+    SQLAlchemy model for star name mappings.
+
+    Maps catalog numbers (e.g., HR numbers) to common star names. This allows
+    users to search for stars by their common names (e.g., "Capella") even though
+    they're stored in the database as catalog numbers (e.g., "HR 1708").
+    """
+
+    __tablename__ = "star_name_mappings"
+
+    # Primary key
+    hr_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Common name
+    common_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    # Optional: Bayer designation (e.g., "Alpha Aurigae")
+    bayer_designation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    def __repr__(self) -> str:
+        """String representation of star name mapping."""
+        return f"<StarNameMapping(hr_number={self.hr_number}, common_name='{self.common_name}')>"
+
+
 @contextmanager
 def get_db_session() -> Iterator[Session]:
     """

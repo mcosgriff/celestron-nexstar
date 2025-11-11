@@ -463,9 +463,10 @@ def search_objects(
 
 def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
-    Get objects by name or common name (fuzzy matching).
+    Get objects by name (name field only, no common_name).
 
     Searches only the database (catalog.yaml is already imported).
+    Uses FTS5 for fuzzy matching.
 
     Args:
         name: Object name to search for
@@ -478,6 +479,8 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
 
     # Ensure name is a string
     name = str(name) if name is not None else ""
+    if not name:
+        return []
 
     all_matches: list[CelestialObject] = []
     seen_names: set[str] = set()
@@ -485,7 +488,7 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
     # Search only in database (catalog.yaml is already imported)
     try:
         db = get_database()
-        # First, try exact match in database (highest priority)
+        # First, try exact match in database (highest priority) - name field only
         db_obj = db.get_by_name(name)
         if db_obj:
             all_matches.append(db_obj)
@@ -493,12 +496,14 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
             # If we found an exact match, return it immediately
             return [db_obj]
 
-        # If no exact match, try fuzzy search in database
+        # If no exact match, try FTS5 search (searches name, common_name, description)
+        # But we'll filter to only return matches where name contains the query
         db_results = db.search(name, limit=20)
         for obj in db_results:
             if obj and obj.name is not None:
                 obj_name_lower = str(obj.name).lower()
-                if obj_name_lower not in seen_names:
+                # Only include if the name field contains the query (not just common_name)
+                if obj_name_lower not in seen_names and name.lower() in obj_name_lower:
                     all_matches.append(obj)
                     seen_names.add(obj_name_lower)
     except Exception:

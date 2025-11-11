@@ -83,6 +83,121 @@ def sync_ephemeris_files(
         raise typer.Exit(code=1) from e
 
 
+@app.command("update-star-names", rich_help_panel="Database Management")
+def update_star_names() -> None:
+    """
+    Update existing Yale BSC stars with common names from star_name_mappings table.
+
+    This command updates existing objects in the database that don't have common_name
+    set by looking them up in the star_name_mappings table. Useful if you've added
+    star name mappings after importing Yale BSC data.
+    """
+    from ...api.database import get_database
+    from ...api.models import CelestialObjectModel, StarNameMappingModel
+
+    console.print("\n[bold cyan]Updating star common names[/bold cyan]\n")
+
+    db = get_database()
+
+    try:
+        with db._get_session() as session:
+            # Get all Yale BSC objects without common_name
+            objects_to_update = (
+                session.query(CelestialObjectModel)
+                .filter(
+                    CelestialObjectModel.catalog == "yale_bsc",
+                    (CelestialObjectModel.common_name.is_(None)) | (CelestialObjectModel.common_name == ""),
+                )
+                .all()
+            )
+
+            console.print(f"[dim]Found {len(objects_to_update)} Yale BSC objects without common names[/dim]")
+
+            updated = 0
+            for obj in objects_to_update:
+                # Extract HR number from name (format: "HR 1708")
+                if not obj.name or not obj.name.startswith("HR "):
+                    continue
+
+                try:
+                    hr_number = int(obj.name.replace("HR ", "").strip())
+                except ValueError:
+                    continue
+
+                # Look up common name
+                mapping = (
+                    session.query(StarNameMappingModel)
+                    .filter(StarNameMappingModel.hr_number == hr_number)
+                    .first()
+                )
+
+                if mapping and mapping.common_name and mapping.common_name.strip():
+                    obj.common_name = mapping.common_name.strip()
+                    updated += 1
+
+            if updated > 0:
+                session.commit()
+                console.print(f"[green]✓[/green] Updated {updated} objects with common names")
+
+                # Repopulate FTS table to include the new common names
+                console.print("[dim]Updating search index...[/dim]")
+                db.repopulate_fts_table()
+                console.print("[green]✓[/green] Search index updated")
+            else:
+                console.print("[yellow]⚠[/yellow] No objects needed updating")
+
+        console.print("\n[bold green]✓ Star names updated![/bold green]\n")
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error updating star names: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from None
+
+
+@app.command("rebuild-fts", rich_help_panel="Database Management")
+def rebuild_fts() -> None:
+    """
+    Rebuild the FTS5 full-text search index.
+
+    This command repopulates the objects_fts table with all objects from the database.
+    Useful if the FTS index is out of sync or if objects were imported before the FTS table was created.
+
+    Example:
+        nexstar data rebuild-fts
+    """
+    from ...api.database import get_database
+
+    console.print("[cyan]Rebuilding FTS5 search index...[/cyan]\n")
+
+    try:
+        db = get_database()
+        db.repopulate_fts_table()
+
+        # Get count of indexed objects
+        from sqlalchemy import text
+
+        with db._get_session() as session:
+            fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
+            objects_count = session.execute(text("SELECT COUNT(*) FROM objects")).scalar() or 0
+
+        console.print("[green]✓[/green] FTS index rebuilt successfully")
+        console.print(f"[dim]  Indexed {fts_count:,} objects out of {objects_count:,} total[/dim]\n")
+
+        if fts_count != objects_count:
+            console.print(
+                f"[yellow]⚠[/yellow] Warning: FTS index count ({fts_count:,}) doesn't match objects count ({objects_count:,})"
+            )
+            console.print("[dim]Some objects may not be searchable. Check for NULL names or descriptions.[/dim]\n")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to rebuild FTS index: {e}")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("sources", rich_help_panel="Data Sources")
 def sources() -> None:
     """
@@ -139,6 +254,264 @@ def import_source(
         raise typer.Exit(code=1)
 
 
+@app.command("setup", rich_help_panel="Database Management")
+def setup(
+    skip_ephemeris: bool = typer.Option(False, "--skip-ephemeris", help="Skip ephemeris metadata sync (can be slow)"),
+    mag_limit: float = typer.Option(
+        15.0,
+        "--mag-limit",
+        "-m",
+        help="Maximum magnitude to import for catalog data (default: 15.0)",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation prompt and rebuild database if it exists"
+    ),
+) -> None:
+    """
+    Set up the database for first-time use.
+
+    This command initializes the database by:
+    1. Creating database schema (via Alembic migrations)
+    2. Importing ALL available catalog data (custom, OpenNGC, Yale BSC - ~18,000 objects)
+    3. Initializing ALL static reference data (meteor showers, constellations, dark sky sites, space events)
+    4. Syncing ephemeris file metadata from NAIF (optional)
+
+    If the database already exists and contains data, you'll be prompted to rebuild it.
+
+    Examples:
+        nexstar data setup
+        nexstar data setup --skip-ephemeris
+        nexstar data setup --mag-limit 12.0
+        nexstar data setup --force  # Skip confirmation prompt
+    """
+    from rich.table import Table
+    from sqlalchemy import inspect, text
+
+    from ...api.database import get_database, rebuild_database
+    from ...api.models import get_db_session
+    from ..data_import import DATA_SOURCES
+
+    console.print("\n[bold cyan]Setting up database...[/bold cyan]\n")
+
+    db = get_database()
+    should_rebuild = False
+
+    # Check if database exists and has data
+    if db.db_path.exists():
+        try:
+            inspector = inspect(db._engine)
+            existing_tables = set(inspector.get_table_names())
+            if "objects" not in existing_tables:
+                console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
+                should_rebuild = True
+            else:
+                # Check if we have catalog data
+                with db._get_session() as session:
+                    result = session.execute(text("SELECT COUNT(*) FROM objects")).scalar() or 0
+                    if result > 0:
+                        console.print(f"[yellow]⚠[/yellow] Database already exists with {result:,} objects")
+                        console.print("[dim]To import all available data, the database needs to be rebuilt.[/dim]\n")
+
+                        if not force:
+                            try:
+                                response = typer.prompt(
+                                    "Do you want to delete the existing database and rebuild with all data? (yes/no)",
+                                    default="no",
+                                )
+                                if response.lower() not in ("yes", "y"):
+                                    console.print(
+                                        "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
+                                    )
+                                    raise typer.Exit(code=0) from None
+                            except typer.Abort:
+                                console.print("\n[dim]Operation cancelled.[/dim]\n")
+                                raise typer.Exit(code=0) from None
+
+                        should_rebuild = True
+                    else:
+                        console.print("[yellow]⚠[/yellow] Database exists but is empty")
+                        should_rebuild = True
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Error checking database: {e}")
+            console.print("[dim]Will rebuild database[/dim]")
+            should_rebuild = True
+    else:
+        console.print("[yellow]⚠[/yellow] Database does not exist - will create")
+        should_rebuild = True
+
+    # Rebuild database if needed
+    if should_rebuild:
+        console.print("\n[cyan]Rebuilding database with all available data...[/cyan]\n")
+
+        # Show what sources will be imported
+        console.print(f"[dim]Will import from {len(DATA_SOURCES)} sources: {', '.join(DATA_SOURCES.keys())}[/dim]\n")
+
+        try:
+            # Use rebuild_database which handles everything
+            # Note: import_data_source prints to console, so output should be visible
+            console.print("[dim]Initializing database schema...[/dim]")
+
+            # Show progress for static data initialization
+            console.print("\n[cyan]Initializing static reference data...[/cyan]")
+            console.print("[dim]  • Meteor showers[/dim]")
+            console.print("[dim]  • Constellations and asterisms[/dim]")
+            console.print("[dim]  • Dark sky sites[/dim]")
+            console.print("[dim]  • Space events[/dim]")
+
+            result = rebuild_database(
+                backup_dir=None,  # Don't backup during setup
+                sources=list(DATA_SOURCES.keys()),  # Import all sources
+                mag_limit=mag_limit,
+                skip_backup=True,  # Skip backup during setup
+                dry_run=False,
+            )
+
+            console.print("\n[green]✓[/green] Database rebuilt successfully\n")
+
+            # Show import summary
+            if result.get("imported_counts"):
+                console.print("[bold]Imported Catalog Data:[/bold]")
+                import_table = Table()
+                import_table.add_column("Source", style="cyan")
+                import_table.add_column("Imported", justify="right", style="green")
+
+                total_imported = 0
+                any_imported = False
+                for source_id, (imported, _skipped) in result["imported_counts"].items():
+                    source_name = DATA_SOURCES[source_id].name if source_id in DATA_SOURCES else source_id
+                    import_table.add_row(source_name, f"{imported:,}")
+                    total_imported += imported
+                    if imported > 0:
+                        any_imported = True
+
+                console.print(import_table)
+                console.print(f"\n[dim]Total objects imported: {total_imported:,}[/dim]\n")
+
+                # Check if we actually got data
+                if not any_imported:
+                    console.print("[yellow]⚠[/yellow] Warning: No objects were imported from any source!")
+                    console.print("[dim]This might indicate an issue with the import process.[/dim]")
+                    console.print("[dim]Try running imports manually: nexstar data import custom[/dim]\n")
+            else:
+                console.print("[yellow]⚠[/yellow] Warning: No import results returned!")
+                console.print("[dim]The rebuild completed but no data sources were processed.[/dim]\n")
+
+            # Show static data summary
+            if result.get("static_data"):
+                console.print("[bold]Static Reference Data:[/bold]")
+                static_table = Table()
+                static_table.add_column("Data Type", style="cyan")
+                static_table.add_column("Count", justify="right", style="green")
+
+                static_data = result["static_data"]
+                if static_data.get("meteor_showers", 0) > 0:
+                    static_table.add_row("Meteor Showers", f"{static_data['meteor_showers']:,}")
+                if static_data.get("constellations", 0) > 0:
+                    static_table.add_row("Constellations", f"{static_data['constellations']:,}")
+                if static_data.get("asterisms", 0) > 0:
+                    static_table.add_row("Asterisms", f"{static_data['asterisms']:,}")
+                if static_data.get("dark_sky_sites", 0) > 0:
+                    static_table.add_row("Dark Sky Sites", f"{static_data['dark_sky_sites']:,}")
+                if static_data.get("space_events", 0) > 0:
+                    static_table.add_row("Space Events", f"{static_data['space_events']:,}")
+                if static_data.get("light_pollution_grid_points", 0) > 0:
+                    static_table.add_row(
+                        "Light Pollution Grid Points", f"{static_data['light_pollution_grid_points']:,}"
+                    )
+                if static_data.get("weather_forecast_hours", 0) > 0:
+                    static_table.add_row("Weather Forecast Hours", f"{static_data['weather_forecast_hours']:,}")
+
+                if static_table.rows:
+                    console.print(static_table)
+                    console.print()
+
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to rebuild database: {e}")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise typer.Exit(code=1) from e
+    else:
+        # Database is already set up, just ensure migrations are current
+        try:
+            from alembic.config import Config
+
+            from alembic import command  # type: ignore[attr-defined]
+
+            alembic_cfg = Config("alembic.ini")
+            command.upgrade(alembic_cfg, "head")
+        except Exception:
+            pass
+
+    # Ensure static data is populated (rebuild_database should have done this, but double-check)
+    console.print("[cyan]Ensuring static reference data is populated...[/cyan]")
+    try:
+        with db._get_session() as session:
+            meteor_count = session.execute(text("SELECT COUNT(*) FROM meteor_showers")).scalar() or 0
+            constellation_count = session.execute(text("SELECT COUNT(*) FROM constellations")).scalar() or 0
+            dark_sky_count = session.execute(text("SELECT COUNT(*) FROM dark_sky_sites")).scalar() or 0
+            star_mapping_count = session.execute(text("SELECT COUNT(*) FROM star_name_mappings")).scalar() or 0
+
+            if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
+                console.print("[dim]Populating static reference data...[/dim]")
+                from ...api.constellations import populate_constellation_database
+                from ...api.meteor_showers import populate_meteor_shower_database
+                from ...api.space_events import populate_space_events_database
+                from ...api.star_name_mappings import populate_star_name_mappings_database
+                from ...api.vacation_planning import populate_dark_sky_sites_database
+
+                populate_meteor_shower_database(session)
+                populate_constellation_database(session)
+                populate_dark_sky_sites_database(session)
+                populate_space_events_database(session)
+                populate_star_name_mappings_database(session)
+                console.print("[green]✓[/green] Static reference data populated")
+            else:
+                console.print("[green]✓[/green] Static reference data already exists")
+    except Exception as e:
+        console.print(f"[yellow]⚠[/yellow] Error checking static data: {e}")
+        # Try to populate anyway
+        try:
+            with get_db_session() as session:
+                from ...api.constellations import populate_constellation_database
+                from ...api.meteor_showers import populate_meteor_shower_database
+                from ...api.space_events import populate_space_events_database
+                from ...api.vacation_planning import populate_dark_sky_sites_database
+
+                populate_meteor_shower_database(session)
+                populate_constellation_database(session)
+                populate_dark_sky_sites_database(session)
+                populate_space_events_database(session)
+                console.print("[green]✓[/green] Static reference data populated")
+        except Exception as e2:
+            console.print(f"[yellow]⚠[/yellow] Failed to populate static data (non-critical): {e2}")
+
+    # Sync ephemeris metadata (optional)
+    if not skip_ephemeris:
+        console.print("\n[cyan]Syncing ephemeris file metadata...[/cyan]")
+        try:
+            import asyncio
+
+            from ...api.database import sync_ephemeris_files_from_naif
+
+            count = asyncio.run(sync_ephemeris_files_from_naif(force=False))
+            console.print(f"[green]✓[/green] Synced {count} ephemeris files")
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Ephemeris sync failed (non-critical): {e}")
+            console.print("[dim]You can sync later with: nexstar data sync-ephemeris[/dim]")
+
+    # Final summary
+    console.print("\n[bold green]✓ Database setup complete![/bold green]\n")
+
+    # Show stats
+    try:
+        stats = db.get_stats()
+        console.print(f"[dim]Total objects: {stats.total_objects:,}[/dim]")
+        console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
+    except Exception:
+        pass
+
+
 @app.command("init-static", rich_help_panel="Database Management")
 def init_static() -> None:
     """
@@ -156,6 +529,7 @@ def init_static() -> None:
     from ...api.meteor_showers import populate_meteor_shower_database
     from ...api.models import get_db_session
     from ...api.space_events import populate_space_events_database
+    from ...api.star_name_mappings import populate_star_name_mappings_database
     from ...api.vacation_planning import populate_dark_sky_sites_database
 
     console.print("\n[bold cyan]Initializing static reference data[/bold cyan]\n")
@@ -181,6 +555,11 @@ def init_static() -> None:
             console.print("[dim]Populating space events calendar...[/dim]")
             populate_space_events_database(db)
             console.print("[green]✓[/green] Space events populated")
+
+            # Populate star name mappings
+            console.print("[dim]Populating star name mappings...[/dim]")
+            populate_star_name_mappings_database(db)
+            console.print("[green]✓[/green] Star name mappings populated")
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")
