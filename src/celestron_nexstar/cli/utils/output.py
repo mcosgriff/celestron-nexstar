@@ -176,7 +176,10 @@ def calculate_panel_width(content: "RenderableType", console: Console | None = N
     # Add padding for panel borders and title (roughly 15 chars)
     # Cap at terminal width to prevent overflow on small terminals
     if hasattr(console, "width"):
-        return min(max_line_length + 15, console.width)
+        width = getattr(console, "width", None)
+        if width is not None and isinstance(width, int):
+            result = min(max_line_length + 15, width)
+            return int(result)
     return None
 
 

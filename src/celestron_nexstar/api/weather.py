@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 try:
@@ -25,7 +25,7 @@ try:
     OPENMETEO_AVAILABLE = True
 except ImportError:
     OPENMETEO_AVAILABLE = False
-    np = None
+    np = None  # type: ignore[assignment]
 
 import aiohttp
 
@@ -597,7 +597,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     """
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        params = {
+        params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
             "longitude": location.longitude,
             "current": [

@@ -991,7 +991,7 @@ def rebuild_database(
         # Step 3: Run Alembic migrations to create fresh schema
         from alembic.config import Config
 
-        from alembic import command
+        from alembic import command  # type: ignore[attr-defined]
 
         alembic_cfg = Config("alembic.ini")
         command.upgrade(alembic_cfg, "head")

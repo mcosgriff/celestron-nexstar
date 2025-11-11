@@ -544,6 +544,9 @@ def _select_telescope_interactive() -> TelescopeModel | None:
                 default="1" if current_model else None,
             )
 
+            if choice is None:
+                return None
+
             if choice.lower() in ["q", "quit", "cancel", "exit"]:
                 return None
 
@@ -616,6 +619,9 @@ def _select_eyepiece_interactive(telescope_specs: TelescopeSpecs) -> EyepieceSpe
                 "[cyan]Select eyepiece number, 'c' for custom, or 'q' to cancel[/cyan]",
                 default=None,
             )
+
+            if choice is None:
+                return None
 
             if choice.lower() in ["q", "quit", "cancel", "exit"]:
                 return None

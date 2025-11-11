@@ -164,6 +164,9 @@ def select_from_list(
                 default="1" if current_item else None,
             )
 
+            if choice is None:
+                return None
+
             if choice.lower() in ["q", "quit", "cancel", "exit"]:
                 return None
 

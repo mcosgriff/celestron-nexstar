@@ -32,19 +32,123 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format --check src
 
-  pre-commit:
-    name: Pre-commit Hooks
+  pre-commit-hooks:
+    name: Pre-commit Hook Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for diff checks
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies for checks
+        run: |
+          uv pip install pyyaml tomli
+
+      - name: Check for trailing whitespace
+        run: |
+          # Check all Python files in src/ for trailing whitespace
+          if find src/ -name '*.py' -exec grep -l '[[:space:]]$' {} \; | grep -v '__pycache__'; then
+            echo "Error: Trailing whitespace detected in Python files"
+            find src/ -name '*.py' -exec grep -n '[[:space:]]$' {} \; | head -20
+            exit 1
+          fi
+
+      - name: Check end of file newlines
+        run: |
+          # Check that files end with a newline (end-of-file-fixer check)
+          files_missing_newline=$(find src/ -name '*.py' \
+            ! -path '*/__pycache__/*' \
+            -exec sh -c 'last_char=$(tail -c 1 "$1" 2>/dev/null); [ -n "$last_char" ] && [ "$last_char" != "$(printf "\n")" ] && echo "$1"' _ {} \; \
+            2>/dev/null || true)
+          if [ -n "$files_missing_newline" ]; then
+            echo "Error: Files missing newline at end of file:"
+            echo "$files_missing_newline"
+            exit 1
+          fi
+
+      - name: Check YAML files
+        run: |
+          find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
+            ! -path './.git/*' \
+            ! -path './.venv/*' \
+            ! -path './dist/*' \
+            ! -path './build/*' \
+            ! -path './htmlcov/*' \
+            ! -path './.mypy_cache/*' \
+            ! -path './.ruff_cache/*' \
+            ! -path './__pycache__/*' \
+            -exec python -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" {} \; || exit 1
+
+      - name: Check for large files
+        run: |
+          # Check for files larger than 500KB (warning only)
+          large_files=$(find . -type f -size +500k \
+            ! -path './.git/*' \
+            ! -path './.venv/*' \
+            ! -path './dist/*' \
+            ! -path './build/*' \
+            ! -path './htmlcov/*' \
+            ! -path './.mypy_cache/*' \
+            ! -path './.ruff_cache/*' \
+            ! -path './__pycache__/*' \
+            ! -path './*.db' \
+            ! -path './*.sqlite' \
+            ! -path './*.sqlite3' 2>/dev/null | head -10)
+          if [ -n "$large_files" ]; then
+            echo "Warning: Large files detected (>500KB):"
+            echo "$large_files"
+            echo "Consider using Git LFS for large files"
+          fi
+
+      - name: Check for merge conflict markers
+        run: |
+          if git grep -E '^<<<<<<< |^======= |^>>>>>>> ' -- ':!*.lock' ':!*.db'; then
+            echo "Error: Merge conflict markers detected"
+            exit 1
+          fi
+
+      - name: Check TOML files
+        run: |
+          for toml_file in pyproject.toml uv.lock; do
+            if [ -f "$toml_file" ]; then
+              python -c "import tomli; tomli.load(open('$toml_file', 'rb'))" || {
+                echo "Error: Invalid TOML syntax in $toml_file"
+                exit 1
+              }
+            fi
+          done
+
+      - name: Check for debug statements
+        run: |
+          # Check all Python files in src/ for debug statements
+          debug_files=$(find src/ -name '*.py' \
+            -exec grep -lE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; \
+            2>/dev/null | grep -v '__pycache__' || true)
+          if [ -n "$debug_files" ]; then
+            echo "Error: Debug statements found in source files:"
+            echo "$debug_files"
+            find src/ -name '*.py' -exec grep -nE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; 2>/dev/null | head -20
+            exit 1
+          fi
+
+      - name: Check uv lock file
+        run: |
+          # Check if lock file is out of sync with pyproject.toml
+          uv lock --check || {
+            echo "Error: uv.lock is out of sync with pyproject.toml"
+            echo "Run 'uv lock' to update the lock file"
+            exit 1
+          }
 
   security:
     name: Security Scan
@@ -181,7 +285,7 @@ jobs:
 
   build:
     name: Build Distribution
-    needs: [lint, pre-commit, security, typecheck, test]
+    needs: [lint, pre-commit-hooks, security, typecheck, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

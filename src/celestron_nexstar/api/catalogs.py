@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 from cachetools import TTLCache, cached
@@ -127,7 +128,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
     catalogs_path = _get_catalogs_path()
 
     with catalogs_path.open("r") as f:
-        data = yaml.safe_load(f)
+        data: dict[str, Any] = yaml.safe_load(f) or {}
 
     if catalog_name not in data:
         raise ValueError(f"Catalog '{catalog_name}' not found in {catalogs_path}")
@@ -165,7 +166,7 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
     logger.debug(f"Loading catalogs from {catalogs_path}")
 
     with catalogs_path.open("r") as f:
-        data = yaml.safe_load(f)
+        data: dict[str, Any] = yaml.safe_load(f) or {}
 
     all_catalogs: dict[str, list[CelestialObject]] = {}
     for catalog_name, objects_data in data.items():
@@ -201,7 +202,8 @@ def get_all_catalogs_dict() -> dict[str, list[CelestialObject]]:
     Returns:
         Dictionary mapping catalog names to lists of CelestialObject instances
     """
-    return _load_all_catalogs()
+    # cachetools.cached doesn't preserve return types, so mypy sees Any
+    return _load_all_catalogs()  # type: ignore[no-any-return]
 
 
 # Module-level cached reference for backwards compatibility
@@ -258,7 +260,8 @@ def get_catalog(catalog_name: str) -> list[CelestialObject]:
     Returns:
         List of CelestialObject instances from the catalog
     """
-    return _load_catalog_from_yaml(catalog_name)
+    # cachetools.cached doesn't preserve return types, so mypy sees Any
+    return _load_catalog_from_yaml(catalog_name)  # type: ignore[no-any-return]
 
 
 def get_all_objects() -> list[CelestialObject]:

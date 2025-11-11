@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import typer
 from rich.console import Console
@@ -275,12 +276,16 @@ def _select_event_type_interactive() -> str | None:
     }
 
     def display_event_type(item: str | SpaceEventType) -> tuple[str, ...]:
-        if isinstance(item, str) and item == "all":
-            return ("All Event Types", "Show all events regardless of type")
-        et = item
-        display_name = et.value.replace("_", " ").title()
-        description = descriptions.get(et, "Event type")
-        return (display_name, description)
+        if isinstance(item, str):
+            if item == "all":
+                return ("All Event Types", "Show all events regardless of type")
+            # Should not happen, but handle it
+            return (item, "Event type")
+        else:
+            # item is SpaceEventType (mypy type narrowing issue)
+            display_name = item.value.replace("_", " ").title()  # type: ignore[unreachable]
+            description = descriptions.get(item, "Event type")
+            return (display_name, description)
 
     selected = select_from_list(
         all_items,
@@ -293,7 +298,10 @@ def _select_event_type_interactive() -> str | None:
         return None
     if isinstance(selected, str) and selected == "all":
         return "all"
-    return selected.value
+    if isinstance(selected, SpaceEventType):
+        return selected.value
+    # Should not reach here, but handle it
+    return None
 
 
 def _show_viewing_recommendation_content(

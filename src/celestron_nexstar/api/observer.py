@@ -173,7 +173,7 @@ async def geocode_location(query: str) -> ObserverLocation:
     try:
         # Use Nominatim API directly
         url = "https://nominatim.openstreetmap.org/search"
-        params = {
+        params: dict[str, str | int] = {
             "q": query,
             "format": "json",
             "limit": 1,

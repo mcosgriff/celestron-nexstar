@@ -14,7 +14,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
+from collections.abc import ItemsView, KeysView, ValuesView
 
 import aiohttp
 
@@ -84,7 +85,8 @@ async def _fetch_summaries(url: str) -> str:
         ):
             if response.status != 200:
                 raise RuntimeError(f"HTTP {response.status}")
-            return await response.text()
+            text = await response.text()
+            return str(text)
     except Exception as e:
         logger.warning(f"Failed to fetch {url}: {e}")
         raise
@@ -431,19 +433,19 @@ class _EphemerisFilesDict:
     def __contains__(self, key: str) -> bool:
         return key in _get_ephemeris_files_dict()
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return _get_ephemeris_files_dict().keys()
 
-    def items(self):
+    def items(self) -> ItemsView[str, EphemerisFileInfo]:
         return _get_ephemeris_files_dict().items()
 
-    def values(self):
+    def values(self) -> ValuesView[EphemerisFileInfo]:
         return _get_ephemeris_files_dict().values()
 
     def get(self, key: str, default: EphemerisFileInfo | None = None) -> EphemerisFileInfo | None:
         return _get_ephemeris_files_dict().get(key, default)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(_get_ephemeris_files_dict())
 
     def __len__(self) -> int:

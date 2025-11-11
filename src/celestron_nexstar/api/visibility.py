@@ -11,6 +11,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 
 try:
@@ -19,7 +20,7 @@ try:
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    np = None
+    np = None  # type: ignore[assignment]
 
 from .catalogs import CelestialObject
 from .enums import SkyBrightness
