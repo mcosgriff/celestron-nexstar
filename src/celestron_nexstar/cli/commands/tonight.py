@@ -14,6 +14,7 @@ from rich.table import Table
 from timezonefinder import TimezoneFinder
 
 from ...api.observation_planner import ObservationPlanner, ObservingTarget
+from ...cli.utils.export import FileConsole
 
 
 app = typer.Typer(help="Telescope viewing commands")
@@ -75,7 +76,7 @@ def show_conditions(
     _show_conditions_content(console)
 
 
-def _show_conditions_content(output_console: Console) -> None:
+def _show_conditions_content(output_console: Console | FileConsole) -> None:
     """Generate and display conditions content."""
     try:
         planner = ObservationPlanner()
@@ -520,7 +521,7 @@ def show_objects(
 
 
 def _show_objects_content(
-    output_console: Console,
+    output_console: Console | FileConsole,
     target_type: str | None = None,
     limit: int = 20,
     best_for_seeing: bool = False,
@@ -643,7 +644,7 @@ def show_imaging(
     _show_imaging_content(console)
 
 
-def _show_imaging_content(output_console: Console) -> None:
+def _show_imaging_content(output_console: Console | FileConsole) -> None:
     """Generate and display imaging content."""
     try:
         planner = ObservationPlanner()
@@ -965,7 +966,7 @@ def show_tonight(
 
 
 def _show_tonight_content(
-    output_console: Console,
+    output_console: Console | FileConsole,
     target_type: str | None = None,
     limit: int = 20,
     best_for_seeing: bool = False,

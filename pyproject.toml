@@ -32,6 +32,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "cachetools>=5.3.0",
     "skyfield>=1.49",
+    "astropy>=6.0.0",
     "geopy>=2.4.0",
     "prompt-toolkit>=3.0.0",
     "sqlalchemy>=2.0.0",
@@ -221,6 +222,10 @@ module = [
     "prompt_toolkit.*",
     "alembic",
     "alembic.*",
+    "astropy",
+    "astropy.*",
+    "retry_requests",
+    "retry_requests.*",
 ]
 ignore_missing_imports = true
 

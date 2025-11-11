@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -61,4 +62,4 @@ def create_file_console(file_path: Path | None = None) -> FileConsole:
         no_color=True,  # No ANSI color codes in exported files
     )
 
-    return FileConsole(console, file_handle)  # type: ignore[arg-type]
+    return FileConsole(console, file_handle)

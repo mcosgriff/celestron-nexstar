@@ -132,7 +132,6 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
         obj: The celestial object
         visibility_info: Visibility information for the object
     """
-    from prompt_toolkit import PromptSession
     from rich.console import Console
 
     console = Console()
@@ -214,8 +213,8 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     console.print("[dim]Press Enter to return...[/dim]")
     from prompt_toolkit import PromptSession as _PromptSession
 
-    session: _PromptSession[str] = _PromptSession()
-    session.prompt("")
+    prompt_session: _PromptSession[str] = _PromptSession()
+    prompt_session.prompt("")
 
 
 def show_object_detail_interactive() -> None:
@@ -226,7 +225,6 @@ def show_object_detail_interactive() -> None:
     selected = state.get_selected_object()
 
     if selected is None:
-        from prompt_toolkit import PromptSession
         from rich.console import Console
 
         console = Console()

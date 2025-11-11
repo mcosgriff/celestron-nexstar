@@ -367,8 +367,6 @@ def filter_visible_objects(
     # Get observer location
     if observer_lat is None or observer_lon is None:
         location = get_observer_location()
-        if location is None:
-            return []
         observer_lat = location.latitude
         observer_lon = location.longitude
 

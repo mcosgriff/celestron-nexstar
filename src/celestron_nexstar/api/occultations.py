@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
+
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -59,4 +60,3 @@ def get_upcoming_occultations(
     # For now, return empty list with note
     logger.info("Asteroid occultation predictions require specialized databases - not yet fully implemented")
     return []
-

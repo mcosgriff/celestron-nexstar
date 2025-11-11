@@ -10,7 +10,9 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 
 try:
     from skyfield.api import Loader, Topos, load
@@ -22,14 +24,15 @@ except ImportError:
 
 from .ephemeris import PLANET_NAMES, _get_ephemeris
 
+
 if TYPE_CHECKING:
     from .observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "PlanetaryEvent",
     "EventType",
+    "PlanetaryEvent",
     "get_planetary_conjunctions",
     "get_planetary_oppositions",
     "get_retrograde_periods",
@@ -64,18 +67,16 @@ class EventType:
 MAJOR_PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
 
 
-def _get_skyfield_directory():
+def _get_skyfield_directory() -> Path:
     """Get the Skyfield cache directory."""
-    from pathlib import Path
-
     return Path.home() / ".skyfield"
 
 
-def _get_planet_position(planet_name: str, t, eph) -> tuple[float, float]:
+def _get_planet_position(planet_name: str, t: Any, eph: Any) -> tuple[float, float] | None:
     """Get planet RA/Dec position at time t."""
     planet_key = planet_name.lower()
     if planet_key not in PLANET_NAMES:
-        return None, None
+        return None
 
     ephemeris_name, _bsp_file = PLANET_NAMES[planet_key]
     earth = eph["earth"]
@@ -86,7 +87,7 @@ def _get_planet_position(planet_name: str, t, eph) -> tuple[float, float]:
         try:
             target = eph[ephemeris_name.upper()]
         except KeyError:
-            return None, None
+            return None
 
     astrometric = earth.at(t).observe(target)
     ra, dec, _distance = astrometric.radec()
@@ -102,13 +103,15 @@ def _angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> flo
     dec2_rad = math.radians(dec2)
 
     # Spherical law of cosines
-    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(ra1_rad - ra2_rad)
+    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(
+        ra1_rad - ra2_rad
+    )
     cos_sep = max(-1.0, min(1.0, cos_sep))  # Clamp to valid range
     separation_rad = math.acos(cos_sep)
     return math.degrees(separation_rad)
 
 
-def _get_altitude(planet_name: str, observer_lat: float, observer_lon: float, t, eph) -> float:
+def _get_altitude(planet_name: str, observer_lat: float, observer_lon: float, t: Any, eph: Any) -> float:
     """Get planet altitude above horizon."""
     planet_key = planet_name.lower()
     if planet_key not in PLANET_NAMES:
@@ -128,7 +131,7 @@ def _get_altitude(planet_name: str, observer_lat: float, observer_lon: float, t,
 
     astrometric = observer.at(t).observe(target)
     alt, _az, _ = astrometric.apparent().altaz()
-    return alt.degrees
+    return float(alt.degrees)
 
 
 def get_planetary_conjunctions(
@@ -153,7 +156,7 @@ def get_planetary_conjunctions(
 
     try:
         skyfield_dir = _get_skyfield_directory()
-        loader = Loader(str(skyfield_dir))
+        Loader(str(skyfield_dir))
         ts = load.timescale()
         eph = _get_ephemeris("de440s.bsp")
     except Exception as e:
@@ -169,11 +172,14 @@ def get_planetary_conjunctions(
         for planet2 in MAJOR_PLANETS[i + 1 :]:
             try:
                 # Find times when separation is minimized
-                def separation_at_time(t):
-                    ra1, dec1 = _get_planet_position(planet1, t, eph)
-                    ra2, dec2 = _get_planet_position(planet2, t, eph)
-                    if ra1 is None or ra2 is None:
+                # Capture loop variables as default parameters to avoid closure issues
+                def separation_at_time(t: Any, p1: str = planet1, p2: str = planet2) -> float:
+                    pos1 = _get_planet_position(p1, t, eph)
+                    pos2 = _get_planet_position(p2, t, eph)
+                    if pos1 is None or pos2 is None:
                         return 180.0  # Maximum separation
+                    ra1, dec1 = pos1
+                    ra2, dec2 = pos2
                     return _angular_separation(ra1, dec1, ra2, dec2)
 
                 t0 = ts.from_datetime(now)
@@ -238,7 +244,7 @@ def get_planetary_oppositions(
 
     try:
         skyfield_dir = _get_skyfield_directory()
-        loader = Loader(str(skyfield_dir))
+        Loader(str(skyfield_dir))
         ts = load.timescale()
         eph = _get_ephemeris("de440s.bsp")
         sun = eph["sun"]
@@ -257,15 +263,16 @@ def get_planetary_oppositions(
     for planet_name in outer_planets:
         try:
             # Find times when planet is opposite sun (elongation = 180°)
-            def elongation_at_time(t):
-                ra_planet, dec_planet = _get_planet_position(planet_name, t, eph)
+            # Capture loop variable as default parameter to avoid closure issues
+            def elongation_at_time(t: Any, pname: str = planet_name) -> float:
+                pos = _get_planet_position(pname, t, eph)
+                if pos is None:
+                    return 0.0
+                ra_planet, dec_planet = pos
                 sun_astrometric = earth.at(t).observe(sun)
                 ra_sun_obj, dec_sun_obj, _ = sun_astrometric.radec()
                 ra_sun = ra_sun_obj.hours
                 dec_sun = dec_sun_obj.degrees
-
-                if ra_planet is None:
-                    return 0.0
 
                 # Calculate elongation (angle between sun and planet)
                 separation = _angular_separation(ra_planet, dec_planet, ra_sun, dec_sun)
@@ -286,7 +293,10 @@ def get_planetary_oppositions(
                         event_time = event_time.replace(tzinfo=UTC)
 
                     # Get actual elongation
-                    ra_planet, dec_planet = _get_planet_position(planet_name, min_time, eph)
+                    pos = _get_planet_position(planet_name, min_time, eph)
+                    if pos is None:
+                        continue
+                    ra_planet, dec_planet = pos
                     sun_astrometric = earth.at(min_time).observe(sun)
                     ra_sun_obj, dec_sun_obj, _ = sun_astrometric.radec()
                     ra_sun = ra_sun_obj.hours
@@ -340,4 +350,3 @@ def get_retrograde_periods(
     # Retrograde detection is complex - simplified version
     # For now, return empty list - can be enhanced later
     return []
-

@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+
 try:
     import requests_cache
     from retry_requests import retry
@@ -30,8 +31,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AuroraForecast",
     "AuroraProbability",
-    "get_aurora_forecast",
     "check_aurora_visibility",
+    "get_aurora_forecast",
     "get_aurora_visibility_windows",
     "get_next_aurora_opportunity",
     "get_solar_cycle_info",
@@ -104,7 +105,8 @@ def _get_kp_forecast(days: int = 3) -> list[tuple[datetime, float]] | None:
         cache_dir = Path.home() / ".cache" / "celestron-nexstar"
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_session = requests_cache.CachedSession(
-            str(cache_dir / "aurora_cache"), expire_after=1800  # 30 minutes
+            str(cache_dir / "aurora_cache"),
+            expire_after=1800,  # 30 minutes
         )
         retry_session = retry(cache_session, retries=3, backoff_factor=0.2)
 
@@ -165,7 +167,8 @@ def _get_kp_index() -> float | None:
         cache_dir = Path.home() / ".cache" / "celestron-nexstar"
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_session = requests_cache.CachedSession(
-            str(cache_dir / "aurora_cache"), expire_after=1800  # 30 minutes
+            str(cache_dir / "aurora_cache"),
+            expire_after=1800,  # 30 minutes
         )
         retry_session = retry(cache_session, retries=3, backoff_factor=0.2)
 
@@ -339,10 +342,7 @@ def get_aurora_forecast(
     elif cloud_cover_percent is not None and cloud_cover_percent > 50:
         # Heavy cloud cover blocks aurora
         is_visible = False
-        if visibility_level in ["very_high", "high"]:
-            visibility_level = "moderate"  # Still active, just blocked by clouds
-        else:
-            visibility_level = "none"
+        visibility_level = "moderate" if visibility_level in ["very_high", "high"] else "none"  # Still active, just blocked by clouds
 
     # Moon phase affects visibility (bright moon washes out faint aurora)
     if moon_illumination is not None and moon_illumination > 0.7:
@@ -414,20 +414,11 @@ def check_aurora_visibility(
 
         if sunset and sunrise:
             # Normalize to same day for comparison
-            if dt.tzinfo is None:
-                dt_utc = dt.replace(tzinfo=UTC)
-            else:
-                dt_utc = dt.astimezone(UTC)
+            dt_utc = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
 
-            if sunset.tzinfo is None:
-                sunset = sunset.replace(tzinfo=UTC)
-            else:
-                sunset = sunset.astimezone(UTC)
+            sunset = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
 
-            if sunrise.tzinfo is None:
-                sunrise = sunrise.replace(tzinfo=UTC)
-            else:
-                sunrise = sunrise.astimezone(UTC)
+            sunrise = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
 
             # Check if current time is after sunset or before sunrise
             # Handle case where sunrise is next day
@@ -468,11 +459,11 @@ def get_aurora_visibility_windows(
         return []
 
     min_lat = abs(location.latitude)
-    visibility_windows = []
+    visibility_windows: list[tuple[datetime, datetime, float, str]] = []
 
     # Group consecutive periods where aurora is visible
-    current_window_start = None
-    current_window_end = None
+    current_window_start: datetime | None = None
+    current_window_end: datetime | None = None
     current_max_kp = 0.0
     current_visibility = "none"
 
@@ -487,31 +478,33 @@ def get_aurora_visibility_windows(
             # Start or extend window
             if current_window_start is None:
                 current_window_start = forecast_time
+                current_window_end = forecast_time
                 current_max_kp = kp_value
                 current_visibility = visibility_level
-            current_window_end = forecast_time
+            else:
+                current_window_end = forecast_time
             current_max_kp = max(current_max_kp, kp_value)
             # Update visibility to highest level in window
-            if visibility_level in ["very_high", "high"]:
-                current_visibility = visibility_level
-            elif visibility_level == "moderate" and current_visibility not in ["very_high", "high"]:
+            if visibility_level in ["very_high", "high"] or (
+                visibility_level == "moderate" and current_visibility not in ["very_high", "high"]
+            ):
                 current_visibility = visibility_level
         else:
             # End current window if exists
-            if current_window_start is not None:
-                visibility_windows.append(
-                    (current_window_start, current_window_end, current_max_kp, current_visibility)
-                )
+            window_start = current_window_start
+            window_end = current_window_end
+            if window_start is not None and window_end is not None:
+                visibility_windows.append((window_start, window_end, current_max_kp, current_visibility))
                 current_window_start = None
                 current_window_end = None
                 current_max_kp = 0.0
                 current_visibility = "none"
 
     # Add final window if still open
-    if current_window_start is not None:
-        visibility_windows.append(
-            (current_window_start, current_window_end, current_max_kp, current_visibility)
-        )
+    window_start = current_window_start
+    window_end = current_window_end
+    if window_start is not None and window_end is not None:
+        visibility_windows.append((window_start, window_end, current_max_kp, current_visibility))
 
     return visibility_windows
 
@@ -561,10 +554,7 @@ def get_solar_cycle_info(dt: datetime | None = None) -> SolarCycleInfo:
         activity_level = "maximum"
         # Peak phase: high activity with some variation
         peak_distance = abs(years_since_peak)
-        if peak_distance < 0.5:  # Within 6 months of peak
-            activity_multiplier = 1.0
-        else:
-            activity_multiplier = max(0.8, 1.0 - (peak_distance - 0.5) * 0.4)
+        activity_multiplier = 1.0 if peak_distance < 0.5 else max(0.8, 1.0 - (peak_distance - 0.5) * 0.4)  # Within 6 months of peak
     elif current_phase < 0.8:
         activity_level = "declining"
         # Declining phase: linear decrease from 1.0 to 0.5
@@ -606,15 +596,15 @@ def _get_seasonal_factor(month: int) -> float:
     # Winter months (December, January, February) are good but not as good as equinox
 
     seasonal_factors = {
-        1: 0.85,   # January - good
-        2: 0.80,   # February - good
-        3: 1.15,   # March - equinox, excellent
-        4: 0.90,   # April - good
-        5: 0.75,   # May - moderate
-        6: 0.60,   # June - summer, poor
-        7: 0.55,   # July - summer, poor
-        8: 0.65,   # August - summer, poor
-        9: 1.20,   # September - equinox, excellent
+        1: 0.85,  # January - good
+        2: 0.80,  # February - good
+        3: 1.15,  # March - equinox, excellent
+        4: 0.90,  # April - good
+        5: 0.75,  # May - moderate
+        6: 0.60,  # June - summer, poor
+        7: 0.55,  # July - summer, poor
+        8: 0.65,  # August - summer, poor
+        9: 1.20,  # September - equinox, excellent
         10: 1.15,  # October - equinox, excellent
         11: 0.90,  # November - good
         12: 0.85,  # December - good
@@ -623,9 +613,7 @@ def _get_seasonal_factor(month: int) -> float:
     return seasonal_factors.get(month, 0.80)
 
 
-def _get_historical_kp_probabilities(
-    month: int, solar_cycle_factor: float, seasonal_factor: float
-) -> dict[str, float]:
+def _get_historical_kp_probabilities(month: int, solar_cycle_factor: float, seasonal_factor: float) -> dict[str, float]:
     """
     Get historical probability distributions for Kp index based on month and solar cycle.
 
@@ -724,7 +712,7 @@ def get_next_aurora_opportunity(
     opportunities = []
 
     # Get current solar cycle info
-    cycle_info = get_solar_cycle_info(now)
+    get_solar_cycle_info(now)
 
     # Check each month for the next N months
     for month_offset in range(months_ahead):
@@ -838,4 +826,3 @@ def get_next_aurora_opportunity(
     opportunities.sort(key=sort_key, reverse=True)
 
     return opportunities
-

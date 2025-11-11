@@ -24,6 +24,7 @@ from ...api.observation_planner import ObservationPlanner, ObservingConditions
 from ...api.solar_system import get_moon_info, get_sun_info
 from ...api.utils import angular_separation, calculate_lst, ra_dec_to_alt_az
 from ...api.visibility import VisibilityInfo, assess_visibility
+from ...cli.utils.export import FileConsole
 
 
 if TYPE_CHECKING:
@@ -630,7 +631,7 @@ def show_week(
     _show_week_content(console)
 
 
-def _show_week_content(output_console: Console) -> None:
+def _show_week_content(output_console: Console | FileConsole) -> None:
     """Generate and display week comparison content."""
     try:
         planner = ObservationPlanner()
@@ -829,7 +830,7 @@ def show_best_night(
     _show_best_night_content(console, object_name, days)
 
 
-def _show_best_night_content(output_console: Console, object_name: str, days: int) -> None:
+def _show_best_night_content(output_console: Console | FileConsole, object_name: str, days: int) -> None:
     """Generate and display best night content."""
     try:
         # Find the object

@@ -4,16 +4,17 @@ Satellite Tracking Commands
 Find bright satellite passes and flares.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.satellite_flares import get_bright_satellite_passes, get_starlink_passes
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.observer import ObserverLocation, get_observer_location
+from ...api.satellite_flares import SatellitePass, get_bright_satellite_passes, get_starlink_passes
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Satellite tracking commands")
 console = Console()
@@ -21,7 +22,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "satellites") -> Path:
     """Generate export filename for satellite commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -50,7 +50,9 @@ def show_bright(
     """Find bright satellite passes (Hubble, Tiangong, etc.)."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     passes = get_bright_satellite_passes(location, days=days, min_magnitude=min_magnitude)
@@ -80,7 +82,9 @@ def show_starlink(
     """Find Starlink train passes (simplified)."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     passes = get_starlink_passes(location, days=days)
@@ -98,14 +102,17 @@ def show_starlink(
 
     if not passes:
         console.print("\n[yellow]Starlink tracking requires fetching TLE for many satellites.[/yellow]")
-        console.print("[dim]Full implementation coming soon. Use 'nexstar satellites bright' for other bright satellites.[/dim]\n")
+        console.print(
+            "[dim]Full implementation coming soon. Use 'nexstar satellites bright' for other bright satellites.[/dim]\n"
+        )
     else:
         _show_passes_content(console, location, passes, days)
 
 
-def _show_passes_content(output_console: Console, location, passes: list, days: int) -> None:
+def _show_passes_content(output_console: Console | FileConsole, location: ObserverLocation, passes: list[SatellitePass], days: int) -> None:
     """Display satellite pass information."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -179,7 +186,9 @@ def _show_passes_content(output_console: Console, location, passes: list, days: 
         duration = (pass_obj.set_time - pass_obj.rise_time).total_seconds() / 60.0
 
         output_console.print(f"\n  [bold]{pass_obj.name}[/bold]")
-        output_console.print(f"    Rise: {rise_str} → Max: {max_str} ({pass_obj.max_altitude_deg:.0f}°) → Set: {set_str}")
+        output_console.print(
+            f"    Rise: {rise_str} → Max: {max_str} ({pass_obj.max_altitude_deg:.0f}°) → Set: {set_str}"
+        )
         output_console.print(f"    Duration: {duration:.0f} minutes, Magnitude: {pass_obj.magnitude:.1f}")
         output_console.print(f"    {pass_obj.notes}")
 
@@ -193,4 +202,3 @@ def _show_passes_content(output_console: Console, location, passes: list, days: 
 
 if __name__ == "__main__":
     app()
-

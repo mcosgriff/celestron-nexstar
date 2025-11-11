@@ -5,7 +5,7 @@ Check if the aurora borealis is visible from your location based on
 geomagnetic activity, weather conditions, and moon phase.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -13,13 +13,16 @@ from rich.console import Console
 from rich.table import Table
 
 from ...api.aurora import (
+    AuroraForecast,
+    AuroraProbability,
     check_aurora_visibility,
     get_aurora_visibility_windows,
     get_next_aurora_opportunity,
     get_solar_cycle_info,
 )
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.observer import ObserverLocation, get_observer_location
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Aurora borealis visibility commands")
 console = Console()
@@ -27,7 +30,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "aurora") -> Path:
     """Generate export filename for aurora commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -88,7 +90,9 @@ def show_tonight(
     """Check if aurora borealis is visible tonight from your location."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     # Check aurora visibility
@@ -108,10 +112,8 @@ def show_tonight(
     _show_aurora_content(console, location, forecast)
 
 
-def _show_aurora_content(output_console: Console, location, forecast) -> None:
+def _show_aurora_content(output_console: Console | FileConsole, location: ObserverLocation, forecast: AuroraForecast | None) -> None:
     """Display aurora visibility information."""
-    from ...api.aurora import AuroraForecast
-    from ...api.observer import ObserverLocation
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
@@ -192,7 +194,9 @@ def _show_aurora_content(output_console: Console, location, forecast) -> None:
         output_console.print("  • [green]Allow 15-20 minutes for dark adaptation[/green]")
         output_console.print("  • [green]Aurora can appear as green, red, purple, or white curtains/bands[/green]")
         if forecast.cloud_cover_percent and forecast.cloud_cover_percent > 50:
-            output_console.print("  • [yellow]⚠ Heavy cloud cover may block the aurora - check weather forecast[/yellow]")
+            output_console.print(
+                "  • [yellow]⚠ Heavy cloud cover may block the aurora - check weather forecast[/yellow]"
+            )
         if forecast.moon_illumination and forecast.moon_illumination > 0.7:
             output_console.print("  • [yellow]⚠ Bright moon may reduce visibility of faint aurora[/yellow]")
     else:
@@ -219,13 +223,17 @@ def _show_aurora_content(output_console: Console, location, forecast) -> None:
 
             if needed_kp:
                 output_console.print(f"  • [dim]To see aurora at your latitude, you need Kp ≥ {needed_kp:.0f}[/dim]")
-            output_console.print(f"  • [dim]Current Kp index ({forecast.kp_index:.1f}) requires latitude ≥ {forecast.latitude_required:.1f}°[/dim]")
+            output_console.print(
+                f"  • [dim]Current Kp index ({forecast.kp_index:.1f}) requires latitude ≥ {forecast.latitude_required:.1f}°[/dim]"
+            )
         if not forecast.is_dark:
             output_console.print("  • [dim]Wait until after sunset for darkness[/dim]")
         if forecast.cloud_cover_percent and forecast.cloud_cover_percent > 50:
             output_console.print("  • [dim]Heavy cloud cover is blocking visibility[/dim]")
 
-    output_console.print("\n[dim]💡 Tip: Aurora activity can change quickly. Check again in 30-60 minutes for updates.[/dim]")
+    output_console.print(
+        "\n[dim]💡 Tip: Aurora activity can change quickly. Check again in 30-60 minutes for updates.[/dim]"
+    )
     output_console.print("[dim]💡 Tip: Even if not visible now, geomagnetic storms can develop rapidly.[/dim]\n")
 
 
@@ -240,7 +248,9 @@ def show_when(
     """Find when aurora borealis will be visible from your location in the next few days."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     # Limit days to 3 (NOAA forecast limit)
@@ -263,13 +273,11 @@ def show_when(
     _show_when_content(console, location, windows, days)
 
 
-def _show_when_content(output_console: Console, location, windows: list, days: int) -> None:
+def _show_when_content(output_console: Console | FileConsole, location: ObserverLocation, windows: list[tuple[datetime, datetime, float, str]], days: int) -> None:
     """Display aurora visibility windows."""
-    from datetime import datetime
     from zoneinfo import ZoneInfo
-    from timezonefinder import TimezoneFinder
 
-    from ...api.observer import ObserverLocation
+    from timezonefinder import TimezoneFinder
 
     _tz_finder = TimezoneFinder()
 
@@ -280,7 +288,9 @@ def _show_when_content(output_console: Console, location, windows: list, days: i
 
     if not windows:
         output_console.print("[yellow]No aurora visibility windows found in the forecast period.[/yellow]")
-        output_console.print("[dim]Aurora activity may be too low for your latitude, or no geomagnetic storms are predicted.[/dim]\n")
+        output_console.print(
+            "[dim]Aurora activity may be too low for your latitude, or no geomagnetic storms are predicted.[/dim]\n"
+        )
 
         # Show what Kp would be needed
         needed_kp = None
@@ -300,7 +310,9 @@ def _show_when_content(output_console: Console, location, windows: list, days: i
             needed_kp = 3.0
 
         if needed_kp:
-            output_console.print(f"[dim]To see aurora at your latitude ({abs(location.latitude):.1f}°N), you need Kp ≥ {needed_kp:.0f}[/dim]")
+            output_console.print(
+                f"[dim]To see aurora at your latitude ({abs(location.latitude):.1f}°N), you need Kp ≥ {needed_kp:.0f}[/dim]"
+            )
         output_console.print()
         return
 
@@ -354,14 +366,20 @@ def _show_when_content(output_console: Console, location, windows: list, days: i
     output_console.print("  • [green]Aurora is best viewed with naked eye or binoculars[/green]")
     output_console.print("  • [green]Allow 15-20 minutes for dark adaptation[/green]")
     output_console.print("  • [green]Check weather forecast for cloud cover during these times[/green]")
-    output_console.print("  • [yellow]⚠ Forecasts are predictions and may change - check 'nexstar aurora tonight' for current conditions[/yellow]")
-    output_console.print("\n[dim]💡 Tip: Aurora activity can change quickly. Check again in a few hours for updated forecasts.[/dim]\n")
+    output_console.print(
+        "  • [yellow]⚠ Forecasts are predictions and may change - check 'nexstar aurora tonight' for current conditions[/yellow]"
+    )
+    output_console.print(
+        "\n[dim]💡 Tip: Aurora activity can change quickly. Check again in a few hours for updated forecasts.[/dim]\n"
+    )
 
 
 @app.command("next")
 def show_next(
     months: int = typer.Option(24, "--months", "-m", help="Number of months ahead to search (default: 24)"),
-    min_probability: float = typer.Option(0.10, "--min-prob", help="Minimum probability threshold (0.0-1.0, default: 0.10)"),
+    min_probability: float = typer.Option(
+        0.10, "--min-prob", help="Minimum probability threshold (0.0-1.0, default: 0.10)"
+    ),
     limit: int = typer.Option(10, "--limit", "-l", help="Maximum number of opportunities to show (default: 10)"),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
     export_path: str | None = typer.Option(
@@ -371,7 +389,9 @@ def show_next(
     """Find the next likely aurora viewing opportunities using probabilistic models."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     # Get opportunities
@@ -391,11 +411,8 @@ def show_next(
     _show_next_content(console, location, opportunities, limit, months)
 
 
-def _show_next_content(output_console: Console, location, opportunities: list, limit: int, months: int) -> None:
+def _show_next_content(output_console: Console | FileConsole, location: ObserverLocation, opportunities: list[AuroraProbability], limit: int, months: int) -> None:
     """Display next aurora opportunities with probabilities."""
-    from datetime import datetime
-
-    from ...api.observer import ObserverLocation
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
     min_lat = abs(location.latitude)
@@ -423,7 +440,7 @@ def _show_next_content(output_console: Console, location, opportunities: list, l
     cycle_info = get_solar_cycle_info()
 
     output_console.print(f"\n[bold cyan]Next Aurora Viewing Opportunities for {location_name}[/bold cyan]")
-    output_console.print(f"[dim]Probabilistic forecast based on solar cycle and historical patterns[/dim]")
+    output_console.print("[dim]Probabilistic forecast based on solar cycle and historical patterns[/dim]")
     output_console.print(f"[dim]Searching next {months} months, showing top {limit} opportunities[/dim]\n")
 
     # Display solar cycle context
@@ -438,7 +455,9 @@ def _show_next_content(output_console: Console, location, opportunities: list, l
 
     if not opportunities:
         output_console.print("[yellow]No aurora opportunities found above the probability threshold.[/yellow]")
-        output_console.print(f"[dim]Your location ({min_lat:.1f}°N) requires Kp ≥ {needed_kp:.0f} for aurora visibility.[/dim]")
+        output_console.print(
+            f"[dim]Your location ({min_lat:.1f}°N) requires Kp ≥ {needed_kp:.0f} for aurora visibility.[/dim]"
+        )
         output_console.print("[dim]Try lowering --min-prob or increasing --months to see more opportunities.[/dim]\n")
         return
 
@@ -451,10 +470,7 @@ def _show_next_content(output_console: Console, location, opportunities: list, l
     table.add_column("Confidence", width=12)
     table.add_column("Notes", style="dim")
 
-    month_names = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-    ]
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     for opp in opportunities[:limit]:
         month_str = f"{month_names[opp.month - 1]} {opp.start_date.year}"
@@ -514,10 +530,13 @@ def _show_next_content(output_console: Console, location, opportunities: list, l
     output_console.print("  • [green]Book travel during high-probability months for best chances[/green]")
     output_console.print("  • [green]Monitor 'nexstar aurora when' as dates approach for specific forecasts[/green]")
     output_console.print("  • [green]Check 'nexstar aurora tonight' during your visit for real-time conditions[/green]")
-    output_console.print("  • [yellow]⚠ Even high-probability months don't guarantee aurora - weather and timing matter[/yellow]")
-    output_console.print("\n[dim]💡 Tip: Use --min-prob to filter results (e.g., --min-prob 0.20 for 20%+ probability)[/dim]\n")
+    output_console.print(
+        "  • [yellow]⚠ Even high-probability months don't guarantee aurora - weather and timing matter[/yellow]"
+    )
+    output_console.print(
+        "\n[dim]💡 Tip: Use --min-prob to filter results (e.g., --min-prob 0.20 for 20%+ probability)[/dim]\n"
+    )
 
 
 if __name__ == "__main__":
     app()
-

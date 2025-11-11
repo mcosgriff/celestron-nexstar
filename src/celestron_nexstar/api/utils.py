@@ -1,14 +1,18 @@
 """
 Utility functions for Celestron NexStar telescope coordinate conversions
 and astronomical calculations.
+
+This module uses Astropy extensively for all astronomical calculations,
+providing a clean interface while leveraging a well-tested astronomy library.
 """
 
 from __future__ import annotations
 
-import math
 from datetime import datetime
 
-from .constants import DEGREES_PER_HOUR_ANGLE
+from astropy import units as u
+from astropy.coordinates import AltAz, Angle, EarthLocation, SkyCoord
+from astropy.time import Time
 
 
 __all__ = [
@@ -40,8 +44,10 @@ def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float
     Returns:
         RA in decimal degrees (0-360)
     """
+    # Use Astropy's Angle with explicit unit conversion
     total_hours = hours + minutes / 60.0 + seconds / 3600.0
-    return total_hours * DEGREES_PER_HOUR_ANGLE
+    angle = Angle(total_hours, unit=u.hour)
+    return float(angle.degree)
 
 
 def ra_to_hours(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -56,6 +62,7 @@ def ra_to_hours(hours: float, minutes: float = 0, seconds: float = 0) -> float:
     Returns:
         RA in decimal hours (0-24)
     """
+    # Simple arithmetic conversion - no need for Astropy here
     return hours + minutes / 60.0 + seconds / 3600.0
 
 
@@ -72,11 +79,12 @@ def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign:
     Returns:
         Dec in decimal degrees (-90 to +90)
     """
+    # Use Astropy's Angle for conversion
     total_degrees = abs(degrees) + minutes / 60.0 + seconds / 3600.0
-
     if sign == "-":
-        return -total_degrees
-    return total_degrees
+        total_degrees = -total_degrees
+    angle = Angle(total_degrees, unit=u.deg)
+    return float(angle.degree)
 
 
 def degrees_to_dms(degrees: float) -> tuple[int, int, float, str]:
@@ -89,15 +97,10 @@ def degrees_to_dms(degrees: float) -> tuple[int, int, float, str]:
     Returns:
         Tuple of (degrees, minutes, seconds, sign)
     """
+    angle = Angle(degrees, unit=u.deg)
+    dms = angle.dms
     sign = "+" if degrees >= 0 else "-"
-    abs_degrees = abs(degrees)
-
-    deg = int(abs_degrees)
-    min_decimal = (abs_degrees - deg) * 60
-    minutes = int(min_decimal)
-    seconds = (min_decimal - minutes) * 60
-
-    return deg, minutes, seconds, sign
+    return int(abs(dms.d)), int(abs(dms.m)), abs(dms.s), sign
 
 
 def hours_to_hms(hours: float) -> tuple[int, int, float]:
@@ -110,12 +113,9 @@ def hours_to_hms(hours: float) -> tuple[int, int, float]:
     Returns:
         Tuple of (hours, minutes, seconds)
     """
-    h = int(hours)
-    min_decimal = (hours - h) * 60
-    minutes = int(min_decimal)
-    seconds = (min_decimal - minutes) * 60
-
-    return (h, minutes, seconds)
+    angle = Angle(hours, unit=u.hour)
+    hms = angle.hms
+    return int(hms.h), int(hms.m), hms.s
 
 
 def alt_az_to_ra_dec(
@@ -134,42 +134,20 @@ def alt_az_to_ra_dec(
     Returns:
         Tuple of (RA in hours, Dec in degrees)
     """
-    # Convert to radians
-    az_rad = math.radians(azimuth)
-    alt_rad = math.radians(altitude)
-    lat_rad = math.radians(latitude)
+    # Create observer location
+    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
 
-    # Calculate Local Sidereal Time
-    lst_hours = calculate_lst(longitude, utc_time)
+    # Create time object
+    time = Time(utc_time, scale="utc")
 
-    # Calculate declination
-    sin_dec = math.sin(alt_rad) * math.sin(lat_rad) + math.cos(alt_rad) * math.cos(lat_rad) * math.cos(az_rad)
-    dec_rad = math.asin(sin_dec)
-    dec_deg = math.degrees(dec_rad)
+    # Create AltAz coordinate
+    altaz = AltAz(az=azimuth * u.deg, alt=altitude * u.deg, location=location, obstime=time)
 
-    # Calculate hour angle
-    cos_ha = (math.sin(alt_rad) - math.sin(lat_rad) * math.sin(dec_rad)) / (math.cos(lat_rad) * math.cos(dec_rad))
+    # Convert to ICRS (RA/Dec)
+    icrs = altaz.transform_to("icrs")
 
-    # Clamp to valid range to avoid numerical errors
-    cos_ha = max(-1.0, min(1.0, cos_ha))
-    ha_rad = math.acos(cos_ha)
-
-    # Determine sign of hour angle
-    if math.sin(az_rad) > 0:
-        ha_rad = -ha_rad
-
-    ha_hours = math.degrees(ha_rad) / DEGREES_PER_HOUR_ANGLE
-
-    # Calculate RA
-    ra_hours = lst_hours - ha_hours
-
-    # Normalize RA to 0-24 hours
-    while ra_hours < 0:
-        ra_hours += 24
-    while ra_hours >= 24:
-        ra_hours -= 24
-
-    return (ra_hours, dec_deg)
+    # Return RA in hours and Dec in degrees
+    return icrs.ra.hour, icrs.dec.degree
 
 
 def ra_dec_to_alt_az(
@@ -188,34 +166,20 @@ def ra_dec_to_alt_az(
     Returns:
         Tuple of (Azimuth in degrees, Altitude in degrees)
     """
-    # Convert to radians
-    ra_rad = math.radians(ra_hours * DEGREES_PER_HOUR_ANGLE)
-    dec_rad = math.radians(dec_degrees)
-    lat_rad = math.radians(latitude)
+    # Create observer location
+    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
 
-    # Calculate Local Sidereal Time
-    lst_hours = calculate_lst(longitude, utc_time)
-    lst_rad = math.radians(lst_hours * DEGREES_PER_HOUR_ANGLE)
+    # Create time object
+    time = Time(utc_time, scale="utc")
 
-    # Calculate hour angle
-    ha_rad = lst_rad - ra_rad
+    # Create ICRS coordinate (RA/Dec)
+    icrs = SkyCoord(ra=ra_hours * u.hourangle, dec=dec_degrees * u.deg, frame="icrs")
 
-    # Calculate altitude
-    sin_alt = math.sin(dec_rad) * math.sin(lat_rad) + math.cos(dec_rad) * math.cos(lat_rad) * math.cos(ha_rad)
-    alt_rad = math.asin(sin_alt)
-    altitude = math.degrees(alt_rad)
+    # Convert to AltAz
+    altaz = icrs.transform_to(AltAz(location=location, obstime=time))
 
-    # Calculate azimuth
-    cos_az = (math.sin(dec_rad) - math.sin(lat_rad) * math.sin(alt_rad)) / (math.cos(lat_rad) * math.cos(alt_rad))
-
-    # Clamp to valid range
-    cos_az = max(-1.0, min(1.0, cos_az))
-    az_rad = math.acos(cos_az)
-
-    # Determine sign of azimuth
-    azimuth = 360 - math.degrees(az_rad) if math.sin(ha_rad) > 0 else math.degrees(az_rad)
-
-    return azimuth, altitude
+    # Return azimuth and altitude in degrees
+    return altaz.az.degree, altaz.alt.degree
 
 
 def calculate_lst(longitude: float, utc_time: datetime) -> float:
@@ -229,25 +193,14 @@ def calculate_lst(longitude: float, utc_time: datetime) -> float:
     Returns:
         LST in hours (0-24)
     """
-    # Julian Date
-    jd = calculate_julian_date(utc_time)
+    # Create time object
+    time = Time(utc_time, scale="utc")
 
-    # Days since J2000.0
-    d = jd - 2451545.0
+    # Calculate LST using Astropy's sidereal time
+    # longitude parameter expects Angle, so convert degrees to Angle
+    lst = time.sidereal_time("mean", longitude=longitude * u.deg)
 
-    # Greenwich Mean Sidereal Time at 0h UT
-    gmst = 18.697374558 + 24.06570982441908 * d
-
-    # Normalize to 0-24 hours
-    gmst = gmst % 24
-
-    # Local Sidereal Time
-    lst = gmst + longitude / DEGREES_PER_HOUR_ANGLE
-
-    # Normalize to 0-24 hours
-    lst = lst % 24
-
-    return lst
+    return float(lst.hour)
 
 
 def calculate_julian_date(dt: datetime) -> float:
@@ -260,16 +213,8 @@ def calculate_julian_date(dt: datetime) -> float:
     Returns:
         Julian Date
     """
-    a = (14 - dt.month) // 12
-    y = dt.year + 4800 - a
-    m = dt.month + 12 * a - 3
-
-    jdn = dt.day + (153 * m + 2) // 5 + 365 * y + y // 4 - y // 100 + y // 400 - 32045
-
-    # Time fraction
-    time_fraction = (dt.hour - 12) / 24.0 + dt.minute / 1440.0 + dt.second / 86400.0
-
-    return jdn + time_fraction
+    time = Time(dt, scale="utc")
+    return float(time.jd)
 
 
 def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
@@ -285,22 +230,14 @@ def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> floa
     Returns:
         Angular separation in degrees
     """
-    # Convert to radians
-    ra1_rad = math.radians(ra1 * DEGREES_PER_HOUR_ANGLE)
-    dec1_rad = math.radians(dec1)
-    ra2_rad = math.radians(ra2 * DEGREES_PER_HOUR_ANGLE)
-    dec2_rad = math.radians(dec2)
+    # Create SkyCoord objects for both positions
+    coord1 = SkyCoord(ra=ra1 * u.hourangle, dec=dec1 * u.deg, frame="icrs")
+    coord2 = SkyCoord(ra=ra2 * u.hourangle, dec=dec2 * u.deg, frame="icrs")
 
-    # Use spherical law of cosines
-    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(
-        ra1_rad - ra2_rad
-    )
+    # Calculate separation using Astropy's built-in method
+    separation = coord1.separation(coord2)
 
-    # Clamp to valid range
-    cos_sep = max(-1.0, min(1.0, cos_sep))
-
-    separation_rad = math.acos(cos_sep)
-    return math.degrees(separation_rad)
+    return float(separation.degree)
 
 
 def format_ra(hours: float, precision: int = 2) -> str:
@@ -314,8 +251,10 @@ def format_ra(hours: float, precision: int = 2) -> str:
     Returns:
         Formatted string (e.g., "12h 34m 56.78s")
     """
-    h, m, s = hours_to_hms(hours)
-    return f"{h:02d}h {m:02d}m {s:0{precision + 3}.{precision}f}s"
+    angle = Angle(hours, unit=u.hour)
+    hms = angle.hms
+    # Format with spaces: "12h 34m 56.78s"
+    return f"{int(hms.h):02d}h {int(hms.m):02d}m {hms.s:0{precision + 3}.{precision}f}s"
 
 
 def format_dec(degrees: float, precision: int = 1) -> str:
@@ -329,8 +268,11 @@ def format_dec(degrees: float, precision: int = 1) -> str:
     Returns:
         Formatted string (e.g., "+45° 12' 34.5\"")
     """
-    d, m, s, sign = degrees_to_dms(degrees)
-    return f"{sign}{d:02d}° {m:02d}' {s:0{precision + 3}.{precision}f}\""
+    angle = Angle(degrees, unit=u.deg)
+    dms = angle.dms
+    sign = "+" if degrees >= 0 else "-"
+    # Format with spaces: "+45° 12' 34.5\""
+    return f"{sign}{int(abs(dms.d)):02d}° {int(abs(dms.m)):02d}' {abs(dms.s):0{precision + 3}.{precision}f}\""
 
 
 def format_position(ra_hours: float, dec_degrees: float) -> str:

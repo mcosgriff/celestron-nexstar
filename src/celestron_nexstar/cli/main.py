@@ -127,26 +127,28 @@ def show_all_config(
 ) -> None:
     """
     Show all current configuration values.
-    
+
     Displays optical configuration (telescope and eyepiece) and observer location
     in a single unified view.
-    
+
     Example:
         nexstar config
         nexstar config --json
     """
     from pathlib import Path
+
     from rich.table import Table
 
-    from celestron_nexstar.api.optics import get_current_configuration
     from celestron_nexstar.api.observer import get_observer_location
+    from celestron_nexstar.api.optics import get_current_configuration
+
     from .utils.output import print_error, print_info, print_json
 
     try:
         # Get all configuration
         optical_config = get_current_configuration()
         observer_location = get_observer_location()
-        
+
         # Get config file paths
         config_dir = Path.home() / ".config" / "celestron-nexstar"
         optical_config_path = config_dir / "optical_config.json"
@@ -156,7 +158,7 @@ def show_all_config(
             # JSON output
             lat_dir = "N" if observer_location.latitude >= 0 else "S"
             lon_dir = "E" if observer_location.longitude >= 0 else "W"
-            
+
             print_json(
                 {
                     "optical": {
@@ -198,7 +200,7 @@ def show_all_config(
         else:
             # Pretty table output
             console.print("\n[bold cyan]Current Configuration[/bold cyan]\n")
-            
+
             # Optical Configuration
             optics_table = Table(
                 title="[bold]Optical Configuration[/bold]",
@@ -208,7 +210,7 @@ def show_all_config(
             )
             optics_table.add_column("Setting", style="cyan", width=25)
             optics_table.add_column("Value", style="green")
-            
+
             optics_table.add_row("Telescope", optical_config.telescope.display_name)
             optics_table.add_row(
                 "Aperture",
@@ -216,16 +218,20 @@ def show_all_config(
             )
             optics_table.add_row("Focal Length", f"{optical_config.telescope.focal_length_mm}mm")
             optics_table.add_row("Focal Ratio", f"f/{optical_config.telescope.focal_ratio}")
-            optics_table.add_row("Eyepiece", optical_config.eyepiece.name or f"{optical_config.eyepiece.focal_length_mm}mm")
+            optics_table.add_row(
+                "Eyepiece", optical_config.eyepiece.name or f"{optical_config.eyepiece.focal_length_mm}mm"
+            )
             optics_table.add_row("Eyepiece Focal Length", f"{optical_config.eyepiece.focal_length_mm}mm")
             optics_table.add_row("Apparent FOV", f"{optical_config.eyepiece.apparent_fov_deg}°")
             optics_table.add_row("Magnification", f"{optical_config.magnification:.0f}x")
             optics_table.add_row("Exit Pupil", f"{optical_config.exit_pupil_mm:.1f}mm")
-            optics_table.add_row("True FOV", f"{optical_config.true_fov_deg:.2f}° ({optical_config.true_fov_arcmin:.1f}')")
-            
+            optics_table.add_row(
+                "True FOV", f"{optical_config.true_fov_deg:.2f}° ({optical_config.true_fov_arcmin:.1f}')"
+            )
+
             console.print(optics_table)
             console.print()
-            
+
             # Observer Location
             location_table = Table(
                 title="[bold]Observer Location[/bold]",
@@ -235,21 +241,21 @@ def show_all_config(
             )
             location_table.add_column("Setting", style="cyan", width=25)
             location_table.add_column("Value", style="green")
-            
+
             if observer_location.name:
                 location_table.add_row("Location Name", observer_location.name)
-            
+
             lat_dir = "N" if observer_location.latitude >= 0 else "S"
             lon_dir = "E" if observer_location.longitude >= 0 else "W"
             location_table.add_row("Latitude", f"{abs(observer_location.latitude):.4f}°{lat_dir}")
             location_table.add_row("Longitude", f"{abs(observer_location.longitude):.4f}°{lon_dir}")
-            
+
             if observer_location.elevation:
                 location_table.add_row("Elevation", f"{observer_location.elevation:.0f} m above sea level")
-            
+
             console.print(location_table)
             console.print()
-            
+
             # Config File Paths
             paths_table = Table(
                 title="[bold]Configuration Files[/bold]",
@@ -259,20 +265,22 @@ def show_all_config(
             )
             paths_table.add_column("File", style="cyan", width=25)
             paths_table.add_column("Path", style="dim")
-            
+
             paths_table.add_row("Config Directory", str(config_dir))
             paths_table.add_row(
                 "Optical Config",
-                str(optical_config_path) + (" [green]✓[/green]" if optical_config_path.exists() else " [dim](not saved)[/dim]"),
+                str(optical_config_path)
+                + (" [green]✓[/green]" if optical_config_path.exists() else " [dim](not saved)[/dim]"),
             )
             paths_table.add_row(
                 "Location Config",
-                str(location_config_path) + (" [green]✓[/green]" if location_config_path.exists() else " [dim](not saved)[/dim]"),
+                str(location_config_path)
+                + (" [green]✓[/green]" if location_config_path.exists() else " [dim](not saved)[/dim]"),
             )
-            
+
             console.print(paths_table)
             console.print()
-            
+
             print_info("Use 'nexstar optics show' for detailed optical specs")
             print_info("Use 'nexstar location get-observer' for detailed location info")
 

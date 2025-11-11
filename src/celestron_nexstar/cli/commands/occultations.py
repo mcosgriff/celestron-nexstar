@@ -4,15 +4,15 @@ Asteroid Occultation Commands
 Find star occultations by asteroids.
 """
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
-from ...api.occultations import get_upcoming_occultations
 from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.occultations import get_upcoming_occultations
+from ...cli.utils.export import create_file_console
+
 
 app = typer.Typer(help="Asteroid occultation predictions")
 console = Console()
@@ -30,22 +30,25 @@ def show_next(
     """Find upcoming asteroid occultations."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     occultations = get_upcoming_occultations(location, months_ahead=months, min_magnitude=min_magnitude)
 
     if not occultations:
         console.print("\n[yellow]Asteroid occultation predictions require specialized databases.[/yellow]")
-        console.print("[dim]Full implementation coming soon. Check IOTA (International Occultation Timing Association)[/dim]")
+        console.print(
+            "[dim]Full implementation coming soon. Check IOTA (International Occultation Timing Association)[/dim]"
+        )
         console.print("[dim]for detailed occultation predictions: https://www.lunar-occultations.com/iota/[/dim]\n")
         return
 
     if export:
         from datetime import datetime
-        from ...api.observer import get_observer_location
 
-        location = get_observer_location()
+        # location already set above
         if location.name:
             location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
             location_short = location_short.replace("_(default)", "").replace("_observatory", "")
@@ -73,4 +76,3 @@ def show_next(
 
 if __name__ == "__main__":
     app()
-

@@ -4,21 +4,21 @@ Planetary Events Commands
 Find planetary conjunctions, oppositions, and other events.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from ...api.observer import ObserverLocation, get_observer_location
 from ...api.planetary_events import (
-    EventType,
+    PlanetaryEvent,
     get_planetary_conjunctions,
     get_planetary_oppositions,
-    get_retrograde_periods,
 )
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Planetary events commands")
 console = Console()
@@ -26,7 +26,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "planets") -> Path:
     """Generate export filename for planetary events commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -46,7 +45,9 @@ def _generate_export_filename(command: str = "planets") -> Path:
 @app.command("conjunctions")
 def show_conjunctions(
     months: int = typer.Option(12, "--months", "-m", help="Number of months ahead to search (default: 12)"),
-    max_separation: float = typer.Option(5.0, "--max-separation", help="Maximum angular separation in degrees (default: 5.0)"),
+    max_separation: float = typer.Option(
+        5.0, "--max-separation", help="Maximum angular separation in degrees (default: 5.0)"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
     export_path: str | None = typer.Option(
         None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
@@ -55,7 +56,9 @@ def show_conjunctions(
     """Find planetary conjunctions (planets appearing close together)."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     conjunctions = get_planetary_conjunctions(location, max_separation=max_separation, months_ahead=months)
@@ -85,7 +88,9 @@ def show_oppositions(
     """Find planetary oppositions (best viewing times for outer planets)."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     oppositions = get_planetary_oppositions(location, years_ahead=years)
@@ -104,9 +109,10 @@ def show_oppositions(
     _show_oppositions_content(console, location, oppositions, years)
 
 
-def _show_conjunctions_content(output_console: Console, location, conjunctions: list, months: int) -> None:
+def _show_conjunctions_content(output_console: Console | FileConsole, location: ObserverLocation, conjunctions: list[PlanetaryEvent], months: int) -> None:
     """Display conjunction information."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -143,16 +149,14 @@ def _show_conjunctions_content(output_console: Console, location, conjunctions: 
             date_str = event.date.strftime("%Y-%m-%d %H:%M UTC")
 
         # Format planets
-        planets_str = f"{event.planet1.capitalize()} - {event.planet2.capitalize()}"
+        planet2_str = event.planet2.capitalize() if event.planet2 else "N/A"
+        planets_str = f"{event.planet1.capitalize()} - {planet2_str}"
 
         # Format separation
         sep_str = f"{event.separation_degrees:.2f}°"
 
         # Format visibility
-        if event.is_visible:
-            visible_str = "[green]✓ Yes[/green]"
-        else:
-            visible_str = "[dim]✗ No[/dim]"
+        visible_str = "[green]✓ Yes[/green]" if event.is_visible else "[dim]✗ No[/dim]"
 
         # Format altitude
         alt_str = f"{event.altitude_at_event:.0f}°"
@@ -172,8 +176,13 @@ def _show_conjunctions_content(output_console: Console, location, conjunctions: 
             else:
                 date_str = event.date.strftime("%B %d, %Y at %H:%M UTC")
 
-            output_console.print(f"\n  [bold]{event.planet1.capitalize()} - {event.planet2.capitalize()}[/bold] - {date_str}")
-            output_console.print(f"    Separation: {event.separation_degrees:.2f}° at {event.altitude_at_event:.0f}° altitude")
+            planet2_str = event.planet2.capitalize() if event.planet2 else "N/A"
+            output_console.print(
+                f"\n  [bold]{event.planet1.capitalize()} - {planet2_str}[/bold] - {date_str}"
+            )
+            output_console.print(
+                f"    Separation: {event.separation_degrees:.2f}° at {event.altitude_at_event:.0f}° altitude"
+            )
             output_console.print(f"    {event.notes}")
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")
@@ -183,9 +192,10 @@ def _show_conjunctions_content(output_console: Console, location, conjunctions: 
     output_console.print("\n[dim]💡 Tip: Conjunctions are great photo opportunities![/dim]\n")
 
 
-def _show_oppositions_content(output_console: Console, location, oppositions: list, years: int) -> None:
+def _show_oppositions_content(output_console: Console | FileConsole, location: ObserverLocation, oppositions: list[PlanetaryEvent], years: int) -> None:
     """Display opposition information."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -228,10 +238,7 @@ def _show_oppositions_content(output_console: Console, location, oppositions: li
         elong_str = f"{event.separation_degrees:.1f}°"
 
         # Format visibility
-        if event.is_visible:
-            visible_str = "[green]✓ Yes[/green]"
-        else:
-            visible_str = "[dim]✗ No[/dim]"
+        visible_str = "[green]✓ Yes[/green]" if event.is_visible else "[dim]✗ No[/dim]"
 
         # Format altitude
         alt_str = f"{event.altitude_at_event:.0f}°"
@@ -250,7 +257,9 @@ def _show_oppositions_content(output_console: Console, location, oppositions: li
             date_str = event.date.strftime("%B %d, %Y at %H:%M UTC")
 
         output_console.print(f"\n  [bold]{event.planet1.capitalize()}[/bold] - {date_str}")
-        output_console.print(f"    Elongation: {event.separation_degrees:.1f}° at {event.altitude_at_event:.0f}° altitude")
+        output_console.print(
+            f"    Elongation: {event.separation_degrees:.1f}° at {event.altitude_at_event:.0f}° altitude"
+        )
         output_console.print(f"    {event.notes}")
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")
@@ -263,4 +272,3 @@ def _show_oppositions_content(output_console: Console, location, oppositions: li
 
 if __name__ == "__main__":
     app()
-

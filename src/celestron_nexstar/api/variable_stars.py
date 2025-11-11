@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from .observer import ObserverLocation
 
@@ -76,7 +77,7 @@ KNOWN_VARIABLE_STARS = [
     ),
     VariableStar(
         name="Mira",
-        designation="ο Ceti",
+        designation="o Ceti",  # Using Latin 'o' instead of Greek omicron
         variable_type="mira",
         period_days=332.0,
         magnitude_min=2.0,
@@ -181,4 +182,3 @@ def get_variable_star_events(
     # Sort by date
     events.sort(key=lambda e: e.date)
     return events
-

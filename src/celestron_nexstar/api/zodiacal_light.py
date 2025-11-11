@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from .solar_system import get_sun_info
 
+
 if TYPE_CHECKING:
     from .observer import ObserverLocation
 
@@ -20,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "ZodiacalLightWindow",
-    "get_zodiacal_light_windows",
     "get_gegenschein_windows",
+    "get_zodiacal_light_windows",
 ]
 
 
@@ -67,10 +68,10 @@ def get_zodiacal_light_windows(
     while current_date <= end_date:
         # Check evening window (spring - March to May best)
         sun_info_evening = get_sun_info(location.latitude, location.longitude, current_date)
-        if sun_info_evening and sun_info_evening.sunset:
+        if sun_info_evening and sun_info_evening.sunset_time:
             # Evening window: 60-90 minutes after sunset
-            window_start = sun_info_evening.sunset + timedelta(minutes=60)
-            window_end = sun_info_evening.sunset + timedelta(minutes=90)
+            window_start = sun_info_evening.sunset_time + timedelta(minutes=60)
+            window_end = sun_info_evening.sunset_time + timedelta(minutes=90)
 
             # Check if window is in our search period
             if now <= window_start <= end_date:
@@ -101,10 +102,10 @@ def get_zodiacal_light_windows(
 
         # Check morning window (autumn - September to November best)
         sun_info_morning = get_sun_info(location.latitude, location.longitude, current_date)
-        if sun_info_morning and sun_info_morning.sunrise:
+        if sun_info_morning and sun_info_morning.sunrise_time:
             # Morning window: 60-90 minutes before sunrise
-            window_start = sun_info_morning.sunrise - timedelta(minutes=90)
-            window_end = sun_info_morning.sunrise - timedelta(minutes=60)
+            window_start = sun_info_morning.sunrise_time - timedelta(minutes=90)
+            window_end = sun_info_morning.sunrise_time - timedelta(minutes=60)
 
             # Check if window is in our search period
             if now <= window_start <= end_date:
@@ -113,7 +114,7 @@ def get_zodiacal_light_windows(
                 if 9 <= month <= 11:  # Autumn - best for morning zodiacal light
                     quality = "excellent"
                     notes = "Autumn morning - optimal for zodiacal light"
-                elif 12 <= month or month <= 2:  # Winter
+                elif month >= 12 or month <= 2:  # Winter
                     quality = "good"
                     notes = "Winter morning - good viewing"
                 else:
@@ -176,7 +177,7 @@ def get_gegenschein_windows(
         if now <= midnight <= end_date:
             # Determine quality based on season
             month = midnight.month
-            if 9 <= month <= 11 or 12 <= month or month <= 2:  # Autumn/Winter
+            if 9 <= month <= 11 or month >= 12 or month <= 2:  # Autumn/Winter
                 quality = "excellent"
                 notes = "Autumn/Winter - optimal for gegenschein"
             else:
@@ -206,4 +207,3 @@ def get_gegenschein_windows(
     # Sort by date
     windows.sort(key=lambda w: w.start_time)
     return windows
-

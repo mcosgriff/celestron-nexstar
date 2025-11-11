@@ -15,12 +15,14 @@ from rich.table import Table
 
 from ...api.observer import ObserverLocation, geocode_location, get_observer_location
 from ...api.space_events import (
+    SpaceEvent,
     SpaceEventType,
     find_best_viewing_location,
     get_upcoming_events,
     is_event_visible_from_location,
 )
-from ...cli.utils.export import create_file_console, export_to_text
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Space events calendar and viewing recommendations")
 console = Console()
@@ -28,16 +30,16 @@ console = Console()
 
 def _generate_export_filename(command: str = "events", location: str | None = None, date_suffix: str = "") -> Path:
     """Generate export filename for events commands."""
-    from datetime import datetime
     import re
+    from datetime import datetime
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
     parts = [f"nexstar_events_{date_str}", command]
 
     if location:
-        sanitized = re.sub(r'[^\w\s-]', '', location)
-        sanitized = re.sub(r'[-\s]+', '-', sanitized)
+        sanitized = re.sub(r"[^\w\s-]", "", location)
+        sanitized = re.sub(r"[-\s]+", "-", sanitized)
         sanitized = sanitized[:30]
         if sanitized:
             parts.append(sanitized)
@@ -51,10 +53,16 @@ def _generate_export_filename(command: str = "events", location: str | None = No
 
 @app.command("upcoming")
 def show_upcoming_events(
-    days_ahead: int = typer.Option(90, "--days", "-d", help="Days ahead to show events (default: 90, ignored if --date is used)"),
+    days_ahead: int = typer.Option(
+        90, "--days", "-d", help="Days ahead to show events (default: 90, ignored if --date is used)"
+    ),
     date: str | None = typer.Option(None, "--date", help="Find events around this date (YYYY-MM-DD format)"),
-    range_days: int = typer.Option(7, "--range", "-r", help="Days before and after --date to search (default: 7, only used with --date)"),
-    event_type: str | None = typer.Option(None, "--type", "-t", help="Filter by event type (meteor_shower, eclipse, etc.)"),
+    range_days: int = typer.Option(
+        7, "--range", "-r", help="Days before and after --date to search (default: 7, only used with --date)"
+    ),
+    event_type: str | None = typer.Option(
+        None, "--type", "-t", help="Filter by event type (meteor_shower, eclipse, etc.)"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
 ) -> None:
@@ -69,9 +77,9 @@ def show_upcoming_events(
             target_date = target_date.replace(tzinfo=UTC)
             start_date = target_date - timedelta(days=range_days)
             end_date = target_date + timedelta(days=range_days)
-        except ValueError:
+        except ValueError as e:
             console.print(f"[red]Error: Invalid date format '{date}'. Use YYYY-MM-DD format (e.g., 2025-12-14)[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
     else:
         # Use days_ahead from today
         start_date = datetime.now(UTC)
@@ -81,18 +89,15 @@ def show_upcoming_events(
     if event_type:
         try:
             event_types = [SpaceEventType(event_type)]
-        except ValueError:
+        except ValueError as e:
             console.print(f"[red]Error: Invalid event type '{event_type}'[/red]")
             console.print(f"[dim]Valid types: {', '.join([e.value for e in SpaceEventType])}[/dim]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     events = get_upcoming_events(start_date=start_date, end_date=end_date, event_types=event_types)
 
     if export:
-        if date:
-            date_suffix = f"{date}_±{range_days}days"
-        else:
-            date_suffix = f"{days_ahead}days"
+        date_suffix = f"{date}_±{range_days}days" if date else f"{days_ahead}days"
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("upcoming", None, date_suffix)
         file_console = create_file_console()
         _show_events_content(file_console, events, days_ahead, date, range_days)
@@ -109,14 +114,18 @@ def show_upcoming_events(
 @app.command("viewing")
 def show_viewing_recommendations(
     event_name: str = typer.Argument(..., help="Name of the event (partial match OK)"),
-    location: str | None = typer.Option(None, "--location", "-l", help="Location to check (default: your saved location)"),
-    max_distance: float = typer.Option(500.0, "--max-distance", help="Maximum distance to search for better locations (miles)"),
+    location: str | None = typer.Option(
+        None, "--location", "-l", help="Location to check (default: your saved location)"
+    ),
+    max_distance: float = typer.Option(
+        500.0, "--max-distance", help="Maximum distance to search for better locations (miles)"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
 ) -> None:
     """
     Find the best viewing location for a specific space event.
-    
+
     Compares your current location with event requirements and suggests
     nearby dark sky sites or other locations if needed.
     """
@@ -130,25 +139,30 @@ def show_viewing_recommendations(
 
     # Find matching event (case-insensitive, partial match)
     event_name_lower = event_name.lower()
-    matching_events = [e for e in all_events if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower]
-    
+    matching_events = [
+        e for e in all_events if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower
+    ]
+
     # If no matches found, try a broader search (all events, regardless of date)
     if not matching_events:
         # Get all events from hardcoded lists as fallback
         from ...api.space_events import SPACE_EVENTS_2025, SPACE_EVENTS_2026
+
         all_events_fallback = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
-        matching_events = [e for e in all_events_fallback if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower]
+        matching_events = [
+            e for e in all_events_fallback if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower
+        ]
 
     if not matching_events:
         console.print(f"[red]Error: No event found matching '{event_name}'[/red]")
-        console.print(f"[dim]Use 'nexstar events upcoming' to see available events[/dim]")
+        console.print("[dim]Use 'nexstar events upcoming' to see available events[/dim]")
         raise typer.Exit(1)
 
     if len(matching_events) > 1:
         console.print(f"[yellow]Multiple events found matching '{event_name}':[/yellow]")
         for e in matching_events:
             console.print(f"  • {e.name} ({e.date.strftime('%Y-%m-%d')})")
-        console.print(f"[dim]Please be more specific[/dim]")
+        console.print("[dim]Please be more specific[/dim]")
         raise typer.Exit(1)
 
     event = matching_events[0]
@@ -159,21 +173,23 @@ def show_viewing_recommendations(
             observer_location = geocode_location(location)
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
     else:
         try:
             observer_location = get_observer_location()
         except Exception as e:
             console.print(f"[red]Error: Could not get your location: {e}[/red]")
-            console.print(f"[dim]Set your location with 'nexstar location set' or use --location[/dim]")
-            raise typer.Exit(1)
+            console.print("[dim]Set your location with 'nexstar location set' or use --location[/dim]")
+            raise typer.Exit(1) from e
 
     # Find best viewing location
     max_distance_km = max_distance * 1.60934
     best_location, recommendation = find_best_viewing_location(event, observer_location, max_distance_km)
 
     if export:
-        location_name = observer_location.name or f"{observer_location.latitude:.1f}N-{observer_location.longitude:.1f}E"
+        location_name = (
+            observer_location.name or f"{observer_location.latitude:.1f}N-{observer_location.longitude:.1f}E"
+        )
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("viewing", location_name)
         file_console = create_file_console()
         _show_viewing_recommendation_content(file_console, event, observer_location, recommendation, best_location)
@@ -187,9 +203,10 @@ def show_viewing_recommendations(
     _show_viewing_recommendation_content(console, event, observer_location, recommendation, best_location)
 
 
-def _show_events_content(output_console: Console, events: list, days_ahead: int, date: str | None = None, range_days: int = 7) -> None:
+def _show_events_content(
+    output_console: Console | FileConsole, events: list[SpaceEvent], days_ahead: int, date: str | None = None, range_days: int = 7
+) -> None:
     """Display space events."""
-    from datetime import UTC
 
     if date:
         output_console.print(f"\n[bold cyan]Space Events (within ±{range_days} days of {date})[/bold cyan]\n")
@@ -215,12 +232,14 @@ def _show_events_content(output_console: Console, events: list, days_ahead: int,
 
     output_console.print(table)
 
-    output_console.print(f"\n[dim]💡 Tip: Use 'nexstar events viewing <event-name>' to find best viewing location[/dim]\n")
+    output_console.print(
+        "\n[dim]💡 Tip: Use 'nexstar events viewing <event-name>' to find best viewing location[/dim]\n"
+    )
 
 
 def _show_viewing_recommendation_content(
-    output_console: Console,
-    event,
+    output_console: Console | FileConsole,
+    event: SpaceEvent,
     location: ObserverLocation,
     recommendation: str,
     best_location: ObserverLocation | None,
@@ -258,12 +277,12 @@ def _show_viewing_recommendation_content(
 
     # Show current location conditions
     light_data = get_light_pollution_data(location.latitude, location.longitude)
-    output_console.print(f"\n[bold]Your Current Sky Conditions:[/bold]")
+    output_console.print("\n[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²")
 
     # Show recommendation
-    output_console.print(f"\n[bold]Recommendation:[/bold]")
+    output_console.print("\n[bold]Recommendation:[/bold]")
     output_console.print(f"  {recommendation}\n")
 
     if event.url:
@@ -272,4 +291,3 @@ def _show_viewing_recommendation_content(
 
 if __name__ == "__main__":
     app()
-

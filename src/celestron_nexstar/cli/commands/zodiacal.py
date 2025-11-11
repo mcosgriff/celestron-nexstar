@@ -4,16 +4,17 @@ Zodiacal Light and Gegenschein Commands
 Find best viewing times for zodiacal light and gegenschein.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ...api.zodiacal_light import get_gegenschein_windows, get_zodiacal_light_windows
-from ...api.observer import get_observer_location
-from ...cli.utils.export import create_file_console, export_to_text
+from ...api.observer import ObserverLocation, get_observer_location
+from ...api.zodiacal_light import ZodiacalLightWindow, get_gegenschein_windows, get_zodiacal_light_windows
+from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+
 
 app = typer.Typer(help="Zodiacal light and gegenschein viewing")
 console = Console()
@@ -21,7 +22,6 @@ console = Console()
 
 def _generate_export_filename(command: str = "zodiacal") -> Path:
     """Generate export filename for zodiacal commands."""
-    from datetime import datetime
     from ...api.observer import get_observer_location
 
     location = get_observer_location()
@@ -49,7 +49,9 @@ def show_zodiacal_light(
     """Find best viewing times for zodiacal light."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     windows = get_zodiacal_light_windows(location, months_ahead=months)
@@ -79,7 +81,9 @@ def show_gegenschein(
     """Find best viewing times for gegenschein."""
     location = get_observer_location()
     if not location:
-        console.print("[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]")
+        console.print(
+            "[red]Error: No observer location set. Use 'nexstar location set' to configure your location.[/red]"
+        )
         raise typer.Exit(1)
 
     windows = get_gegenschein_windows(location, months_ahead=months)
@@ -98,9 +102,10 @@ def show_gegenschein(
     _show_windows_content(console, location, windows, "Gegenschein", months)
 
 
-def _show_windows_content(output_console: Console, location, windows: list, phenomenon: str, months: int) -> None:
+def _show_windows_content(output_console: Console | FileConsole, location: ObserverLocation, windows: list[ZodiacalLightWindow], phenomenon: str, months: int) -> None:
     """Display viewing window information."""
     from zoneinfo import ZoneInfo
+
     from timezonefinder import TimezoneFinder
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
@@ -109,7 +114,9 @@ def _show_windows_content(output_console: Console, location, windows: list, phen
     output_console.print(f"[dim]Searching next {months} months[/dim]\n")
 
     if not windows:
-        output_console.print(f"[yellow]No {phenomenon.lower()} viewing windows found in the forecast period.[/yellow]\n")
+        output_console.print(
+            f"[yellow]No {phenomenon.lower()} viewing windows found in the forecast period.[/yellow]\n"
+        )
         return
 
     # Get timezone for formatting
@@ -174,7 +181,9 @@ def _show_windows_content(output_console: Console, location, windows: list, phen
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")
     if phenomenon == "Zodiacal Light":
-        output_console.print("  • [green]Best seen 60-90 minutes after sunset (spring) or before sunrise (autumn)[/green]")
+        output_console.print(
+            "  • [green]Best seen 60-90 minutes after sunset (spring) or before sunrise (autumn)[/green]"
+        )
         output_console.print("  • [yellow]Requires dark skies (Bortle 3 or better)[/yellow]")
         output_console.print("  • [dim]Look for a faint triangular glow along the ecliptic[/dim]")
         output_console.print("  • [green]Best when moon is below horizon[/green]")
@@ -188,4 +197,3 @@ def _show_windows_content(output_console: Console, location, windows: list, phen
 
 if __name__ == "__main__":
     app()
-
