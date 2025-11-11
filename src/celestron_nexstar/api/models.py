@@ -499,6 +499,58 @@ class SpaceEventModel(Base):
         return f"<SpaceEvent(id={self.id}, name='{self.name}', date={self.date})>"
 
 
+class EphemerisFileModel(Base):
+    """
+    SQLAlchemy model for JPL ephemeris files.
+
+    Stores information about available ephemeris files from NAIF,
+    including file metadata, coverage dates, and contents.
+    """
+
+    __tablename__ = "ephemeris_files"
+
+    # Primary key (file key like "de440s", "jup365")
+    file_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+
+    # File identification
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Coverage
+    coverage_start: Mapped[int] = mapped_column(Integer, nullable=False)  # Year
+    coverage_end: Mapped[int] = mapped_column(Integer, nullable=False)  # Year
+
+    # File properties
+    size_mb: Mapped[float] = mapped_column(Float, nullable=False)
+    file_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # "planets" or "satellites"
+    url: Mapped[str] = mapped_column(String(512), nullable=False)
+
+    # Contents (stored as comma-separated string)
+    contents: Mapped[str] = mapped_column(Text, nullable=False)  # Comma-separated list of objects
+
+    # Use case description
+    use_case: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_file_type", "file_type"),
+        Index("idx_coverage", "coverage_start", "coverage_end"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the ephemeris file."""
+        return f"<EphemerisFile(file_key='{self.file_key}', filename='{self.filename}')>"
+
+
 @contextmanager
 def get_db_session() -> Iterator[Session]:
     """

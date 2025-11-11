@@ -108,6 +108,7 @@ Browse and search extensive catalogs:
 - **Visibility filtering**: Filter by telescope capabilities and sky conditions
 - **Geocoding**: Set location by address (`location geocode "New York, NY"`)
 - **Offline ephemeris**: Download JPL data for field use without internet
+- **Dynamic ephemeris sync**: Automatically fetch and sync ephemeris file metadata from NASA JPL's NAIF servers
 - **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
 - **Celestial events tracking**: Aurora, eclipses, meteor showers, comets, ISS, and more
 - **Space events calendar**: Planetary Society calendar with viewing location recommendations
@@ -274,7 +275,8 @@ catalog info M57                      # Detailed information
 optics config --telescope nexstar_6se --eyepiece 25
 location set --lat 34.05 --lon -118.24 --name "LA"
 location geocode "Griffith Observatory, Los Angeles"
-ephemeris download standard  # ~20MB, includes planets + Jupiter/Saturn moons
+ephemeris download recommended  # DE421 + Jupiter moons (Skyfield's default recommendation)
+ephemeris download standard      # ~20MB, includes planets + Jupiter/Saturn moons
 ```
 
 #### Alignment & Tracking
@@ -336,6 +338,8 @@ nexstar vacation plan --location "Denver, CO" --export        # Vacation plan
 
 ```bash
 nexstar data init-static                                        # Initialize offline data
+nexstar data sync-ephemeris                                     # Sync ephemeris file metadata from NAIF
+nexstar data sync-ephemeris --list                             # Preview available ephemeris files
 nexstar data stats                                              # Show database statistics
 ```
 
@@ -367,7 +371,8 @@ uv run nexstar shell
 # Follow the setup wizard or configure manually:
 optics config --telescope nexstar_6se --eyepiece 25
 location geocode "Your City, State"
-ephemeris download standard
+nexstar data sync-ephemeris                                     # Sync ephemeris file metadata
+ephemeris download recommended                                  # Download recommended set (DE421 + Jupiter moons)
 
 # Take the tutorial to learn all features
 tutorial

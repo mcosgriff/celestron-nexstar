@@ -33,8 +33,8 @@ from .commands import (
     planets,
     position,
     satellites,
+    telescope,
     time,
-    tonight,
     track,
     vacation,
     variables,
@@ -331,7 +331,7 @@ app.add_typer(
 
 # Planning & Observation
 app.add_typer(
-    tonight.app,
+    telescope.app,
     name="telescope",
     help="Telescope viewing commands",
     rich_help_panel="Planning & Observation",

@@ -23,6 +23,7 @@ from ...api.space_events import (
     is_event_visible_from_location,
 )
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
+from ...cli.utils.selection import select_from_list
 
 
 app = typer.Typer(help="Space events calendar and viewing recommendations")
@@ -62,7 +63,10 @@ def show_upcoming_events(
         7, "--range", "-r", help="Days before and after --date to search (default: 7, only used with --date)"
     ),
     event_type: str | None = typer.Option(
-        None, "--type", "-t", help="Filter by event type (meteor_shower, eclipse, etc.)"
+        None,
+        "--type",
+        "-t",
+        help="Filter by event type (meteor_shower, eclipse, etc.) or 'all' for all types. If not provided, will prompt interactively.",
     ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
@@ -86,13 +90,19 @@ def show_upcoming_events(
         start_date = datetime.now(UTC)
         end_date = start_date + timedelta(days=days_ahead)
 
-    event_types = None
-    if event_type:
+    # Interactive selection if event_type not provided
+    if event_type is None:
+        selected_type = _select_event_type_interactive()
+        event_types = None if selected_type is None or selected_type == "all" else [SpaceEventType(selected_type)]
+    elif event_type.lower() == "all":
+        # Explicit "all" option
+        event_types = None
+    else:
         try:
             event_types = [SpaceEventType(event_type)]
         except ValueError as e:
             console.print(f"[red]Error: Invalid event type '{event_type}'[/red]")
-            console.print(f"[dim]Valid types: {', '.join([e.value for e in SpaceEventType])}[/dim]")
+            console.print(f"[dim]Valid types: {', '.join([e.value for e in SpaceEventType])}, 'all'[/dim]")
             raise typer.Exit(1) from e
 
     events = get_upcoming_events(start_date=start_date, end_date=end_date, event_types=event_types)
@@ -222,10 +232,10 @@ def _show_events_content(
         output_console.print("[dim]No events found in this time period[/dim]\n")
         return
 
-    table = Table(expand=True, show_header=True, header_style="bold")
-    table.add_column("Date", width=12)
-    table.add_column("Event", style="bold", width=30)
-    table.add_column("Type", width=20)
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date")
+    table.add_column("Event", style="bold")
+    table.add_column("Type")
     table.add_column("Description", style="dim")
 
     for event in events:
@@ -240,6 +250,50 @@ def _show_events_content(
     output_console.print(
         "\n[dim]💡 Tip: Use 'nexstar events viewing <event-name>' to find best viewing location[/dim]\n"
     )
+
+
+def _select_event_type_interactive() -> str | None:
+    """Interactively select an event type."""
+    # Create list with "all" option first, then event types
+    all_option = "all"
+    event_types = list(SpaceEventType)
+    all_items: list[str | SpaceEventType] = [all_option, *event_types]
+
+    # Event type descriptions
+    descriptions = {
+        SpaceEventType.METEOR_SHOWER: "Meteor shower events",
+        SpaceEventType.PLANETARY_OPPOSITION: "Planetary oppositions",
+        SpaceEventType.PLANETARY_ELONGATION: "Planetary elongations",
+        SpaceEventType.PLANETARY_BRIGHTNESS: "Planetary brightness peaks",
+        SpaceEventType.LUNAR_ECLIPSE: "Lunar eclipses",
+        SpaceEventType.SOLAR_ECLIPSE: "Solar eclipses",
+        SpaceEventType.SPACE_MISSION: "Space mission events",
+        SpaceEventType.ASTEROID_FLYBY: "Asteroid flyby events",
+        SpaceEventType.SOLSTICE: "Solstices",
+        SpaceEventType.EQUINOX: "Equinoxes",
+        SpaceEventType.OTHER: "Other space events",
+    }
+
+    def display_event_type(item: str | SpaceEventType) -> tuple[str, ...]:
+        if isinstance(item, str) and item == "all":
+            return ("All Event Types", "Show all events regardless of type")
+        et = item
+        display_name = et.value.replace("_", " ").title()
+        description = descriptions.get(et, "Event type")
+        return (display_name, description)
+
+    selected = select_from_list(
+        all_items,
+        title="Select Event Type (or 'q' to cancel)",
+        display_func=display_event_type,
+        headers=["Event Type", "Description"],
+    )
+
+    if selected is None:
+        return None
+    if isinstance(selected, str) and selected == "all":
+        return "all"
+    return selected.value
 
 
 def _show_viewing_recommendation_content(

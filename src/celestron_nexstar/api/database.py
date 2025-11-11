@@ -13,7 +13,7 @@ import logging
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .catalogs import CelestialObject
 from .enums import CelestialObjectType
 from .ephemeris import get_planetary_position, is_dynamic_object
-from .models import CelestialObjectModel, MetadataModel
+from .models import CelestialObjectModel, EphemerisFileModel, MetadataModel
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,8 @@ __all__ = [
     "DatabaseStats",
     "get_database",
     "init_database",
+    "list_ephemeris_files_from_naif",
+    "sync_ephemeris_files_from_naif",
     "vacuum_database",
 ]
 
@@ -839,3 +841,189 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     )
 
     return (size_before, size_after)
+
+
+def get_ephemeris_files() -> dict[str, dict[str, Any]]:
+    """
+    Get all ephemeris files from the database.
+
+    Returns:
+        Dictionary mapping file_key to EphemerisFileInfo-like dict
+    """
+    db = get_database()
+    with db._get_session() as session:
+        files = session.query(EphemerisFileModel).all()
+        result: dict[str, dict[str, Any]] = {}
+        for file_model in files:
+            result[file_model.file_key] = {
+                "filename": file_model.filename,
+                "display_name": file_model.display_name,
+                "description": file_model.description,
+                "coverage_start": file_model.coverage_start,
+                "coverage_end": file_model.coverage_end,
+                "size_mb": file_model.size_mb,
+                "contents": tuple(file_model.contents.split(", ") if file_model.contents else ()),
+                "use_case": file_model.use_case,
+                "url": file_model.url,
+            }
+        return result
+
+
+async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
+    """
+    Fetch ephemeris file information from NAIF and return as list (without syncing).
+
+    Returns:
+        List of dictionaries with ephemeris file information
+    """
+    from .ephemeris_manager import (
+        NAIF_PLANETS_SUMMARY,
+        NAIF_SATELLITES_SUMMARY,
+        _fetch_summaries,
+        _generate_file_info,
+        _parse_summaries,
+    )
+
+    try:
+        # Fetch and parse summaries
+        logger.info("Fetching ephemeris file summaries from NAIF...")
+        planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
+        satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+
+        planets_summaries = _parse_summaries(planets_content, "planets")
+        satellites_summaries = _parse_summaries(satellites_content, "satellites")
+        all_summaries = planets_summaries + satellites_summaries
+
+        # Convert to dict format for display
+        files_list: list[dict[str, Any]] = []
+        for summary in all_summaries:
+            file_info = _generate_file_info(summary)
+            file_key = summary.filename.replace(".bsp", "")
+
+            files_list.append(
+                {
+                    "file_key": file_key,
+                    "filename": file_info.filename,
+                    "display_name": file_info.display_name,
+                    "description": file_info.description,
+                    "coverage_start": file_info.coverage_start,
+                    "coverage_end": file_info.coverage_end,
+                    "size_mb": file_info.size_mb,
+                    "file_type": summary.file_type,
+                    "url": file_info.url,
+                    "contents": ", ".join(file_info.contents),
+                    "use_case": file_info.use_case,
+                }
+            )
+
+        return files_list
+
+    except Exception as e:
+        logger.error(f"Failed to fetch ephemeris files from NAIF: {e}")
+        raise
+
+
+async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
+    """
+    Fetch ephemeris file information from NAIF and sync to database.
+
+    Args:
+        force: If True, update even if recently synced
+
+    Returns:
+        Number of files synced
+    """
+    from .ephemeris_manager import (
+        NAIF_PLANETS_SUMMARY,
+        NAIF_SATELLITES_SUMMARY,
+        _fetch_summaries,
+        _generate_file_info,
+        _parse_summaries,
+    )
+
+    db = get_database()
+
+    # Check if we need to sync (check last sync time in metadata)
+    if not force:
+        with db._get_session() as session:
+            last_sync = session.query(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync").first()
+            if last_sync:
+                last_sync_time = datetime.fromisoformat(last_sync.value)
+                hours_since_sync = (datetime.now() - last_sync_time).total_seconds() / 3600
+                if hours_since_sync < 24:  # Sync once per day max
+                    logger.info("Ephemeris files recently synced, skipping")
+                    return 0
+
+    try:
+        # Fetch and parse summaries
+        logger.info("Fetching ephemeris file summaries from NAIF...")
+        planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
+        satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+
+        planets_summaries = _parse_summaries(planets_content, "planets")
+        satellites_summaries = _parse_summaries(satellites_content, "satellites")
+        all_summaries = planets_summaries + satellites_summaries
+
+        # Convert to EphemerisFileInfo and then to database models
+        files_to_sync: list[EphemerisFileModel] = []
+        for summary in all_summaries:
+            file_info = _generate_file_info(summary)
+            file_key = summary.filename.replace(".bsp", "")
+
+            files_to_sync.append(
+                EphemerisFileModel(
+                    file_key=file_key,
+                    filename=file_info.filename,
+                    display_name=file_info.display_name,
+                    description=file_info.description,
+                    coverage_start=file_info.coverage_start,
+                    coverage_end=file_info.coverage_end,
+                    size_mb=file_info.size_mb,
+                    file_type=summary.file_type,
+                    url=file_info.url,
+                    contents=", ".join(file_info.contents),
+                    use_case=file_info.use_case,
+                )
+            )
+
+        # Upsert to database
+        with db._get_session() as session:
+            synced_count = 0
+            for file_model in files_to_sync:
+                # Check if exists
+                existing = (
+                    session.query(EphemerisFileModel).filter(EphemerisFileModel.file_key == file_model.file_key).first()
+                )
+                if existing:
+                    # Update existing
+                    for key, value in file_model.__dict__.items():
+                        if key != "_sa_instance_state" and key != "file_key":
+                            setattr(existing, key, value)
+                    existing.updated_at = datetime.now(UTC)
+                else:
+                    # Insert new
+                    session.add(file_model)
+                synced_count += 1
+
+            # Update sync timestamp
+            sync_metadata = (
+                session.query(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync").first()
+            )
+            if sync_metadata:
+                sync_metadata.value = datetime.now(UTC).isoformat()
+                sync_metadata.updated_at = datetime.now(UTC)
+            else:
+                session.add(
+                    MetadataModel(
+                        key="ephemeris_files_last_sync",
+                        value=datetime.now(UTC).isoformat(),
+                    )
+                )
+
+            session.commit()
+            logger.info(f"Synced {synced_count} ephemeris files to database")
+            return synced_count
+
+    except Exception as e:
+        logger.error(f"Failed to sync ephemeris files from NAIF: {e}")
+        raise

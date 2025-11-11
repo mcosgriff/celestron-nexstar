@@ -4,7 +4,7 @@ Ephemeris Commands
 Commands for managing JPL ephemeris files for offline field use.
 """
 
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import typer
 from rich.panel import Panel
@@ -25,7 +25,8 @@ from celestron_nexstar.api.ephemeris_manager import (
     verify_file,
 )
 
-from ..utils.output import console, print_error, print_info, print_success, print_warning
+from ..utils.output import calculate_panel_width, console, print_error, print_info, print_success, print_warning
+from ..utils.selection import select_from_list
 
 
 app = typer.Typer(help="Ephemeris file management")
@@ -116,7 +117,9 @@ def list_files(
 
 @app.command("info", rich_help_panel="File Information")
 def show_info(
-    file: str = typer.Argument(..., help="File name (e.g., de440s, jup365)"),
+    file: str | None = typer.Argument(
+        None, help="File name (e.g., de440s, jup365). If not provided, will prompt interactively."
+    ),
 ) -> None:
     """
     Show detailed information about an ephemeris file.
@@ -124,11 +127,25 @@ def show_info(
     Explains what the file contains, when to use it, and what objects
     it covers.
 
+    If run without arguments, you'll be prompted to select from available
+    files interactively.
+
     Examples:
+        # Interactive selection
+        nexstar ephemeris info
+
+        # Direct selection
         nexstar ephemeris info de440s
         nexstar ephemeris info jup365
     """
     try:
+        # Interactive selection if file not provided
+        if file is None:
+            file = _select_ephemeris_file_interactive()
+            if file is None:
+                print_info("Selection cancelled")
+                return
+
         if file not in EPHEMERIS_FILES:
             print_error(f"Unknown ephemeris file: {file}")
             print_info(f"Available files: {', '.join(EPHEMERIS_FILES.keys())}")
@@ -174,7 +191,12 @@ def show_info(
         info_text.append("When to use:\n", style="bold yellow")
         info_text.append(f"   {info.use_case}\n", style="white")
 
-        panel = Panel(info_text, title=f"[bold]{info.display_name}[/bold]", border_style="cyan")
+        panel = Panel(
+            info_text,
+            title=f"[bold]{info.display_name}[/bold]",
+            border_style="cyan",
+            width=calculate_panel_width(info_text, console),
+        )
         console.print(panel)
 
         # Show download command if not installed
@@ -188,7 +210,9 @@ def show_info(
 
 @app.command("download", rich_help_panel="File Management")
 def download(
-    file: str = typer.Argument(..., help="File name or set name (e.g., de440s, standard)"),
+    file: str | None = typer.Argument(
+        None, help="File name or set name (e.g., de440s, standard). If not provided, will prompt interactively."
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Force re-download"),
 ) -> None:
     """
@@ -197,18 +221,26 @@ def download(
     Downloads ephemeris files to ~/.skyfield/ for offline use in the field.
     Files are downloaded from NASA JPL's NAIF servers.
 
+    If run without arguments, you'll be prompted to select from available
+    files and sets interactively.
+
     File sets:
-      minimal  - Planets + Jupiter moons (~20 MB)
-      standard - Planets + Jupiter & Saturn moons (~47 MB)
-      complete - All major moons except Mars (~60 MB)
-      full     - Everything including Mars moons (~63 MB)
+      recommended - Skyfield's default (DE421 + Jupiter moons) (~20 MB) [RECOMMENDED]
+      minimal     - Same as recommended (alias) (~20 MB)
+      standard    - Planets + Jupiter & Saturn moons (~47 MB)
+      complete    - All major moons except Mars (~60 MB)
+      full        - Everything including Mars moons (~63 MB)
 
     Examples:
+        # Interactive selection
+        nexstar ephemeris download
+
         # Download specific file
         nexstar ephemeris download de440s
         nexstar ephemeris download jup365
 
-        # Download file set
+        # Download file set (recommended is Skyfield's default)
+        nexstar ephemeris download recommended
         nexstar ephemeris download standard
         nexstar ephemeris download complete
 
@@ -216,6 +248,12 @@ def download(
         nexstar ephemeris download de440s --force
     """
     try:
+        # Interactive selection if file not provided
+        if file is None:
+            file = _select_ephemeris_download_interactive()
+            if file is None:
+                print_info("Selection cancelled")
+                return
         # Check if it's a file set
         if file in EPHEMERIS_SETS:
             set_info = get_set_info(file)
@@ -224,7 +262,9 @@ def download(
             )
 
             with console.status(f"[bold green]Downloading {file} set..."):
-                downloaded = download_set(cast(Literal["minimal", "standard", "complete", "full"], file), force=force)
+                downloaded = download_set(
+                    cast(Literal["recommended", "minimal", "standard", "complete", "full"], file), force=force
+                )
 
             print_success(f"Downloaded {len(downloaded)} files")
             for path in downloaded:
@@ -284,13 +324,14 @@ def show_sets() -> None:
         table.add_column("Description", style="white")
 
         set_descriptions = {
-            "minimal": "Planets + Jupiter moons (good for casual use)",
-            "standard": "Planets + Jupiter & Saturn moons (recommended)",
+            "recommended": "Skyfield's default recommendation (DE421 + Jupiter moons)",
+            "minimal": "Same as recommended (alias for backwards compatibility)",
+            "standard": "Planets + Jupiter & Saturn moons",
             "complete": "All major planet moons except Mars",
             "full": "Everything including challenging Mars moons",
         }
 
-        for set_name in ["minimal", "standard", "complete", "full"]:
+        for set_name in ["recommended", "minimal", "standard", "complete", "full"]:
             info = get_set_info(set_name)
             installed_count = cast(int, info["installed_count"])
             file_count = cast(int, info["file_count"])
@@ -303,8 +344,10 @@ def show_sets() -> None:
             else:
                 status = "[dim]Not installed[/dim]"
 
+            # Highlight recommended set
+            set_name_display = f"[bold green]★ {set_name}[/bold green]" if set_name == "recommended" else set_name
             table.add_row(
-                set_name,
+                set_name_display,
                 str(info["file_count"]),
                 f"{info['total_size_mb']:.0f} MB",
                 status,
@@ -432,3 +475,73 @@ def delete_file_cmd(
     except Exception as e:
         print_error(f"Delete failed: {e}")
         raise typer.Exit(code=1) from e
+
+
+def _select_ephemeris_file_interactive() -> str | None:
+    """Interactively select an ephemeris file."""
+    # Create list of file keys with their info
+    file_items = list(EPHEMERIS_FILES.items())
+
+    def display_file(item: tuple[str, Any]) -> tuple[str, ...]:
+        key, info = item
+        installed = is_file_installed(key)
+        status = "[green]✓ Installed[/green]" if installed else "[dim]Not installed[/dim]"
+        if installed:
+            size = get_file_size(key)
+            size_str = f"{size / (1024 * 1024):.1f} MB" if size else f"{info.size_mb:.0f} MB (est.)"
+        else:
+            size_str = f"{info.size_mb:.0f} MB"
+        coverage = f"{info.coverage_start}-{info.coverage_end}"
+        return (info.display_name, status, size_str, coverage)
+
+    selected = select_from_list(
+        file_items,
+        title="Select Ephemeris File",
+        display_func=display_file,
+        headers=["File", "Status", "Size", "Coverage"],
+    )
+
+    return selected[0] if selected else None
+
+
+def _select_ephemeris_download_interactive() -> str | None:
+    """Interactively select an ephemeris file or set to download."""
+    # Combine files and sets
+    all_items: list[tuple[str, str, Any]] = []  # (key, type, info)
+
+    # Add individual files
+    for key, info in EPHEMERIS_FILES.items():
+        all_items.append((key, "file", info))
+
+    # Add sets
+    for set_name in EPHEMERIS_SETS:
+        set_info = get_set_info(set_name)
+        all_items.append((set_name, "set", set_info))
+
+    def display_item(item: tuple[str, str, Any]) -> tuple[str, ...]:
+        key, item_type, info = item
+        if item_type == "file":
+            info_obj = info
+            name = info_obj.display_name
+            size = f"{info_obj.size_mb:.0f} MB"
+            description = info_obj.description[:50] + "..." if len(info_obj.description) > 50 else info_obj.description
+        else:
+            # It's a set
+            set_info_dict = info
+            # Highlight recommended set
+            name = "[bold green]★ Recommended Set[/bold green]" if key == "recommended" else f"{key.title()} Set"
+            size = f"{set_info_dict['total_size_mb']:.0f} MB"
+            description = (
+                "[dim]Skyfield's default[/dim]" if key == "recommended" else f"{set_info_dict['file_count']} files"
+            )
+
+        return (name, "[cyan]File[/cyan]" if item_type == "file" else "[yellow]Set[/yellow]", size, description)
+
+    selected = select_from_list(
+        all_items,
+        title="Select Ephemeris File or Set to Download",
+        display_func=display_item,
+        headers=["Name", "Type", "Size", "Description"],
+    )
+
+    return selected[0] if selected else None

@@ -16,6 +16,73 @@ app = typer.Typer(help="Data import and management commands")
 console = Console()
 
 
+@app.command("sync-ephemeris", rich_help_panel="Data Management")
+def sync_ephemeris_files(
+    force: bool = typer.Option(False, "--force", "-f", help="Force sync even if recently updated"),
+    list_files: bool = typer.Option(
+        False, "--list", "-l", help="List files that would be synced without actually syncing"
+    ),
+) -> None:
+    """
+    Sync ephemeris file information from NAIF to the database.
+
+    Fetches the latest ephemeris file summaries from NASA JPL's NAIF servers
+    and updates the local database with file metadata, coverage dates, and contents.
+
+    This command should be run periodically to keep ephemeris file information
+    up to date. By default, it only syncs once per day.
+
+    Examples:
+        nexstar data sync-ephemeris
+        nexstar data sync-ephemeris --force
+        nexstar data sync-ephemeris --list
+    """
+    import asyncio
+
+    from rich.table import Table
+
+    from ...api.database import list_ephemeris_files_from_naif, sync_ephemeris_files_from_naif
+
+    try:
+        if list_files:
+            console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]\n")
+            files = asyncio.run(list_ephemeris_files_from_naif())
+
+            if not files:
+                console.print("[yellow]No ephemeris files found[/yellow]")
+                return
+
+            # Create table
+            table = Table(title="Ephemeris Files Available from NAIF", show_header=True, header_style="bold magenta")
+            table.add_column("Key", style="cyan", width=15)
+            table.add_column("File", style="green", width=20)
+            table.add_column("Type", style="yellow", width=10)
+            table.add_column("Coverage", style="blue", width=15)
+            table.add_column("Size (MB)", justify="right", style="magenta", width=10)
+            table.add_column("Description", style="white")
+
+            for file_info in sorted(files, key=lambda x: (x["file_type"], x["file_key"])):
+                coverage = f"{file_info['coverage_start']}-{file_info['coverage_end']}"
+                table.add_row(
+                    file_info["file_key"],
+                    file_info["filename"],
+                    file_info["file_type"],
+                    coverage,
+                    f"{file_info['size_mb']:.1f}",
+                    file_info["description"][:50] + ("..." if len(file_info["description"]) > 50 else ""),
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Total: {len(files)} files[/dim]")
+        else:
+            console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]")
+            count = asyncio.run(sync_ephemeris_files_from_naif(force=force))
+            console.print(f"[green]✓[/green] Synced {count} ephemeris files to database")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to sync ephemeris files: {e}")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("sources", rich_help_panel="Data Sources")
 def sources() -> None:
     """

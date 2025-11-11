@@ -4,12 +4,16 @@ CLI Output Utilities
 Rich console formatting utilities for beautiful CLI output.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+
+if TYPE_CHECKING:
+    from rich.console import RenderableType
 
 
 # Create console with unicode detection
@@ -129,8 +133,51 @@ def print_telescope_info(model: int, firmware_major: int, firmware_minor: int) -
     info_text.append("Firmware: ", style="bold cyan")
     info_text.append(f"{firmware_major}.{firmware_minor:02d}", style="white")
 
-    panel = Panel(info_text, title="[bold]Telescope Information[/bold]", border_style="green")
+    panel = Panel(
+        info_text,
+        title="[bold]Telescope Information[/bold]",
+        border_style="green",
+        width=calculate_panel_width(info_text, console),
+    )
     console.print(panel)
+
+
+def calculate_panel_width(content: "RenderableType", console: Console | None = None) -> int | None:
+    """
+    Calculate optimal panel width based on content size.
+
+    Measures the content width and adds padding for panel borders and title,
+    while capping at terminal width to prevent overflow.
+
+    Args:
+        content: Rich renderable content (Text, str, etc.)
+        console: Console instance to get terminal width. If None, uses global console.
+
+    Returns:
+        Calculated width or None if console width is unavailable
+    """
+    if console is None:
+        console = globals()["console"]
+
+    # Get plain text representation to measure width
+    if hasattr(content, "plain"):
+        # Rich Text objects have a plain property
+        plain_text = content.plain
+    elif isinstance(content, str):
+        plain_text = content
+    else:
+        # Fallback to string representation
+        plain_text = str(content)
+
+    # Find the longest line
+    content_lines = plain_text.split("\n")
+    max_line_length = max(len(line) for line in content_lines) if content_lines else 0
+
+    # Add padding for panel borders and title (roughly 15 chars)
+    # Cap at terminal width to prevent overflow on small terminals
+    if hasattr(console, "width"):
+        return min(max_line_length + 15, console.width)
+    return None
 
 
 def print_json(data: dict[str, Any]) -> None:

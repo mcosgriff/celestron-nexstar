@@ -5,6 +5,7 @@ Commands for managing telescope and eyepiece optical configuration.
 """
 
 import typer
+from rich.prompt import Prompt
 from rich.table import Table
 
 from celestron_nexstar.api.enums import SkyBrightness
@@ -13,6 +14,7 @@ from celestron_nexstar.api.optics import (
     EyepieceSpecs,
     OpticalConfiguration,
     TelescopeModel,
+    TelescopeSpecs,
     calculate_dawes_limit_arcsec,
     calculate_limiting_magnitude,
     calculate_rayleigh_criterion_arcsec,
@@ -29,22 +31,22 @@ app = typer.Typer(help="Optical configuration commands")
 
 @app.command("config", rich_help_panel="Configuration")
 def configure(
-    telescope: TelescopeModel = typer.Option(
-        TelescopeModel.NEXSTAR_6SE,
+    telescope: TelescopeModel | None = typer.Option(
+        None,
         "--telescope",
         "-t",
-        help="Telescope model",
+        help="Telescope model (if not provided, will prompt interactively)",
     ),
-    eyepiece_mm: float = typer.Option(
-        25.0,
+    eyepiece_mm: float | None = typer.Option(
+        None,
         "--eyepiece",
         "-e",
-        help="Eyepiece focal length in mm",
+        help="Eyepiece focal length in mm (if not provided, will prompt interactively)",
     ),
-    eyepiece_fov: float = typer.Option(
-        50.0,
+    eyepiece_fov: float | None = typer.Option(
+        None,
         "--fov",
-        help="Eyepiece apparent field of view in degrees",
+        help="Eyepiece apparent field of view in degrees (auto-filled from common eyepieces if not provided)",
     ),
     eyepiece_name: str | None = typer.Option(
         None,
@@ -53,28 +55,66 @@ def configure(
     ),
 ) -> None:
     """
-    Configure telescope and eyepiece setup.
+    Configure telescope and eyepiece setup interactively.
 
     This configuration is used for calculating limiting magnitudes and
     filtering visible objects based on your actual equipment.
 
+    If run without options, you'll be prompted to select from available
+    telescopes and eyepieces interactively.
+
     Examples:
-        # Configure NexStar 6SE with 25mm Plössl
+        # Interactive configuration
+        nexstar optics config
+
+        # Non-interactive with flags
         nexstar optics config --telescope nexstar_6se --eyepiece 25
 
         # Configure NexStar 8SE with 10mm ultra-wide
         nexstar optics config -t nexstar_8se -e 10 --fov 82 --name "10mm UW"
     """
     try:
+        # Interactive telescope selection if not provided
+        if telescope is None:
+            telescope = _select_telescope_interactive()
+            if telescope is None:
+                print_info("Configuration cancelled")
+                return
+
         # Get telescope specs
         telescope_specs = get_telescope_specs(telescope)
 
-        # Create eyepiece specs
-        eyepiece_specs = EyepieceSpecs(
-            focal_length_mm=eyepiece_mm,
-            apparent_fov_deg=eyepiece_fov,
-            name=eyepiece_name or f"{eyepiece_mm}mm eyepiece",
-        )
+        # Interactive eyepiece selection if not provided
+        if eyepiece_mm is None:
+            eyepiece_specs = _select_eyepiece_interactive(telescope_specs)
+            if eyepiece_specs is None:
+                print_info("Configuration cancelled")
+                return
+        else:
+            # Use provided eyepiece focal length
+            # If FOV not provided, try to find it in COMMON_EYEPIECES
+            if eyepiece_fov is None:
+                # Look for matching eyepiece in COMMON_EYEPIECES
+                matching_eyepiece = None
+                for ep in COMMON_EYEPIECES.values():
+                    if abs(ep.focal_length_mm - eyepiece_mm) < 0.1:
+                        matching_eyepiece = ep
+                        break
+
+                if matching_eyepiece:
+                    eyepiece_fov = matching_eyepiece.apparent_fov_deg
+                    if not eyepiece_name:
+                        eyepiece_name = matching_eyepiece.name
+                else:
+                    # Default to standard Plössl FOV
+                    eyepiece_fov = 50.0
+
+            # Create eyepiece specs
+            eyepiece_specs = EyepieceSpecs(
+                focal_length_mm=eyepiece_mm,
+                apparent_fov_deg=eyepiece_fov,
+                name=eyepiece_name or f"{eyepiece_mm}mm eyepiece",
+            )
 
         # Create and save configuration
         config = OpticalConfiguration(
@@ -86,6 +126,9 @@ def configure(
         print_success("Optical configuration saved!")
         _display_configuration(config)
 
+    except KeyboardInterrupt:
+        print_info("\nConfiguration cancelled")
+        raise typer.Exit(code=0) from None
     except Exception as e:
         print_error(f"Failed to configure optics: {e}")
         raise typer.Exit(code=1) from e
@@ -452,3 +495,192 @@ def _display_configuration(config: OpticalConfiguration) -> None:
     performance_table.add_row("Limiting Mag (good sky)", f"{good_sky_mag:.1f}")
 
     console.print(performance_table)
+
+
+def _select_telescope_interactive() -> TelescopeModel | None:
+    """Interactively select a telescope model."""
+    try:
+        current_config = get_current_configuration()
+        current_model = current_config.telescope.model
+    except Exception:
+        current_model = None
+
+    console.print("\n[bold cyan]Select Telescope Model:[/bold cyan]\n")
+
+    # Create table of available telescopes
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("Model", style="cyan")
+    table.add_column("Aperture", style="green")
+    table.add_column("Focal Length", style="green")
+    table.add_column("f-ratio", style="yellow")
+
+    telescope_models = list(TelescopeModel)
+    for i, model in enumerate(telescope_models, 1):
+        specs = get_telescope_specs(model)
+        # Use fixed-width format: always reserve 2 chars for indicator (asterisk + space, or 2 spaces)
+        marker = "* " if model == current_model else "  "
+        if model == current_model:
+            model_name = f"[bold]{marker}{specs.display_name}[/bold]"
+        else:
+            model_name = f"{marker}{specs.display_name}"
+
+        table.add_row(
+            str(i),
+            model_name,
+            f'{specs.aperture_mm}mm ({specs.aperture_inches:.1f}")',
+            f"{specs.focal_length_mm}mm",
+            f"f/{specs.focal_ratio}",
+        )
+
+    console.print(table)
+    console.print()
+
+    # Prompt for selection
+    while True:
+        try:
+            choice = Prompt.ask(
+                "[cyan]Select telescope number (or 'q' to cancel)[/cyan]",
+                default="1" if current_model else None,
+            )
+
+            if choice.lower() in ["q", "quit", "cancel", "exit"]:
+                return None
+
+            idx = int(choice) - 1
+            if 0 <= idx < len(telescope_models):
+                selected = telescope_models[idx]
+                console.print(f"[green]Selected:[/green] {get_telescope_specs(selected).display_name}")
+                return selected
+            else:
+                console.print(f"[red]Invalid selection. Please enter 1-{len(telescope_models)}[/red]")
+
+        except ValueError:
+            console.print("[red]Invalid input. Please enter a number or 'q' to cancel[/red]")
+        except KeyboardInterrupt:
+            return None
+
+
+def _select_eyepiece_interactive(telescope_specs: TelescopeSpecs) -> EyepieceSpecs | None:
+    """Interactively select an eyepiece."""
+    try:
+        current_config = get_current_configuration()
+        current_eyepiece = current_config.eyepiece
+    except Exception:
+        current_eyepiece = None
+
+    console.print("\n[bold cyan]Select Eyepiece:[/bold cyan]\n")
+
+    # Show common eyepieces in a table
+    table = Table(show_header=True, header_style="bold magenta")
+    table.add_column("#", style="cyan", justify="right")
+    table.add_column("Name", style="cyan")
+    table.add_column("Focal Length", style="green")
+    table.add_column("FOV", style="yellow")
+    table.add_column("Magnification", style="blue")
+    table.add_column("True FOV", style="green")
+
+    eyepiece_list = list(COMMON_EYEPIECES.values())
+    for i, eyepiece in enumerate(eyepiece_list, 1):
+        mag = eyepiece.magnification(telescope_specs)
+        tfov = eyepiece.true_fov_arcmin(telescope_specs)
+
+        # Check if this matches current eyepiece
+        is_current = False
+        if current_eyepiece:
+            is_current = (
+                abs(eyepiece.focal_length_mm - current_eyepiece.focal_length_mm) < 0.1
+                and abs(eyepiece.apparent_fov_deg - current_eyepiece.apparent_fov_deg) < 0.1
+            )
+
+        # Use fixed-width format: always reserve 2 chars for indicator (asterisk + space, or 2 spaces)
+        marker = "* " if is_current else "  "
+        name = f"[bold]{marker}{eyepiece.name}[/bold]" if is_current else f"{marker}{eyepiece.name}"
+
+        table.add_row(
+            str(i),
+            name,
+            f"{eyepiece.focal_length_mm}mm",
+            f"{eyepiece.apparent_fov_deg}°",
+            f"{mag:.0f}x",
+            f"{tfov:.1f}'",
+        )
+
+    console.print(table)
+    console.print()
+
+    # Prompt for selection
+    while True:
+        try:
+            choice = Prompt.ask(
+                "[cyan]Select eyepiece number, 'c' for custom, or 'q' to cancel[/cyan]",
+                default=None,
+            )
+
+            if choice.lower() in ["q", "quit", "cancel", "exit"]:
+                return None
+
+            if choice.lower() in ["c", "custom"]:
+                return _create_custom_eyepiece()
+
+            idx = int(choice) - 1
+            if 0 <= idx < len(eyepiece_list):
+                selected = eyepiece_list[idx]
+                console.print(f"[green]Selected:[/green] {selected.name}")
+                return selected
+            else:
+                console.print(f"[red]Invalid selection. Please enter 1-{len(eyepiece_list)}, 'c', or 'q'[/red]")
+
+        except ValueError:
+            console.print("[red]Invalid input. Please enter a number, 'c' for custom, or 'q' to cancel[/red]")
+        except KeyboardInterrupt:
+            return None
+
+
+def _create_custom_eyepiece() -> EyepieceSpecs | None:
+    """Prompt user to create a custom eyepiece."""
+    console.print("\n[bold cyan]Custom Eyepiece Configuration:[/bold cyan]\n")
+
+    try:
+        # Get focal length
+        while True:
+            focal_length_str = Prompt.ask("[cyan]Focal length (mm)[/cyan]")
+            try:
+                focal_length = float(focal_length_str)
+                if focal_length > 0:
+                    break
+                console.print("[red]Focal length must be positive[/red]")
+            except ValueError:
+                console.print("[red]Invalid number. Please enter a valid focal length in mm[/red]")
+
+        # Get FOV
+        while True:
+            fov_str = Prompt.ask(
+                "[cyan]Apparent field of view (degrees)[/cyan]",
+                default="50.0",
+            )
+            try:
+                fov = float(fov_str)
+                if 0 < fov <= 120:
+                    break
+                console.print("[red]FOV must be between 0 and 120 degrees[/red]")
+            except ValueError:
+                console.print("[red]Invalid number. Please enter a valid FOV in degrees[/red]")
+
+        # Get optional name
+        name = Prompt.ask(
+            "[cyan]Eyepiece name (optional)[/cyan]",
+            default=f"{focal_length}mm eyepiece",
+        )
+
+        eyepiece = EyepieceSpecs(
+            focal_length_mm=focal_length,
+            apparent_fov_deg=fov,
+            name=name,
+        )
+
+        console.print(f"[green]Created custom eyepiece:[/green] {eyepiece.name}")
+        return eyepiece
+
+    except KeyboardInterrupt:
+        return None

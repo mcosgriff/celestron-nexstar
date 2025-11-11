@@ -8,10 +8,15 @@ ephemeris file handling.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
+
+import aiohttp
 
 
 logger = logging.getLogger(__name__)
@@ -48,8 +53,408 @@ class EphemerisFileInfo:
     url: str  # Download URL
 
 
-# Comprehensive ephemeris file database
-EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
+# Base URL for NAIF ephemeris files
+NAIF_BASE_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk"
+NAIF_PLANETS_SUMMARY = f"{NAIF_BASE_URL}/planets/aa_summaries.txt"
+NAIF_SATELLITES_SUMMARY = f"{NAIF_BASE_URL}/satellites/aa_summaries.txt"
+
+# Cache for fetched summaries (to avoid repeated network calls)
+_SUMMARIES_CACHE: dict[str, str] = {}
+_CACHE_TIMESTAMP: datetime | None = None
+_CACHE_TTL_HOURS = 24  # Cache for 24 hours
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedEphemerisSummary:
+    """Parsed information from NAIF summaries file."""
+
+    filename: str
+    bodies: list[str]
+    coverage_start: int | None  # Year, or None if very old
+    coverage_end: int | None  # Year, or None if very far future
+    file_type: Literal["planets", "satellites"]  # Which directory it's in
+
+
+async def _fetch_summaries(url: str) -> str:
+    """Fetch summaries file from NAIF server."""
+    try:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
+        ):
+            if response.status != 200:
+                raise RuntimeError(f"HTTP {response.status}")
+            return await response.text()
+    except Exception as e:
+        logger.warning(f"Failed to fetch {url}: {e}")
+        raise
+
+
+def _parse_summaries(content: str, file_type: Literal["planets", "satellites"]) -> list[ParsedEphemerisSummary]:
+    """Parse NAIF summaries file content."""
+    summaries: list[ParsedEphemerisSummary] = []
+    current_file: str | None = None
+    current_bodies: list[str] = []
+    current_start: int | None = None
+    current_end: int | None = None
+
+    lines = content.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        # Check for "Summary for: filename.bsp"
+        if match := re.match(r"Summary for:\s+(.+)\.bsp", line):
+            # Save previous file if exists
+            if current_file:
+                summaries.append(
+                    ParsedEphemerisSummary(
+                        filename=f"{current_file}.bsp",
+                        bodies=current_bodies.copy(),
+                        coverage_start=current_start,
+                        coverage_end=current_end,
+                        file_type=file_type,
+                    )
+                )
+
+            # Start new file
+            current_file = match.group(1)
+            current_bodies = []
+            current_start = None
+            current_end = None
+
+        # Check for body lines (format: "BODY_NAME (ID) w.r.t. REFERENCE (REF_ID)")
+        elif current_file and re.match(r"^[A-Z0-9_/]+ \(\d+\)", line):
+            # Extract body name (before the parenthesis)
+            body_match = re.match(r"^([A-Z0-9_/]+)", line)
+            if body_match:
+                body_name = body_match.group(1)
+                # Skip system barycenters and Earth (we want specific objects)
+                if body_name not in ("EARTH BARYCENTER", "SOLAR SYSTEM BARYCENTER", "EARTH"):
+                    # Map NAIF body names to common names
+                    body_mapped = _map_naif_body_name(body_name)
+                    if body_mapped and body_mapped not in current_bodies:
+                        current_bodies.append(body_mapped)
+
+        # Check for time coverage
+        elif current_file and "Start of Interval (ET)" in line:
+            # Look for date range in next few lines
+            for j in range(i + 1, min(i + 5, len(lines))):
+                date_line = lines[j].strip()
+                # Format: "1900 JAN 01 00:00:00.000      2100 JAN 24 00:00:00.000"
+                date_match = re.search(r"(\d{4})\s+[A-Z]{3}\s+\d+", date_line)
+                if date_match:
+                    year = int(date_match.group(1))
+                    if current_start is None:
+                        current_start = year
+                    # Find end date (second date in line)
+                    dates = re.findall(r"(\d{4})\s+[A-Z]{3}\s+\d+", date_line)
+                    if len(dates) >= 2:
+                        current_end = int(dates[1])
+                    elif len(dates) == 1 and current_start is not None:
+                        # Only one date, assume it's the start, look for end in next line
+                        for k in range(j + 1, min(j + 3, len(lines))):
+                            end_match = re.search(r"(\d{4})\s+[A-Z]{3}\s+\d+", lines[k])
+                            if end_match:
+                                current_end = int(end_match.group(1))
+                                break
+                    break
+
+        i += 1
+
+    # Don't forget the last file
+    if current_file:
+        summaries.append(
+            ParsedEphemerisSummary(
+                filename=f"{current_file}.bsp",
+                bodies=current_bodies.copy(),
+                coverage_start=current_start,
+                coverage_end=current_end,
+                file_type=file_type,
+            )
+        )
+
+    return summaries
+
+
+def _map_naif_body_name(naif_name: str) -> str | None:
+    """Map NAIF body names to common astronomical names."""
+    # NAIF body name mappings
+    mappings = {
+        # Planets
+        "MERCURY": "Mercury",
+        "VENUS": "Venus",
+        "MARS": "Mars",
+        "JUPITER": "Jupiter",
+        "SATURN": "Saturn",
+        "URANUS": "Uranus",
+        "NEPTUNE": "Neptune",
+        "PLUTO": "Pluto",
+        "SUN": "Sun",
+        "MOON": "Moon",
+        # Jupiter moons
+        "IO": "Io",
+        "EUROPA": "Europa",
+        "GANYMEDE": "Ganymede",
+        "CALLISTO": "Callisto",
+        "AMALTHEA": "Amalthea",
+        "HIMALIA": "Himalia",
+        "ELARA": "Elara",
+        "PASIPHAE": "Pasiphae",
+        "SINOPE": "Sinope",
+        "LYSITHEA": "Lysithea",
+        "CARME": "Carme",
+        "ANANKE": "Ananke",
+        "LEDA": "Leda",
+        # Saturn moons
+        "TITAN": "Titan",
+        "RHEA": "Rhea",
+        "IAPETUS": "Iapetus",
+        "DIONE": "Dione",
+        "TETHYS": "Tethys",
+        "ENCELADUS": "Enceladus",
+        "MIMAS": "Mimas",
+        "HYPERION": "Hyperion",
+        # Uranus moons
+        "ARIEL": "Ariel",
+        "UMBRIEL": "Umbriel",
+        "TITANIA": "Titania",
+        "OBERON": "Oberon",
+        "MIRANDA": "Miranda",
+        # Neptune moons
+        "TRITON": "Triton",
+        # Mars moons
+        "PHOBOS": "Phobos",
+        "DEIMOS": "Deimos",
+    }
+    return mappings.get(naif_name, naif_name.replace("_", " ").title() if "_" in naif_name else None)
+
+
+def _generate_file_info(parsed: ParsedEphemerisSummary) -> EphemerisFileInfo:
+    """Generate EphemerisFileInfo from parsed summary."""
+    filename_base = parsed.filename.replace(".bsp", "")
+    base_url = f"{NAIF_BASE_URL}/{parsed.file_type}"
+
+    # Generate display name based on filename
+    if parsed.file_type == "planets":
+        if "de" in filename_base.lower():
+            # DE files (Development Ephemeris)
+            version = filename_base.upper()
+            if "s" in version:
+                display_name = f"{version} - Modern Planetary (no Moon)"
+            else:
+                display_name = f"{version} - Full Precision Planetary"
+        else:
+            display_name = filename_base.replace("_", " ").title()
+    else:
+        # Satellite files
+        if "jup" in filename_base.lower():
+            display_name = "Jupiter Moons"
+        elif "sat" in filename_base.lower():
+            display_name = "Saturn Moons"
+        elif "ura" in filename_base.lower():
+            display_name = "Uranus Moons"
+        elif "nep" in filename_base.lower():
+            display_name = "Neptune Moons"
+        elif "mar" in filename_base.lower():
+            display_name = "Mars Moons"
+        else:
+            display_name = filename_base.replace("_", " ").title()
+
+    # Generate description
+    if parsed.bodies:
+        if len(parsed.bodies) <= 5:
+            description = f"{', '.join(parsed.bodies)}"
+        else:
+            description = f"{', '.join(parsed.bodies[:5])}, +{len(parsed.bodies) - 5} more"
+    else:
+        description = f"{parsed.file_type.title()} ephemeris file"
+
+    # Estimate size (rough approximation based on file type and coverage)
+    if parsed.file_type == "planets":
+        if "de440" in filename_base.lower():
+            size_mb = 115.0
+        elif "de421" in filename_base.lower():
+            size_mb = 16.0
+        else:
+            size_mb = 50.0  # Default for planetary files
+    else:
+        # Satellite files are typically larger
+        if "jup" in filename_base.lower():
+            size_mb = 1083.9
+        elif "sat" in filename_base.lower():
+            size_mb = 630.9
+        elif "ura" in filename_base.lower():
+            size_mb = 1967.0
+        elif "nep" in filename_base.lower():
+            size_mb = 100.4
+        elif "mar" in filename_base.lower():
+            size_mb = 64.5
+        else:
+            size_mb = 500.0  # Default for satellite files
+
+    # Generate use case
+    if parsed.file_type == "planets":
+        use_case = "Planetary positions and orbits"
+    else:
+        use_case = f"Required for {display_name.lower()} positions"
+
+    return EphemerisFileInfo(
+        filename=parsed.filename,
+        display_name=display_name,
+        description=description,
+        coverage_start=parsed.coverage_start or 1900,
+        coverage_end=parsed.coverage_end or 2100,
+        size_mb=size_mb,
+        contents=tuple(parsed.bodies) if parsed.bodies else ("Various objects",),
+        use_case=use_case,
+        url=f"{base_url}/{parsed.filename}",
+    )
+
+
+async def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
+    """Load ephemeris file information from NAIF summaries."""
+    global _SUMMARIES_CACHE, _CACHE_TIMESTAMP
+
+    # Check cache
+    if _CACHE_TIMESTAMP and (datetime.now() - _CACHE_TIMESTAMP).total_seconds() < _CACHE_TTL_HOURS * 3600:
+        if "planets" in _SUMMARIES_CACHE and "satellites" in _SUMMARIES_CACHE:
+            logger.debug("Using cached NAIF summaries")
+            planets_content = _SUMMARIES_CACHE["planets"]
+            satellites_content = _SUMMARIES_CACHE["satellites"]
+        else:
+            planets_content = None
+            satellites_content = None
+    else:
+        planets_content = None
+        satellites_content = None
+
+    # Fetch if not cached
+    if not planets_content:
+        try:
+            planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
+            _SUMMARIES_CACHE["planets"] = planets_content
+        except Exception as e:
+            logger.warning(f"Failed to fetch planets summary: {e}")
+            planets_content = ""
+
+    if not satellites_content:
+        try:
+            satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+            _SUMMARIES_CACHE["satellites"] = satellites_content
+        except Exception as e:
+            logger.warning(f"Failed to fetch satellites summary: {e}")
+            satellites_content = ""
+
+    _CACHE_TIMESTAMP = datetime.now()
+
+    # Parse summaries
+    all_summaries: list[ParsedEphemerisSummary] = []
+    if planets_content:
+        all_summaries.extend(_parse_summaries(planets_content, "planets"))
+    if satellites_content:
+        all_summaries.extend(_parse_summaries(satellites_content, "satellites"))
+
+    # Convert to EphemerisFileInfo
+    files: dict[str, EphemerisFileInfo] = {}
+    for summary in all_summaries:
+        key = summary.filename.replace(".bsp", "")
+        files[key] = _generate_file_info(summary)
+
+    return files
+
+
+def _get_ephemeris_files() -> dict[str, EphemerisFileInfo]:
+    """Get ephemeris files from database, with fallback to hardcoded data."""
+    try:
+        from .database import get_ephemeris_files
+
+        # Try to get from database first
+        db_files = get_ephemeris_files()
+        if db_files:
+            logger.info(f"Loaded {len(db_files)} ephemeris files from database")
+            # Convert dict to EphemerisFileInfo objects
+            result: dict[str, EphemerisFileInfo] = {}
+            for key, file_data in db_files.items():
+                result[key] = EphemerisFileInfo(
+                    filename=file_data["filename"],
+                    display_name=file_data["display_name"],
+                    description=file_data["description"],
+                    coverage_start=file_data["coverage_start"],
+                    coverage_end=file_data["coverage_end"],
+                    size_mb=file_data["size_mb"],
+                    contents=file_data["contents"],
+                    use_case=file_data["use_case"],
+                    url=file_data["url"],
+                )
+            # Merge with hardcoded files (hardcoded take precedence for known files)
+            result.update(_HARDCODED_EPHEMERIS_FILES)
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to load ephemeris files from database: {e}, trying NAIF fetch")
+
+    # Fallback: try to load from NAIF
+    try:
+        files = asyncio.run(_load_ephemeris_files_from_naif())
+        if files:
+            logger.info(f"Loaded {len(files)} ephemeris files from NAIF summaries")
+            # Merge with hardcoded files (hardcoded take precedence for known files)
+            files.update(_HARDCODED_EPHEMERIS_FILES)
+            return files
+    except Exception as e:
+        logger.warning(f"Failed to load ephemeris files from NAIF: {e}, using hardcoded fallback")
+
+    # Final fallback to hardcoded files
+    return _HARDCODED_EPHEMERIS_FILES.copy()
+
+
+# Lazy-loaded ephemeris files (loaded on first access)
+_EPHEMERIS_FILES_CACHE: dict[str, EphemerisFileInfo] | None = None
+
+
+def _get_ephemeris_files_dict() -> dict[str, EphemerisFileInfo]:
+    """Get ephemeris files dictionary (lazy-loaded, cached)."""
+    global _EPHEMERIS_FILES_CACHE
+    if _EPHEMERIS_FILES_CACHE is None:
+        _EPHEMERIS_FILES_CACHE = _get_ephemeris_files()
+    return _EPHEMERIS_FILES_CACHE
+
+
+# Public API: EPHEMERIS_FILES is a property that returns the cached dict
+# This allows it to be used like a dict but loads lazily
+class _EphemerisFilesDict:
+    """Wrapper to make EPHEMERIS_FILES work like a dict but load lazily."""
+
+    def __getitem__(self, key: str) -> EphemerisFileInfo:
+        return _get_ephemeris_files_dict()[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in _get_ephemeris_files_dict()
+
+    def keys(self):
+        return _get_ephemeris_files_dict().keys()
+
+    def items(self):
+        return _get_ephemeris_files_dict().items()
+
+    def values(self):
+        return _get_ephemeris_files_dict().values()
+
+    def get(self, key: str, default: EphemerisFileInfo | None = None) -> EphemerisFileInfo | None:
+        return _get_ephemeris_files_dict().get(key, default)
+
+    def __iter__(self):
+        return iter(_get_ephemeris_files_dict())
+
+    def __len__(self) -> int:
+        return len(_get_ephemeris_files_dict())
+
+
+EPHEMERIS_FILES = _EphemerisFilesDict()
+
+
+# Hardcoded fallback ephemeris files (used if NAIF fetch fails or for known important files)
+_HARDCODED_EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
     "de421": EphemerisFileInfo(
         filename="de421.bsp",
         display_name="DE421 - Compact Planetary",
@@ -183,8 +588,10 @@ EPHEMERIS_FILES: dict[str, EphemerisFileInfo] = {
 }
 
 # Predefined file sets for different use cases
+# "recommended" matches Skyfield's default recommendation (DE421 + Jupiter moons)
 EPHEMERIS_SETS: dict[str, list[str]] = {
-    "minimal": ["de421", "jup365"],
+    "recommended": ["de421", "jup365"],  # Skyfield's default recommendation
+    "minimal": ["de421", "jup365"],  # Same as recommended (alias for backwards compatibility)
     "standard": ["de440s", "jup365", "sat441"],
     "complete": ["de440s", "jup365", "sat441", "ura184_part-1", "nep097"],
     "full": ["de440", "jup365", "sat441", "ura184_part-1", "nep097", "mar099s"],
@@ -302,7 +709,7 @@ def download_file(file_key: str, force: bool = False) -> Path:
 
 
 def download_set(
-    set_name: Literal["minimal", "standard", "complete", "full"],
+    set_name: Literal["recommended", "minimal", "standard", "complete", "full"],
     force: bool = False,
 ) -> list[Path]:
     """
