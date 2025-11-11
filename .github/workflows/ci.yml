@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for diff checks
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -25,30 +27,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --locked --all-extras --dev
-
-      - name: Run ruff check
-        run: uv run ruff check src
-
-      - name: Run ruff format check
-        run: uv run ruff format --check src
-
-  pre-commit-hooks:
-    name: Pre-commit Hook Checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Need full history for diff checks
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
 
       - name: Install dependencies for checks
         run: |
@@ -76,6 +54,26 @@ jobs:
             exit 1
           fi
 
+      - name: Check for merge conflict markers
+        run: |
+          if git grep -E '^<<<<<<< |^======= |^>>>>>>> ' -- ':!*.lock' ':!*.db'; then
+            echo "Error: Merge conflict markers detected"
+            exit 1
+          fi
+
+      - name: Check for debug statements
+        run: |
+          # Check all Python files in src/ for debug statements
+          debug_files=$(find src/ -name '*.py' \
+            -exec grep -lE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; \
+            2>/dev/null | grep -v '__pycache__' || true)
+          if [ -n "$debug_files" ]; then
+            echo "Error: Debug statements found in source files:"
+            echo "$debug_files"
+            find src/ -name '*.py' -exec grep -nE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; 2>/dev/null | head -20
+            exit 1
+          fi
+
       - name: Check YAML files
         run: |
           find . -type f \( -name '*.yaml' -o -name '*.yml' \) \
@@ -88,6 +86,17 @@ jobs:
             ! -path './.ruff_cache/*' \
             ! -path './__pycache__/*' \
             -exec python -c "import yaml, sys; yaml.safe_load(open(sys.argv[1]))" {} \; || exit 1
+
+      - name: Check TOML files
+        run: |
+          for toml_file in pyproject.toml uv.lock; do
+            if [ -f "$toml_file" ]; then
+              python -c "import tomli; tomli.load(open('$toml_file', 'rb'))" || {
+                echo "Error: Invalid TOML syntax in $toml_file"
+                exit 1
+              }
+            fi
+          done
 
       - name: Check for large files
         run: |
@@ -110,37 +119,6 @@ jobs:
             echo "Consider using Git LFS for large files"
           fi
 
-      - name: Check for merge conflict markers
-        run: |
-          if git grep -E '^<<<<<<< |^======= |^>>>>>>> ' -- ':!*.lock' ':!*.db'; then
-            echo "Error: Merge conflict markers detected"
-            exit 1
-          fi
-
-      - name: Check TOML files
-        run: |
-          for toml_file in pyproject.toml uv.lock; do
-            if [ -f "$toml_file" ]; then
-              python -c "import tomli; tomli.load(open('$toml_file', 'rb'))" || {
-                echo "Error: Invalid TOML syntax in $toml_file"
-                exit 1
-              }
-            fi
-          done
-
-      - name: Check for debug statements
-        run: |
-          # Check all Python files in src/ for debug statements
-          debug_files=$(find src/ -name '*.py' \
-            -exec grep -lE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; \
-            2>/dev/null | grep -v '__pycache__' || true)
-          if [ -n "$debug_files" ]; then
-            echo "Error: Debug statements found in source files:"
-            echo "$debug_files"
-            find src/ -name '*.py' -exec grep -nE '(^|\s)(pdb|ipdb|breakpoint|import pdb|import ipdb|from pdb import|from ipdb import)' {} \; 2>/dev/null | head -20
-            exit 1
-          fi
-
       - name: Check uv lock file
         run: |
           # Check if lock file is out of sync with pyproject.toml
@@ -148,7 +126,13 @@ jobs:
             echo "Error: uv.lock is out of sync with pyproject.toml"
             echo "Run 'uv lock' to update the lock file"
             exit 1
-          }
+          fi
+
+      - name: Run ruff check
+        run: uv run ruff check src
+
+      - name: Run ruff format check
+        run: uv run ruff format --check src
 
   security:
     name: Security Scan
@@ -285,7 +269,7 @@ jobs:
 
   build:
     name: Build Distribution
-    needs: [lint, pre-commit-hooks, security, typecheck, test]
+    needs: [lint, security, typecheck, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

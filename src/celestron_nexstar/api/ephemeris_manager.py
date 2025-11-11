@@ -11,11 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, Literal
-from collections.abc import ItemsView, KeysView, ValuesView
+from typing import Literal
 
 import aiohttp
 
