@@ -261,7 +261,7 @@ tracking alert-threshold 5  # Set collision alert (deg/s)
 tracking chart on           # Enable ASCII star chart
 ```
 
-**Catalogs & Objects**
+### Catalogs & Objects
 
 ```bash
 catalog catalogs                      # List all catalogs
@@ -493,6 +493,40 @@ open htmlcov/index.html
 - ~95% coverage on core modules
 - Includes connection, movement, coordinates, calculations
 
+## 🛠️ Development
+
+### Pre-commit Hooks
+
+Before committing your code, run the pre-commit hooks to ensure code quality:
+
+```bash
+# Install pre-commit (if not already installed)
+uv pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# Run hooks on all files (recommended before first commit)
+pre-commit run --all-files
+
+# Hooks will run automatically on git commit, but you can also run manually:
+pre-commit run
+```
+
+**What the hooks check:**
+
+- **Code formatting**: Ruff automatically formats Python code
+- **Linting**: Ruff checks for code quality issues
+- **Type checking**: Mypy validates type annotations
+- **Markdown linting**: Ensures documentation follows markdown best practices
+- **YAML/TOML validation**: Checks configuration file syntax
+- **Trailing whitespace**: Removes unnecessary whitespace
+- **End of file**: Ensures files end with newlines
+- **Debug statements**: Prevents accidental `pdb`/`breakpoint` commits
+- **Merge conflicts**: Detects unresolved conflict markers
+
+**Note:** The hooks will automatically fix many issues (like formatting and whitespace). If there are unfixable errors, the commit will be blocked until you fix them manually.
+
 ## ⚠️ Safety Notes
 
 1. **Clear path**: Ensure telescope has room to move before goto commands
@@ -503,7 +537,7 @@ open htmlcov/index.html
 
 ## 🐛 Troubleshooting
 
-#### Connection Issues
+### Connection Issues
 
 - Verify USB cable is connected
 - Check no other software is using the port
@@ -561,6 +595,6 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ---
 
-#### Happy Observing! 🌟🔭
+### Happy Observing! 🌟🔭
 
 _Start with `tutorial` and you'll be controlling your telescope like a pro in minutes!_

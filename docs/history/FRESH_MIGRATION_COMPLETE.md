@@ -270,13 +270,13 @@ class CelestialObjectModel(Base):
     surface_brightness: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 ```
 
-2. **Generate migration**:
+1. **Generate migration**:
 
 ```bash
 alembic revision --autogenerate -m "Add surface_brightness field"
 ```
 
-3. **Review generated migration**:
+1. **Review generated migration**:
 
 ```python
 # alembic/versions/xxxxx_add_surface_brightness_field.py

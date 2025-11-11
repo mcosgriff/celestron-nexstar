@@ -4,7 +4,7 @@ This document describes the organization of documentation files in this project.
 
 ## Directory Structure
 
-```
+```text
 docs/
 ├── INDEX.md                    # Main documentation index
 ├── INSTALL.md                  # Installation guide
@@ -47,24 +47,30 @@ docs/
 ## File Categories
 
 ### User Documentation (docs/)
+
 - **Getting Started**: INSTALL.md, CLI.md
 - **User Guides**: DATA_IMPORT.md, CUSTOM_CATALOG.md, CUSTOM_YAML_FEATURE.md
 - **Reference**: CATALOG_DATA_SOURCES.md
 - **Integration**: COSMOS_INTEGRATION.md, TUI_FRAMEWORK_OPTIONS.md
 
 ### Historical Documentation (docs/history/)
+
 Completed migrations, phases, and major changes preserved for reference:
+
 - Database migrations (Phase 1, Phase 2, Fresh Migration, SQLAlchemy)
 - Feature completion documents
 - Setup instructions that may still be useful
 
 ### Future Plans (docs/plans/)
+
 Planning documents for future features:
+
 - Catalog expansion roadmap (partially complete)
 - Feature implementation plans
 - Architecture proposals
 
 ### API Documentation (docs/api/)
+
 Auto-generated API reference documentation for developers.
 
 ## Maintenance
@@ -73,4 +79,3 @@ Auto-generated API reference documentation for developers.
 - **Plan docs**: Update status as features are implemented
 - **User docs**: Keep current with code changes
 - **API docs**: Regenerate when API changes
-

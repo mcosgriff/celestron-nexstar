@@ -440,7 +440,7 @@ nexstar data import openngc --mag-limit 14.0
 
 nexstar data import openngc --mag-limit 99.0
 
-```
+```bash
 
 ### Re-importing with Different Settings
 

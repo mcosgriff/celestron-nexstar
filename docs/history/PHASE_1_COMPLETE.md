@@ -183,7 +183,7 @@ src/celestron_nexstar/cli/data/
 
 ## Next Steps: Phase 2
 
-#### Ready to import 40,000+ objects
+### Ready to import 40,000+ objects
 
 Phase 2 will add:
 

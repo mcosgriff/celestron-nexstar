@@ -247,6 +247,7 @@ nexstar telescope objects [OPTIONS]
 - `--export-path` PATH - Custom export file path
 
 **Object Types:**
+
 - `all` - Show all object types (no filtering)
 - `planets` - Solar system planets
 - `moon` - Earth's moon

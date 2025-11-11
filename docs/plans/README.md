@@ -9,4 +9,3 @@ See [GitHub Issues](https://github.com/mcosgriff/celestron-nexstar/issues) for c
 - **Catalog Expansion** - Issues #9, #10, #11, #12
 - **Full-Screen TUI** - Issues #13, #14, #15, #16, #17
 - **What's Visible Tonight?** - ✅ Implemented (see `nexstar tonight` command)
-

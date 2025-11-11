@@ -14,4 +14,3 @@ This directory contains documentation for completed migrations, phases, and majo
 ## Note
 
 These documents are kept for historical reference. For current documentation, see the main [docs/](../) directory.
-
