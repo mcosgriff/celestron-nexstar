@@ -3,10 +3,11 @@ Unit tests for observer location management.
 Tests geocoding, location saving/loading, and configuration management.
 """
 
+import asyncio
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.observer import (
     DEFAULT_LOCATION,
@@ -251,69 +252,118 @@ class TestGetSetObserverLocation(unittest.TestCase):
 class TestGeocoding(unittest.TestCase):
     """Test suite for geocoding functionality."""
 
-    @patch("celestron_nexstar.api.observer.Nominatim")
-    def test_geocode_location_success(self, mock_nominatim_class):
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_success(self, mock_session_class):
         """Test successful geocoding of a location."""
-        # Mock the geocoder
-        mock_geocoder = MagicMock()
-        mock_nominatim_class.return_value = mock_geocoder
+        # Mock the async context manager and response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value=[
+                {
+                    "lat": "40.7128",
+                    "lon": "-74.0060",
+                    "display_name": "New York, NY, USA",
+                }
+            ]
+        )
 
-        # Mock the location result
-        mock_location = MagicMock()
-        mock_location.latitude = 40.7128
-        mock_location.longitude = -74.0060
-        mock_location.altitude = 10.0
-        mock_location.address = "New York, NY, USA"
-        mock_geocoder.geocode.return_value = mock_location
+        # Mock session.get() to return an async context manager
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
 
-        result = geocode_location("New York City")
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_get_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        result = asyncio.run(geocode_location("New York City"))
 
         self.assertIsNotNone(result)
         self.assertEqual(result.latitude, 40.7128)
         self.assertEqual(result.longitude, -74.0060)
-        self.assertEqual(result.elevation, 10.0)
+        self.assertEqual(result.elevation, 0.0)
         self.assertEqual(result.name, "New York, NY, USA")
 
-    @patch("celestron_nexstar.api.observer.Nominatim")
-    def test_geocode_location_not_found(self, mock_nominatim_class):
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_not_found(self, mock_session_class):
         """Test geocoding when location is not found."""
-        mock_geocoder = MagicMock()
-        mock_nominatim_class.return_value = mock_geocoder
-        mock_geocoder.geocode.return_value = None
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[])
+
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_get_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with self.assertRaises(ValueError) as context:
-            geocode_location("NonexistentPlace12345")
+            asyncio.run(geocode_location("NonexistentPlace12345"))
 
         self.assertIn("Could not find location", str(context.exception))
 
-    @patch("celestron_nexstar.api.observer.Nominatim")
-    def test_geocode_location_geopy_error(self, mock_nominatim_class):
-        """Test geocoding when GeopyError occurs."""
-        from geopy.exc import GeopyError
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_geopy_error(self, mock_session_class):
+        """Test geocoding when HTTP error occurs."""
+        mock_response = AsyncMock()
+        mock_response.status = 500
 
-        mock_geocoder = MagicMock()
-        mock_nominatim_class.return_value = mock_geocoder
-        mock_geocoder.geocode.side_effect = GeopyError("Network error")
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_get_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
         with self.assertRaises(ValueError) as context:
-            geocode_location("New York")
+            asyncio.run(geocode_location("New York"))
 
-        self.assertIn("Geocoding error", str(context.exception))
+        self.assertIn("Geocoding API returned HTTP 500", str(context.exception))
 
-    @patch("celestron_nexstar.api.observer.Nominatim")
-    def test_geocode_location_no_altitude(self, mock_nominatim_class):
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_no_altitude(self, mock_session_class):
         """Test geocoding when altitude is not provided."""
-        mock_geocoder = MagicMock()
-        mock_nominatim_class.return_value = mock_geocoder
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(
+            return_value=[
+                {
+                    "lat": "40.7128",
+                    "lon": "-74.0060",
+                    "display_name": "New York, NY, USA",
+                }
+            ]
+        )
 
-        mock_location = MagicMock()
-        mock_location.latitude = 40.7128
-        mock_location.longitude = -74.0060
-        mock_location.altitude = None  # No altitude data
-        mock_location.address = "New York, NY, USA"
-        mock_geocoder.geocode.return_value = mock_location
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
 
-        result = geocode_location("New York City")
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_get_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session_class.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        result = asyncio.run(geocode_location("New York City"))
 
         self.assertIsNotNone(result)
         self.assertEqual(result.elevation, 0.0)  # Should default to 0.0

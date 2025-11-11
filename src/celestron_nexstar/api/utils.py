@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from astropy import units as u
-from astropy.coordinates import AltAz, Angle, EarthLocation, SkyCoord
+from astropy.coordinates import AltAz, Angle, EarthLocation, ICRS, SkyCoord
 from astropy.time import Time
 
 
@@ -144,7 +144,7 @@ def alt_az_to_ra_dec(
     altaz = AltAz(az=azimuth * u.deg, alt=altitude * u.deg, location=location, obstime=time)
 
     # Convert to ICRS (RA/Dec)
-    icrs = altaz.transform_to("icrs")
+    icrs = altaz.transform_to(ICRS())
 
     # Return RA in hours and Dec in degrees
     return icrs.ra.hour, icrs.dec.degree
