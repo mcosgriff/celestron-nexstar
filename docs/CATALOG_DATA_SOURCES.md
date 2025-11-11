@@ -21,7 +21,8 @@ This document lists online sources for astronomical data that can be imported in
 
 #### Alternative: Hipparcos Catalog
 
-- **Source**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/hip.html
+- **Source**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/bsc5p.html (BSC5P catalog - similar data)
+- **Alternative**: https://cdsarc.cds.unistra.fr/viz-bin/cat/I/239 (CDS VizieR - Hipparcos catalog)
 - **Format**: ASCII/FITS
 - **Objects**: ~118,000 stars with high-precision astrometry
 - **License**: Public domain
@@ -158,7 +159,7 @@ Typical entry:
 ## References
 
 - **Yale Bright Star Catalog**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/bsc5p.html
-- **Hipparcos Catalog**: https://heasarc.gsfc.nasa.gov/W3Browse/star-catalog/hip.html
+- **Hipparcos Catalog**: https://cdsarc.cds.unistra.fr/viz-bin/cat/I/239 (CDS VizieR)
 - **OpenNGC**: https://github.com/mattiaverga/OpenNGC
 - **SIMBAD**: http://simbad.u-strasbg.fr/simbad/
 - **VizieR**: https://vizier.cds.unistra.fr/ (catalog search service)

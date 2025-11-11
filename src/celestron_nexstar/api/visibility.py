@@ -12,14 +12,7 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-
-try:
-    import numpy as np
-
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None  # type: ignore[assignment]
+import numpy as np
 
 from .catalogs import CelestialObject
 from .enums import SkyBrightness
@@ -381,7 +374,7 @@ def filter_visible_objects(
     )
 
     # Use vectorized calculations if numpy is available and we have enough objects
-    if NUMPY_AVAILABLE and len(objects) > 10:
+    if len(objects) > 10:
         return _filter_visible_objects_vectorized(
             objects,
             config,
@@ -433,10 +426,6 @@ def _filter_visible_objects_vectorized(
 
     Processes all objects in batch for faster computation.
     """
-    if not NUMPY_AVAILABLE or np is None:
-        # Fallback if numpy not available
-        return []
-
     from .constants import DEGREES_PER_HOUR_ANGLE
 
     # Separate dynamic and fixed objects

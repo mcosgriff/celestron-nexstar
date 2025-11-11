@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Required to push to wiki
-    
+
     steps:
       - name: Checkout main repository
         uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
       - name: Sync documentation files
         run: |
           cd repo
-          
+
           # Define file mappings: source_file -> wiki_file
           # Format: "source:destination"
           declare -A file_map=(
@@ -52,15 +52,15 @@ jobs:
             ["docs/COSMOS_INTEGRATION.md"]="COSMOS-Integration.md"
             ["docs/ORGANIZATION.md"]="Project-Organization.md"
           )
-          
+
           # Track which wiki files should exist
           expected_wiki_files=()
-          
+
           # Sync mapped files
           for source_file in "${!file_map[@]}"; do
             wiki_file="${file_map[$source_file]}"
             expected_wiki_files+=("$wiki_file")
-            
+
             if [ -f "$source_file" ]; then
               echo "Syncing $source_file -> $wiki_file"
               cp "$source_file" "../wiki/$wiki_file"
@@ -73,18 +73,18 @@ jobs:
               fi
             fi
           done
-          
+
           # Note: Deletions are handled above - when a source file doesn't exist,
           # we delete the corresponding wiki file. Protected files are handled
           # by not deleting them even if their source is missing.
-          
+
           # Handle README.md -> Home.md separately
           # Check if README.md was changed in this commit
           readme_changed=false
           if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q "^README.md$"; then
             readme_changed=true
           fi
-          
+
           # Update Home.md if README changed or if it doesn't exist
           if [ "$readme_changed" = true ] || [ ! -f ../wiki/Home.md ]; then
             echo "Updating Home.md from README.md"
@@ -97,56 +97,45 @@ jobs:
           else
             echo "README.md unchanged, keeping existing Home.md"
           fi
-          
+
           echo "✓ Documentation files synced"
 
       - name: Commit and push wiki changes
         run: |
           cd wiki
-          
+
           # Check if there are any changes (including deletions)
           if [ -n "$(git status --porcelain)" ]; then
             # Stage all changes including deletions
             git add -A .
-            
+
             # Get list of changed files (added, modified, deleted)
             changed_files=$(git diff --cached --name-status)
             added_files=$(echo "$changed_files" | grep "^A" | cut -c3- || true)
             modified_files=$(echo "$changed_files" | grep "^M" | cut -c3- || true)
             deleted_files=$(echo "$changed_files" | grep "^D" | cut -c3- || true)
-            
+
             # Build commit message
             commit_msg="Auto-sync documentation from main repository"
-            
+
             if [ -n "$added_files" ]; then
-              commit_msg="$commit_msg
-
-Added files:
-$(echo "$added_files" | sed 's/^/- /')"
+              commit_msg="$commit_msg"$'\n\n'"Added files:"$'\n'"$(echo "$added_files" | sed 's/^/- /')"
             fi
-            
+
             if [ -n "$modified_files" ]; then
-              commit_msg="$commit_msg
-
-Modified files:
-$(echo "$modified_files" | sed 's/^/- /')"
+              commit_msg="$commit_msg"$'\n\n'"Modified files:"$'\n'"$(echo "$modified_files" | sed 's/^/- /')"
             fi
-            
+
             if [ -n "$deleted_files" ]; then
-              commit_msg="$commit_msg
-
-Deleted files:
-$(echo "$deleted_files" | sed 's/^/- /')"
+              commit_msg="$commit_msg"$'\n\n'"Deleted files:"$'\n'"$(echo "$deleted_files" | sed 's/^/- /')"
             fi
-            
-            commit_msg="$commit_msg
 
-[skip ci]"
-            
+            commit_msg="$commit_msg"$'\n\n'"[skip ci]"
+
             git commit -m "$commit_msg"
             git push origin master
             echo "✓ Wiki updated successfully"
-            
+
             # Add summary
             echo "## Wiki Sync Summary" >> $GITHUB_STEP_SUMMARY
             if [ -n "$added_files" ]; then
@@ -176,4 +165,3 @@ $(echo "$deleted_files" | sed 's/^/- /')"
           echo "Files synced:" >> $GITHUB_STEP_SUMMARY
           cd wiki
           git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "No changes" >> $GITHUB_STEP_SUMMARY
-

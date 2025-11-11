@@ -1487,4 +1487,4 @@ The CLI is organized into logical groups:
 
 - [Main README](../README.md) - Project overview and interactive shell
 - [Installation Guide](INSTALL.md) - Setup instructions
-- [Python API Documentation](telescope_docs.md) - Programmatic usage
+- [Python API Documentation](api/telescope_docs.md) - Programmatic usage

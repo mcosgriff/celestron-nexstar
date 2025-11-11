@@ -13,25 +13,18 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-
-try:
-    import numpy as np
-    import openmeteo_requests
-    import requests_cache
-    from retry_requests import retry
-
-    OPENMETEO_AVAILABLE = True
-except ImportError:
-    OPENMETEO_AVAILABLE = False
-    np = None  # type: ignore[assignment]
 
 import aiohttp
+import numpy as np
+import openmeteo_requests
+import requests_cache
+from retry_requests import retry
+
+from .observer import ObserverLocation
 
 
-if TYPE_CHECKING:
-    from .observer import ObserverLocation
+OPENMETEO_AVAILABLE = True
+
 
 logger = logging.getLogger(__name__)
 
