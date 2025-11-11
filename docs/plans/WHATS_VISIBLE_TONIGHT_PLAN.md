@@ -1,5 +1,14 @@
 # "What's Visible Tonight?" Feature Plan
 
+## Status: ✅ IMPLEMENTED
+
+This feature has been implemented! The `nexstar tonight` command provides:
+- Observing conditions (weather, light pollution, moon phase)
+- Recommended objects for tonight
+- Complete observing plans
+
+See [CLI.md](docs/CLI.md) for usage documentation.
+
 ## Overview
 
 Create an intelligent observing planner that answers "What can I see tonight?" by combining:
@@ -9,7 +18,7 @@ Create an intelligent observing planner that answers "What can I see tonight?" b
 - **Weather**: Cloud cover, rain, fog forecasts
 - **Light Pollution**: Bortle scale / SQM values
 - **Telescope Capabilities**: Aperture, limiting magnitude
-- **Object Database**: 40,000+ objects from catalog expansion
+- **Object Database**: 9,722+ objects (expanding toward 40,000)
 
 ## Current Capabilities (Already Built!)
 
