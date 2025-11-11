@@ -42,8 +42,6 @@ TLE_MAX_AGE_HOURS = 24  # Refresh TLE every 24 hours
 PASS_CACHE_MAX_AGE_HOURS = 24  # Pass predictions valid for 24 hours
 
 
-
-
 @dataclass(frozen=True)
 class ISSPass:
     """ISS pass over a location."""

@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 
@@ -99,8 +98,6 @@ KNOWN_COMETS = [
         notes="Non-periodic comet discovered January 2025. May be visible to naked eye.",
     ),
 ]
-
-
 
 
 def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:

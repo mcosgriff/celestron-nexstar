@@ -662,30 +662,32 @@ class CatalogDatabase:
 
             # By catalog
             catalog_rows = session.execute(
-                select(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id))
-                .group_by(CelestialObjectModel.catalog)
+                select(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id)).group_by(
+                    CelestialObjectModel.catalog
+                )
             ).all()
             by_catalog = {row[0]: row[1] for row in catalog_rows if row[0] and row[1] > 0}
 
             # By type
             type_rows = session.execute(
-                select(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id))
-                .group_by(CelestialObjectModel.object_type)
+                select(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id)).group_by(
+                    CelestialObjectModel.object_type
+                )
             ).all()
             by_type = {row[0]: row[1] for row in type_rows}
 
             # Magnitude range
             mag_row = session.execute(
-                select(func.min(CelestialObjectModel.magnitude), func.max(CelestialObjectModel.magnitude))
-                .where(CelestialObjectModel.magnitude.isnot(None))
+                select(func.min(CelestialObjectModel.magnitude), func.max(CelestialObjectModel.magnitude)).where(
+                    CelestialObjectModel.magnitude.isnot(None)
+                )
             ).first()
             mag_range = (mag_row[0], mag_row[1]) if mag_row and mag_row[0] is not None else (None, None)
 
             # Dynamic objects
             dynamic = (
                 session.execute(
-                    select(func.count(CelestialObjectModel.id))
-                    .where(CelestialObjectModel.is_dynamic.is_(True))
+                    select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.is_dynamic.is_(True))
                 ).scalar_one()
                 or 0
             )

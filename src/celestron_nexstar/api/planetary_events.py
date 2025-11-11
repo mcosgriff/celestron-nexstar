@@ -10,7 +10,6 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
@@ -65,8 +64,6 @@ class EventType:
 
 # Major planets for event calculations (excluding moons)
 MAJOR_PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
-
-
 
 
 def _get_planet_position(planet_name: str, t: Any, eph: Any) -> tuple[float, float] | None:

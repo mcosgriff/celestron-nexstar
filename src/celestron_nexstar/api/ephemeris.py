@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
-from pathlib import Path
 
 from skyfield.jpllib import SpiceKernel
 

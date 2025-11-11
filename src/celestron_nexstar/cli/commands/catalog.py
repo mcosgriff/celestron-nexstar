@@ -21,10 +21,10 @@ from celestron_nexstar.api.catalogs import (
 )
 from celestron_nexstar.api.database import get_database
 
+from ...cli.utils.export import FileConsole
 from ..utils.output import console, format_dec, format_ra, print_error, print_info, print_json
 from ..utils.selection import select_object
 from ..utils.state import ensure_connected
-from ...cli.utils.export import FileConsole
 
 
 app = typer.Typer(help="Celestial object catalog commands")
@@ -224,8 +224,7 @@ def list_catalog(
             available_catalogs = db.get_all_catalogs()
             if catalog not in available_catalogs:
                 print_error(
-                    f"Invalid catalog: '{catalog}'. "
-                    f"Available catalogs: {', '.join(sorted(available_catalogs))}, 'all'"
+                    f"Invalid catalog: '{catalog}'. Available catalogs: {', '.join(sorted(available_catalogs))}, 'all'"
                 )
                 raise typer.Exit(code=1)
 
@@ -253,7 +252,12 @@ def list_catalog(
             return
 
         # Helper function to show catalog content
-        def _show_catalog_content(output_console: Console | FileConsole, catalog_name: str, objects_list: list[CelestialObject], type_filter: str | None = None) -> None:
+        def _show_catalog_content(
+            output_console: Console | FileConsole,
+            catalog_name: str,
+            objects_list: list[CelestialObject],
+            type_filter: str | None = None,
+        ) -> None:
             catalog_display = catalog_name.replace("_", " ").title()
             type_suffix = f" ({type_filter})" if type_filter else ""
             table = Table(
@@ -290,7 +294,16 @@ def list_catalog(
 
             # Write CSV file
             with export_path_obj.open("w", newline="", encoding="utf-8") as csvfile:
-                fieldnames = ["name", "common_name", "type", "ra_hours", "dec_degrees", "magnitude", "catalog", "description"]
+                fieldnames = [
+                    "name",
+                    "common_name",
+                    "type",
+                    "ra_hours",
+                    "dec_degrees",
+                    "magnitude",
+                    "catalog",
+                    "description",
+                ]
                 if catalog == "moons":
                     fieldnames.insert(3, "parent_planet")
 
@@ -517,11 +530,7 @@ def catalogs() -> None:
         }
 
         # Sort catalogs by object count (descending)
-        sorted_catalogs = sorted(
-            stats.objects_by_catalog.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        sorted_catalogs = sorted(stats.objects_by_catalog.items(), key=lambda x: x[1], reverse=True)
 
         for catalog_name, count in sorted_catalogs:
             # Only show catalogs that actually exist in the database

@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Literal
 
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -348,7 +347,7 @@ def verify_file(file_key: str) -> tuple[bool, str]:
         return False, "File not installed"
 
     info = EPHEMERIS_FILES[file_key]
-    ephemeris_dir = get_ephemeris_directory()
+    get_ephemeris_directory()
 
     try:
         # Try to load the file with Skyfield

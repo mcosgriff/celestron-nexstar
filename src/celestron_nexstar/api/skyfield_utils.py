@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+
 if TYPE_CHECKING:
     from skyfield.api import Loader
 
@@ -52,4 +53,3 @@ def get_skyfield_loader() -> Loader:
         skyfield_dir.mkdir(parents=True, exist_ok=True)
         _loader = Loader(str(skyfield_dir.resolve()))
     return _loader
-
