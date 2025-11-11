@@ -184,7 +184,8 @@ nexstar telescope tonight --export --export-path observing_plan.txt
 **Export with filters:**
 
 ```bash
-nexstar telescope objects --export --type planets --limit 10
+nexstar telescope objects --export --type all --limit 10     # Export all object types
+nexstar telescope objects --export --type planets --limit 10 # Export planets only
 ```
 
 **Export best night analysis:**
@@ -239,18 +240,30 @@ nexstar telescope objects [OPTIONS]
 
 **Options:**
 
-- `--type` TEXT - Filter by type (planets, deep_sky, messier, etc.)
+- `--type` TEXT - Filter by type (all, planets, deep_sky, messier, etc.). If not specified, shows interactive menu
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing conditions
 - `--export`, `-e` - Export output to text file
 - `--export-path` PATH - Custom export file path
 
+**Object Types:**
+- `all` - Show all object types (no filtering)
+- `planets` - Solar system planets
+- `moon` - Earth's moon
+- `deep_sky` - Deep sky objects (galaxies, nebulae, clusters)
+- `double_stars` - Double and multiple star systems
+- `variable_stars` - Variable stars
+- `messier` - Messier catalog objects
+- `caldwell` - Caldwell catalog objects
+- `ngc_ic` - NGC and IC catalog objects
+
 **Example:**
 
 ```bash
-nexstar telescope objects
-nexstar telescope objects --type planets --limit 5
-nexstar telescope objects --best-for-seeing --export
+nexstar telescope objects                                    # Interactive menu to select type
+nexstar telescope objects --type all                        # Show all object types
+nexstar telescope objects --type planets --limit 5           # Filter to planets only
+nexstar telescope objects --best-for-seeing --export        # Best for seeing, export to file
 ```
 
 ### Imaging
@@ -290,7 +303,7 @@ nexstar telescope tonight [OPTIONS]
 
 **Options:**
 
-- `--type` TEXT - Filter objects by type
+- `--type` TEXT - Filter objects by type (all, planets, deep_sky, messier, etc.). If not specified, shows interactive menu
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing
 - `--export`, `-e` - Export output to text file
@@ -299,8 +312,9 @@ nexstar telescope tonight [OPTIONS]
 **Example:**
 
 ```bash
-nexstar telescope tonight
-nexstar telescope tonight --export
+nexstar telescope tonight                                    # Interactive menu to select type
+nexstar telescope tonight --type all                        # Show all object types
+nexstar telescope tonight --export                          # Export with auto-generated filename
 nexstar telescope tonight --type deep_sky --export --export-path deep_sky_tonight.txt
 ```
 
@@ -314,7 +328,7 @@ nexstar telescope plan [OPTIONS]
 
 **Options:**
 
-- `--type` TEXT - Filter objects by type
+- `--type` TEXT - Filter objects by type (all, planets, deep_sky, messier, etc.). If not specified, shows interactive menu
 - `--limit` INTEGER - Maximum objects to show (default: 20)
 - `--best-for-seeing` - Show only objects ideal for current seeing
 - `--export`, `-e` - Export output to text file
@@ -323,8 +337,9 @@ nexstar telescope plan [OPTIONS]
 **Example:**
 
 ```bash
-nexstar telescope plan
-nexstar telescope plan --export
+nexstar telescope plan                                      # Interactive menu to select type
+nexstar telescope plan --type all                          # Show all object types
+nexstar telescope plan --export                            # Export with auto-generated filename
 ```
 
 ## Multi-Night Planning

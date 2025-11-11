@@ -490,7 +490,7 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
 @app.command("objects", rich_help_panel="Object Recommendations")
 def show_objects(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -535,15 +535,23 @@ def _show_objects_content(
         # Interactive selection if target_type not provided
         if target_type is None:
             target_type = _select_object_type_interactive()
-            target_types = None if target_type is None else [ObservingTarget(target_type)]
+            if target_type is None:
+                target_types = None  # User cancelled
+            elif target_type == "all":
+                target_types = None  # Show all types
+            else:
+                target_types = [ObservingTarget(target_type)]
         else:
             # Parse target types
-            try:
-                target_types = [ObservingTarget(target_type)]
-            except ValueError:
-                output_console.print(f"[red]Invalid target type: {target_type}[/red]")
-                output_console.print(f"Valid types: {', '.join([t.value for t in ObservingTarget])}")
-                raise typer.Exit(code=1) from None
+            if target_type.lower() == "all":
+                target_types = None  # Show all types
+            else:
+                try:
+                    target_types = [ObservingTarget(target_type)]
+                except ValueError:
+                    output_console.print(f"[red]Invalid target type: {target_type}[/red]")
+                    output_console.print(f"Valid types: all, {', '.join([t.value for t in ObservingTarget])}")
+                    raise typer.Exit(code=1) from None
 
         objects = planner.get_recommended_objects(
             conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing
@@ -929,7 +937,7 @@ def _generate_export_filename(
 
 @app.command("tonight", rich_help_panel="Viewing Guides")
 def show_tonight(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -1015,7 +1023,7 @@ def _show_tonight_content(
 
 @app.command("plan", rich_help_panel="Complete Plans")
 def show_plan(
-    target_type: str | None = typer.Option(None, "--type", help="Filter by type (planets, deep_sky, messier, etc.)"),
+    target_type: str | None = typer.Option(None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -1049,7 +1057,14 @@ def show_plan(
 
 def _select_object_type_interactive() -> str | None:
     """Interactively select an object type for filtering."""
-    object_types = list(ObservingTarget)
+    # Create a special "all" option
+    class AllOption:
+        """Special marker for 'all' option."""
+        value = "all"
+        display_name = "All Types"
+        description = "Show all object types (no filtering)"
+
+    object_types: list[ObservingTarget | AllOption] = [AllOption(), *list(ObservingTarget)]
 
     # Object type descriptions
     descriptions = {
@@ -1063,16 +1078,24 @@ def _select_object_type_interactive() -> str | None:
         ObservingTarget.NGC_IC: "NGC and IC catalog objects",
     }
 
-    def display_object_type(ot: ObservingTarget) -> tuple[str, ...]:
-        display_name = ot.value.replace("_", " ").title()
-        description = descriptions.get(ot, "Object type")
+    def display_object_type(item: ObservingTarget | AllOption) -> tuple[str, ...]:
+        if isinstance(item, AllOption):
+            return (item.display_name, item.description)
+        display_name = item.value.replace("_", " ").title()
+        description = descriptions.get(item, "Object type")
         return (display_name, description)
 
     selected = select_from_list(
         object_types,
-        title="Select Object Type (or 'q' to show all)",
+        title="Select Object Type",
         display_func=display_object_type,
         headers=["Object Type", "Description"],
     )
 
-    return selected.value if selected else None
+    if selected is None:
+        return None
+
+    if isinstance(selected, AllOption):
+        return "all"
+
+    return selected.value

@@ -106,6 +106,7 @@ Browse and search extensive catalogs:
 
 - **Fuzzy search**: Find objects quickly (`catalog search andromeda`)
 - **Visibility filtering**: Filter by telescope capabilities and sky conditions
+- **Interactive object type selection**: Choose from all object types or filter by specific type (planets, deep_sky, messier, etc.)
 - **Geocoding**: Set location by address (`location geocode "New York, NY"`)
 - **Offline ephemeris**: Download JPL data for field use without internet
 - **Dynamic ephemeris sync**: Automatically fetch and sync ephemeris file metadata from NASA JPL's NAIF servers
