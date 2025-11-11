@@ -126,7 +126,7 @@ jobs:
             echo "Error: uv.lock is out of sync with pyproject.toml"
             echo "Run 'uv lock' to update the lock file"
             exit 1
-          fi
+          }
 
       - name: Run ruff check
         run: uv run ruff check src
