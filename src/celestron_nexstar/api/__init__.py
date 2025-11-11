@@ -68,8 +68,7 @@ from celestron_nexstar.api.light_pollution import (
     BortleClass,
     LightPollutionData,
     get_light_pollution_data,
-    get_light_pollution_data_async,
-    get_light_pollution_data_batch_async,
+    get_light_pollution_data_batch,
     sqm_to_bortle,
 )
 
@@ -242,8 +241,7 @@ __all__ = [
     "get_file_size",
     "get_installed_files",
     "get_light_pollution_data",
-    "get_light_pollution_data_async",
-    "get_light_pollution_data_batch_async",
+    "get_light_pollution_data_batch",
     "get_object_altitude_azimuth",
     "get_object_by_name",
     "get_observer_location",

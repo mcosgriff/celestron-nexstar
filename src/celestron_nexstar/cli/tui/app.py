@@ -6,6 +6,8 @@ Main application class for the full-screen terminal user interface.
 
 from __future__ import annotations
 
+import asyncio
+
 from prompt_toolkit import Application, PromptSession
 from prompt_toolkit.layout.containers import FloatContainer
 from prompt_toolkit.layout.layout import Layout
@@ -483,7 +485,7 @@ def _update_location_interactive() -> None:
 
         # Step 2: Geocode
         try:
-            new_location = geocode_location(query)
+            new_location = asyncio.run(geocode_location(query))
         except ValueError as e:
             # Show error dialog
             _show_error_dialog(f"Geocoding failed: {e}")

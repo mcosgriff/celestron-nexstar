@@ -4,6 +4,7 @@ ISS Pass Prediction Commands
 Find International Space Station passes visible from your location.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -81,13 +82,15 @@ def show_passes(
     now = datetime.now(UTC)
 
     with get_db_session() as db:
-        iss_passes = get_iss_passes_cached(
-            location.latitude,
-            location.longitude,
-            start_time=now,
-            days=days,
-            min_altitude_deg=min_altitude,
-            db_session=db,
+        iss_passes = asyncio.run(
+            get_iss_passes_cached(
+                location.latitude,
+                location.longitude,
+                start_time=now,
+                days=days,
+                min_altitude_deg=min_altitude,
+                db_session=db,
+            )
         )
 
     if export:

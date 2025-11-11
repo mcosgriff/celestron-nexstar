@@ -7,6 +7,7 @@ capabilities to recommend what to observe tonight.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -190,12 +191,12 @@ class ObservationPlanner:
             elevation=0.0,
         )
 
-        weather = fetch_weather(observer_location)
+        weather = asyncio.run(fetch_weather(observer_location))
         weather_status, weather_warning = assess_observing_conditions(weather)
         is_weather_suitable = weather_status in ("excellent", "good", "fair")
 
         # Get light pollution
-        lp_data = get_light_pollution_data(lat, lon)
+        lp_data = asyncio.run(get_light_pollution_data(lat, lon))
 
         # Get telescope configuration
         config = get_current_configuration()

@@ -7,6 +7,7 @@ what's visible and locating nearby dark sky sites.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from contextlib import suppress
@@ -561,7 +562,7 @@ def find_dark_sites_near(
     """
     # Handle string location
     if isinstance(location, str):
-        location = geocode_location(location)
+        location = asyncio.run(geocode_location(location))
 
     sites = []
 
@@ -675,10 +676,10 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
     """
     # Handle string location
     if isinstance(location, str):
-        location = geocode_location(location)
+        location = asyncio.run(geocode_location(location))
 
     # Get light pollution data
-    light_data = get_light_pollution_data(location.latitude, location.longitude)
+    light_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
 
     return VacationViewingInfo(
         location=location,

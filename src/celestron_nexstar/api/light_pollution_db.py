@@ -24,7 +24,6 @@ The system will work without SpatiaLite but queries will be slower for large dat
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 from pathlib import Path
@@ -407,7 +406,7 @@ def _point_in_boundaries(lat: float, lon: float, boundaries: list[dict[str, Any]
     return False
 
 
-async def _download_png_async(url: str, output_path: Path) -> bool:
+async def _download_png(url: str, output_path: Path) -> bool:
     """Download PNG image asynchronously."""
     try:
         import aiohttp
@@ -854,7 +853,7 @@ async def download_world_atlas_data(
         # Download if needed
         if not png_path.exists() or force:
             logger.info(f"Downloading {region} data from {url}...")
-            success = await _download_png_async(url, png_path)
+            success = await _download_png(url, png_path)
             if not success:
                 logger.error(f"Failed to download {region}")
                 continue
@@ -866,30 +865,3 @@ async def download_world_atlas_data(
         results[region] = count
 
     return results
-
-
-def download_world_atlas_data_sync(
-    regions: list[str] | None = None,
-    grid_resolution: float = 0.1,
-    force: bool = False,
-    state_filter: list[str] | None = None,
-) -> dict[str, int]:
-    """
-    Synchronous wrapper for downloading World Atlas data.
-
-    Args:
-        regions: List of regions to download (None = all)
-        grid_resolution: Grid resolution in degrees (default 0.1° ≈ 11km)
-        force: Force re-download even if data exists
-        state_filter: Optional list of state/province names to filter by
-
-    Returns:
-        Dictionary mapping region to number of points inserted
-    """
-    try:
-        asyncio.get_running_loop()
-        # In async context, can't use run_until_complete
-        logger.warning("Cannot download in async context. Use download_world_atlas_data() instead.")
-        return {}
-    except RuntimeError:
-        return asyncio.run(download_world_atlas_data(regions, grid_resolution, force, state_filter))

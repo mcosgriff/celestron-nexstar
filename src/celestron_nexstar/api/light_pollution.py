@@ -321,7 +321,7 @@ async def _fetch_from_darksky_api(lat: float, lon: float) -> float | None:
     return None
 
 
-async def _fetch_sqm_async(lat: float, lon: float) -> float | None:
+async def _fetch_sqm(lat: float, lon: float) -> float | None:
     """
     Fetch SQM value from available sources (async).
 
@@ -371,9 +371,9 @@ def _estimate_sqm_from_location(lat: float, lon: float) -> float:
     return 20.0
 
 
-async def get_light_pollution_data_async(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
+async def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
     """
-    Get light pollution data for a location (async).
+    Get light pollution data for a location.
 
     Uses async HTTP to fetch data from APIs with intelligent caching.
     Only fetches new data if cache is stale or force_refresh is True.
@@ -407,7 +407,7 @@ async def get_light_pollution_data_async(lat: float, lon: float, force_refresh: 
 
     # Need to fetch new data
     logger.info(f"Fetching light pollution data for {lat},{lon}")
-    sqm = await _fetch_sqm_async(lat, lon)
+    sqm = await _fetch_sqm(lat, lon)
 
     if sqm is None:
         # Fallback to estimation
@@ -432,83 +432,11 @@ async def get_light_pollution_data_async(lat: float, lon: float, force_refresh: 
     return _create_light_pollution_data(sqm, source, cached=False)
 
 
-def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
-    """
-    Get light pollution data for a location (synchronous wrapper).
-
-    This is a convenience wrapper that runs the async function.
-    When called from within an async context, it will use cached data if available,
-    or return estimated data to avoid event loop conflicts.
-
-    Args:
-        lat: Latitude in degrees
-        lon: Longitude in degrees
-        force_refresh: Force refresh even if cache is valid
-
-    Returns:
-        Light pollution data
-    """
-    cache_key = _get_cache_key(lat, lon)
-
-    # Always check database first (synchronous, fast, offline)
-    try:
-        from .database import get_database
-        from .light_pollution_db import get_sqm_from_database
-
-        db = get_database()
-        sqm = get_sqm_from_database(lat, lon, db)
-        if sqm is not None:
-            logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
-            return _create_light_pollution_data(sqm, "database", cached=False)
-    except Exception as e:
-        logger.debug(f"Database lookup failed: {e}")
-
-    # Check cache second - this is synchronous and safe
-    cache_data = _load_cache()
-    if not force_refresh and cache_data and "data" in cache_data:
-        location_data = cache_data["data"].get(cache_key)
-        if location_data and "timestamp" in location_data:
-            try:
-                cache_time = datetime.fromisoformat(location_data["timestamp"])
-                age = datetime.now(UTC) - cache_time.replace(tzinfo=UTC)
-                if age < timedelta(hours=CACHE_STALE_HOURS):
-                    # Use cached data
-                    return _create_light_pollution_data(location_data["sqm"], location_data.get("source"), cached=True)
-            except (ValueError, KeyError):
-                pass
-
-    # If we need fresh data, check if we're in an async context
-    try:
-        loop = asyncio.get_running_loop()
-        # We're in an async context - can't block, so use cache or estimate
-        if cache_data and "data" in cache_data:
-            location_data = cache_data["data"].get(cache_key)
-            if location_data:
-                # Use stale cache rather than blocking
-                return _create_light_pollution_data(location_data["sqm"], location_data.get("source"), cached=True)
-        # No cache available, use estimation
-        sqm = _estimate_sqm_from_location(lat, lon)
-        return _create_light_pollution_data(sqm, "estimated", cached=False)
-    except RuntimeError:
-        # No running event loop - safe to run async code
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # This shouldn't happen, but handle it
-                sqm = _estimate_sqm_from_location(lat, lon)
-                return _create_light_pollution_data(sqm, "estimated", cached=False)
-            else:
-                return loop.run_until_complete(get_light_pollution_data_async(lat, lon, force_refresh))
-        except RuntimeError:
-            # No event loop at all, create a new one
-            return asyncio.run(get_light_pollution_data_async(lat, lon, force_refresh))
-
-
-async def get_light_pollution_data_batch_async(
+async def get_light_pollution_data_batch(
     locations: list[tuple[float, float]], force_refresh: bool = False
 ) -> dict[tuple[float, float], LightPollutionData]:
     """
-    Get light pollution data for multiple locations (async batch).
+    Get light pollution data for multiple locations concurrently.
 
     Fetches data for multiple locations concurrently for a full night of viewing.
     Uses caching to avoid redundant API calls.
@@ -520,7 +448,7 @@ async def get_light_pollution_data_batch_async(
     Returns:
         Dictionary mapping (lat, lon) to LightPollutionData
     """
-    tasks = [get_light_pollution_data_async(lat, lon, force_refresh) for lat, lon in locations]
+    tasks = [get_light_pollution_data(lat, lon, force_refresh) for lat, lon in locations]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     data_map: dict[tuple[float, float], LightPollutionData] = {}

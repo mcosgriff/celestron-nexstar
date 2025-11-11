@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, NamedTuple
 
-from skyfield.api import Loader, Topos, load
+from skyfield.api import Topos
 
 from .enums import MoonPhase
 
@@ -58,9 +57,10 @@ class SunInfo(NamedTuple):
 def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None]:
     """Get Skyfield Earth, Sun, and Moon objects."""
     try:
-        skyfield_dir = _get_skyfield_directory()
-        loader = Loader(str(skyfield_dir))
-        ts = load.timescale()
+        from .skyfield_utils import get_skyfield_loader
+
+        loader = get_skyfield_loader()
+        ts = loader.timescale()
 
         # Load ephemeris - de421 includes Moon
         try:
@@ -81,11 +81,6 @@ def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None]:
     except Exception as e:
         logger.error(f"Failed to load Skyfield objects: {e}")
         return None, None, None, None
-
-
-def _get_skyfield_directory() -> Path:
-    """Get the Skyfield cache directory."""
-    return Path.home() / ".skyfield"
 
 
 def calculate_moon_phase(illumination: float, moon_ra: float, sun_ra: float) -> MoonPhase:

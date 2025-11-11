@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
-from pathlib import Path
 
-from skyfield.api import Loader, load
 from skyfield.jpllib import SpiceKernel
+
+from .skyfield_utils import get_skyfield_loader
 
 
 logger = logging.getLogger(__name__)
@@ -69,18 +69,13 @@ PLANET_NAMES = {
 _ephemeris_cache: dict[str, SpiceKernel] = {}
 
 
-def _get_skyfield_directory() -> Path:
-    """Get the Skyfield cache directory."""
-    return Path.home() / ".skyfield"
-
-
 @lru_cache(maxsize=10)
 def _get_ephemeris(bsp_file: str) -> SpiceKernel:
     """
     Load ephemeris data from a specific BSP file.
 
     Cached to avoid reloading files on every call.
-    Will attempt to load from ~/.skyfield/ directory.
+    Will attempt to load from ~/.skyfield/ directory (or SKYFIELD_DIR env var).
 
     Args:
         bsp_file: Name of the BSP file to load
@@ -94,16 +89,10 @@ def _get_ephemeris(bsp_file: str) -> SpiceKernel:
     if bsp_file in _ephemeris_cache:
         return _ephemeris_cache[bsp_file]
 
-    # Use Skyfield directory for both loading and downloading
-    skyfield_dir = _get_skyfield_directory()
+    # Use centralized Skyfield loader
+    loader = get_skyfield_loader()
 
-    # Ensure directory exists
-    skyfield_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use absolute path to ensure Skyfield finds the file
-    loader = Loader(str(skyfield_dir.resolve()))
-
-    # Load file - will download to skyfield_dir if not present
+    # Load file - will download to configured directory if not present
     eph = loader(bsp_file)
 
     _ephemeris_cache[bsp_file] = eph
@@ -156,7 +145,8 @@ def get_planetary_position(
         ) from None
 
     # Get timescale and current time
-    ts = load.timescale()
+    loader = get_skyfield_loader()
+    ts = loader.timescale()
     if dt is None:
         dt = datetime.now(UTC)
     elif dt.tzinfo is None:

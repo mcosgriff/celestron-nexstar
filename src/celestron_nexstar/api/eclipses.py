@@ -10,12 +10,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 
 try:
-    from skyfield.api import Loader, Topos, load
+    from skyfield.api import Topos
+
+    from .skyfield_utils import get_skyfield_loader
 
     SKYFIELD_AVAILABLE = True
 except ImportError:
@@ -68,20 +69,16 @@ class EclipseType:
     SOLAR_ANNULAR = "solar_annular"
 
 
-def _get_skyfield_directory() -> Path:
-    """Get the Skyfield cache directory."""
-    return Path.home() / ".skyfield"
-
-
 def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[None, None, None, None, None]:
     """Get Skyfield objects for calculations."""
     if not SKYFIELD_AVAILABLE:
         return None, None, None, None, None
 
     try:
-        skyfield_dir = _get_skyfield_directory()
-        loader = Loader(str(skyfield_dir))
-        ts = load.timescale()
+        from .skyfield_utils import get_skyfield_loader
+
+        loader = get_skyfield_loader()
+        ts = loader.timescale()
 
         # Load ephemeris - de421 includes Moon
         try:

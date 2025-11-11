@@ -4,15 +4,15 @@ Catalog Commands
 Commands for searching and managing celestial object catalogs.
 """
 
-from typing import Literal
+from pathlib import Path
 
 import typer
+from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from celestron_nexstar.api.catalogs import (
-    ALL_CATALOGS,
     CelestialObject,
     get_all_objects,
     get_catalog,
@@ -21,12 +21,23 @@ from celestron_nexstar.api.catalogs import (
 )
 from celestron_nexstar.api.database import get_database
 
+from ...cli.utils.export import FileConsole
 from ..utils.output import console, format_dec, format_ra, print_error, print_info, print_json
 from ..utils.selection import select_object
 from ..utils.state import ensure_connected
 
 
 app = typer.Typer(help="Celestial object catalog commands")
+
+
+def _generate_export_filename(catalog: str) -> Path:
+    """Generate export filename for catalog list."""
+    from datetime import datetime
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    catalog_safe = catalog.replace("_", "-").lower()
+    filename = f"catalog-{catalog_safe}-{date_str}.csv"
+    return Path(filename)
 
 
 def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
@@ -187,13 +198,15 @@ def search(
 
 @app.command("list", rich_help_panel="Search & Browse")
 def list_catalog(
-    catalog: Literal[
-        "messier", "bright_stars", "asterisms", "ngc", "caldwell", "planets", "moons", "all"
-    ] = typer.Option("all", help="Catalog to list"),
+    catalog: str = typer.Option("all", help="Catalog to list (or 'all' for all catalogs)"),
     object_type: str | None = typer.Option(
         None, "--type", help="Filter by type (star, galaxy, nebula, asterism, etc.)"
     ),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
 ) -> None:
     """
     List objects in a catalog.
@@ -205,8 +218,24 @@ def list_catalog(
         nexstar catalog list --catalog messier --type galaxy
     """
     try:
-        # Get objects
-        objects = get_all_objects() if catalog == "all" else get_catalog(catalog)
+        # Validate catalog name if not "all"
+        if catalog != "all":
+            db = get_database()
+            available_catalogs = db.get_all_catalogs()
+            if catalog not in available_catalogs:
+                print_error(
+                    f"Invalid catalog: '{catalog}'. Available catalogs: {', '.join(sorted(available_catalogs))}, 'all'"
+                )
+                raise typer.Exit(code=1)
+
+        # Get objects from database if catalog is specified, otherwise use YAML fallback
+        if catalog == "all":
+            objects = get_all_objects()
+        else:
+            # Try to get from database first, fallback to YAML if not in database
+            db = get_database()
+            db_objects = db.get_by_catalog(catalog, limit=10000)  # Large limit to get all objects
+            objects = db_objects or get_catalog(catalog)
 
         # Filter by type if specified
         if object_type:
@@ -220,6 +249,83 @@ def list_catalog(
 
         if not objects:
             print_info("No objects found")
+            return
+
+        # Helper function to show catalog content
+        def _show_catalog_content(
+            output_console: Console | FileConsole,
+            catalog_name: str,
+            objects_list: list[CelestialObject],
+            type_filter: str | None = None,
+        ) -> None:
+            catalog_display = catalog_name.replace("_", " ").title()
+            type_suffix = f" ({type_filter})" if type_filter else ""
+            table = Table(
+                title=f"{catalog_display} Catalog{type_suffix} ({len(objects_list)} objects)",
+                show_header=True,
+                header_style="bold magenta",
+            )
+            table.add_column("Name", style="cyan", width=15)
+            table.add_column("Type", style="yellow", width=10)
+            if catalog_name == "moons":
+                table.add_column("Parent Planet", style="yellow", width=15)
+            table.add_column("RA", style="green", width=12)
+            table.add_column("Dec", style="green", width=12)
+            table.add_column("Mag", style="blue", width=6)
+            table.add_column("Description", style="white")
+
+            for obj in objects_list:
+                ra_str = f"{obj.ra_hours:.2f}h"
+                dec_str = f"{obj.dec_degrees:+.1f}°"
+                mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                desc = obj.common_name or obj.description or ""
+
+                if catalog_name == "moons":
+                    table.add_row(obj.name, obj.object_type, obj.parent_planet, ra_str, dec_str, mag_str, desc[:40])
+                else:
+                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+
+            output_console.print(table)
+
+        if export:
+            import csv
+
+            export_path_obj = Path(export_path) if export_path else _generate_export_filename(catalog)
+
+            # Write CSV file
+            with export_path_obj.open("w", newline="", encoding="utf-8") as csvfile:
+                fieldnames = [
+                    "name",
+                    "common_name",
+                    "type",
+                    "ra_hours",
+                    "dec_degrees",
+                    "magnitude",
+                    "catalog",
+                    "description",
+                ]
+                if catalog == "moons":
+                    fieldnames.insert(3, "parent_planet")
+
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for obj in objects:
+                    row = {
+                        "name": obj.name,
+                        "common_name": obj.common_name or "",
+                        "type": obj.object_type,
+                        "ra_hours": f"{obj.ra_hours:.4f}",
+                        "dec_degrees": f"{obj.dec_degrees:.4f}",
+                        "magnitude": f"{obj.magnitude:.2f}" if obj.magnitude is not None else "",
+                        "catalog": obj.catalog,
+                        "description": obj.description or "",
+                    }
+                    if catalog == "moons":
+                        row["parent_planet"] = obj.parent_planet or ""
+                    writer.writerow(row)
+
+            console.print(f"\n[green]✓[/green] Exported {len(objects)} objects to {export_path_obj}")
             return
 
         if json_output:
@@ -241,35 +347,7 @@ def list_catalog(
                 }
             )
         else:
-            # Create table
-            catalog_display = catalog.replace("_", " ").title()
-            type_filter = f" ({object_type})" if object_type else ""
-            table = Table(
-                title=f"{catalog_display} Catalog{type_filter} ({len(objects)} objects)",
-                show_header=True,
-                header_style="bold magenta",
-            )
-            table.add_column("Name", style="cyan", width=15)
-            table.add_column("Type", style="yellow", width=10)
-            if catalog == "moons":
-                table.add_column("Parent Planet", style="yellow", width=15)
-            table.add_column("RA", style="green", width=12)
-            table.add_column("Dec", style="green", width=12)
-            table.add_column("Mag", style="blue", width=6)
-            table.add_column("Description", style="white")
-
-            for obj in objects:
-                ra_str = f"{obj.ra_hours:.2f}h"
-                dec_str = f"{obj.dec_degrees:+.1f}°"
-                mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
-                desc = obj.common_name or obj.description or ""
-
-                if catalog == "moons":
-                    table.add_row(obj.name, obj.object_type, obj.parent_planet, ra_str, dec_str, mag_str, desc[:40])
-                else:
-                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
-
-            console.print(table)
+            _show_catalog_content(console, catalog, objects, object_type)
 
     except Exception as e:
         print_error(f"Failed to list catalog: {e}")
@@ -430,34 +508,40 @@ def catalogs() -> None:
         nexstar catalog catalogs
     """
     try:
+        db = get_database()
+        stats = db.get_stats()
+
         table = Table(title="Available Catalogs", show_header=True, header_style="bold magenta")
         table.add_column("Catalog", style="cyan", width=20)
         table.add_column("Objects", style="green", width=10)
         table.add_column("Description", style="white")
 
-        for name, objects in ALL_CATALOGS.items():
-            display_name = name.replace("_", " ").title()
-            count = str(len(objects))
+        # Catalog descriptions
+        descriptions = {
+            "bright_stars": "Bright stars including navigation stars and famous double stars",
+            "messier": "Complete Messier catalog objects visible with 6SE",
+            "asterisms": "Star patterns: Big Dipper, Orion's Belt, Summer Triangle, etc.",
+            "ngc": "Notable NGC deep sky objects visible with 6SE",
+            "ic": "Index Catalog deep sky objects",
+            "caldwell": "Selected Caldwell catalog highlights for amateur telescopes",
+            "planets": "Solar system planets and moons visible with 6SE",
+            "moons": "Planetary moons",
+            "yale_bsc": "Yale Bright Star Catalog",
+        }
 
-            # Get catalog description
-            if name == "bright_stars":
-                desc = "Bright stars including navigation stars and famous double stars"
-            elif name == "messier":
-                desc = "Complete Messier catalog objects visible with 6SE"
-            elif name == "asterisms":
-                desc = "Star patterns: Big Dipper, Orion's Belt, Summer Triangle, etc."
-            elif name == "ngc":
-                desc = "Notable NGC deep sky objects visible with 6SE"
-            elif name == "caldwell":
-                desc = "Selected Caldwell catalog highlights for amateur telescopes"
-            elif name == "planets":
-                desc = "Solar system planets and moons visible with 6SE"
-            else:
-                desc = ""
+        # Sort catalogs by object count (descending)
+        sorted_catalogs = sorted(stats.objects_by_catalog.items(), key=lambda x: x[1], reverse=True)
 
-            table.add_row(display_name, count, desc)
+        for catalog_name, count in sorted_catalogs:
+            # Only show catalogs that actually exist in the database
+            # (sanity check - should already be filtered by the query)
+            if count > 0:
+                display_name = catalog_name.replace("_", " ").title()
+                desc = descriptions.get(catalog_name, "")
+                table.add_row(display_name, str(count), desc)
 
         console.print(table)
+        print_info(f"Total objects in database: {stats.total_objects:,}")
         print_info("Use 'nexstar catalog list --catalog <name>' to view catalog contents")
 
     except Exception as e:

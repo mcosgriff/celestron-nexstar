@@ -7,13 +7,11 @@ Includes geocoding support for city/address lookups.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-
-from geopy.exc import GeopyError
-from geopy.geocoders import Nominatim
 
 
 logger = logging.getLogger(__name__)
@@ -155,11 +153,11 @@ def clear_observer_location() -> None:
     _current_location = None
 
 
-def geocode_location(query: str) -> ObserverLocation:
+async def geocode_location(query: str) -> ObserverLocation:
     """
     Geocode a location from city name, address, or ZIP code.
 
-    Uses OpenStreetMap's Nominatim service for geocoding.
+    Uses OpenStreetMap's Nominatim service via aiohttp.
 
     Args:
         query: Location query (e.g., "New York, NY", "90210", "London, UK")
@@ -170,24 +168,75 @@ def geocode_location(query: str) -> ObserverLocation:
     Raises:
         ValueError: If location could not be found or geocoding failed
     """
+    import aiohttp
+
     try:
-        # Create geocoder with a user agent
-        geolocator = Nominatim(user_agent="celestron-nexstar-cli")
+        # Use Nominatim API directly
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": query,
+            "format": "json",
+            "limit": 1,
+            "addressdetails": 1,
+        }
+        headers = {
+            "User-Agent": "celestron-nexstar-cli",
+        }
 
-        # Geocode the query
-        location = geolocator.geocode(query, timeout=10)
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response,
+        ):
+            if response.status != 200:
+                raise ValueError(f"Geocoding API returned HTTP {response.status}")
 
-        if location is None:
+            data = await response.json()
+
+        if not data or len(data) == 0:
             raise ValueError(f"Could not find location: '{query}'") from None
 
+        result = data[0]
+        latitude = float(result["lat"])
+        longitude = float(result["lon"])
+        address = result.get("display_name", query)
+
+        # Try to get elevation from addressdetails if available
+        elevation = 0.0
+        if "addressdetails" in result:
+            # Elevation not typically in Nominatim response, but we can try
+            pass
+
         return ObserverLocation(
-            latitude=location.latitude,
-            longitude=location.longitude,
-            elevation=location.altitude if hasattr(location, "altitude") and location.altitude else 0.0,
-            name=location.address,
+            latitude=latitude,
+            longitude=longitude,
+            elevation=elevation,
+            name=address,
         )
 
-    except GeopyError as e:
-        raise ValueError(f"Geocoding error: {e}") from None
     except Exception as e:
+        if isinstance(e, ValueError):
+            raise
         raise ValueError(f"Failed to geocode location: {e}") from None
+
+
+async def geocode_location_batch(queries: list[str]) -> dict[str, ObserverLocation]:
+    """
+    Geocode multiple locations concurrently.
+
+    Args:
+        queries: List of location queries
+
+    Returns:
+        Dictionary mapping queries to ObserverLocation (failed queries excluded)
+    """
+    tasks = [geocode_location(query) for query in queries]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    data_map: dict[str, ObserverLocation] = {}
+    for query, result in zip(queries, results, strict=False):
+        if isinstance(result, Exception):
+            logger.warning(f"Error geocoding '{query}': {result}")
+        elif isinstance(result, ObserverLocation):
+            data_map[query] = result
+
+    return data_map
