@@ -196,15 +196,16 @@ def populate_star_name_mappings_database(
     db_session: Session, hr_numbers: list[int] | None = None, force_refresh: bool = False
 ) -> None:
     """
-    Populate database with star name mappings from external sources.
+    Populate database with star name mappings.
 
-    This fetches data from external APIs/catalogs and stores it in the database.
-    Falls back to a minimal static list if external fetch fails.
+    Uses a comprehensive static list of commonly searched stars as the primary source.
+    Optionally enhances with additional mappings from external APIs/catalogs if available.
+    This ensures star common names are always available even without internet connectivity.
 
     Args:
         db_session: SQLAlchemy database session
-        hr_numbers: Optional list of HR numbers to fetch. If None, fetches all available.
-        force_refresh: If True, re-fetch even if data exists
+        hr_numbers: Optional list of HR numbers to fetch from external sources. If None, fetches all available.
+        force_refresh: If True, re-populate even if data exists
     """
     logger.info("Populating star name mappings database...")
 

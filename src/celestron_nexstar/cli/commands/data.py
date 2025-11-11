@@ -126,9 +126,7 @@ def update_star_names() -> None:
 
                 # Look up common name
                 mapping = (
-                    session.query(StarNameMappingModel)
-                    .filter(StarNameMappingModel.hr_number == hr_number)
-                    .first()
+                    session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
                 )
 
                 if mapping and mapping.common_name and mapping.common_name.strip():
