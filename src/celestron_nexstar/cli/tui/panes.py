@@ -492,6 +492,8 @@ def get_conditions_info() -> FormattedText:
     weather_status = None
     weather_warning = None
     try:
+        import asyncio
+
         from ...api.observer import get_observer_location
         from ...api.weather import assess_observing_conditions, fetch_weather
 
@@ -526,7 +528,7 @@ def get_conditions_info() -> FormattedText:
             weather_location = None
 
         if weather_location:
-            weather_data = fetch_weather(weather_location)
+            weather_data = asyncio.run(fetch_weather(weather_location))
             weather_status, weather_warning = assess_observing_conditions(weather_data)
 
             if weather_data.error:
@@ -676,7 +678,7 @@ def get_conditions_info() -> FormattedText:
 
         if lp_location:
             try:
-                lp_data = get_light_pollution_data(lp_location[0], lp_location[1])
+                lp_data = asyncio.run(get_light_pollution_data(lp_location[0], lp_location[1]))
 
                 # Display Bortle class with color coding
                 bortle = lp_data.bortle_class

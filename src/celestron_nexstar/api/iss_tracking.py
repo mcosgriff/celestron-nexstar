@@ -13,10 +13,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from skyfield.api import load, wgs84
+from skyfield.api import wgs84
 from skyfield.sgp4lib import EarthSatellite
 
 from .compass import azimuth_to_compass_8point
+from .skyfield_utils import get_skyfield_loader
 
 
 if TYPE_CHECKING:
@@ -39,6 +40,8 @@ TLE_CACHE_DIR = Path.home() / ".celestron_nexstar" / "cache"
 TLE_CACHE_FILE = TLE_CACHE_DIR / "iss_tle.txt"
 TLE_MAX_AGE_HOURS = 24  # Refresh TLE every 24 hours
 PASS_CACHE_MAX_AGE_HOURS = 24  # Pass predictions valid for 24 hours
+
+
 
 
 @dataclass(frozen=True)
@@ -133,9 +136,9 @@ def _get_cached_tle() -> tuple[str, str, datetime] | None:
     return None
 
 
-def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
+async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
     """
-    Fetch current ISS TLE from CelesTrak.
+    Fetch current ISS TLE from CelesTrak (async).
 
     Returns:
         Tuple of (line1, line2, fetch_time)
@@ -143,13 +146,20 @@ def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
     Raises:
         RuntimeError: If fetch fails
     """
-    import urllib.request
-
-    logger.info("Fetching ISS TLE from CelesTrak...")
+    import aiohttp
 
     try:
-        with urllib.request.urlopen(CELESTRAK_ISS_URL, timeout=10) as response:
-            data = response.read().decode("utf-8")
+        logger.info("Fetching ISS TLE from CelesTrak (async)...")
+
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(CELESTRAK_ISS_URL, timeout=aiohttp.ClientTimeout(total=10)) as response,
+        ):
+            if response.status != 200:
+                msg = f"Failed to fetch ISS TLE: HTTP {response.status}"
+                raise RuntimeError(msg) from None
+
+            data = await response.text()
             lines = data.strip().split("\n")
 
             if len(lines) >= 3:
@@ -162,18 +172,20 @@ def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
                 with TLE_CACHE_FILE.open("w") as f:
                     f.write(data)
 
-                logger.info("ISS TLE fetched and cached successfully")
+                logger.info("ISS TLE fetched and cached successfully (async)")
                 return (line1, line2, fetch_time)
             else:
                 msg = "Invalid TLE format from CelesTrak"
                 raise RuntimeError(msg) from None
 
     except Exception as e:
+        if isinstance(e, RuntimeError):
+            raise
         msg = f"Failed to fetch ISS TLE: {e}"
         raise RuntimeError(msg) from e
 
 
-def _get_iss_satellite() -> EarthSatellite:
+async def _get_iss_satellite() -> EarthSatellite:
     """
     Get ISS satellite object with current TLE.
 
@@ -190,16 +202,17 @@ def _get_iss_satellite() -> EarthSatellite:
         line1, line2, _fetch_time = cached_tle
     else:
         # Fetch fresh TLE
-        line1, line2, _fetch_time = _fetch_tle_from_celestrak()
+        line1, line2, _fetch_time = await _fetch_tle_from_celestrak()
 
     # Create satellite object
-    ts = load.timescale()
+    loader = get_skyfield_loader()
+    ts = loader.timescale()
     satellite = EarthSatellite(line1, line2, "ISS (ZARYA)", ts)
 
     return satellite
 
 
-def get_iss_passes(
+async def get_iss_passes(
     latitude: float,
     longitude: float,
     start_time: datetime | None = None,
@@ -237,13 +250,14 @@ def get_iss_passes(
     logger.info(f"Calculating ISS passes for lat={latitude}, lon={longitude}, {days} days")
 
     # Get ISS satellite
-    satellite = _get_iss_satellite()
+    satellite = await _get_iss_satellite()
 
     # Create observer location
     observer = wgs84.latlon(latitude, longitude)
 
     # Load timescale
-    ts = load.timescale()
+    loader = get_skyfield_loader()
+    ts = loader.timescale()
     t0 = ts.from_datetime(start_time)
     t1 = ts.from_datetime(end_time)
 
@@ -287,7 +301,9 @@ def get_iss_passes(
                     if max_altitude >= min_altitude_deg:
                         # Check if sunlit (visible)
                         # ISS is visible when it's in sunlight and observer is in darkness
-                        is_sunlit = satellite.at(max_t).is_sunlit(load("de421.bsp"))
+                        loader = get_skyfield_loader()
+                        eph = loader("de421.bsp")
+                        is_sunlit = satellite.at(max_t).is_sunlit(eph)
 
                         duration = int((set_time - rise_time).total_seconds())
 
@@ -315,7 +331,7 @@ def get_iss_passes(
     return passes
 
 
-def get_iss_passes_cached(
+async def get_iss_passes_cached(
     latitude: float,
     longitude: float,
     start_time: datetime | None = None,
@@ -385,7 +401,7 @@ def get_iss_passes_cached(
             ]
 
     # Calculate fresh passes
-    passes = get_iss_passes(latitude, longitude, start_time, days, min_altitude_deg)
+    passes = await get_iss_passes(latitude, longitude, start_time, days, min_altitude_deg)
 
     # Cache in database
     if db_session is not None and passes:

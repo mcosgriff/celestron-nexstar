@@ -7,6 +7,7 @@ Uses Open-Meteo API (free, no API key required).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ try:
 except ImportError:
     OPENMETEO_AVAILABLE = False
     np = None
+
+import aiohttp
 
 
 if TYPE_CHECKING:
@@ -100,132 +103,6 @@ def get_weather_api_key() -> str | None:
         API key if set, None otherwise
     """
     return os.environ.get("OPENWEATHER_API_KEY") or os.environ.get("OWM_API_KEY")
-
-
-def fetch_weather(location: ObserverLocation) -> WeatherData:
-    """
-    Fetch current weather data for the observer location.
-
-    Uses Open-Meteo API (free, no API key required).
-
-    Args:
-        location: Observer location with latitude and longitude
-
-    Returns:
-        WeatherData with current conditions, or error message if failed
-    """
-    if not OPENMETEO_AVAILABLE:
-        return WeatherData(
-            error="openmeteo-requests library not available. Install with: pip install openmeteo-requests"
-        )
-
-    try:
-        # Setup the Open-Meteo API client with cache and retry on error
-        cache_dir = Path.home() / ".cache" / "celestron-nexstar"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_session = requests_cache.CachedSession(str(cache_dir / "openmeteo_cache"), expire_after=3600)
-        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-        openmeteo = openmeteo_requests.Client(session=retry_session)
-
-        # Get current weather from Open-Meteo
-        url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": location.latitude,
-            "longitude": location.longitude,
-            "current": [
-                "temperature_2m",
-                "relative_humidity_2m",
-                "cloud_cover",
-                "wind_speed_10m",
-                "weather_code",
-            ],
-            "hourly": [
-                "temperature_2m",
-                "dew_point_2m",
-                "relative_humidity_2m",
-                "cloud_cover",
-                "wind_speed_10m",
-            ],
-            "timezone": "auto",
-            "wind_speed_unit": "mph",
-            "temperature_unit": "fahrenheit",
-            "forecast_days": 1,  # Only need current + a few hours for dew point
-        }
-
-        responses = openmeteo.weather_api(url, params=params)
-        response = responses[0]
-
-        # Get current weather
-        current = response.Current()
-        current_temperature_2m = current.Variables(0).Value()
-        current_relative_humidity_2m = current.Variables(1).Value()
-        current_cloud_cover = current.Variables(2).Value()
-        current_wind_speed_10m = current.Variables(3).Value()
-        weather_code = current.Variables(4).Value()
-
-        # Get hourly data for dew point (first hour)
-        hourly = response.Hourly()
-        hourly_dew_point_2m = hourly.Variables(1).ValuesAsNumpy()
-
-        # Extract values (handle NaN)
-        def safe_float(value: float) -> float | None:
-            """Convert value to float, returning None if NaN."""
-            if np is not None and np.isnan(value):
-                return None
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return None
-
-        temp_f = safe_float(current_temperature_2m)
-        humidity = safe_float(current_relative_humidity_2m)
-        cloud_cover = safe_float(current_cloud_cover)
-        wind_speed_mph = safe_float(current_wind_speed_10m)
-        dew_point_f = safe_float(hourly_dew_point_2m[0]) if len(hourly_dew_point_2m) > 0 else None
-
-        # If dew point not available, calculate from temp/humidity
-        if dew_point_f is None and temp_f is not None and humidity is not None:
-            dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
-
-        # Map weather code to condition string (WMO Weather interpretation codes)
-        condition = None
-        if weather_code is not None:
-            code = int(weather_code)
-            if code == 0:
-                condition = "Clear"
-            elif code in (1, 2, 3):
-                condition = "Partly Cloudy"
-            elif code in (45, 48):
-                condition = "Foggy"
-            elif code in (51, 53, 55, 56, 57):
-                condition = "Drizzle"
-            elif code in (61, 63, 65, 66, 67):
-                condition = "Rain"
-            elif code in (71, 73, 75, 77):
-                condition = "Snow"
-            elif code in (80, 81, 82):
-                condition = "Rain Showers"
-            elif code in (85, 86):
-                condition = "Snow Showers"
-            elif code in (95, 96, 99):
-                condition = "Thunderstorm"
-            else:
-                condition = "Cloudy"
-
-        return WeatherData(
-            temperature_c=temp_f,  # In Fahrenheit when units=imperial
-            dew_point_f=dew_point_f,
-            humidity_percent=humidity,
-            cloud_cover_percent=cloud_cover,
-            wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
-            visibility_km=None,  # Open-Meteo doesn't provide visibility in free tier
-            condition=condition,
-            last_updated="now",
-        )
-
-    except Exception as e:
-        logger.exception("Error fetching weather from Open-Meteo")
-        return WeatherData(error=f"Error fetching weather: {e}")
 
 
 def assess_observing_conditions(weather: WeatherData) -> tuple[str, str]:
@@ -699,8 +576,153 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             logger.warning(f"Error storing weather forecasts in database: {e}")
             # Continue and return forecasts anyway
 
-        return forecasts
-
     except Exception as e:
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
         return []
+
+    return forecasts
+
+
+async def fetch_weather(location: ObserverLocation) -> WeatherData:
+    """
+    Fetch current weather data for the observer location.
+
+    Uses Open-Meteo API (free, no API key required) via aiohttp.
+
+    Args:
+        location: Observer location with latitude and longitude
+
+    Returns:
+        WeatherData with current conditions, or error message if failed
+    """
+    try:
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "current": [
+                "temperature_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+                "weather_code",
+            ],
+            "hourly": [
+                "temperature_2m",
+                "dew_point_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+            ],
+            "timezone": "auto",
+            "wind_speed_unit": "mph",
+            "temperature_unit": "fahrenheit",
+            "forecast_days": 1,
+        }
+
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
+        ):
+            if response.status != 200:
+                return WeatherData(error=f"HTTP {response.status}")
+
+            data = await response.json()
+
+        # Parse response
+        current = data.get("current", {})
+        hourly = data.get("hourly", {})
+
+        def safe_float(value: float | None) -> float | None:
+            """Convert value to float, returning None if NaN or None."""
+            if value is None:
+                return None
+            if np is not None and np.isnan(value):
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+
+        current_vars = current.get("variables", {})
+        temp_f = safe_float(current_vars.get("temperature_2m"))
+        humidity = safe_float(current_vars.get("relative_humidity_2m"))
+        cloud_cover = safe_float(current_vars.get("cloud_cover"))
+        wind_speed_mph = safe_float(current_vars.get("wind_speed_10m"))
+        weather_code = current_vars.get("weather_code")
+
+        # Get dew point from hourly data (first hour)
+        hourly_vars = hourly.get("variables", {})
+        dew_point_values = hourly_vars.get("dew_point_2m", [])
+        dew_point_f = safe_float(dew_point_values[0]) if dew_point_values else None
+
+        # If dew point not available, calculate from temp/humidity
+        if dew_point_f is None and temp_f is not None and humidity is not None:
+            dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
+
+        # Map weather code to condition string
+        condition = None
+        if weather_code is not None:
+            code = int(weather_code)
+            if code == 0:
+                condition = "Clear"
+            elif code in (1, 2, 3):
+                condition = "Partly Cloudy"
+            elif code in (45, 48):
+                condition = "Foggy"
+            elif code in (51, 53, 55, 56, 57):
+                condition = "Drizzle"
+            elif code in (61, 63, 65, 66, 67):
+                condition = "Rain"
+            elif code in (71, 73, 75, 77):
+                condition = "Snow"
+            elif code in (80, 81, 82):
+                condition = "Rain Showers"
+            elif code in (85, 86):
+                condition = "Snow Showers"
+            elif code in (95, 96, 99):
+                condition = "Thunderstorm"
+            else:
+                condition = "Cloudy"
+
+        return WeatherData(
+            temperature_c=temp_f,
+            dew_point_f=dew_point_f,
+            humidity_percent=humidity,
+            cloud_cover_percent=cloud_cover,
+            wind_speed_ms=wind_speed_mph,
+            visibility_km=None,
+            condition=condition,
+            last_updated="now",
+        )
+
+    except Exception as e:
+        logger.exception("Error fetching weather from Open-Meteo (async)")
+        return WeatherData(error=f"Error fetching weather: {e}")
+
+
+async def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[ObserverLocation, WeatherData]:
+    """
+    Fetch weather data for multiple locations concurrently.
+
+    Args:
+        locations: List of observer locations
+
+    Returns:
+        Dictionary mapping locations to WeatherData
+    """
+    tasks = [fetch_weather(loc) for loc in locations]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    data_map: dict[ObserverLocation, WeatherData] = {}
+    for location, result in zip(locations, results, strict=False):
+        if isinstance(result, Exception):
+            logger.error(f"Error fetching weather for {location}: {result}")
+            data_map[location] = WeatherData(error=f"Error: {result}")
+        elif isinstance(result, WeatherData):
+            data_map[location] = result
+        else:
+            logger.warning(f"Unexpected result type for {location}: {type(result)}")
+            data_map[location] = WeatherData(error="Unexpected error")
+
+    return data_map

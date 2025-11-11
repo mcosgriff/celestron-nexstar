@@ -101,9 +101,6 @@ KNOWN_COMETS = [
 ]
 
 
-def _get_skyfield_directory() -> Path:
-    """Get the Skyfield cache directory."""
-    return Path.home() / ".skyfield"
 
 
 def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:

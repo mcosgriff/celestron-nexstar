@@ -1038,6 +1038,6 @@ def show_plan(
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
-    show_conditions()
+    _show_conditions_content(console)
     console.print("\n" + "=" * 80 + "\n")
-    show_objects(target_type=target_type, limit=limit, best_for_seeing=best_for_seeing)
+    _show_objects_content(console, target_type, limit, best_for_seeing)

@@ -6,6 +6,7 @@ Plan telescope viewing for vacation destinations.
 
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -73,7 +74,7 @@ def show_viewing_info(
     """Show what's visible from a vacation location."""
     try:
         # Geocode location
-        vacation_location = geocode_location(location)
+        vacation_location = asyncio.run(geocode_location(location))
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -110,7 +111,7 @@ def show_dark_sites(
     """Find dark sky viewing sites near a vacation location."""
     try:
         # Geocode location
-        vacation_location = geocode_location(location)
+        vacation_location = asyncio.run(geocode_location(location))
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -292,7 +293,7 @@ def show_comprehensive_plan(
 
     try:
         # Geocode location
-        vacation_location = geocode_location(location)
+        vacation_location = asyncio.run(geocode_location(location))
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -676,12 +677,14 @@ def _show_comprehensive_plan_content(
     try:
         vacation_days = (end_dt - start_dt).days + 1 if start_date and end_date else days_ahead
 
-        iss_passes = get_iss_passes(
-            location.latitude,
-            location.longitude,
-            start_time=start_dt if start_date else datetime.now(UTC),
-            days=min(vacation_days, 14),  # Limit to 14 days
-            min_altitude_deg=10.0,
+        iss_passes = asyncio.run(
+            get_iss_passes(
+                location.latitude,
+                location.longitude,
+                start_time=start_dt if start_date else datetime.now(UTC),
+                days=min(vacation_days, 14),  # Limit to 14 days
+                min_altitude_deg=10.0,
+            )
         )
 
         # Filter visible passes and show top 5

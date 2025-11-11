@@ -387,9 +387,11 @@ def check_aurora_visibility(
     # Get weather data for cloud cover
     cloud_cover = None
     try:
+        import asyncio
+
         from .weather import fetch_weather
 
-        weather = fetch_weather(location)
+        weather = asyncio.run(fetch_weather(location))
         cloud_cover = weather.cloud_cover_percent
     except Exception as e:
         logger.debug(f"Could not fetch weather for aurora check: {e}")

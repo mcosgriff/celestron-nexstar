@@ -105,8 +105,6 @@ KNOWN_STAR_CONSTELLATIONS = {
     "Almach": "Andromeda",
     "Acrux": "Crux",
     "Gacrux": "Crux",
-    "Mimosa": "Crux",
-    "Hadar": "Centaurus",
     "Rigil Kentaurus": "Centaurus",
     "Toliman": "Centaurus",
 }
@@ -287,7 +285,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        updated, not_found = update_star_constellations(verbose=args.verbose)
+        _updated, not_found = update_star_constellations(verbose=args.verbose)
         sys.exit(0 if not_found == 0 else 1)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

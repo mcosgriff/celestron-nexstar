@@ -39,7 +39,7 @@ def create_missing_tables() -> None:
 
     # Create missing tables
     tables_to_create = []
-    for table_name, model in required_tables.items():
+    for table_name, _model in required_tables.items():
         if table_name not in existing_tables:
             tables_to_create.append(table_name)
             print(f"Creating table: {table_name}")

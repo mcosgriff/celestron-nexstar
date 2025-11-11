@@ -4,6 +4,8 @@ Data Management Commands
 Commands for importing and managing catalog data sources.
 """
 
+import asyncio
+
 import typer
 from rich.console import Console
 
@@ -472,7 +474,7 @@ def download_light_pollution(
     """
     from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
-    from ...api.light_pollution_db import download_world_atlas_data_sync
+    from ...api.light_pollution_db import download_world_atlas_data
 
     regions_to_download = [region] if region else None
 
@@ -506,7 +508,9 @@ def download_light_pollution(
         ) as progress:
             task = progress.add_task("Downloading and processing...", total=None)
 
-            results = download_world_atlas_data_sync(regions_to_download, grid_resolution, force, state_filter)
+            from ...api.light_pollution_db import download_world_atlas_data
+
+            results = asyncio.run(download_world_atlas_data(regions_to_download, grid_resolution, force, state_filter))
 
             progress.update(task, completed=100)
 

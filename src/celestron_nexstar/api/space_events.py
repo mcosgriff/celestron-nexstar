@@ -7,6 +7,7 @@ Helps users find optimal viewing locations for upcoming space events.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -571,7 +572,7 @@ def find_best_viewing_location(
 
     # Check if dark sky is required
     if req.dark_sky_required or req.min_bortle_class:
-        current_light = get_light_pollution_data(current_location.latitude, current_location.longitude)
+        current_light = asyncio.run(get_light_pollution_data(current_location.latitude, current_location.longitude))
         current_bortle = current_light.bortle_class.value
 
         # Check if current location meets requirements

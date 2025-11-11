@@ -6,6 +6,7 @@ constellations, asterisms, and meteor showers. Perfect for stargazing
 without any equipment.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -240,7 +241,9 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[dim]Bright satellite passes visible without equipment[/dim]\n")
 
         with get_db_session() as db:
-            iss_passes = get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=db)
+            iss_passes = asyncio.run(
+                get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=db)
+            )
 
         if iss_passes:
             table_iss = Table(expand=True)

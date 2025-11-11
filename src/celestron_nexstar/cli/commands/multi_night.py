@@ -6,6 +6,7 @@ Compare observing conditions across multiple nights and find the best night for 
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -766,7 +767,7 @@ def _show_week_content(output_console: Console | FileConsole) -> None:
             f"  [green]Best Seeing:[/green] {best_seeing_date} (Seeing: {best_seeing[2].seeing_score:.0f}/100)"
         )
         output_console.print(
-            f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent:.0f}%)"
+            f"  [green]Clearest Sky:[/green] {best_clear_date} (Clouds: {best_clear[2].weather.cloud_cover_percent or 0:.0f}%)"
         )
 
     except Exception as e:
@@ -869,7 +870,7 @@ def _show_best_night_content(output_console: Console | FileConsole, object_name:
         )
 
         # Get light pollution data for observer location
-        light_pollution_data = get_light_pollution_data(lat, lon)
+        light_pollution_data = asyncio.run(get_light_pollution_data(lat, lon))
         output_console.print(
             f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n"
         )
@@ -1231,7 +1232,7 @@ def show_clear_sky_chart(
             return
 
         # Get light pollution for darkness calculation
-        lp_data = get_light_pollution_data(lat, lon)
+        lp_data = asyncio.run(get_light_pollution_data(lat, lon))
 
         # Calculate transparency and darkness for each hour
         chart_data = []

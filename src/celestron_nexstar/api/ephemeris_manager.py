@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from skyfield.api import Loader
 
 
 logger = logging.getLogger(__name__)
@@ -197,14 +196,14 @@ def get_ephemeris_directory() -> Path:
     """
     Get the directory where ephemeris files are stored.
 
-    Uses the standard Skyfield cache location: ~/.skyfield/
+    Uses the standard Skyfield cache location: ~/.skyfield/ (or SKYFIELD_DIR env var).
 
     Returns:
         Path to ephemeris directory
     """
-    cache_dir = Path.home() / ".skyfield"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
+    from .skyfield_utils import get_skyfield_directory
+
+    return get_skyfield_directory()
 
 
 def get_installed_files() -> list[tuple[str, EphemerisFileInfo, Path]]:
@@ -285,10 +284,13 @@ def download_file(file_key: str, force: bool = False) -> Path:
     info = EPHEMERIS_FILES[file_key]
     ephemeris_dir = get_ephemeris_directory()
 
-    # Configure Skyfield loader with our cache directory
-    loader = Loader(str(ephemeris_dir))
+    # Use centralized Skyfield loader (respects SKYFIELD_DIR env var)
+    from .skyfield_utils import get_skyfield_loader
+
+    loader = get_skyfield_loader()
 
     # Check if file exists and force is False
+    # Use the actual directory from the loader, not ephemeris_dir
     file_path = ephemeris_dir / info.filename
     if file_path.exists() and not force:
         return file_path
@@ -350,7 +352,9 @@ def verify_file(file_key: str) -> tuple[bool, str]:
 
     try:
         # Try to load the file with Skyfield
-        loader = Loader(str(ephemeris_dir))
+        from .skyfield_utils import get_skyfield_loader
+
+        loader = get_skyfield_loader()
         eph = loader(info.filename)
 
         # Basic validation - check if we can access it as an SPK file

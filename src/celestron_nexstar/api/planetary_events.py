@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 
 try:
-    from skyfield.api import Loader, Topos, load
+    from skyfield.api import Topos
     from skyfield.searchlib import find_minima
 
     SKYFIELD_AVAILABLE = True
@@ -67,9 +67,6 @@ class EventType:
 MAJOR_PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
 
 
-def _get_skyfield_directory() -> Path:
-    """Get the Skyfield cache directory."""
-    return Path.home() / ".skyfield"
 
 
 def _get_planet_position(planet_name: str, t: Any, eph: Any) -> tuple[float, float] | None:
@@ -155,9 +152,10 @@ def get_planetary_conjunctions(
         return []
 
     try:
-        skyfield_dir = _get_skyfield_directory()
-        Loader(str(skyfield_dir))
-        ts = load.timescale()
+        from .skyfield_utils import get_skyfield_loader
+
+        loader = get_skyfield_loader()
+        ts = loader.timescale()
         eph = _get_ephemeris("de440s.bsp")
     except Exception as e:
         logger.error(f"Error loading ephemeris: {e}")
@@ -243,9 +241,10 @@ def get_planetary_oppositions(
         return []
 
     try:
-        skyfield_dir = _get_skyfield_directory()
-        Loader(str(skyfield_dir))
-        ts = load.timescale()
+        from .skyfield_utils import get_skyfield_loader
+
+        loader = get_skyfield_loader()
+        ts = loader.timescale()
         eph = _get_ephemeris("de440s.bsp")
         sun = eph["sun"]
         earth = eph["earth"]

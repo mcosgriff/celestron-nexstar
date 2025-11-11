@@ -287,6 +287,78 @@ class CatalogDatabase:
 
         logger.info("Database schema initialized")
 
+    def ensure_fts_table(self) -> None:
+        """
+        Ensure the FTS5 table exists. Creates it if missing.
+
+        This is useful when the database was created without migrations
+        or if the FTS table was accidentally dropped.
+        """
+        with self._get_session() as session:
+            # Check if FTS table exists
+            result = session.execute(
+                text("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='objects_fts'
+                """)
+            ).fetchone()
+
+            if result is None:
+                logger.info("Creating missing objects_fts table")
+                # Create FTS5 virtual table
+                session.execute(
+                    text("""
+                    CREATE VIRTUAL TABLE objects_fts USING fts5(
+                        name,
+                        common_name,
+                        description,
+                        content=objects,
+                        content_rowid=id
+                    )
+                """)
+                )
+
+                # Create triggers
+                session.execute(
+                    text("""
+                    CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
+                        INSERT INTO objects_fts(rowid, name, common_name, description)
+                        VALUES (new.id, new.name, new.common_name, new.description);
+                    END
+                """)
+                )
+
+                session.execute(
+                    text("""
+                    CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
+                        DELETE FROM objects_fts WHERE rowid = old.id;
+                    END
+                """)
+                )
+
+                session.execute(
+                    text("""
+                    CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
+                        UPDATE objects_fts SET
+                            name = new.name,
+                            common_name = new.common_name,
+                            description = new.description
+                        WHERE rowid = new.id;
+                    END
+                """)
+                )
+
+                # Populate FTS table with existing objects
+                session.execute(
+                    text("""
+                    INSERT INTO objects_fts(rowid, name, common_name, description)
+                    SELECT id, name, common_name, description FROM objects
+                """)
+                )
+
+                session.commit()
+                logger.info("FTS table created and populated")
+
     def insert_object(
         self,
         name: str,
@@ -582,62 +654,57 @@ class CatalogDatabase:
 
     def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
-        from sqlalchemy import func
+        from sqlalchemy import func, select
 
         with self._get_session() as session:
             # Total count
-            total = session.query(func.count(CelestialObjectModel.id)).scalar()
+            total = session.execute(select(func.count(CelestialObjectModel.id))).scalar_one() or 0
 
             # By catalog
-            catalog_counts = (
-                session.query(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id))
+            catalog_rows = session.execute(
+                select(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id))
                 .group_by(CelestialObjectModel.catalog)
-                .all()
-            )
-            by_catalog: dict[str, int] = {row[0]: row[1] for row in catalog_counts}
+            ).all()
+            by_catalog = {row[0]: row[1] for row in catalog_rows if row[0] and row[1] > 0}
 
             # By type
-            type_counts = (
-                session.query(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id))
+            type_rows = session.execute(
+                select(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id))
                 .group_by(CelestialObjectModel.object_type)
-                .all()
-            )
-            by_type: dict[str, int] = {row[0]: row[1] for row in type_counts}
+            ).all()
+            by_type = {row[0]: row[1] for row in type_rows}
 
             # Magnitude range
-            mag_result = (
-                session.query(
-                    func.min(CelestialObjectModel.magnitude),
-                    func.max(CelestialObjectModel.magnitude),
-                )
-                .filter(CelestialObjectModel.magnitude.isnot(None))
-                .first()
-            )
-            mag_range = (mag_result[0], mag_result[1]) if mag_result and mag_result[0] is not None else (None, None)
+            mag_row = session.execute(
+                select(func.min(CelestialObjectModel.magnitude), func.max(CelestialObjectModel.magnitude))
+                .where(CelestialObjectModel.magnitude.isnot(None))
+            ).first()
+            mag_range = (mag_row[0], mag_row[1]) if mag_row and mag_row[0] is not None else (None, None)
 
             # Dynamic objects
             dynamic = (
-                session.query(func.count(CelestialObjectModel.id))
-                .filter(CelestialObjectModel.is_dynamic.is_(True))
-                .scalar()
+                session.execute(
+                    select(func.count(CelestialObjectModel.id))
+                    .where(CelestialObjectModel.is_dynamic.is_(True))
+                ).scalar_one()
+                or 0
             )
 
-            # Version
+            # Version and last updated from metadata table
             version_model = session.get(MetadataModel, "version")
             version = version_model.value if version_model else "unknown"
 
-            # Last updated
             updated_model = session.get(MetadataModel, "last_updated")
             last_updated = (
                 datetime.fromisoformat(updated_model.value) if updated_model and updated_model.value else None
             )
 
             return DatabaseStats(
-                total_objects=total or 0,
+                total_objects=total,
                 objects_by_catalog=by_catalog,
                 objects_by_type=by_type,
                 magnitude_range=mag_range,
-                dynamic_objects=dynamic or 0,
+                dynamic_objects=dynamic,
                 database_version=version,
                 last_updated=last_updated,
             )

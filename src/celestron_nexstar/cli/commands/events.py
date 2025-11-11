@@ -6,6 +6,7 @@ Show upcoming space events and find best viewing locations.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -170,7 +171,7 @@ def show_viewing_recommendations(
     # Get location
     if location:
         try:
-            observer_location = geocode_location(location)
+            observer_location = asyncio.run(geocode_location(location))
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
             raise typer.Exit(1) from e
@@ -280,7 +281,7 @@ def _show_viewing_recommendation_content(
         output_console.print(f"  • Notes: {req.notes}")
 
     # Show current location conditions
-    light_data = get_light_pollution_data(location.latitude, location.longitude)
+    light_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
     output_console.print("\n[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²")
