@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+import deal
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Row
 from sqlalchemy.orm import Session, sessionmaker
@@ -852,6 +853,7 @@ class CatalogDatabase:
 _database_instance: CatalogDatabase | None = None
 
 
+@deal.post(lambda result: result is not None, message="Database instance must be returned")
 def get_database() -> CatalogDatabase:
     """
     Get the global database instance.
@@ -935,6 +937,8 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     return (size_before, size_after)
 
 
+@deal.post(lambda result: result.exists(), message="Backup file must be created")
+@deal.raises(FileNotFoundError, OSError)
 def backup_database(
     db: CatalogDatabase | None = None,
     backup_dir: Path | None = None,
@@ -985,6 +989,8 @@ def backup_database(
     return backup_path
 
 
+@deal.pre(lambda backup_path, db: backup_path.exists(), message="Backup file must exist")  # type: ignore[misc,arg-type]
+@deal.raises(FileNotFoundError)
 def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> None:
     """
     Restore database from a backup file.
@@ -1012,6 +1018,14 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
     logger.info(f"Database restored from: {backup_path}")
 
 
+# type: ignore[misc,arg-type]
+@deal.pre(
+    lambda backup_dir, sources, mag_limit, skip_backup, dry_run: mag_limit > 0,
+    message="Magnitude limit must be positive",
+)
+@deal.post(lambda result: result is not None, message="Rebuild must return statistics")
+@deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")
+@deal.raises(RuntimeError)
 def rebuild_database(
     backup_dir: Path | None = None,
     sources: list[str] | None = None,
