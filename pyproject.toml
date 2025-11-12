@@ -264,7 +264,10 @@ warn_unused_ignores = false  # Type ignores needed for cachetools.cached return 
 
 # Suppress unused ignore warnings for alembic import and deal contracts
 [[tool.mypy.overrides]]
-module = "celestron_nexstar.api.database"
+module = [
+    "celestron_nexstar.api.database",
+    "celestron_nexstar.cli.commands.data",
+]
 warn_unused_ignores = false  # Type ignore needed for alembic.command import and deal contracts
 
 # Suppress deal contract type errors (known limitation with deal.mypy plugin)
