@@ -1018,11 +1018,10 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
     logger.info(f"Database restored from: {backup_path}")
 
 
-# type: ignore[misc,arg-type]
 @deal.pre(
     lambda backup_dir, sources, mag_limit, skip_backup, dry_run: mag_limit > 0,
     message="Magnitude limit must be positive",
-)
+)  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
 @deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")
 @deal.raises(RuntimeError)

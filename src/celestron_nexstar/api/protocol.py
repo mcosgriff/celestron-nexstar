@@ -279,7 +279,7 @@ class NexStarProtocol:
 
     # ========== Specific Protocol Commands ==========
 
-    @deal.pre(lambda char: len(char) == 1)
+    @deal.pre(lambda char: len(char) == 1)  # type: ignore[misc,arg-type]
     def echo(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
@@ -346,7 +346,7 @@ class NexStarProtocol:
         response = self.send_command("Z")
         return self.decode_coordinate_pair(response)
 
-    @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)
+    @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)  # type: ignore[misc,arg-type]
     def goto_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
         """
         Slew to RA/Dec coordinates.
@@ -363,7 +363,7 @@ class NexStarProtocol:
         coords = self.encode_coordinate_pair(ra_degrees, dec_degrees)
         return self.send_empty_command(f"R{coords}")
 
-    @deal.pre(lambda az_degrees, alt_degrees: 0.0 <= az_degrees <= 360.0 and 0.0 <= alt_degrees <= 360.0)
+    @deal.pre(lambda az_degrees, alt_degrees: 0.0 <= az_degrees <= 360.0 and 0.0 <= alt_degrees <= 360.0)  # type: ignore[misc,arg-type]
     def goto_alt_az_precise(self, az_degrees: float, alt_degrees: float) -> bool:
         """
         Slew to Alt/Az coordinates.
@@ -380,7 +380,7 @@ class NexStarProtocol:
         coords = self.encode_coordinate_pair(az_degrees, alt_degrees)
         return self.send_empty_command(f"B{coords}")
 
-    @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)
+    @deal.pre(lambda ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)  # type: ignore[misc,arg-type]
     def sync_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
         """
         Sync to RA/Dec coordinates (for alignment).
@@ -420,7 +420,7 @@ class NexStarProtocol:
         """
         return self.send_empty_command("M")
 
-    @deal.pre(lambda axis, direction, rate: axis in [1, 2] and direction in [17, 18] and 0 <= rate <= 9)
+    @deal.pre(lambda axis, direction, rate: axis in [1, 2] and direction in [17, 18] and 0 <= rate <= 9)  # type: ignore[misc,arg-type]
     def variable_rate_motion(self, axis: int, direction: int, rate: int) -> bool:
         """
         Initiate variable rate motion.
@@ -449,7 +449,7 @@ class NexStarProtocol:
         result = self.get_single_byte("t")
         return result if result is not None else 0
 
-    @deal.pre(lambda mode: 0 <= mode <= 3)
+    @deal.pre(lambda mode: 0 <= mode <= 3)  # type: ignore[misc,arg-type]
     def set_tracking_mode(self, mode: int) -> bool:
         """
         Set tracking mode.
@@ -486,7 +486,7 @@ class NexStarProtocol:
     @deal.pre(
         lambda latitude_degrees, longitude_degrees: 0.0 <= latitude_degrees <= 360.0
         and 0.0 <= longitude_degrees <= 360.0
-    )
+    )  # type: ignore[misc,arg-type]
     def set_location(self, latitude_degrees: float, longitude_degrees: float) -> bool:
         """
         Set observer location.
@@ -528,7 +528,7 @@ class NexStarProtocol:
         and 1 <= day <= 31
         and year_offset >= 0
         and dst in [0, 1]
-    )
+    )  # type: ignore[misc,arg-type]
     def set_time(
         self, hour: int, minute: int, second: int, month: int, day: int, year_offset: int, timezone: int, dst: int
     ) -> bool:
