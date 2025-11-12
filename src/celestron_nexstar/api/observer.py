@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import deal
+
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,7 @@ def load_location() -> ObserverLocation:
         return DEFAULT_LOCATION
 
 
+@deal.post(lambda result: result is not None, message="Observer location must be returned")
 def get_observer_location() -> ObserverLocation:
     """
     Get current observer location.
@@ -132,6 +135,10 @@ def get_observer_location() -> ObserverLocation:
     return _current_location
 
 
+@deal.pre(lambda location, save: location is not None, message="Location must be provided")  # type: ignore[misc,arg-type]
+@deal.pre(lambda location, save: -90 <= location.latitude <= 90, message="Latitude must be -90 to +90")  # type: ignore[misc,arg-type]
+@deal.pre(lambda location, save: -180 <= location.longitude <= 180, message="Longitude must be -180 to +180")  # type: ignore[misc,arg-type]
+@deal.pre(lambda location, save: location.elevation >= 0, message="Elevation must be non-negative")  # type: ignore[misc,arg-type]
 def set_observer_location(location: ObserverLocation, save: bool = True) -> None:
     """
     Set current observer location.
@@ -153,6 +160,12 @@ def clear_observer_location() -> None:
     _current_location = None
 
 
+# type: ignore[misc,arg-type]
+@deal.pre(lambda query: query and len(query.strip()) > 0, message="Query must be non-empty")
+@deal.post(lambda result: result is not None, message="Geocoded location must be returned")
+# Note: Postconditions on async functions check the coroutine, not the awaited result
+# Latitude/longitude validation happens in the function implementation
+@deal.raises(ValueError)
 async def geocode_location(query: str) -> ObserverLocation:
     """
     Geocode a location from city name, address, or ZIP code.

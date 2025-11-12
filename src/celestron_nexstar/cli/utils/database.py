@@ -7,12 +7,16 @@ and show helpful error messages instead of stacktraces.
 
 from __future__ import annotations
 
-from typing import NoReturn
+from collections.abc import Callable
+from typing import NoReturn, TypeVar
 
 import typer
 from rich.console import Console
 
 from ...api.database import get_database
+
+
+T = TypeVar("T", bound=Callable[..., object])
 
 
 console = Console()
@@ -88,7 +92,7 @@ def _show_setup_error(issue: str, details: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
-def require_database_setup(func):
+def require_database_setup(func: T) -> T:
     """
     Decorator to check database setup before running a command.
 
@@ -102,8 +106,8 @@ def require_database_setup(func):
     from functools import wraps
 
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: object, **kwargs: object) -> object:
         check_database_setup()
         return func(*args, **kwargs)
 
-    return wrapper
+    return wrapper  # type: ignore[return-value]

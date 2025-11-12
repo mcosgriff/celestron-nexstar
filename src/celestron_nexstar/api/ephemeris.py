@@ -10,6 +10,7 @@ import logging
 from datetime import UTC, datetime
 from functools import lru_cache
 
+import deal
 from skyfield.jpllib import SpiceKernel
 
 from .skyfield_utils import get_skyfield_loader
@@ -99,6 +100,15 @@ def _get_ephemeris(bsp_file: str) -> SpiceKernel:
     return eph
 
 
+@deal.pre(
+    lambda planet_name, observer_lat, observer_lon, dt: planet_name.lower() in PLANET_NAMES,
+    message="Planet name must be valid",
+)  # type: ignore[misc,arg-type]
+@deal.post(lambda result: result is not None, message="Position must be calculated")
+@deal.post(lambda result: len(result) == 2, message="Position must be (ra, dec) tuple")
+@deal.post(lambda result: 0 <= result[0] < 24, message="RA must be 0-24 hours")
+@deal.post(lambda result: -90 <= result[1] <= 90, message="Dec must be -90 to +90 degrees")
+@deal.raises(ValueError, FileNotFoundError)
 def get_planetary_position(
     planet_name: str,
     observer_lat: float | None = None,
@@ -190,6 +200,8 @@ def get_planetary_position(
     return (ra_hours, dec_degrees)
 
 
+@deal.pre(lambda object_name: object_name is not None, message="Object name required")  # type: ignore[misc,arg-type]
+@deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
 def is_dynamic_object(object_name: str) -> bool:
     """
     Check if an object has dynamic (time-varying) coordinates.

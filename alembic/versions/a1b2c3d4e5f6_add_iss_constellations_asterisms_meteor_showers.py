@@ -26,7 +26,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     existing_tables = set(inspector.get_table_names())
-    
+
     # Create iss_passes table
     if "iss_passes" not in existing_tables:
         op.create_table(
@@ -47,7 +47,7 @@ def upgrade() -> None:
             sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
             sa.PrimaryKeyConstraint("id"),
         )
-    
+
     # Create indexes using IF NOT EXISTS (SQLite supports this)
     # This handles cases where table/indexes might already exist from partial migrations
     indexes_to_create = [
@@ -58,7 +58,7 @@ def upgrade() -> None:
         ("idx_location_rise_time", ["latitude", "longitude", "rise_time"]),
         ("idx_location_fetched", ["latitude", "longitude", "fetched_at"]),
     ]
-    
+
     for index_name, columns in indexes_to_create:
         try:
             columns_str = ", ".join(columns)
@@ -90,7 +90,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("name"),
             sa.UniqueConstraint("abbreviation"),
         )
-    
+
     # Create indexes for constellations
     if "constellations" in existing_tables or "constellations" not in existing_tables:  # Always try to create indexes
         with op.batch_alter_table("constellations", schema=None) as batch_op:
@@ -115,7 +115,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("name"),
         )
-    
+
     # Create indexes for asterisms
     if "asterisms" in existing_tables or "asterisms" not in existing_tables:
         with op.batch_alter_table("asterisms", schema=None) as batch_op:
@@ -147,7 +147,7 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("name"),
         )
-    
+
     # Create indexes for meteor_showers
     if "meteor_showers" in existing_tables or "meteor_showers" not in existing_tables:
         with op.batch_alter_table("meteor_showers", schema=None) as batch_op:

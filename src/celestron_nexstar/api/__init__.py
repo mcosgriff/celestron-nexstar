@@ -5,6 +5,8 @@ This package contains all the core business logic for the Celestron NexStar
 telescope control library, separated from CLI presentation concerns.
 """
 
+import deal
+
 # Main telescope class
 # Celestial object catalogs
 from celestron_nexstar.api.catalogs import (
@@ -155,6 +157,11 @@ from celestron_nexstar.api.weather import (
     get_weather_api_key,
 )
 
+
+# Activate deal contracts for runtime validation
+# Contracts are checked during development/testing
+# Can be disabled in production for performance if needed
+deal.activate()
 
 __all__ = [
     "ALL_CATALOGS",

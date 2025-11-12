@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import deal
 import yaml
 from cachetools import TTLCache, cached
 
@@ -250,6 +251,10 @@ class _AllCatalogsProxy:
 ALL_CATALOGS = _AllCatalogsProxy()
 
 
+# type: ignore[misc,arg-type]
+@deal.pre(lambda catalog_name: catalog_name and len(catalog_name) > 0, message="Catalog name required")
+@deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
+@deal.raises(ValueError)
 def get_catalog(catalog_name: str) -> list[CelestialObject]:
     """
     Get objects from a specific catalog.
@@ -278,6 +283,7 @@ def get_all_objects() -> list[CelestialObject]:
     return objects
 
 
+@deal.post(lambda result: isinstance(result, list), message="Must return list of catalogs")
 def get_available_catalogs() -> list[str]:
     """
     Get list of available catalog names.
@@ -288,6 +294,11 @@ def get_available_catalogs() -> list[str]:
     return list(_load_all_catalogs().keys())
 
 
+@deal.pre(
+    lambda query, catalog_name, max_l_dist, update_positions: query and len(query.strip()) > 0,
+    message="Search query must be non-empty",
+)  # type: ignore[misc,arg-type]
+@deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
 ) -> list[tuple[CelestialObject, str]]:

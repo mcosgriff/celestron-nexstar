@@ -125,7 +125,7 @@ def main():
     with db._get_session() as session:
         result = session.execute(
             text("""
-                SELECT objects.id, objects.name, objects.common_name 
+                SELECT objects.id, objects.name, objects.common_name
                 FROM objects
                 JOIN objects_fts ON objects.id = objects_fts.rowid
                 WHERE objects_fts MATCH 'Capella'
@@ -148,5 +148,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

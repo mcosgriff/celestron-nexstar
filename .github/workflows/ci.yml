@@ -200,6 +200,22 @@ jobs:
       - name: Run mypy
         run: uv run mypy src/
 
+      - name: Check deal contracts
+        run: |
+          # Check only changed API files in PR, or all files on main branch
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Get changed API files
+            changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '^src/celestron_nexstar/api/(database|telescope|observer|catalogs|ephemeris)\.py$' || true)
+            if [ -n "$changed_files" ]; then
+              echo "$changed_files" | xargs uv run python scripts/check_contracts.py
+            else
+              echo "No API files changed, skipping contract check"
+            fi
+          else
+            # On main branch, check all API modules
+            uv run python scripts/check_contracts.py
+          fi
+
   test:
     name: Test with pytest
     runs-on: ubuntu-latest
