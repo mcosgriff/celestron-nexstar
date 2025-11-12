@@ -7,6 +7,14 @@ telescope control library, separated from CLI presentation concerns.
 
 import deal
 
+# Alignment methods
+from celestron_nexstar.api.alignment import (
+    SkyAlignGroup,
+    SkyAlignObject,
+    get_bright_objects_for_skyalign,
+    suggest_skyalign_objects,
+)
+
 # Main telescope class
 # Celestial object catalogs
 from celestron_nexstar.api.catalogs import (
@@ -201,6 +209,9 @@ __all__ = [
     "ObserverLocation",
     "OpticalConfiguration",
     "PositionTracker",
+    # Alignment
+    "SkyAlignGroup",
+    "SkyAlignObject",
     "TelescopeConfig",
     "TelescopeConnectionError",
     "TelescopeInfo",
@@ -241,6 +252,7 @@ __all__ = [
     "get_all_catalogs_dict",
     "get_all_objects",
     "get_available_catalogs",
+    "get_bright_objects_for_skyalign",
     "get_catalog",
     "get_config_path",
     "get_current_configuration",
@@ -275,5 +287,6 @@ __all__ = [
     "set_current_configuration",
     "set_observer_location",
     "sqm_to_bortle",
+    "suggest_skyalign_objects",
     "verify_file",
 ]
