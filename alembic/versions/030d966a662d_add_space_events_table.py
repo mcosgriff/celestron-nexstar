@@ -74,7 +74,7 @@ def upgrade() -> None:
         "objects_fts_idx",
         "objects_fts_docsize",
     ]
-    
+
     for fts_table in fts_tables:
         if fts_table in existing_tables:
             try:
@@ -102,7 +102,7 @@ def upgrade() -> None:
             ("ix_iss_passes_longitude", ["longitude"]),
             ("ix_iss_passes_rise_time", ["rise_time"]),
         ]
-        
+
         for index_name, columns in indexes_to_create:
             if index_name not in existing_indexes:
                 try:

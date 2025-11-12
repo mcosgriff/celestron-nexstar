@@ -40,4 +40,3 @@ def downgrade() -> None:
     with op.batch_alter_table("star_name_mappings", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_star_name_mappings_common_name"))
     op.drop_table("star_name_mappings")
-
