@@ -711,7 +711,7 @@ class CatalogDatabase:
             return count > 0
 
     @deal.pre(
-        lambda self, catalog, object_type, max_magnitude, min_magnitude, constellation, is_dynamic, limit: limit > 0,
+        lambda self, *args, **kwargs: kwargs.get("limit", 1000) > 0,
         message="Limit must be positive",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")

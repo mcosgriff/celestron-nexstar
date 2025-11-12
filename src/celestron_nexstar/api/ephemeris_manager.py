@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import ssl
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from datetime import datetime
@@ -79,8 +80,22 @@ class ParsedEphemerisSummary:
 async def _fetch_summaries(url: str) -> str:
     """Fetch summaries file from NAIF server."""
     try:
+        # Create SSL context that uses system certificates
+        # This is necessary on macOS where Python may not have access to system certs
+        # Try to use certifi if available (common on macOS), otherwise use default context
+        try:
+            import certifi
+
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            # Fallback to system certificates
+            ssl_context = ssl.create_default_context()
+
+        # Create connector with SSL context
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
         async with (
-            aiohttp.ClientSession() as session,
+            aiohttp.ClientSession(connector=connector) as session,
             session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
         ):
             if response.status != 200:
