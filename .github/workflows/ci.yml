@@ -200,6 +200,9 @@ jobs:
       - name: Run mypy
         run: uv run mypy src/
 
+      - name: Check deal contracts
+        run: uv run python scripts/check_contracts.py
+
   test:
     name: Test with pytest
     runs-on: ubuntu-latest

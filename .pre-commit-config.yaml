@@ -35,6 +35,15 @@ repos:
       - id: ruff-format
         files: ^src/
 
+  - repo: local
+    hooks:
+      - id: check-contracts
+        name: Check deal contracts
+        entry: python scripts/check_contracts.py
+        language: system
+        pass_filenames: true
+        files: ^src/celestron_nexstar/api/(database|telescope|observer|catalogs|ephemeris)\.py$
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
     hooks:
