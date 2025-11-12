@@ -4,6 +4,7 @@ Align Commands
 Commands for telescope alignment and sync.
 """
 
+import logging
 from datetime import UTC, datetime
 
 import typer
@@ -13,9 +14,14 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from ...api.alignment import suggest_skyalign_objects
+from ...api.observation_planner import ObservationPlanner
 from ...api.observer import get_observer_location
+from ...api.solar_system import get_moon_info
 from ..utils.output import print_error, print_info, print_success
 from ..utils.state import ensure_connected
+
+
+logger = logging.getLogger(__name__)
 
 
 console = Console()
@@ -93,12 +99,40 @@ def skyalign_suggest(
 
         console.print("\n[bold cyan]Finding SkyAlign Objects...[/bold cyan]\n")
 
+        # Try to get observing conditions for better recommendations
+        cloud_cover_percent = None
+        moon_ra_hours = None
+        moon_dec_degrees = None
+        moon_illumination = None
+        seeing_score = None
+
+        try:
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions(lat=location.latitude, lon=location.longitude, start_time=dt)
+            cloud_cover_percent = conditions.weather.cloud_cover_percent
+            seeing_score = conditions.seeing_score
+
+            # Get moon info
+            moon_info = get_moon_info(location.latitude, location.longitude, dt)
+            if moon_info:
+                moon_ra_hours = moon_info.ra_hours
+                moon_dec_degrees = moon_info.dec_degrees
+                moon_illumination = moon_info.illumination
+        except Exception as e:
+            # Conditions unavailable - continue without them
+            logger.debug(f"Could not fetch observing conditions: {e}")
+
         # Get suggested groups
         groups = suggest_skyalign_objects(
             observer_lat=location.latitude,
             observer_lon=location.longitude,
             dt=dt,
             max_groups=max_groups,
+            cloud_cover_percent=cloud_cover_percent,
+            moon_ra_hours=moon_ra_hours,
+            moon_dec_degrees=moon_dec_degrees,
+            moon_illumination=moon_illumination,
+            seeing_score=seeing_score,
         )
 
         if not groups:
@@ -141,6 +175,17 @@ def skyalign_suggest(
 [dim]Average observability:[/dim] {group.avg_observability_score:.2f}
 [dim]Separation score:[/dim] {group.separation_score:.2f}
 """
+            # Add conditions score if available
+            if group.conditions_score < 1.0:
+                conditions_desc = "Excellent"
+                if group.conditions_score < 0.5:
+                    conditions_desc = "Poor"
+                elif group.conditions_score < 0.7:
+                    conditions_desc = "Fair"
+                elif group.conditions_score < 0.9:
+                    conditions_desc = "Good"
+                stats_text += f"[dim]Conditions score:[/dim] {group.conditions_score:.2f} ({conditions_desc})\n"
+
             console.print(Panel(stats_text.strip(), border_style="dim"))
             console.print()
 

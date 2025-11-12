@@ -19,6 +19,7 @@ from .database import get_database
 from .enums import CelestialObjectType
 from .ephemeris import get_planet_magnitude, get_planetary_position
 from .observer import get_observer_location
+from .utils import angular_separation
 from .visibility import VisibilityInfo, assess_visibility
 
 
@@ -49,6 +50,7 @@ class SkyAlignGroup:
     min_separation_deg: float  # Minimum angular separation between any two objects
     avg_observability_score: float  # Average observability score
     separation_score: float  # Score based on separation (higher = better separation)
+    conditions_score: float = 1.0  # Score based on weather/sky conditions (0.0-1.0, higher = better conditions)
 
 
 # SkyAlign requires bright objects: magnitude ≤ 2.5 for stars, or planets/Moon
@@ -240,6 +242,85 @@ def _calculate_separation_score(
     return min_separation, separation_score
 
 
+def _calculate_conditions_score(
+    obj1: SkyAlignObject,
+    obj2: SkyAlignObject,
+    obj3: SkyAlignObject,
+    cloud_cover_percent: float | None = None,
+    moon_ra_hours: float | None = None,
+    moon_dec_degrees: float | None = None,
+    moon_illumination: float | None = None,
+    seeing_score: float | None = None,
+) -> float:
+    """
+    Calculate conditions score for a group based on weather and sky conditions.
+
+    Args:
+        obj1, obj2, obj3: Objects in the group
+        cloud_cover_percent: Cloud cover percentage (0-100, None = unknown)
+        moon_ra_hours: Moon RA in hours (None = unknown)
+        moon_dec_degrees: Moon declination in degrees (None = unknown)
+        moon_illumination: Moon illumination fraction (0.0-1.0, None = unknown)
+        seeing_score: Astronomical seeing score (0-100, None = unknown)
+
+    Returns:
+        Conditions score from 0.0 to 1.0 (higher = better conditions)
+    """
+    score = 1.0
+
+    # Factor 1: Cloud cover (heavily penalize if cloudy)
+    if cloud_cover_percent is not None:
+        if cloud_cover_percent > 80:
+            score *= 0.3  # Very cloudy - objects may be obscured
+        elif cloud_cover_percent > 50:
+            score *= 0.6  # Partly cloudy - some objects may be obscured
+        elif cloud_cover_percent > 20:
+            score *= 0.85  # Light clouds - minor impact
+        # <20% clouds: no penalty
+
+    # Factor 2: Moon interference (bright moon washes out stars)
+    if moon_ra_hours is not None and moon_dec_degrees is not None and moon_illumination is not None:
+        # Calculate average moon separation for the group
+        separations = []
+        for obj in [obj1, obj2, obj3]:
+            try:
+                sep_deg = angular_separation(obj.obj.ra_hours, obj.obj.dec_degrees, moon_ra_hours, moon_dec_degrees)
+                separations.append(sep_deg)
+            except Exception:
+                separations.append(180.0)  # Assume far if calculation fails
+
+        avg_separation = sum(separations) / len(separations) if separations else 180.0
+
+        # Moon interference scoring (similar to observation planner)
+        if avg_separation >= 90:
+            moon_score = 1.0  # Opposite side of sky
+        elif avg_separation >= 60:
+            moon_score = 0.8 + 0.2 * ((avg_separation - 60) / 30)
+        elif avg_separation >= 30:
+            moon_score = 0.5 + 0.3 * ((avg_separation - 30) / 30)
+        elif avg_separation >= 15:
+            moon_score = 0.2 + 0.3 * ((avg_separation - 15) / 15)
+        else:
+            moon_score = 0.2 * (avg_separation / 15)
+
+        # Brightness factor: brighter moon = more interference
+        brightness_factor = 1.0 - (moon_illumination * 0.5)  # Max 50% reduction
+        moon_interference = moon_score * brightness_factor
+
+        # Apply moon interference (only penalize if moon is bright and close)
+        if moon_illumination > 0.3:  # Only consider if moon is >30% illuminated
+            score *= 0.7 + 0.3 * moon_interference
+
+    # Factor 3: Seeing conditions (affects how clearly objects can be seen)
+    if seeing_score is not None:
+        # Seeing score is 0-100, convert to 0.0-1.0 multiplier
+        seeing_factor = seeing_score / 100.0
+        # Apply moderate weight (seeing affects alignment less than observation)
+        score *= 0.8 + 0.2 * seeing_factor
+
+    return max(0.0, min(1.0, score))  # Clamp to 0.0-1.0
+
+
 def _check_collinear(
     obj1: SkyAlignObject, obj2: SkyAlignObject, obj3: SkyAlignObject, threshold_deg: float = 10.0
 ) -> bool:
@@ -307,12 +388,18 @@ def suggest_skyalign_objects(
     dt: datetime | None = None,
     min_altitude_deg: float = 20.0,
     max_groups: int = 5,
+    cloud_cover_percent: float | None = None,
+    moon_ra_hours: float | None = None,
+    moon_dec_degrees: float | None = None,
+    moon_illumination: float | None = None,
+    seeing_score: float | None = None,
 ) -> list[SkyAlignGroup]:
     """
     Suggest groups of 3 objects suitable for SkyAlign alignment.
 
     Uses visibility checks to find bright, well-separated objects that are
-    currently visible and suitable for alignment.
+    currently visible and suitable for alignment. Optionally considers weather
+    and sky conditions to rank groups.
 
     Args:
         observer_lat: Observer latitude
@@ -320,6 +407,11 @@ def suggest_skyalign_objects(
         dt: Datetime to check for (default: now)
         min_altitude_deg: Minimum altitude for comfortable viewing
         max_groups: Maximum number of groups to return
+        cloud_cover_percent: Cloud cover percentage (0-100) for conditions scoring
+        moon_ra_hours: Moon RA in hours for conditions scoring
+        moon_dec_degrees: Moon declination in degrees for conditions scoring
+        moon_illumination: Moon illumination fraction (0.0-1.0) for conditions scoring
+        seeing_score: Astronomical seeing score (0-100) for conditions scoring
 
     Returns:
         List of SkyAlignGroup instances, sorted by quality (best first)
@@ -365,18 +457,32 @@ def suggest_skyalign_objects(
                 if avg_score < 0.6:
                     continue
 
+                # Calculate conditions score if conditions data provided
+                conditions_score = _calculate_conditions_score(
+                    obj1,
+                    obj2,
+                    obj3,
+                    cloud_cover_percent=cloud_cover_percent,
+                    moon_ra_hours=moon_ra_hours,
+                    moon_dec_degrees=moon_dec_degrees,
+                    moon_illumination=moon_illumination,
+                    seeing_score=seeing_score,
+                )
+
                 groups.append(
                     SkyAlignGroup(
                         objects=(obj1, obj2, obj3),
                         min_separation_deg=min_sep,
                         avg_observability_score=avg_score,
                         separation_score=sep_score,
+                        conditions_score=conditions_score,
                     )
                 )
 
-    # Sort by combined score (observability + separation)
+    # Sort by combined score (observability + separation + conditions)
     def group_score(group: SkyAlignGroup) -> float:
-        return group.avg_observability_score * 0.6 + group.separation_score * 0.4
+        # Weight: 50% observability, 30% separation, 20% conditions
+        return group.avg_observability_score * 0.5 + group.separation_score * 0.3 + group.conditions_score * 0.2
 
     groups.sort(key=group_score, reverse=True)
 
