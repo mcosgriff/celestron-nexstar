@@ -137,6 +137,8 @@ class ContractChecker(ast.NodeVisitor):
             for dec in node.decorator_list
         )
 
+        # Async functions are acceptable with just preconditions (postconditions don't work well)
+        # Check for at least one deal decorator (pre/raises)
         if is_public and not excluded and not is_instance_method and not has_contract:
             self.functions_without_contracts.append((node.lineno, node.name))
 

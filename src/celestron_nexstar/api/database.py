@@ -1563,6 +1563,7 @@ async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
 
 # Note: Postconditions on async functions check the coroutine, not the awaited result
 # Cannot use @deal.post here - deal checks coroutine object, not awaited result
+@deal.pre(lambda force: isinstance(force, bool), message="Force must be boolean")  # type: ignore[misc,arg-type]
 async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
     """
     Fetch ephemeris file information from NAIF and sync to database.
