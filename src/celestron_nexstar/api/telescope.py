@@ -12,10 +12,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
+import deal
 import serial
 
 from .converters import CoordinateConverter
-from .exceptions import TelescopeConnectionError
+from .exceptions import InvalidCoordinateError, NotConnectedError, TelescopeConnectionError
 from .protocol import NexStarProtocol
 from .types import (
     EquatorialCoordinates,
@@ -92,6 +93,10 @@ class NexStarTelescope:
         if self.config.auto_connect:
             self.connect()
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.post(lambda result: result is True, message="Connection must succeed")
+    @deal.raises(TelescopeConnectionError)
     def connect(self) -> bool:
         """
         Establish connection to telescope.
@@ -126,6 +131,7 @@ class NexStarTelescope:
             logger.error(f"Connection failed: {e}")
             raise
 
+    @deal.post(lambda result: result is None, message="Disconnect must complete")
     def disconnect(self) -> None:
         """
         Close telescope connection.
@@ -195,6 +201,9 @@ class NexStarTelescope:
         """
         return self.protocol.get_model()
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.post(lambda result: result is not None, message="Position must be returned")
     def get_position_ra_dec(self) -> EquatorialCoordinates:
         """
         Get current Right Ascension and Declination.
@@ -222,6 +231,9 @@ class NexStarTelescope:
             EquatorialCoordinates(ra_hours=0.0, dec_degrees=0.0)
         )
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.post(lambda result: result is not None, message="Position must be returned")
     def get_position_alt_az(self) -> HorizontalCoordinates:
         """
         Get current Altitude and Azimuth.
@@ -248,6 +260,12 @@ class NexStarTelescope:
             HorizontalCoordinates(azimuth=0.0, altitude=0.0)
         )
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, ra_hours, dec_degrees: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.pre(lambda self, ra_hours, dec_degrees: 0 <= ra_hours < 24, message="RA must be 0-24 hours")
+    @deal.pre(lambda self, ra_hours, dec_degrees: -90 <= dec_degrees <= 90, message="Dec must be -90 to +90 degrees")
+    @deal.post(lambda result: result is True, message="Goto must succeed")
+    @deal.raises(NotConnectedError, InvalidCoordinateError)
     def goto_ra_dec(self, ra_hours: float, dec_degrees: float) -> bool:
         """
         Slew telescope to specific RA/Dec coordinates.
@@ -274,6 +292,12 @@ class NexStarTelescope:
         logger.info(f"Slewing to RA {ra_hours:.4f}h, Dec {dec_degrees:.4f}°")
         return self.protocol.goto_ra_dec_precise(ra_deg, dec_deg)
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, azimuth, altitude: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.pre(lambda self, azimuth, altitude: 0 <= azimuth < 360, message="Azimuth must be 0-360 degrees")
+    @deal.pre(lambda self, azimuth, altitude: -90 <= altitude <= 90, message="Altitude must be -90 to +90 degrees")
+    @deal.post(lambda result: result is True, message="Goto must succeed")
+    @deal.raises(NotConnectedError, InvalidCoordinateError)
     def goto_alt_az(self, azimuth: float, altitude: float) -> bool:
         """
         Slew telescope to specific Alt/Az coordinates.
@@ -299,6 +323,12 @@ class NexStarTelescope:
         logger.info(f"Slewing to Az {azimuth:.2f}°, Alt {altitude:.2f}°")
         return self.protocol.goto_alt_az_precise(azimuth, alt_deg)
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, ra_hours, dec_degrees: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.pre(lambda self, ra_hours, dec_degrees: 0 <= ra_hours < 24, message="RA must be 0-24 hours")
+    @deal.pre(lambda self, ra_hours, dec_degrees: -90 <= dec_degrees <= 90, message="Dec must be -90 to +90 degrees")
+    @deal.post(lambda result: result is True, message="Sync must succeed")
+    @deal.raises(NotConnectedError, InvalidCoordinateError)
     def sync_ra_dec(self, ra_hours: float, dec_degrees: float) -> bool:
         """
         Sync telescope position to specified RA/Dec coordinates.
@@ -478,6 +508,11 @@ class NexStarTelescope:
 
         return GeographicLocation(latitude=latitude, longitude=longitude)
 
+    # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, latitude, longitude: self.protocol.is_open(), message="Telescope must be connected")
+    @deal.pre(lambda self, latitude, longitude: -90 <= latitude <= 90, message="Latitude must be -90 to +90 degrees")
+    @deal.pre(lambda self, latitude, longitude: -180 <= longitude <= 180, message="Longitude must be -180 to +180 degrees")
+    @deal.post(lambda result: result is True, message="Location must be set")
     def set_location(self, latitude: float, longitude: float) -> bool:
         """
         Set observer location.
