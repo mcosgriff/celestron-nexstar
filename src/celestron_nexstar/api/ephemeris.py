@@ -218,6 +218,11 @@ def is_dynamic_object(object_name: str) -> bool:
     return str(object_name).lower() in PLANET_NAMES
 
 
+@deal.pre(lambda planet_name: planet_name.lower() in PLANET_NAMES, message="Planet name must be valid")  # type: ignore[misc,arg-type]
+@deal.post(
+    lambda result: result is None or (isinstance(result, float) and -5 <= result <= 30),
+    message="Magnitude must be None or reasonable range",
+)
 def get_planet_magnitude(planet_name: str) -> float | None:
     """
     Get approximate magnitude for a planet.

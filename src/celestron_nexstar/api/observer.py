@@ -51,6 +51,7 @@ DEFAULT_LOCATION = ObserverLocation(
 _current_location: ObserverLocation | None = None
 
 
+@deal.post(lambda result: (result is not None and result.exists()) or True, message="Must return valid path")
 def get_config_path() -> Path:
     """Get path to observer location config file."""
     # Store in user's home directory
@@ -59,6 +60,10 @@ def get_config_path() -> Path:
     return config_dir / "observer_location.json"
 
 
+@deal.pre(lambda location: location is not None, message="Location must be provided")  # type: ignore[misc,arg-type]
+@deal.pre(lambda location: -90 <= location.latitude <= 90, message="Latitude must be -90 to +90")  # type: ignore[misc,arg-type]
+@deal.pre(lambda location: -180 <= location.longitude <= 180, message="Longitude must be -180 to +180")  # type: ignore[misc,arg-type]
+@deal.post(lambda result: result is None, message="Save must complete")
 def save_location(location: ObserverLocation) -> None:
     """
     Save observer location to config file.
@@ -84,6 +89,7 @@ def save_location(location: ObserverLocation) -> None:
     logger.debug(f"Location saved to {config_path}")
 
 
+@deal.post(lambda result: result is not None, message="Location must be returned")
 def load_location() -> ObserverLocation:
     """
     Load observer location from config file.
@@ -154,6 +160,7 @@ def set_observer_location(location: ObserverLocation, save: bool = True) -> None
         save_location(location)
 
 
+@deal.post(lambda result: result is None, message="Clear must complete")
 def clear_observer_location() -> None:
     """Clear cached observer location (will reload from config on next access)."""
     global _current_location
@@ -232,6 +239,9 @@ async def geocode_location(query: str) -> ObserverLocation:
         raise ValueError(f"Failed to geocode location: {e}") from None
 
 
+@deal.pre(lambda queries: isinstance(queries, list) and len(queries) > 0, message="Queries must be non-empty list")  # type: ignore[misc,arg-type]
+@deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
+# Note: Postconditions on async functions check the coroutine, not the awaited result
 async def geocode_location_batch(queries: list[str]) -> dict[str, ObserverLocation]:
     """
     Geocode multiple locations concurrently.

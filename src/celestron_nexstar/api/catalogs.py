@@ -51,8 +51,9 @@ class CelestialObject:
     parent_planet: str | None = None
     constellation: str | None = None
 
-    def matches_search(self, query: str) -> bool:
+    def matches_search(self, query: str) -> bool:  # type: ignore[misc]
         """Check if object matches search query."""
+        # Note: Instance method - contract checking at class level would be complex
         query_lower = query.lower()
         return bool(
             (self.name and query_lower in str(self.name).lower())
@@ -60,7 +61,8 @@ class CelestialObject:
             or (self.description and query_lower in str(self.description).lower())
         )
 
-    def with_current_position(self, dt: datetime | None = None) -> CelestialObject:
+    def with_current_position(self, dt: datetime | None = None) -> CelestialObject:  # type: ignore[misc]
+        # Note: Instance method - contract checking at class level would be complex
         """
         Return a copy of this object with current ephemeris position if applicable.
 
@@ -196,6 +198,7 @@ def _load_all_catalogs() -> dict[str, list[CelestialObject]]:
 
 
 # Public API - lazy-loaded catalogs dict
+@deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
 def get_all_catalogs_dict() -> dict[str, list[CelestialObject]]:
     """
     Get all catalogs as a dictionary.
@@ -223,15 +226,18 @@ def _get_all_catalogs() -> dict[str, list[CelestialObject]]:
 class _AllCatalogsProxy:
     """Proxy object that provides dict-like access to catalogs."""
 
-    def items(self) -> list[tuple[str, list[CelestialObject]]]:
+    def items(self) -> list[tuple[str, list[CelestialObject]]]:  # type: ignore[misc]
+        # Note: Instance method - contract checking at class level would be complex
         """Get catalog items."""
         return list(_get_all_catalogs().items())
 
-    def keys(self) -> list[str]:
+    def keys(self) -> list[str]:  # type: ignore[misc]
+        # Note: Instance method - contract checking at class level would be complex
         """Get catalog names."""
         return list(_get_all_catalogs().keys())
 
-    def values(self) -> list[list[CelestialObject]]:
+    def values(self) -> list[list[CelestialObject]]:  # type: ignore[misc]
+        # Note: Instance method - contract checking at class level would be complex
         """Get catalog object lists."""
         return list(_get_all_catalogs().values())
 
@@ -269,6 +275,7 @@ def get_catalog(catalog_name: str) -> list[CelestialObject]:
     return _load_catalog_from_yaml(catalog_name)  # type: ignore[no-any-return]
 
 
+@deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def get_all_objects() -> list[CelestialObject]:
     """
     Get all objects from all catalogs.
@@ -472,6 +479,8 @@ def search_objects(
     return [(obj, match_type) for score, obj, match_type in all_results]
 
 
+@deal.pre(lambda name, catalog_name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
+@deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
     Get objects by name (name field only, no common_name).

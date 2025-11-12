@@ -142,6 +142,8 @@ class NexStarTelescope:
         self.serial_conn = None
         logger.info("Disconnected from telescope")
 
+    @deal.pre(lambda self, char: len(char) == 1, message="Char must be single character")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     def echo_test(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
@@ -158,6 +160,8 @@ class NexStarTelescope:
         """
         return self.protocol.echo(char)
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is not None, message="Info must be returned")
     def get_info(self) -> TelescopeInfo:
         """
         Get telescope hardware information.
@@ -174,6 +178,10 @@ class NexStarTelescope:
         model = self.protocol.get_model()
         return TelescopeInfo(model=model, firmware_major=major, firmware_minor=minor)
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(
+        lambda result: isinstance(result, tuple) and len(result) == 2, message="Must return tuple of (major, minor)"
+    )
     def get_version(self) -> tuple[int, int]:
         """
         Get telescope firmware version (legacy method).
@@ -187,6 +195,8 @@ class NexStarTelescope:
         """
         return self.protocol.get_version()
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result > 0, message="Model number must be positive")
     def get_model(self) -> int:
         """
         Get telescope model number (legacy method).
@@ -351,6 +361,8 @@ class NexStarTelescope:
         logger.info(f"Syncing to RA {ra_hours:.4f}h, Dec {dec_degrees:.4f}°")
         return self.protocol.sync_ra_dec_precise(ra_deg, dec_deg)
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     def is_slewing(self) -> bool:
         """
         Check if telescope is currently slewing (moving to target).
@@ -366,6 +378,8 @@ class NexStarTelescope:
         """
         return self.protocol.is_goto_in_progress()
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     def cancel_goto(self) -> bool:
         """
         Cancel current goto/slew operation.
@@ -380,6 +394,14 @@ class NexStarTelescope:
         logger.info("Canceling goto operation")
         return self.protocol.cancel_goto()
 
+    @deal.pre(lambda self, direction, rate: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, direction, rate: direction.lower() in ["up", "down", "left", "right"],
+        message="Direction must be up/down/left/right",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
+    @deal.raises(ValueError)
     def move_fixed(self, direction: str, rate: int = 9) -> bool:
         """
         Move telescope in a fixed direction at specified rate.
@@ -417,6 +439,9 @@ class NexStarTelescope:
         logger.debug(f"Moving {direction} at rate {rate}")
         return self.protocol.variable_rate_motion(axis, cmd_dir, rate)
 
+    @deal.pre(lambda self, axis: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, axis: axis in ["az", "alt", "both"], message="Axis must be az/alt/both")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     def stop_motion(self, axis: str = "both") -> bool:
         """
         Stop telescope motion on specified axis.
@@ -444,6 +469,8 @@ class NexStarTelescope:
         logger.debug(f"Stopped motion on {axis} axis")
         return success
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is not None, message="Tracking mode must be returned")
     def get_tracking_mode(self) -> TrackingMode:
         """
         Get current tracking mode.
@@ -459,6 +486,8 @@ class NexStarTelescope:
         mode_val = self.protocol.get_tracking_mode()
         return TrackingMode(mode_val)
 
+    @deal.pre(lambda self, mode: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is True, message="Tracking mode must be set")
     def set_tracking_mode(self, mode: TrackingMode) -> bool:
         """
         Set tracking mode.
@@ -477,6 +506,8 @@ class NexStarTelescope:
         logger.info(f"Setting tracking mode to {mode.name}")
         return self.protocol.set_tracking_mode(mode.value)
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is not None, message="Location must be returned")
     def get_location(self) -> GeographicLocation:
         """
         Get observer location (latitude, longitude).
@@ -531,6 +562,8 @@ class NexStarTelescope:
         logger.info(f"Setting location to {latitude:.4f}°, {longitude:.4f}°")
         return self.protocol.set_location(lat_deg, lon_deg)
 
+    @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is not None, message="Time must be returned")
     def get_time(self) -> TelescopeTime:
         """
         Get date and time from telescope.
@@ -562,6 +595,31 @@ class NexStarTelescope:
             daylight_savings=daylight,
         )
 
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: self.protocol.is_open(),
+        message="Telescope must be connected",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: 0 <= hour <= 23,
+        message="Hour must be 0-23",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: 0 <= minute <= 59,
+        message="Minute must be 0-59",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: 0 <= second <= 59,
+        message="Second must be 0-59",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: 1 <= month <= 12,
+        message="Month must be 1-12",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, hour, minute, second, month, day, year, timezone, daylight_savings: 1 <= day <= 31,
+        message="Day must be 1-31",
+    )  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is True, message="Time must be set")
     def set_time(
         self,
         hour: int,

@@ -207,6 +207,7 @@ class CatalogDatabase:
         """Get a new database session."""
         return self._Session()
 
+    @deal.post(lambda result: result is None, message="Close must complete")
     def close(self) -> None:
         """Close database connection."""
         self._engine.dispose()
@@ -219,6 +220,7 @@ class CatalogDatabase:
         """Context manager exit."""
         self.close()
 
+    @deal.post(lambda result: result is None, message="Schema initialization must complete")
     def init_schema(self) -> None:
         """
         Initialize database schema.
@@ -280,6 +282,7 @@ class CatalogDatabase:
 
         logger.info("Database schema initialized")
 
+    @deal.post(lambda result: result is None, message="FTS table ensure must complete")
     def ensure_fts_table(self) -> None:
         """
         Ensure the FTS5 table exists. Creates it if missing.
@@ -352,6 +355,7 @@ class CatalogDatabase:
                 session.commit()
                 logger.info("FTS table created and populated")
 
+    @deal.post(lambda result: result is None, message="FTS repopulation must complete")
     def repopulate_fts_table(self) -> None:
         """
         Repopulate the FTS table with all existing objects.
@@ -393,6 +397,79 @@ class CatalogDatabase:
             if fts_count != objects_count:
                 logger.warning(f"FTS table count mismatch: {fts_count} vs {objects_count} objects")
 
+    @deal.pre(
+        lambda self,
+        name,
+        catalog,
+        ra_hours,
+        dec_degrees,
+        object_type,
+        magnitude,
+        common_name,
+        catalog_number,
+        size_arcmin,
+        description,
+        constellation,
+        is_dynamic,
+        ephemeris_name,
+        parent_planet: name and len(name.strip()) > 0,
+        message="Name must be non-empty",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self,
+        name,
+        catalog,
+        ra_hours,
+        dec_degrees,
+        object_type,
+        magnitude,
+        common_name,
+        catalog_number,
+        size_arcmin,
+        description,
+        constellation,
+        is_dynamic,
+        ephemeris_name,
+        parent_planet: catalog and len(catalog.strip()) > 0,
+        message="Catalog must be non-empty",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self,
+        name,
+        catalog,
+        ra_hours,
+        dec_degrees,
+        object_type,
+        magnitude,
+        common_name,
+        catalog_number,
+        size_arcmin,
+        description,
+        constellation,
+        is_dynamic,
+        ephemeris_name,
+        parent_planet: 0 <= ra_hours < 24,
+        message="RA must be 0-24 hours",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self,
+        name,
+        catalog,
+        ra_hours,
+        dec_degrees,
+        object_type,
+        magnitude,
+        common_name,
+        catalog_number,
+        size_arcmin,
+        description,
+        constellation,
+        is_dynamic,
+        ephemeris_name,
+        parent_planet: -90 <= dec_degrees <= 90,
+        message="Dec must be -90 to +90 degrees",
+    )  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result > 0, message="Insert must return positive ID")
     def insert_object(
         self,
         name: str,
@@ -462,6 +539,11 @@ class CatalogDatabase:
             session.refresh(model)
             return model.id
 
+    @deal.pre(lambda self, object_id: object_id > 0, message="Object ID must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(
+        lambda result: result is None or isinstance(result, CelestialObject),
+        message="Must return CelestialObject or None",
+    )
     def get_by_id(self, object_id: int) -> CelestialObject | None:
         """Get object by ID."""
         with self._get_session() as session:
@@ -470,6 +552,11 @@ class CatalogDatabase:
                 return None
             return self._model_to_object(model)
 
+    @deal.pre(lambda self, name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
+    @deal.post(
+        lambda result: result is None or isinstance(result, CelestialObject),
+        message="Must return CelestialObject or None",
+    )
     def get_by_name(self, name: str) -> CelestialObject | None:
         """
         Get object by exact name match (checks both name and common_name fields).
@@ -503,6 +590,8 @@ class CatalogDatabase:
 
             return None
 
+    @deal.pre(lambda self, hr_number: hr_number > 0, message="HR number must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: result is None or isinstance(result, str), message="Must return string or None")
     def get_common_name_by_hr(self, hr_number: int) -> str | None:
         """
         Get common name for a given HR number from star_name_mappings table.
@@ -521,6 +610,9 @@ class CatalogDatabase:
                 return mapping.common_name.strip()
             return None
 
+    @deal.pre(lambda self, query, limit: query and len(query.strip()) > 0, message="Query must be non-empty")  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, query, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
     def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
         Fuzzy search using FTS5.
@@ -576,6 +668,9 @@ class CatalogDatabase:
                 # Return empty list - no fallback
                 return []
 
+    @deal.pre(lambda self, catalog, limit: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty")  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, catalog, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
     def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
         with self._get_session() as session:
@@ -588,6 +683,11 @@ class CatalogDatabase:
             )
             return [self._model_to_object(model) for model in models]
 
+    @deal.pre(
+        lambda self, catalog, catalog_number: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty"
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, catalog, catalog_number: catalog_number > 0, message="Catalog number must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
         """
         Check if an object exists with the given catalog and catalog number.
@@ -610,6 +710,11 @@ class CatalogDatabase:
             )
             return count > 0
 
+    @deal.pre(
+        lambda self, catalog, object_type, max_magnitude, min_magnitude, constellation, is_dynamic, limit: limit > 0,
+        message="Limit must be positive",
+    )  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
     def filter_objects(
         self,
         catalog: str | None = None,
@@ -668,6 +773,7 @@ class CatalogDatabase:
 
             return [self._model_to_object(model) for model in models]
 
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
     def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
         with self._get_session() as session:
@@ -676,6 +782,8 @@ class CatalogDatabase:
             )
             return [catalog[0] for catalog in catalogs]
 
+    @deal.pre(lambda self, prefix, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
     def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
         """
         Get object names for command-line autocompletion.
@@ -733,6 +841,8 @@ class CatalogDatabase:
                     names_set.add(val)
             return sorted(names_set, key=str.lower)[:limit]
 
+    @deal.pre(lambda self, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
     def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
         """
         Get all object names for command-line autocompletion.
@@ -747,6 +857,8 @@ class CatalogDatabase:
         """
         return self.get_names_for_completion(prefix="", limit=limit)
 
+    @deal.post(lambda result: result is not None, message="Stats must be returned")
+    @deal.post(lambda result: hasattr(result, "total_objects"), message="Stats must have total_objects")
     def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
         from sqlalchemy import func, select
@@ -838,6 +950,7 @@ class CatalogDatabase:
 
         return obj
 
+    @deal.post(lambda result: result is None, message="Commit must complete")
     def commit(self) -> None:
         """
         Commit pending transactions.
@@ -867,6 +980,7 @@ def get_database() -> CatalogDatabase:
     return _database_instance
 
 
+@deal.post(lambda result: result is not None, message="Database must be initialized")
 def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     """
     Initialize a new database with schema.
@@ -882,6 +996,11 @@ def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     return db
 
 
+@deal.post(
+    lambda result: isinstance(result, tuple) and len(result) == 2,
+    message="Must return tuple of (pages_freed, pages_used)",
+)
+@deal.post(lambda result: result[0] >= 0 and result[1] >= 0, message="Page counts must be non-negative")
 def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     """
     Reclaim unused space in the database by running VACUUM.
@@ -1359,6 +1478,7 @@ def rebuild_database(
         raise RuntimeError(f"Database rebuild failed: {e}") from e
 
 
+@deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
 def get_ephemeris_files() -> dict[str, dict[str, Any]]:
     """
     Get all ephemeris files from the database.
@@ -1385,6 +1505,8 @@ def get_ephemeris_files() -> dict[str, dict[str, Any]]:
         return result
 
 
+@deal.post(lambda result: isinstance(result, list), message="Must return list")
+# Note: Postconditions on async functions check the coroutine, not the awaited result
 async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
     """
     Fetch ephemeris file information from NAIF and return as list (without syncing).
@@ -1439,6 +1561,8 @@ async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
         raise
 
 
+# Note: Postconditions on async functions check the coroutine, not the awaited result
+# Cannot use @deal.post here - deal checks coroutine object, not awaited result
 async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
     """
     Fetch ephemeris file information from NAIF and sync to database.

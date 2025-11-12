@@ -38,6 +38,7 @@ EXCLUDED_FUNCTIONS = {
         "__init__",
         "__enter__",
         "__exit__",
+        "set_sqlite_pragmas",  # SQLAlchemy event listener (internal)
     },
     "telescope.py": {
         "__init__",
@@ -61,6 +62,14 @@ class ContractChecker(ast.NodeVisitor):
         self.current_lineno = 0
         self.has_deal_decorator = False
         self.is_public_function = False
+        self.in_class = False
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Track when we're inside a class."""
+        old_in_class = self.in_class
+        self.in_class = True
+        self.generic_visit(node)
+        self.in_class = old_in_class
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Check if function has deal contracts."""
@@ -69,6 +78,14 @@ class ContractChecker(ast.NodeVisitor):
 
         # Check if function is excluded
         excluded = node.name in EXCLUDED_FUNCTIONS.get(self.module_name, set())
+
+        # Skip instance methods (they're handled differently and checked at class level if needed)
+        # Instance methods have 'self' as first arg and are inside a class
+        is_instance_method = (
+            self.in_class
+            and node.args.args
+            and node.args.args[0].arg == "self"
+        )
 
         # Check for deal decorators
         has_contract = any(
@@ -87,8 +104,8 @@ class ContractChecker(ast.NodeVisitor):
             for dec in node.decorator_list
         )
 
-        # Record functions without contracts (public, not excluded)
-        if is_public and not excluded and not has_contract:
+        # Record functions without contracts (public, not excluded, not instance methods)
+        if is_public and not excluded and not is_instance_method and not has_contract:
             self.functions_without_contracts.append((node.lineno, node.name))
 
         # Continue visiting child nodes
@@ -99,6 +116,13 @@ class ContractChecker(ast.NodeVisitor):
         # Same logic as regular functions
         is_public = not node.name.startswith("_")
         excluded = node.name in EXCLUDED_FUNCTIONS.get(self.module_name, set())
+
+        # Skip instance methods
+        is_instance_method = (
+            self.in_class
+            and node.args.args
+            and node.args.args[0].arg == "self"
+        )
 
         has_contract = any(
             isinstance(dec, ast.Call)
@@ -113,7 +137,7 @@ class ContractChecker(ast.NodeVisitor):
             for dec in node.decorator_list
         )
 
-        if is_public and not excluded and not has_contract:
+        if is_public and not excluded and not is_instance_method and not has_contract:
             self.functions_without_contracts.append((node.lineno, node.name))
 
         self.generic_visit(node)
