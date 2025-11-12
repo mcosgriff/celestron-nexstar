@@ -1261,10 +1261,10 @@ def rebuild_database(
         try:
             import asyncio
 
-            from .observer import geocode_location, get_observer_location, set_observer_location
+            from .observer import ObserverLocation, geocode_location, get_observer_location, set_observer_location
             from .weather import fetch_hourly_weather_forecast
 
-            location = get_observer_location()
+            location: ObserverLocation | None = get_observer_location()
 
             # If no location is set, prompt user to set one
             if not location:

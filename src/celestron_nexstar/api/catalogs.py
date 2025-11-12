@@ -294,8 +294,10 @@ def get_available_catalogs() -> list[str]:
     return list(_load_all_catalogs().keys())
 
 
-# type: ignore[misc,arg-type]
-@deal.pre(lambda query, catalog_name, max_l_dist, update_positions: query and len(query.strip()) > 0, message="Search query must be non-empty")
+@deal.pre(
+    lambda query, catalog_name, max_l_dist, update_positions: query and len(query.strip()) > 0,
+    message="Search query must be non-empty",
+)  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
