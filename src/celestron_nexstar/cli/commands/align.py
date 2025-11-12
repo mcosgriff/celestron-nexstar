@@ -175,15 +175,16 @@ def skyalign_suggest(
 [dim]Average observability:[/dim] {group.avg_observability_score:.2f}
 [dim]Separation score:[/dim] {group.separation_score:.2f}
 """
-            # Add conditions score if available
+            # Add conditions score if conditions were considered (score < 1.0 means conditions affected it)
             if group.conditions_score < 1.0:
-                conditions_desc = "Excellent"
                 if group.conditions_score < 0.5:
                     conditions_desc = "Poor"
                 elif group.conditions_score < 0.7:
                     conditions_desc = "Fair"
                 elif group.conditions_score < 0.9:
                     conditions_desc = "Good"
+                else:
+                    conditions_desc = "Excellent"
                 stats_text += f"[dim]Conditions score:[/dim] {group.conditions_score:.2f} ({conditions_desc})\n"
 
             console.print(Panel(stats_text.strip(), border_style="dim"))

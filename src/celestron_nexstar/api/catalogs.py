@@ -302,7 +302,7 @@ def get_available_catalogs() -> list[str]:
 
 
 @deal.pre(
-    lambda query, catalog_name, max_l_dist, update_positions: query and len(query.strip()) > 0,
+    lambda query, *args, **kwargs: query and len(query.strip()) > 0,
     message="Search query must be non-empty",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
@@ -479,7 +479,7 @@ def search_objects(
     return [(obj, match_type) for score, obj, match_type in all_results]
 
 
-@deal.pre(lambda name, catalog_name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
+@deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
