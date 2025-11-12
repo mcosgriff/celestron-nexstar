@@ -201,6 +201,7 @@ exclude = [
 plugins = [
     "returns.contrib.mypy.returns_plugin",
     "sqlalchemy.ext.mypy.plugin",
+    "deal.mypy",  # Add deal plugin for contract validation
 ]
 
 # Per-module overrides for libraries without type stubs
