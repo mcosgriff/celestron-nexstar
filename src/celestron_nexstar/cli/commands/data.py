@@ -434,7 +434,7 @@ def setup(
         try:
             from alembic.config import Config
 
-            from alembic import command
+            from alembic import command  # type: ignore[attr-defined]
 
             alembic_cfg = Config("alembic.ini")
             command.upgrade(alembic_cfg, "head")
