@@ -20,6 +20,8 @@ import openmeteo_requests
 import requests_cache
 from retry_requests import retry
 
+from celestron_nexstar.api.models import WeatherForecastModel
+
 from .observer import ObserverLocation
 
 
@@ -292,33 +294,17 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
         stability_score = 0.0  # Rapid changes = unstable
     total_score += stability_score
 
-    # 5. Cloud Cover (applied as multiplier - clouds block observation)
-    # If clouds block the sky, seeing conditions are irrelevant
+    # 5. Cloud Cover (blocks measurement, not seeing itself)
+    # According to Clear Sky Chart: "A white block on the seeing line means that there was
+    # too much cloud (>80% cover) to calculate it." Seeing measures atmospheric turbulence,
+    # not cloud cover. However, you cannot measure seeing through clouds.
+    # Reference: https://server1.cleardarksky.com/csk/faq/seeing_catagories.html
     if weather.cloud_cover_percent is not None:
         cloud_cover = weather.cloud_cover_percent
-        # Calculate cloud factor: 0% clouds = 1.0 (no reduction), 100% clouds = 0.0 (complete blocking)
-        # Use a curve that heavily penalizes high cloud cover
-        if cloud_cover >= 100:
-            cloud_factor = 0.0  # Completely overcast - can't observe
-        elif cloud_cover >= 90:
-            # 90-100%: severe penalty
-            cloud_factor = 0.0 + (100 - cloud_cover) * 0.02  # 0.0-0.2
-        elif cloud_cover >= 80:
-            # 80-90%: very heavy penalty
-            cloud_factor = 0.2 + (90 - cloud_cover) * 0.08  # 0.2-1.0
-        elif cloud_cover >= 50:
-            # 50-80%: significant penalty
-            cloud_factor = 1.0 - ((cloud_cover - 50) / 50.0) * 0.5  # 1.0-0.5
-        elif cloud_cover >= 20:
-            # 20-50%: moderate penalty
-            cloud_factor = 1.0 - ((cloud_cover - 20) / 30.0) * 0.3  # 1.0-0.7
-        else:
-            # 0-20%: minimal impact
-            cloud_factor = 1.0 - (cloud_cover / 20.0) * 0.1  # 1.0-0.9
-
-        # Apply cloud factor as multiplier
-        total_score *= cloud_factor
-    # If cloud cover unavailable, don't apply penalty (assume clear)
+        # If cloud cover > 80%, seeing cannot be calculated/measured
+        if cloud_cover > 80:
+            return 0.0  # Cannot measure seeing through clouds
+    # If cloud cover <= 80% or unavailable, calculate seeing normally
 
     # Ensure score is between 0-100
     return max(0.0, min(100.0, total_score))

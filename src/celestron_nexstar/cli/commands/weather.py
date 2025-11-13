@@ -14,18 +14,18 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
-
-logger = logging.getLogger(__name__)
-
-from ...api.observer import ObserverLocation, get_observer_location
-from ...api.weather import (
+from celestron_nexstar.api.observer import ObserverLocation, get_observer_location
+from celestron_nexstar.api.weather import (
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
     fetch_hourly_weather_forecast,
     fetch_weather,
 )
-from ..utils.output import print_error
+from celestron_nexstar.cli.utils.output import print_error
+
+
+logger = logging.getLogger(__name__)
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -586,14 +586,14 @@ def show_next_3_days_weather(
             seeing_scores = [f.seeing_score for f in day_forecasts]
 
             # Format date
-            date_str = day.strftime("%a %b %d") if tz else day.strftime("%a %b %d")
+            date_str = day.strftime("%a %b %d")
 
             # Temperature range
             temp_str = "-"
             if temps:
                 temp_min = min(temps)
                 temp_max = max(temps)
-                temp_str = f"{temp_min:.0f}°F" if temp_min == temp_max else f"{temp_min:.0f}–{temp_max:.0f}°F"
+                temp_str = f"{temp_min:.0f}°F" if temp_min == temp_max else f"{temp_min:.0f}-{temp_max:.0f}°F"
 
             # Average cloud cover
             cloud_str = "-"
