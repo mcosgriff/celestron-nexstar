@@ -17,6 +17,7 @@ from pathlib import Path
 import aiohttp
 from sqlalchemy.orm import Session
 
+from .database_seeder import load_seed_json
 from .models import StarNameMappingModel
 
 
@@ -198,7 +199,7 @@ def populate_star_name_mappings_database(
     """
     Populate database with star name mappings.
 
-    Uses a comprehensive static list of commonly searched stars as the primary source.
+    Uses seed data from JSON files as the primary source.
     Optionally enhances with additional mappings from external APIs/catalogs if available.
     This ensures star common names are always available even without internet connectivity.
 
@@ -207,52 +208,41 @@ def populate_star_name_mappings_database(
         hr_numbers: Optional list of HR numbers to fetch from external sources. If None, fetches all available.
         force_refresh: If True, re-populate even if data exists
     """
+    from .database_seeder import seed_star_name_mappings
+
     logger.info("Populating star name mappings database...")
 
-    # Check if data already exists
-    existing_count = db_session.query(StarNameMappingModel).count()
-    if existing_count > 0 and not force_refresh:
-        logger.info(f"Star name mappings already exist ({existing_count} entries). Use force_refresh=True to update.")
-        return
-
-    # Clear existing data
-    db_session.query(StarNameMappingModel).delete()
-
-    # Start with comprehensive static mappings (primary source)
-    logger.info("Loading comprehensive star name mappings...")
-    mappings = _get_comprehensive_star_mappings()
-    logger.info(f"Loaded {len(mappings)} mappings from comprehensive static list")
+    # Seed from JSON file (primary source)
+    seed_star_name_mappings(db_session, force=force_refresh)
 
     # Try to enhance with external sources (optional enhancement)
     try:
         logger.info("Attempting to fetch additional mappings from external sources...")
         external_mappings = asyncio.run(fetch_star_name_mappings(hr_numbers))
         if external_mappings:
-            # Merge external mappings (they may have additional stars or updated names)
-            mappings.update(external_mappings)
-            logger.info(f"Enhanced with {len(external_mappings)} additional mappings from external sources")
-        else:
-            logger.info("External sources returned no additional mappings (using static list only)")
+            # Add any new mappings from external sources
+            added = 0
+            for hr_number, (common_name, bayer_designation) in external_mappings.items():
+                # Check if already exists
+                existing = (
+                    db_session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
+                )
+                if not existing:
+                    model = StarNameMappingModel(
+                        hr_number=hr_number,
+                        common_name=common_name.strip() if common_name else "",
+                        bayer_designation=bayer_designation.strip() if bayer_designation else None,
+                    )
+                    db_session.add(model)
+                    added += 1
+            if added > 0:
+                db_session.commit()
+                logger.info(f"Enhanced with {added} additional mappings from external sources")
+            else:
+                logger.info("External sources returned no additional mappings")
     except Exception as e:
         logger.warning(f"Could not fetch additional mappings from external sources: {e}")
-        logger.info("Continuing with comprehensive static mappings only")
-        # Don't fail - we have the comprehensive static list
-
-    # Add mappings to database
-    added = 0
-    for hr_number, (common_name, bayer_designation) in mappings.items():
-        # Only add if we have at least one name (not None and not empty string)
-        if (common_name and common_name.strip()) or (bayer_designation and bayer_designation.strip()):
-            model = StarNameMappingModel(
-                hr_number=hr_number,
-                common_name=common_name.strip() if common_name else "",  # Store empty string if None
-                bayer_designation=bayer_designation.strip() if bayer_designation else None,
-            )
-            db_session.add(model)
-            added += 1
-
-    db_session.commit()
-    logger.info(f"Added {added} star name mappings to database")
+        logger.info("Continuing with seed data only")
 
 
 def _get_comprehensive_star_mappings() -> dict[int, tuple[str | None, str | None]]:
@@ -262,90 +252,28 @@ def _get_comprehensive_star_mappings() -> dict[int, tuple[str | None, str | None
     This is the PRIMARY source for star name mappings. It includes all stars
     with IAU-approved proper names and commonly used names for bright stars.
     Source: IAU Working Group on Star Names, Bright Star Catalogue, and common usage.
+
+    Loads data from seed JSON file instead of hardcoded dictionary.
     """
-    return {
-        # Brightest stars (magnitude < 1.0)
-        2491: ("Sirius", "Alpha Canis Majoris"),
-        2326: ("Canopus", "Alpha Carinae"),
-        5340: ("Arcturus", "Alpha Boötis"),
-        7001: ("Vega", "Alpha Lyrae"),
-        1708: ("Capella", "Alpha Aurigae"),
-        1713: ("Rigel", "Beta Orionis"),
-        2943: ("Procyon", "Alpha Canis Minoris"),
-        2061: ("Betelgeuse", "Alpha Orionis"),
-        472: ("Achernar", "Alpha Eridani"),
-        5267: ("Hadar", "Beta Centauri"),
-        7557: ("Altair", "Alpha Aquilae"),
-        1457: ("Aldebaran", "Alpha Tauri"),
-        5056: ("Spica", "Alpha Virginis"),
-        6134: ("Antares", "Alpha Scorpii"),
-        2990: ("Pollux", "Beta Geminorum"),
-        8728: ("Fomalhaut", "Alpha Piscis Austrini"),
-        7924: ("Deneb", "Alpha Cygni"),
-        # Stars magnitude 1.0-2.0
-        4853: ("Mimosa", "Beta Crucis"),
-        3982: ("Regulus", "Alpha Leonis"),
-        2618: ("Adhara", "Epsilon Canis Majoris"),
-        2891: ("Castor", "Alpha Geminorum"),
-        1790: ("Bellatrix", "Gamma Orionis"),
-        1791: ("Elnath", "Beta Tauri"),
-        3685: ("Miaplacidus", "Beta Carinae"),
-        1903: ("Alnilam", "Epsilon Orionis"),
-        8425: ("Alnair", "Alpha Gruis"),
-        4905: ("Alioth", "Epsilon Ursae Majoris"),
-        1017: ("Mirphak", "Alpha Persei"),
-        4301: ("Dubhe", "Alpha Ursae Majoris"),
-        2693: ("Wezen", "Delta Canis Majoris"),
-        6553: ("Sargas", "Theta Scorpii"),
-        6879: ("Kaus Australis", "Epsilon Sagittarii"),
-        3307: ("Avior", "Epsilon Carinae"),
-        5191: ("Alkaid", "Eta Ursae Majoris"),
-        2421: ("Menkalinan", "Beta Aurigae"),
-        6217: ("Atria", "Alpha Trianguli Australis"),
-        2773: ("Alhena", "Gamma Geminorum"),
-        7790: ("Peacock", "Alpha Pavonis"),
-        3045: ("Alsephina", "Delta Velorum"),
-        2294: ("Mirzam", "Beta Canis Majoris"),
-        3748: ("Alphard", "Alpha Hydrae"),
-        424: ("Polaris", "Alpha Ursae Minoris"),
-        617: ("Hamal", "Alpha Arietis"),
-        936: ("Algol", "Beta Persei"),
-        4534: ("Denebola", "Beta Leonis"),
-        7121: ("Nunki", "Sigma Sagittarii"),
-        337: ("Mirach", "Beta Andromedae"),
-        15: ("Alpheratz", "Alpha Andromedae"),
-        6556: ("Rasalhague", "Alpha Ophiuchi"),
-        5563: ("Kochab", "Beta Ursae Minoris"),
-        5953: ("Dschubba", "Delta Scorpii"),
-        6094: ("Graffias", "Beta Scorpii"),
-        6527: ("Shaula", "Lambda Scorpii"),
-        6406: ("Rasalgethi", "Alpha Herculis"),
-        6536: ("Rastaban", "Beta Draconis"),
-        6705: ("Eltanin", "Gamma Draconis"),
-        7039: ("Kaus Media", "Delta Sagittarii"),
-        6913: ("Kaus Borealis", "Lambda Sagittarii"),
-        1829: ("Arneb", "Alpha Leporis"),
-        4623: ("Gienah", "Gamma Corvi"),
-        1904: ("Saiph", "Kappa Orionis"),
-        1948: ("Alnitak", "Zeta Orionis"),
-        1879: ("Meissa", "Lambda Orionis"),
-        4057: ("Algieba", "Gamma Leonis"),
-        603: ("Almach", "Gamma Andromedae"),
-        4730: ("Acrux", "Alpha Crucis"),
-        4763: ("Gacrux", "Gamma Crucis"),
-        5459: ("Rigil Kentaurus", "Alpha Centauri"),
-        5460: ("Toliman", "Beta Centauri"),
-        # Additional commonly searched stars (magnitude 2.0-3.0)
-        1865: ("Menkar", "Alpha Ceti"),
-        1464: ("Ain", "Epsilon Tauri"),
-        2081: ("Mintaka", "Delta Orionis"),
-        2067: ("Nair al Saif", "Iota Orionis"),
-        2646: ("Furud", "Zeta Canis Majoris"),
-        2948: ("Gomeisa", "Beta Canis Minoris"),
-        1577: ("Menkent", "Theta Centauri"),
-        4786: ("Imai", "Delta Crucis"),
-        4856: ("Ginan", "Epsilon Crucis"),
-    }
+    try:
+        # Load from seed data JSON file
+        data = load_seed_json("star_name_mappings.json")
+
+        # Convert JSON format to internal format
+        # JSON format: [{"hr_number": int, "common_name": str, "bayer_designation": str}]
+        # Internal format: {hr_number: (common_name, bayer_designation)}
+        mappings: dict[int, tuple[str | None, str | None]] = {}
+        for item in data:
+            hr_number = item["hr_number"]
+            common_name = item.get("common_name") or None
+            bayer_designation = item.get("bayer_designation") or None
+            mappings[hr_number] = (common_name, bayer_designation)
+
+        return mappings
+    except Exception as e:
+        logger.error(f"Failed to load star name mappings from seed data: {e}")
+        logger.warning("Falling back to empty mappings - star name search may be limited")
+        return {}
 
 
 def get_common_name_by_hr(db_session: Session, hr_number: int) -> str | None:

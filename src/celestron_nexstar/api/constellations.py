@@ -595,60 +595,13 @@ def populate_constellation_database(db_session: Session) -> None:
     Populate database with constellation and asterism data.
 
     This should be called once to initialize the database with static data.
+    Now uses seed data from JSON files instead of hardcoded Python data.
 
     Args:
         db_session: SQLAlchemy database session
     """
-    from .models import AsterismModel, ConstellationModel
+    from .database_seeder import seed_asterisms, seed_constellations
 
     logger.info("Populating constellation database...")
-
-    # Clear existing data
-    db_session.query(ConstellationModel).delete()
-    db_session.query(AsterismModel).delete()
-
-    # Add constellations
-    for constellation in PROMINENT_CONSTELLATIONS:
-        # Calculate approximate boundaries from center and area
-        # Use a simple square approximation: sqrt(area) gives approximate side length
-        # Convert to RA/Dec ranges (rough approximation)
-        import math
-
-        side_deg = math.sqrt(constellation.area_sq_deg)
-        ra_range_hours = side_deg / 15.0  # 1 hour = 15 degrees
-        dec_range_deg = side_deg
-
-        model = ConstellationModel(
-            name=constellation.name,
-            abbreviation=constellation.abbreviation,
-            ra_hours=constellation.ra_hours,
-            dec_degrees=constellation.dec_degrees,
-            ra_min_hours=constellation.ra_hours - ra_range_hours / 2,
-            ra_max_hours=constellation.ra_hours + ra_range_hours / 2,
-            dec_min_degrees=constellation.dec_degrees - dec_range_deg / 2,
-            dec_max_degrees=constellation.dec_degrees + dec_range_deg / 2,
-            area_sq_deg=constellation.area_sq_deg,
-            brightest_star=constellation.brightest_star,
-            season=constellation.season,
-        )
-        db_session.add(model)
-
-    # Add asterisms
-    for asterism in FAMOUS_ASTERISMS:
-        asterism_model = AsterismModel(
-            name=asterism.name,
-            alt_names=",".join(asterism.alt_names),
-            ra_hours=asterism.ra_hours,
-            dec_degrees=asterism.dec_degrees,
-            size_degrees=asterism.size_degrees,
-            parent_constellation=asterism.parent_constellation,
-            season=asterism.season,
-            stars=",".join(asterism.member_stars),
-            description=asterism.description,
-        )
-        db_session.add(asterism_model)
-
-    db_session.commit()
-    logger.info(
-        f"Added {len(PROMINENT_CONSTELLATIONS)} constellations and {len(FAMOUS_ASTERISMS)} asterisms to database"
-    )
+    seed_constellations(db_session, force=True)
+    seed_asterisms(db_session, force=True)

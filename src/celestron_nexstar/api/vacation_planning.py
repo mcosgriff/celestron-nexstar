@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -628,40 +627,15 @@ def populate_dark_sky_sites_database(db_session: Session) -> None:
     Populate database with dark sky site data.
 
     This should be called once to initialize the database with static data.
-    Works offline once populated.
+    Works offline once populated. Now uses seed data from JSON files instead of hardcoded Python data.
 
     Args:
         db_session: SQLAlchemy database session
     """
-    from .models import DarkSkySiteModel
+    from .database_seeder import seed_dark_sky_sites
 
     logger.info("Populating dark sky sites database...")
-
-    # Ensure table exists (create if it doesn't)
-    try:
-        DarkSkySiteModel.__table__.create(db_session.bind, checkfirst=True)  # type: ignore[attr-defined]
-    except Exception as e:
-        logger.debug(f"Table creation check: {e}")
-
-    # Clear existing data (if table exists)
-    with suppress(Exception):
-        db_session.query(DarkSkySiteModel).delete()
-
-    # Add dark sky sites
-    for site in KNOWN_DARK_SITES:
-        model = DarkSkySiteModel(
-            name=site.name,
-            latitude=site.latitude,
-            longitude=site.longitude,
-            bortle_class=site.bortle_class.value,
-            sqm_value=site.sqm_value,
-            description=site.description,
-            notes=site.notes,
-        )
-        db_session.add(model)
-
-    db_session.commit()
-    logger.info(f"Added {len(KNOWN_DARK_SITES)} dark sky sites to database")
+    seed_dark_sky_sites(db_session, force=True)
 
 
 def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewingInfo:

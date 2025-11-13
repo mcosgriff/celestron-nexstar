@@ -449,35 +449,12 @@ def populate_meteor_shower_database(db_session: Session) -> None:
     Populate database with meteor shower data.
 
     This should be called once to initialize the database with static data.
+    Now uses seed data from JSON files instead of hardcoded Python data.
 
     Args:
         db_session: SQLAlchemy database session
     """
-    from .models import MeteorShowerModel
+    from .database_seeder import seed_meteor_showers
 
     logger.info("Populating meteor shower database...")
-
-    # Clear existing data
-    db_session.query(MeteorShowerModel).delete()
-
-    # Add meteor showers
-    for shower in METEOR_SHOWERS:
-        model = MeteorShowerModel(
-            name=shower.name,
-            start_month=shower.activity_start_month,
-            start_day=shower.activity_start_day,
-            end_month=shower.activity_end_month,
-            end_day=shower.activity_end_day,
-            peak_month=shower.peak_month,
-            peak_day=shower.peak_day,
-            radiant_ra_hours=shower.radiant_ra_hours,
-            radiant_dec_degrees=shower.radiant_dec_degrees,
-            zhr_peak=shower.zhr_peak,
-            velocity_km_s=float(shower.velocity_km_s),
-            parent_comet=shower.parent_comet,
-            notes=shower.description,
-        )
-        db_session.add(model)
-
-    db_session.commit()
-    logger.info(f"Added {len(METEOR_SHOWERS)} meteor showers to database")
+    seed_meteor_showers(db_session, force=True)

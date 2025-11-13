@@ -362,53 +362,18 @@ SPACE_EVENTS_2026: list[SpaceEvent] = []
 
 def populate_space_events_database(db_session: Session) -> None:
     """
-    Populate the database with space events from hardcoded lists.
+    Populate the database with space events from seed data.
 
     This function should be called during database initialization to ensure
-    space events are available offline.
+    space events are available offline. Now uses seed data from JSON files instead of hardcoded Python data.
 
     Args:
         db_session: SQLAlchemy database session
     """
+    from .database_seeder import seed_space_events
 
-    from .models import SpaceEventModel
-
-    # Ensure table exists
-    SpaceEventModel.__table__.create(db_session.bind, checkfirst=True)  # type: ignore[attr-defined]
-
-    # Clear existing events (to allow re-population)
-    db_session.query(SpaceEventModel).delete()
-
-    all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
-
-    for event in all_events:
-        # Convert naive datetime to timezone-aware if needed
-        event_date = event.date
-        if event_date.tzinfo is None:
-            event_date = event_date.replace(tzinfo=UTC)
-
-        req = event.viewing_requirements
-
-        model = SpaceEventModel(
-            name=event.name,
-            event_type=event.event_type.value,
-            date=event_date,
-            description=event.description,
-            min_latitude=req.min_latitude,
-            max_latitude=req.max_latitude,
-            min_longitude=req.min_longitude,
-            max_longitude=req.max_longitude,
-            dark_sky_required=req.dark_sky_required,
-            min_bortle_class=req.min_bortle_class,
-            equipment_needed=req.equipment_needed,
-            viewing_notes=req.notes,
-            source=event.source,
-            url=event.url,
-        )
-        db_session.add(model)
-
-    db_session.commit()
-    logger.info(f"Added {len(all_events)} space events to database")
+    logger.info("Populating space events database...")
+    seed_space_events(db_session, force=True)
 
 
 def get_upcoming_events(
@@ -429,7 +394,7 @@ def get_upcoming_events(
     Returns:
         List of SpaceEvent objects, sorted by date
     """
-    from datetime import UTC, timedelta
+    from datetime import timedelta
 
     from sqlalchemy import and_
 

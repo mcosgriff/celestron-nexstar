@@ -1,0 +1,156 @@
+[
+  {
+    "name": "Big Dipper",
+    "alt_names": "The Plough,Ursa Major asterism",
+    "ra_hours": 11.5,
+    "dec_degrees": 53.0,
+    "size_degrees": 25.0,
+    "parent_constellation": "Ursa Major",
+    "description": "Seven bright stars forming a ladle shape. Use the pointer stars (Dubhe and Merak) to find Polaris",
+    "stars": "Dubhe,Merak,Phecda,Megrez,Alioth,Mizar,Alkaid",
+    "season": "Spring"
+  },
+  {
+    "name": "Little Dipper",
+    "alt_names": "Ursa Minor asterism",
+    "ra_hours": 15.0,
+    "dec_degrees": 75.0,
+    "size_degrees": 20.0,
+    "parent_constellation": "Ursa Minor",
+    "description": "Seven stars forming a smaller ladle. Polaris marks the end of the handle and North Celestial Pole",
+    "stars": "Polaris,Kochab,Pherkad",
+    "season": "Year-round"
+  },
+  {
+    "name": "Summer Triangle",
+    "alt_names": "Great Triangle",
+    "ra_hours": 19.5,
+    "dec_degrees": 35.0,
+    "size_degrees": 50.0,
+    "parent_constellation": null,
+    "description": "Large triangle formed by three of the brightest stars in the summer sky",
+    "stars": "Vega,Deneb,Altair",
+    "season": "Summer"
+  },
+  {
+    "name": "Winter Triangle",
+    "alt_names": "Great Southern Triangle",
+    "ra_hours": 6.5,
+    "dec_degrees": -5.0,
+    "size_degrees": 60.0,
+    "parent_constellation": null,
+    "description": "Large triangle connecting the brightest stars of winter: Sirius, Procyon, and Betelgeuse",
+    "stars": "Sirius,Procyon,Betelgeuse",
+    "season": "Winter"
+  },
+  {
+    "name": "Winter Hexagon",
+    "alt_names": "Winter Circle",
+    "ra_hours": 6.0,
+    "dec_degrees": 10.0,
+    "size_degrees": 70.0,
+    "parent_constellation": null,
+    "description": "Six bright stars forming a large hexagon dominating winter skies",
+    "stars": "Sirius,Rigel,Aldebaran,Capella,Pollux,Procyon",
+    "season": "Winter"
+  },
+  {
+    "name": "Spring Triangle",
+    "alt_names": "Great Diamond",
+    "ra_hours": 13.0,
+    "dec_degrees": 25.0,
+    "size_degrees": 55.0,
+    "parent_constellation": null,
+    "description": "Triangle of three bright stars marking the spring sky",
+    "stars": "Arcturus,Spica,Regulus",
+    "season": "Spring"
+  },
+  {
+    "name": "Great Square of Pegasus",
+    "alt_names": "Autumn Square",
+    "ra_hours": 23.0,
+    "dec_degrees": 20.0,
+    "size_degrees": 20.0,
+    "parent_constellation": "Pegasus",
+    "description": "Four stars forming a large square. Alpheratz actually belongs to Andromeda",
+    "stars": "Markab,Scheat,Algenib,Alpheratz",
+    "season": "Fall"
+  },
+  {
+    "name": "Northern Cross",
+    "alt_names": "Cygnus Cross",
+    "ra_hours": 20.5,
+    "dec_degrees": 42.0,
+    "size_degrees": 25.0,
+    "parent_constellation": "Cygnus",
+    "description": "Cross shape formed by the main stars of Cygnus the Swan",
+    "stars": "Deneb,Albireo,Sadr",
+    "season": "Summer"
+  },
+  {
+    "name": "Pleiades",
+    "alt_names": "Seven Sisters,M45",
+    "ra_hours": 3.75,
+    "dec_degrees": 24.0,
+    "size_degrees": 2.0,
+    "parent_constellation": "Taurus",
+    "description": "Stunning open star cluster visible to naked eye. Six or seven stars easily visible",
+    "stars": "Alcyone,Atlas,Electra,Maia,Merope,Taygeta,Pleione",
+    "season": "Winter"
+  },
+  {
+    "name": "Hyades",
+    "alt_names": "Face of the Bull",
+    "ra_hours": 4.5,
+    "dec_degrees": 16.0,
+    "size_degrees": 5.5,
+    "parent_constellation": "Taurus",
+    "description": "V-shaped cluster forming the bull's face. Aldebaran is foreground star, not cluster member",
+    "stars": "Aldebaran,Theta Tauri",
+    "season": "Winter"
+  },
+  {
+    "name": "Orion's Belt",
+    "alt_names": "The Belt,Three Kings",
+    "ra_hours": 5.6,
+    "dec_degrees": -1.2,
+    "size_degrees": 3.0,
+    "parent_constellation": "Orion",
+    "description": "Three bright stars in a straight line. Points to Sirius and Aldebaran",
+    "stars": "Alnitak,Alnilam,Mintaka",
+    "season": "Winter"
+  },
+  {
+    "name": "Sickle of Leo",
+    "alt_names": "Question Mark",
+    "ra_hours": 10.3,
+    "dec_degrees": 18.0,
+    "size_degrees": 20.0,
+    "parent_constellation": "Leo",
+    "description": "Backward question mark shape forming the lion's head and mane",
+    "stars": "Regulus,Algieba,Adhafera",
+    "season": "Spring"
+  },
+  {
+    "name": "Teapot",
+    "alt_names": "Sagittarius Teapot",
+    "ra_hours": 19.0,
+    "dec_degrees": -27.0,
+    "size_degrees": 15.0,
+    "parent_constellation": "Sagittarius",
+    "description": "Eight stars forming a teapot shape. The spout points toward Scorpius",
+    "stars": "Kaus Australis,Nunki,Ascella",
+    "season": "Summer"
+  },
+  {
+    "name": "False Cross",
+    "alt_names": "Diamond Cross",
+    "ra_hours": 8.75,
+    "dec_degrees": -58.0,
+    "size_degrees": 10.0,
+    "parent_constellation": null,
+    "description": "Cross shape often confused with the Southern Cross, but larger and dimmer",
+    "stars": "Aspidiske,Markeb",
+    "season": "Spring"
+  }
+]

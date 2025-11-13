@@ -480,19 +480,11 @@ def setup(
             star_mapping_count = session.scalar(select(func.count(StarNameMappingModel.hr_number))) or 0
 
             if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
-                console.print("[dim]Populating static reference data...[/dim]")
-                from ...api.constellations import populate_constellation_database
-                from ...api.meteor_showers import populate_meteor_shower_database
-                from ...api.space_events import populate_space_events_database
-                from ...api.star_name_mappings import populate_star_name_mappings_database
-                from ...api.vacation_planning import populate_dark_sky_sites_database
+                console.print("[dim]Seeding static reference data...[/dim]")
+                from ...api.database_seeder import seed_all
 
-                populate_meteor_shower_database(session)
-                populate_constellation_database(session)
-                populate_dark_sky_sites_database(session)
-                populate_space_events_database(session)
-                populate_star_name_mappings_database(session)
-                console.print("[green]✓[/green] Static reference data populated")
+                seed_all(session, force=False)
+                console.print("[green]✓[/green] Static reference data seeded")
             else:
                 console.print("[green]✓[/green] Static reference data already exists")
     except Exception as e:
@@ -537,6 +529,104 @@ def setup(
         console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
     except Exception:
         pass
+
+
+@app.command("seed", rich_help_panel="Database Management")
+def seed_database(
+    force: bool = typer.Option(False, "--force", "-f", help="Clear existing data before seeding"),
+    status: bool = typer.Option(False, "--status", "-s", help="Show current seed data status and exit"),
+) -> None:
+    """
+    Seed the database with static reference data.
+
+    Populates the database with static reference data from seed files:
+    - Star name mappings
+    - Meteor showers
+    - Constellations and asterisms
+    - Dark sky sites
+    - Space events calendar
+
+    This command is idempotent - it can be run multiple times without creating duplicates.
+    Use --force to clear existing data before seeding.
+    Use --status to show current seed data status without seeding.
+
+    Examples:
+        nexstar data seed
+        nexstar data seed --force
+        nexstar data seed --status
+    """
+    from ...api.database_seeder import get_seed_status, seed_all
+    from ...api.models import get_db_session
+
+    # If status flag is set, show status and exit
+    if status:
+        console.print("\n[bold cyan]Seed Data Status[/bold cyan]\n")
+        try:
+            with get_db_session() as db_session:
+                status_data = get_seed_status(db_session)
+
+                # Create a table to display status
+                from rich.table import Table
+
+                table = Table(show_header=True, header_style="bold", show_lines=False)
+                table.add_column("Data Type", style="cyan", width=25)
+                table.add_column("Count", justify="right", width=10)
+                table.add_column("Status", width=15)
+
+                for data_type, count in status_data.items():
+                    status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+
+                    display_name = data_type.replace("_", " ").title()
+                    table.add_row(display_name, str(count), status_str)
+
+                console.print(table)
+
+                total_records = sum(status_data.values())
+                console.print(f"\n[bold]Total seed records:[/bold] {total_records}")
+                console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
+        except Exception as e:
+            console.print(f"\n[red]✗[/red] Error checking seed status: {e}\n")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise typer.Exit(code=1) from e
+        return
+
+    console.print("\n[bold cyan]Seeding database with static reference data[/bold cyan]\n")
+
+    try:
+        with get_db_session() as db_session:
+            results = seed_all(db_session, force=force)
+
+            # Display results
+            total_added = sum(results.values())
+            if total_added > 0:
+                console.print("\n[bold green]✓ Seeding complete![/bold green]")
+                console.print("\n[bold]Summary:[/bold]")
+                for data_type, count in results.items():
+                    if count > 0:
+                        console.print(
+                            f"  [green]✓[/green] {data_type.replace('_', ' ').title()}: {count} record(s) added"
+                        )
+                    else:
+                        console.print(
+                            f"  [dim]•[/dim] {data_type.replace('_', ' ').title()}: already seeded (no new records)"
+                        )
+                console.print(f"\n[dim]Total records added: {total_added}[/dim]\n")
+            else:
+                console.print("\n[bold]✓ All data already seeded[/bold]")
+                console.print("[dim]No new records were added. Use --force to re-seed all data.[/dim]\n")
+
+    except FileNotFoundError as e:
+        console.print(f"\n[red]✗[/red] Seed data file not found: {e}\n")
+        console.print("[dim]Make sure seed data files exist in the seed directory.[/dim]\n")
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error seeding database: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
 
 
 @app.command("init-static", rich_help_panel="Database Management")
