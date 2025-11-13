@@ -40,7 +40,7 @@ def check_database_setup() -> None:
 
     # Check if schema exists (objects table)
     try:
-        from sqlalchemy import inspect, text
+        from sqlalchemy import inspect
 
         inspector = inspect(db._engine)
         existing_tables = set(inspector.get_table_names())
@@ -52,8 +52,12 @@ def check_database_setup() -> None:
             )
 
         # Check if there's any catalog data
+        from sqlalchemy import func, select
+
+        from ...api.models import CelestialObjectModel
+
         with db._get_session() as session:
-            result = session.execute(text("SELECT COUNT(*) FROM objects")).scalar() or 0
+            result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
             if result == 0:
                 raise _show_setup_error(
                     "Database is empty.",

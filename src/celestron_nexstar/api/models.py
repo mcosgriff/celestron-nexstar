@@ -11,7 +11,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+import sqlalchemy as sa
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 
@@ -122,6 +123,7 @@ class ObservationModel(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     location_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     location_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_geohash: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
     location_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Viewing conditions
@@ -193,6 +195,46 @@ class UserPreferenceModel(Base):
         return f"<UserPreference(key='{self.key}', category='{self.category}')>"
 
 
+class LightPollutionGridModel(Base):
+    """
+    SQLAlchemy model for light pollution grid data.
+
+    Stores light pollution SQM values for grid points across the world.
+    Uses geohash for efficient spatial indexing and proximity searches.
+    """
+
+    __tablename__ = "light_pollution_grid"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Location
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    geohash: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+
+    # Light pollution data
+    sqm_value: Mapped[float] = mapped_column(Float, nullable=False)
+    region: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[str] = mapped_column(
+        String, nullable=True, server_default=text("CURRENT_TIMESTAMP")
+    )  # TEXT in SQLite
+
+    # Composite indexes and constraints
+    __table_args__ = (
+        Index("idx_lp_geohash", "geohash"),
+        Index("idx_lp_lat_lon", "latitude", "longitude"),
+        Index("idx_lp_region", "region"),
+        sa.UniqueConstraint("latitude", "longitude", name="uq_lp_lat_lon"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of light pollution grid point."""
+        return f"<LightPollutionGrid(id={self.id}, lat={self.latitude}, lon={self.longitude}, sqm={self.sqm_value})>"
+
+
 class WeatherForecastModel(Base):
     """
     SQLAlchemy model for hourly weather forecasts.
@@ -209,6 +251,7 @@ class WeatherForecastModel(Base):
     # Location (used to identify forecasts for a location)
     latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    geohash: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
 
     # Forecast timestamp (when this forecast is for)
     forecast_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -251,6 +294,7 @@ class ISSPassModel(Base):
     # Location (rounded to ~1km precision for cache key)
     latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    geohash: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
 
     # Pass timing
     rise_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -422,6 +466,7 @@ class DarkSkySiteModel(Base):
     # Location
     latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    geohash: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
 
     # Sky quality
     bortle_class: Mapped[int] = mapped_column(Integer, nullable=False, index=True)  # 1-9

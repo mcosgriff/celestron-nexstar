@@ -7,7 +7,9 @@ Commands for managing observer location.
 import asyncio
 
 import typer
+from click import Context
 from rich.table import Table
+from typer.core import TyperGroup
 
 from celestron_nexstar.api.observer import (
     ObserverLocation,
@@ -20,7 +22,16 @@ from ..utils.output import console, print_error, print_info, print_json, print_s
 from ..utils.state import ensure_connected
 
 
-app = typer.Typer(help="Observer location commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Observer location commands", cls=SortedCommandsGroup)
 
 
 @app.command("set", rich_help_panel="Telescope Location")

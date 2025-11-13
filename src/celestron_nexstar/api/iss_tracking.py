@@ -403,7 +403,11 @@ async def get_iss_passes_cached(
 
     # Cache in database
     if db_session is not None and passes:
+        from .geohash_utils import encode
         from .models import ISSPassModel
+
+        # Calculate geohash for this location (precision 9 for ~5m accuracy)
+        location_geohash = encode(lat_rounded, lon_rounded, precision=9)
 
         # Delete old cached passes for this location
         db_session.query(ISSPassModel).filter(
@@ -417,6 +421,7 @@ async def get_iss_passes_cached(
             pass_model = ISSPassModel(
                 latitude=lat_rounded,
                 longitude=lon_rounded,
+                geohash=location_geohash,
                 rise_time=iss_pass.rise_time,
                 max_time=iss_pass.max_time,
                 set_time=iss_pass.set_time,

@@ -33,7 +33,6 @@ from .weather import (
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
-    fetch_hourly_weather_forecast,
     fetch_weather,
 )
 
@@ -182,7 +181,6 @@ class ObservationPlanner:
         elif start_time.tzinfo is None:
             start_time = start_time.replace(tzinfo=UTC)
 
-        # Fetch weather (synchronous for now)
         # Create location object for weather API
         observer_location = ObserverLocation(
             name=location_name or "Current Location",
@@ -191,7 +189,82 @@ class ObservationPlanner:
             elevation=0.0,
         )
 
-        weather = asyncio.run(fetch_weather(observer_location))
+        # Determine which weather time to use:
+        # - If daytime: use weather at sunset
+        # - If nighttime: use weather at current hour (rounded down)
+        now_utc = datetime.now(UTC)
+        target_weather_time: datetime | None = None
+        sunset: datetime | None = None
+
+        # Check if it's dark (after sunset, before sunrise)
+        is_dark = False
+        try:
+            from .sun_moon import calculate_sun_times
+
+            sun_times = calculate_sun_times(lat, lon, start_time)
+            sunset = sun_times.get("sunset")
+            sunrise = sun_times.get("sunrise")
+
+            if sunset and sunrise:
+                sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+                sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
+                if sunrise_utc < sunset_utc:
+                    sunrise_utc = sunrise_utc + timedelta(days=1)
+
+                if sunset_utc <= sunrise_utc:
+                    is_dark = sunset_utc <= now_utc <= sunrise_utc
+                else:
+                    is_dark = now_utc >= sunset_utc or now_utc <= sunrise_utc
+        except Exception:
+            is_dark = True  # Assume dark if we can't determine
+
+        if not is_dark:
+            # Daytime: use sunset weather
+            if sunset:
+                target_weather_time = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+                target_weather_time = target_weather_time.replace(minute=0, second=0, microsecond=0)
+        else:
+            # Nighttime: use current hour weather (rounded down)
+            target_weather_time = now_utc.replace(minute=0, second=0, microsecond=0)
+
+        # Try to get weather from hourly forecast at target time, fall back to current weather
+        weather = None
+        if target_weather_time:
+            try:
+                from .weather import WeatherData, fetch_hourly_weather_forecast
+
+                hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
+                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
+                    observer_location, hours=hours_ahead
+                )
+
+                if hourly_forecasts:
+                    # Find the forecast closest to target time
+                    closest_forecast: HourlySeeingForecast | None = None
+                    min_time_diff = timedelta.max
+                    for f in hourly_forecasts:
+                        if f.timestamp is not None:
+                            time_diff = abs(f.timestamp - target_weather_time)
+                            if time_diff < min_time_diff:
+                                min_time_diff = time_diff
+                                closest_forecast = f
+
+                    if closest_forecast:
+                        # Create WeatherData from hourly forecast
+                        weather = WeatherData(
+                            temperature_c=closest_forecast.temperature_f,  # Note: WeatherData uses C but we're passing F
+                            dew_point_f=closest_forecast.dew_point_f,
+                            humidity_percent=closest_forecast.humidity_percent,
+                            cloud_cover_percent=closest_forecast.cloud_cover_percent,
+                            wind_speed_ms=closest_forecast.wind_speed_mph,  # Note: WeatherData uses m/s but we're passing mph
+                        )
+            except Exception:
+                pass
+
+        # Fall back to current weather if we don't have hourly forecast data
+        if weather is None:
+            weather = asyncio.run(fetch_weather(observer_location))
+
         weather_status, weather_warning = assess_observing_conditions(weather)
         is_weather_suitable = weather_status in ("excellent", "good", "fair")
 

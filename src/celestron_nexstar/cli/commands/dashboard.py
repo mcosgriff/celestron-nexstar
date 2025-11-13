@@ -5,12 +5,23 @@ Launches the full-screen TUI dashboard.
 """
 
 import typer
+from click import Context
 from rich.console import Console
+from typer.core import TyperGroup
 
 from ..tui import TUIApplication
 
 
-app = typer.Typer(help="Full-screen dashboard commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Full-screen dashboard commands", cls=SortedCommandsGroup)
 console = Console()
 
 

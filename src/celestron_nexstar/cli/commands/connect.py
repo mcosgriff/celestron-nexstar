@@ -5,7 +5,9 @@ Commands for managing telescope connection.
 """
 
 import typer
+from click import Context
 from rich.console import Console
+from typer.core import TyperGroup
 
 from celestron_nexstar import NexStarTelescope, TelescopeConfig
 
@@ -13,7 +15,16 @@ from ..utils.output import print_error, print_json, print_success, print_telesco
 from ..utils.state import clear_telescope, get_telescope, set_telescope
 
 
-app = typer.Typer(help="Telescope connection commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Telescope connection commands", cls=SortedCommandsGroup)
 console = Console()
 
 

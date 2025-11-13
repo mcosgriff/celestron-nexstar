@@ -11,8 +11,10 @@ from datetime import datetime
 from pathlib import Path
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ...api.observer import ObserverLocation, geocode_location, get_observer_location
 from ...api.space_events import (
@@ -26,7 +28,16 @@ from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 from ...cli.utils.selection import select_from_list
 
 
-app = typer.Typer(help="Space events calendar and viewing recommendations")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Space events calendar and viewing recommendations", cls=SortedCommandsGroup)
 console = Console()
 
 

@@ -12,8 +12,10 @@ from datetime import datetime
 from pathlib import Path
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ...api.aurora import check_aurora_visibility
 from ...api.comets import get_visible_comets
@@ -30,7 +32,16 @@ from ...api.weather import fetch_hourly_weather_forecast
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
 
-app = typer.Typer(help="Vacation planning for telescope viewing")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Vacation planning for telescope viewing", cls=SortedCommandsGroup)
 console = Console()
 
 

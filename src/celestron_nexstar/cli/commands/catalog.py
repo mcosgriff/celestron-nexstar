@@ -7,10 +7,12 @@ Commands for searching and managing celestial object catalogs.
 from pathlib import Path
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from typer.core import TyperGroup
 
 from celestron_nexstar.api.catalogs import (
     CelestialObject,
@@ -36,7 +38,16 @@ from ..utils.selection import select_from_list, select_object
 from ..utils.state import ensure_connected
 
 
-app = typer.Typer(help="Celestial object catalog commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Celestial object catalog commands", cls=SortedCommandsGroup)
 
 
 def _generate_export_filename(catalog: str) -> Path:

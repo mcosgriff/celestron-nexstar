@@ -7,13 +7,24 @@ Commands for slewing telescope to target coordinates.
 import time
 
 import typer
+from click import Context
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from typer.core import TyperGroup
 
 from ..utils.output import console, print_error, print_info, print_success
 from ..utils.state import ensure_connected
 
 
-app = typer.Typer(help="Telescope slew (goto) commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Telescope slew (goto) commands", cls=SortedCommandsGroup)
 
 
 @app.command(rich_help_panel="Slew to Coordinates")

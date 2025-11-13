@@ -9,16 +9,27 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.table import Table
 from timezonefinder import TimezoneFinder
+from typer.core import TyperGroup
 
 from ...api.observation_planner import ObservationPlanner, ObservingTarget
 from ...cli.utils.export import FileConsole
 from ...cli.utils.selection import select_from_list
 
 
-app = typer.Typer(help="Telescope viewing commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Telescope viewing commands", cls=SortedCommandsGroup)
 console = Console()
 _tz_finder = TimezoneFinder()
 

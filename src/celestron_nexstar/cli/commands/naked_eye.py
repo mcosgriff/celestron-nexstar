@@ -12,9 +12,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.table import Table
 from timezonefinder import TimezoneFinder
+from typer.core import TyperGroup
 
 from ...api.catalogs import CelestialObject
 from ...api.compass import azimuth_to_compass_8point, format_object_path
@@ -30,7 +32,16 @@ from ...api.utils import ra_dec_to_alt_az
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
 
-app = typer.Typer(help="Naked-eye viewing commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Naked-eye viewing commands", cls=SortedCommandsGroup)
 console = Console()
 _tz_finder = TimezoneFinder()
 

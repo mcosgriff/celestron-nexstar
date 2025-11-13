@@ -5,8 +5,10 @@ Commands for managing telescope and eyepiece optical configuration.
 """
 
 import typer
+from click import Context
 from rich.prompt import Prompt
 from rich.table import Table
+from typer.core import TyperGroup
 
 from celestron_nexstar.api.enums import SkyBrightness
 from celestron_nexstar.api.optics import (
@@ -26,7 +28,16 @@ from celestron_nexstar.api.optics import (
 from ..utils.output import console, print_error, print_info, print_json, print_success
 
 
-app = typer.Typer(help="Optical configuration commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Optical configuration commands", cls=SortedCommandsGroup)
 
 
 @app.command("config", rich_help_panel="Configuration")

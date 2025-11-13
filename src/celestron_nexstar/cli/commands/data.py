@@ -5,14 +5,26 @@ Commands for importing and managing catalog data sources.
 """
 
 import asyncio
+from typing import Any
 
 import typer
+from click import Context
 from rich.console import Console
+from typer.core import TyperGroup
 
 from ..data_import import import_data_source, list_data_sources
 
 
-app = typer.Typer(help="Data import and management commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Data import and management commands", cls=SortedCommandsGroup)
 console = Console()
 
 
@@ -173,11 +185,15 @@ def rebuild_fts() -> None:
         db.repopulate_fts_table()
 
         # Get count of indexed objects
-        from sqlalchemy import text
+        from sqlalchemy import func, select, text
+
+        from ...api.models import CelestialObjectModel
 
         with db._get_session() as session:
+            # FTS5 table requires raw SQL (virtual table)
             fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
-            objects_count = session.execute(text("SELECT COUNT(*) FROM objects")).scalar() or 0
+            # Use SQLAlchemy for objects count
+            objects_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
 
         console.print("[green]✓[/green] FTS index rebuilt successfully")
         console.print(f"[dim]  Indexed {fts_count:,} objects out of {objects_count:,} total[/dim]\n")
@@ -283,7 +299,7 @@ def setup(
         nexstar data setup --force  # Skip confirmation prompt
     """
     from rich.table import Table
-    from sqlalchemy import inspect, text
+    from sqlalchemy import inspect
 
     from ...api.database import get_database, rebuild_database
     from ...api.models import get_db_session
@@ -304,10 +320,14 @@ def setup(
                 should_rebuild = True
             else:
                 # Check if we have catalog data
+                from sqlalchemy import func, select
+
+                from ...api.models import CelestialObjectModel
+
                 with db._get_session() as session:
-                    result = session.execute(text("SELECT COUNT(*) FROM objects")).scalar() or 0
-                    if result > 0:
-                        console.print(f"[yellow]⚠[/yellow] Database already exists with {result:,} objects")
+                    object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+                    if object_count > 0:
+                        console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
                         console.print("[dim]To import all available data, the database needs to be rebuilt.[/dim]\n")
 
                         if not force:
@@ -356,7 +376,7 @@ def setup(
             console.print("[dim]  • Dark sky sites[/dim]")
             console.print("[dim]  • Space events[/dim]")
 
-            result = rebuild_database(
+            result: dict[str, Any] = rebuild_database(
                 backup_dir=None,  # Don't backup during setup
                 sources=list(DATA_SOURCES.keys()),  # Import all sources
                 mag_limit=mag_limit,
@@ -444,11 +464,20 @@ def setup(
     # Ensure static data is populated (rebuild_database should have done this, but double-check)
     console.print("[cyan]Ensuring static reference data is populated...[/cyan]")
     try:
+        from sqlalchemy import func, select
+
+        from ...api.models import (
+            ConstellationModel,
+            DarkSkySiteModel,
+            MeteorShowerModel,
+            StarNameMappingModel,
+        )
+
         with db._get_session() as session:
-            meteor_count = session.execute(text("SELECT COUNT(*) FROM meteor_showers")).scalar() or 0
-            constellation_count = session.execute(text("SELECT COUNT(*) FROM constellations")).scalar() or 0
-            dark_sky_count = session.execute(text("SELECT COUNT(*) FROM dark_sky_sites")).scalar() or 0
-            star_mapping_count = session.execute(text("SELECT COUNT(*) FROM star_name_mappings")).scalar() or 0
+            meteor_count = session.scalar(select(func.count(MeteorShowerModel.id))) or 0
+            constellation_count = session.scalar(select(func.count(ConstellationModel.id))) or 0
+            dark_sky_count = session.scalar(select(func.count(DarkSkySiteModel.id))) or 0
+            star_mapping_count = session.scalar(select(func.count(StarNameMappingModel.hr_number))) or 0
 
             if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
                 console.print("[dim]Populating static reference data...[/dim]")
@@ -627,14 +656,22 @@ def stats() -> None:
             ).fetchone()
 
             if table_exists:
-                # Get total count
-                count_result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
-                total_count = count_result[0] if count_result is not None else 0
+                # Get total count using SQLAlchemy
+                from sqlalchemy import func, select
+
+                from ...api.models import LightPollutionGridModel
+
+                total_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
 
                 if total_count > 0:
-                    # Get SQM range
+                    # Get SQM range using SQLAlchemy
+                    from sqlalchemy import func
+
                     sqm_range = session.execute(
-                        text("SELECT MIN(sqm_value), MAX(sqm_value) FROM light_pollution_grid")
+                        select(
+                            func.min(LightPollutionGridModel.sqm_value),
+                            func.max(LightPollutionGridModel.sqm_value),
+                        )
                     ).fetchone()
                     if sqm_range is not None:
                         sqm_min = sqm_range[0] if sqm_range[0] is not None else None
@@ -643,20 +680,18 @@ def stats() -> None:
                         sqm_min = None
                         sqm_max = None
 
-                    # Get coverage by region
-                    region_counts = session.execute(
-                        text(
-                            "SELECT region, COUNT(*) FROM light_pollution_grid WHERE region IS NOT NULL GROUP BY region ORDER BY region"
+                    # Get coverage by region using SQLAlchemy
+                    region_counts = (
+                        session.execute(
+                            select(
+                                LightPollutionGridModel.region,
+                                func.count(LightPollutionGridModel.id),
+                            )
+                            .where(LightPollutionGridModel.region.isnot(None))
+                            .group_by(LightPollutionGridModel.region)
+                            .order_by(LightPollutionGridModel.region)
                         )
                     ).fetchall()
-
-                    # Check for SpatiaLite
-                    spatialite_available = False
-                    try:
-                        session.execute(text("SELECT load_extension('mod_spatialite')"))
-                        spatialite_available = True
-                    except Exception:
-                        pass
 
                     lp_table = Table(title="\nLight Pollution Data")
                     lp_table.add_column("Metric", style="cyan")
@@ -665,10 +700,7 @@ def stats() -> None:
                     lp_table.add_row("Total grid points", f"{total_count:,}")
                     if sqm_min is not None and sqm_max is not None:
                         lp_table.add_row("SQM range", f"{sqm_min:.2f} to {sqm_max:.2f}")
-                    if spatialite_available:
-                        lp_table.add_row("SpatiaLite", "[green]Available[/green]")
-                    else:
-                        lp_table.add_row("SpatiaLite", "[dim]Not available[/dim]")
+                    lp_table.add_row("Spatial indexing", "[green]Geohash[/green]")
 
                     console.print(lp_table)
 
@@ -1097,7 +1129,7 @@ def rebuild(
             task = progress.add_task("Rebuilding database...", total=None)
 
             # Run rebuild
-            result = rebuild_database(
+            result: dict[str, Any] = rebuild_database(
                 backup_dir=backup_path,
                 sources=source_list,
                 mag_limit=mag_limit,
@@ -1176,3 +1208,154 @@ def rebuild(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("migrate", rich_help_panel="Database Management")
+def run_migrations(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without applying changes"),
+) -> None:
+    """
+    Check for pending Alembic migrations and apply them if needed.
+
+    This command checks the current database revision against the latest migration
+    and applies any pending migrations. If the database is already up to date,
+    it will report that no migrations are needed.
+
+    Examples:
+        nexstar data migrate
+        nexstar data migrate --dry-run  # Preview what would be migrated
+    """
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    from alembic import command  # type: ignore[attr-defined]
+
+    from ...api.database import get_database
+
+    console.print("\n[bold cyan]Checking database migrations...[/bold cyan]\n")
+
+    db = get_database()
+
+    # Check if database exists
+    if not db.db_path.exists():
+        console.print("[yellow]⚠[/yellow] Database does not exist. Creating it...")
+        # Create empty database file
+        db.db_path.parent.mkdir(parents=True, exist_ok=True)
+        db.db_path.touch()
+
+    # Configure Alembic
+    alembic_cfg = Config("alembic.ini")
+    # Always set database URL to ensure we're using the correct database
+    # Use the same database path as the database instance
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.db_path}")
+
+    try:
+        # Get current revision from database
+        with db._engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+
+        # Get head revision from script directory
+        script = ScriptDirectory.from_config(alembic_cfg)
+        head_rev = script.get_current_head()
+
+        # Check if there are pending migrations
+        migrations_to_apply: list[str] | str = "unknown"
+        if current_rev is None:
+            console.print("[yellow]⚠[/yellow] Database has no migration history")
+            console.print("[dim]This is normal for a new database. Will apply all migrations.[/dim]\n")
+            pending = True
+            migrations_to_apply = "all migrations"
+        elif head_rev is not None and current_rev == head_rev:
+            console.print("[green]✓[/green] Database is up to date")
+            console.print(f"[dim]Current revision: {current_rev}[/dim]\n")
+            pending = False
+        else:
+            # Get the list of revisions that need to be applied
+            pending = True
+            migrations_to_apply_list: list[str] = []
+            try:
+                # Get the upgrade path from current to head
+                # walk_revisions returns revisions in order from start to end
+                if head_rev is not None and current_rev is not None:
+                    upgrade_path = list(script.walk_revisions(current_rev, head_rev))
+                    migrations_to_apply_list = [rev.revision for rev in upgrade_path if rev.revision != current_rev]
+
+                    console.print("[yellow]⚠[/yellow] Database is not up to date")
+                    console.print(f"[dim]Current revision: {current_rev}[/dim]")
+                    console.print(f"[dim]Head revision: {head_rev}[/dim]")
+                    console.print(f"[dim]Pending migrations: {len(migrations_to_apply_list)}[/dim]\n")
+
+                    # Show which migrations will be applied
+                    if migrations_to_apply_list:
+                        console.print("[bold]Migrations to apply:[/bold]")
+                        for rev in migrations_to_apply_list:
+                            script_rev = script.get_revision(rev)
+                            if script_rev:
+                                console.print(f"  [cyan]{rev}[/cyan] - {script_rev.doc or '(no description)'}")
+                        console.print()
+                        migrations_to_apply = migrations_to_apply_list
+                    else:
+                        migrations_to_apply = "unknown"
+                else:
+                    migrations_to_apply = "unknown"
+            except Exception as e:
+                console.print(f"[yellow]⚠[/yellow] Could not determine upgrade path: {e}")
+                console.print(f"[dim]Current revision: {current_rev}[/dim]")
+                console.print(f"[dim]Head revision: {head_rev}[/dim]")
+                console.print("[dim]Will attempt to upgrade to head anyway.[/dim]\n")
+                migrations_to_apply = "unknown"
+
+        if not pending:
+            console.print("[bold green]No migrations needed![/bold green]\n")
+            return
+
+        if dry_run:
+            console.print("[bold yellow][DRY RUN] Would apply migrations:[/bold yellow]")
+            if isinstance(migrations_to_apply, list):
+                for rev in migrations_to_apply:
+                    console.print(f"  - {rev}")
+            else:
+                console.print(f"  - {migrations_to_apply}")
+            console.print("\n[dim]Run without --dry-run to apply migrations.[/dim]\n")
+            return
+
+        # Apply migrations
+        console.print("[cyan]Applying migrations...[/cyan]\n")
+        try:
+            # Dispose of existing connections to ensure Alembic uses fresh connections
+            db._engine.dispose()
+
+            # Use upgrade to head - this will apply ALL pending migrations in sequence
+            # Alembic will automatically apply all migrations from current state to head
+            command.upgrade(alembic_cfg, "head")
+            console.print("\n[bold green]✓ Migrations applied successfully![/bold green]\n")
+
+            # Verify the new revision after applying migrations
+            # Get a fresh connection to ensure we see the updated state
+            db._engine.dispose()  # Close existing connections
+            with db._engine.connect() as connection:
+                context = MigrationContext.configure(connection)
+                new_rev = context.get_current_revision()
+                head_rev_after = script.get_current_head()
+
+                if new_rev == head_rev_after:
+                    console.print(f"[dim]Database is now at revision: {new_rev}[/dim]\n")
+                else:
+                    console.print(f"[yellow]⚠[/yellow] Database revision: {new_rev}")
+                    console.print(f"[yellow]⚠[/yellow] Head revision: {head_rev_after}")
+                    console.print("[yellow]⚠[/yellow] Database may not be fully up to date. Run migrate again.\n")
+        except Exception as e:
+            console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise typer.Exit(code=1) from e
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e

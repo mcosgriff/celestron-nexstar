@@ -13,7 +13,6 @@ import logging
 import shutil
 import time
 from collections.abc import Sequence
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -152,20 +151,14 @@ class CatalogDatabase:
 
         self.db_path = Path(db_path)
 
-        # Use pysqlite3 if available (supports SpatiaLite extensions)
-        # Fall back to built-in sqlite3 if not available
-        try:
-            import pysqlite3
+        # Use built-in sqlite3 (no longer need pysqlite3 since SpatiaLite was removed)
+        import sqlite3
 
-            dbapi = pysqlite3
-        except ImportError:
-            import sqlite3
-
-            dbapi = sqlite3
+        dbapi = sqlite3
 
         self._engine = create_engine(
             f"sqlite:///{self.db_path}",
-            module=dbapi,  # Use pysqlite3 for extension support
+            module=dbapi,
             poolclass=None,  # No connection pooling for SQLite
             connect_args={
                 "check_same_thread": False,  # Allow multi-threaded access
@@ -188,14 +181,8 @@ class CatalogDatabase:
 
         @event.listens_for(self._engine, "connect")
         def set_sqlite_pragmas(dbapi_conn: Any, connection_record: Any) -> None:
-            """Set SQLite pragmas for performance and enable extension loading."""
+            """Set SQLite pragmas for performance."""
             cursor = dbapi_conn.cursor()
-
-            # Enable extension loading if supported (for SpatiaLite)
-            # Built-in sqlite3 may not support enable_load_extension
-            # This is fine - SpatiaLite is optional
-            with suppress(AttributeError):
-                dbapi_conn.enable_load_extension(True)
 
             cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
@@ -389,8 +376,15 @@ class CatalogDatabase:
             session.commit()
 
             # Verify the repopulation
+            # FTS5 table requires raw SQL (virtual table)
             fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
-            objects_count = session.execute(text("SELECT COUNT(*) FROM objects WHERE name IS NOT NULL")).scalar() or 0
+            # Use SQLAlchemy for objects count
+            from sqlalchemy import func, select
+
+            objects_count = (
+                session.scalar(select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.name.isnot(None)))
+                or 0
+            )
 
             logger.info(f"FTS table repopulated: {fts_count} entries (expected {objects_count})")
 
@@ -1231,7 +1225,11 @@ def rebuild_database(
         with get_db_session() as session:
             # Force refresh to ensure we have the latest mappings
             populate_star_name_mappings_database(session, force_refresh=True)
-            star_mapping_count = session.execute(text("SELECT COUNT(*) FROM star_name_mappings")).scalar() or 0
+            from sqlalchemy import func, select
+
+            from .models import StarNameMappingModel
+
+            star_mapping_count = session.scalar(select(func.count(StarNameMappingModel.hr_number))) or 0
             logger.info(f"Added {star_mapping_count} star name mappings")
             if star_mapping_count == 0:
                 logger.error("WARNING: No star name mappings were added! Yale BSC imports will not have common names.")
@@ -1311,15 +1309,25 @@ def rebuild_database(
             # Populate meteor showers
             logger.info("Populating meteor showers...")
             populate_meteor_shower_database(session)
-            meteor_count = session.execute(text("SELECT COUNT(*) FROM meteor_showers")).scalar() or 0
+            from sqlalchemy import func, select
+
+            from .models import (
+                AsterismModel,
+                ConstellationModel,
+                DarkSkySiteModel,
+                MeteorShowerModel,
+                SpaceEventModel,
+            )
+
+            meteor_count = session.scalar(select(func.count(MeteorShowerModel.id))) or 0
             static_data["meteor_showers"] = meteor_count
             logger.info(f"Added {meteor_count} meteor showers")
 
             # Populate constellations
             logger.info("Populating constellations and asterisms...")
             populate_constellation_database(session)
-            constellation_count = session.execute(text("SELECT COUNT(*) FROM constellations")).scalar() or 0
-            asterism_count = session.execute(text("SELECT COUNT(*) FROM asterisms")).scalar() or 0
+            constellation_count = session.scalar(select(func.count(ConstellationModel.id))) or 0
+            asterism_count = session.scalar(select(func.count(AsterismModel.id))) or 0
             static_data["constellations"] = constellation_count
             static_data["asterisms"] = asterism_count
             logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
@@ -1327,14 +1335,14 @@ def rebuild_database(
             # Populate dark sky sites
             logger.info("Populating dark sky sites...")
             populate_dark_sky_sites_database(session)
-            dark_sky_count = session.execute(text("SELECT COUNT(*) FROM dark_sky_sites")).scalar() or 0
+            dark_sky_count = session.scalar(select(func.count(DarkSkySiteModel.id))) or 0
             static_data["dark_sky_sites"] = dark_sky_count
             logger.info(f"Added {dark_sky_count} dark sky sites")
 
             # Populate space events
             logger.info("Populating space events...")
             populate_space_events_database(session)
-            space_events_count = session.execute(text("SELECT COUNT(*) FROM space_events")).scalar() or 0
+            space_events_count = session.scalar(select(func.count(SpaceEventModel.id))) or 0
             static_data["space_events"] = space_events_count
             logger.info(f"Added {space_events_count} space events")
 

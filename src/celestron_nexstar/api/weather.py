@@ -538,8 +538,14 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                         .first()
                     )
 
+                    # Calculate geohash for this location (precision 9 for ~5m accuracy)
+                    from .geohash_utils import encode
+
+                    location_geohash = encode(location.latitude, location.longitude, precision=9)
+
                     if existing:
                         # Update existing forecast
+                        existing.geohash = location_geohash
                         existing.temperature_f = forecast_item.temperature_f
                         existing.dew_point_f = forecast_item.dew_point_f
                         existing.humidity_percent = forecast_item.humidity_percent
@@ -552,6 +558,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                         db_forecast = WeatherForecastModel(
                             latitude=location.latitude,
                             longitude=location.longitude,
+                            geohash=location_geohash,
                             forecast_timestamp=forecast_item.timestamp,
                             temperature_f=forecast_item.temperature_f,
                             dew_point_f=forecast_item.dew_point_f,

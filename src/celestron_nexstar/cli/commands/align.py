@@ -8,10 +8,12 @@ import logging
 from datetime import UTC, datetime
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ...api.alignment import suggest_skyalign_objects
 from ...api.observation_planner import ObservationPlanner
@@ -24,8 +26,17 @@ from ..utils.state import ensure_connected
 logger = logging.getLogger(__name__)
 
 
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
 console = Console()
-app = typer.Typer(help="Alignment commands")
+app = typer.Typer(help="Alignment commands", cls=SortedCommandsGroup)
 
 
 @app.command(rich_help_panel="Alignment")

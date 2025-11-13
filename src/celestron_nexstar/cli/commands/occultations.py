@@ -7,14 +7,25 @@ Find star occultations by asteroids.
 from pathlib import Path
 
 import typer
+from click import Context
 from rich.console import Console
+from typer.core import TyperGroup
 
 from ...api.observer import get_observer_location
 from ...api.occultations import get_upcoming_occultations
 from ...cli.utils.export import create_file_console
 
 
-app = typer.Typer(help="Asteroid occultation predictions")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Asteroid occultation predictions", cls=SortedCommandsGroup)
 console = Console()
 
 

@@ -7,9 +7,11 @@ Commands for managing JPL ephemeris files for offline field use.
 from typing import Any, Literal, cast
 
 import typer
+from click import Context
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from typer.core import TyperGroup
 
 from celestron_nexstar.api.ephemeris_manager import (
     EPHEMERIS_FILES,
@@ -29,7 +31,16 @@ from ..utils.output import calculate_panel_width, console, print_error, print_in
 from ..utils.selection import select_from_list
 
 
-app = typer.Typer(help="Ephemeris file management")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Ephemeris file management", cls=SortedCommandsGroup)
 
 
 @app.command("list", rich_help_panel="File Management")

@@ -8,15 +8,26 @@ from datetime import datetime
 from pathlib import Path
 
 import typer
+from click import Context
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ...api.comets import CometVisibility, get_upcoming_comets, get_visible_comets
 from ...api.observer import ObserverLocation, get_observer_location
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
 
-app = typer.Typer(help="Comet tracking commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Comet tracking commands", cls=SortedCommandsGroup)
 console = Console()
 
 

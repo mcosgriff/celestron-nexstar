@@ -636,77 +636,67 @@ def check_aurora_visibility(
         from .solar_system import get_moon_info
         from .weather import fetch_hourly_weather_forecast, fetch_weather
 
-        # Check if we're looking for "tonight" (current time is during the day)
-        is_tonight_check = not is_dark and dt_utc <= now_utc + timedelta(hours=1)
-
-        if is_tonight_check:
-            # For "tonight" checks during the day, get forecasted cloud cover for tonight
+        # Determine which weather time to use:
+        # - If daytime: use weather at sunset
+        # - If nighttime: use weather at current hour (rounded down)
+        target_weather_time: datetime | None = None
+        if not is_dark:
+            # Daytime: use sunset weather
             try:
-                # Get sunset/sunrise times
                 sun_times = calculate_sun_times(location.latitude, location.longitude, dt_utc)
                 sunset = sun_times.get("sunset")
-                sunrise = sun_times.get("sunrise")
-
-                if sunset and sunrise:
-                    sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
-                    sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
-                    if sunrise_utc < sunset_utc:
-                        sunrise_utc = sunrise_utc + timedelta(days=1)
-
-                    # Get hourly forecast for tonight
-                    hours_needed = int((sunrise_utc - sunset_utc).total_seconds() / 3600) + 1
-                    from .weather import HourlySeeingForecast, fetch_hourly_weather_forecast
-
-                    hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
-                        location, hours=hours_needed
+                if sunset:
+                    target_weather_time = (
+                        sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
                     )
-
-                    if hourly_forecasts:
-                        # Find forecasts during tonight's nighttime period
-                        # Timestamps are already timezone-aware (UTC)
-                        tonight_forecasts = [
-                            f
-                            for f in hourly_forecasts
-                            if f.timestamp is not None and sunset_utc <= f.timestamp <= sunrise_utc
-                        ]
-
-                        if tonight_forecasts:
-                            # Use weighted average cloud cover for tonight
-                            # Weight peak viewing hours (midnight-2am local) more heavily
-                            cloud_covers_weighted = []
-                            total_weight = 0.0
-                            for f in tonight_forecasts:
-                                if f.cloud_cover_percent is not None and f.timestamp is not None:
-                                    # Weight: 2.0 for midnight-2am, 1.5 for 10pm-midnight and 2am-4am, 1.0 otherwise
-                                    hour = f.timestamp.hour
-                                    if 0 <= hour < 2:  # Midnight-2am (peak viewing)
-                                        weight = 2.0
-                                    elif (22 <= hour < 24) or (2 <= hour < 4):  # 10pm-midnight or 2am-4am
-                                        weight = 1.5
-                                    else:
-                                        weight = 1.0
-                                    cloud_covers_weighted.append((f.cloud_cover_percent, weight))
-                                    total_weight += weight
-
-                            if cloud_covers_weighted and total_weight > 0:
-                                cloud_cover = sum(cc * w for cc, w in cloud_covers_weighted) / total_weight
-                                logger.debug(
-                                    f"Using weighted forecasted cloud cover for tonight: {cloud_cover:.1f}% (weighted avg of {len(cloud_covers_weighted)} hours)"
-                                )
-
-                            # Get moon phase for tonight (use middle of nighttime period)
-                            try:
-                                midnight_tonight = sunset_utc + (sunrise_utc - sunset_utc) / 2
-                                moon_info = get_moon_info(location.latitude, location.longitude, midnight_tonight)
-                                if moon_info:
-                                    moon_illumination = moon_info.illumination
-                                    logger.debug(
-                                        f"Using moon phase for tonight (midnight): {moon_illumination * 100:.1f}%"
-                                    )
-                            except Exception as e:
-                                logger.debug(f"Could not get moon phase for tonight: {e}")
+                    # Round down to the hour
+                    target_weather_time = target_weather_time.replace(minute=0, second=0, microsecond=0)
+                    logger.debug(f"Daytime: using weather at sunset ({target_weather_time})")
             except Exception as e:
-                logger.debug(f"Could not get forecasted cloud cover for tonight: {e}")
+                logger.debug(f"Could not get sunset time: {e}")
+        else:
+            # Nighttime: use current hour weather (rounded down)
+            target_weather_time = now_utc.replace(minute=0, second=0, microsecond=0)
+            logger.debug(f"Nighttime: using weather at current hour ({target_weather_time})")
+
+        # Get hourly forecast and find the forecast closest to target time
+        if target_weather_time:
+            try:
+                from .weather import HourlySeeingForecast, fetch_hourly_weather_forecast
+
+                # Get enough hours to cover from now to target time + buffer
+                hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
+                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
+                    location, hours=hours_ahead
+                )
+
+                if hourly_forecasts:
+                    # Find the forecast closest to target time
+                    closest_forecast: HourlySeeingForecast | None = None
+                    min_time_diff = timedelta.max
+                    for f in hourly_forecasts:
+                        if f.timestamp is not None:
+                            time_diff = abs(f.timestamp - target_weather_time)
+                            if time_diff < min_time_diff:
+                                min_time_diff = time_diff
+                                closest_forecast = f
+
+                    if closest_forecast and closest_forecast.cloud_cover_percent is not None:
+                        cloud_cover = closest_forecast.cloud_cover_percent
+                        logger.debug(
+                            f"Using cloud cover from hourly forecast at {closest_forecast.timestamp}: {cloud_cover:.1f}%"
+                        )
+
+                    # Get moon phase for the target time
+                    try:
+                        moon_info = get_moon_info(location.latitude, location.longitude, target_weather_time)
+                        if moon_info:
+                            moon_illumination = moon_info.illumination
+                            logger.debug(f"Using moon phase at {target_weather_time}: {moon_illumination * 100:.1f}%")
+                    except Exception as e:
+                        logger.debug(f"Could not get moon phase for target time: {e}")
+            except Exception as e:
+                logger.debug(f"Could not get hourly weather forecast: {e}")
 
         # Fall back to current weather if we don't have forecasted data
         if cloud_cover is None or moon_illumination is None or bortle_class is None:
@@ -725,17 +715,23 @@ def check_aurora_visibility(
             if cloud_cover is None:
                 if isinstance(weather, Exception):
                     logger.warning(f"Weather fetch error: {weather}")
-                elif hasattr(weather, "error") and weather.error:
-                    logger.warning(f"Weather fetch error: {weather.error}")
-                elif hasattr(weather, "cloud_cover_percent"):
-                    cloud_cover = getattr(weather, "cloud_cover_percent", None)
-                    if cloud_cover is not None:
+                else:
+                    # Check for error attribute
+                    if hasattr(weather, "error") and getattr(weather, "error", False):
+                        logger.warning(f"Weather fetch error: {getattr(weather, 'error', 'unknown')}")
+                    # Try to get cloud_cover_percent if it exists
+                    cloud_cover_value = getattr(weather, "cloud_cover_percent", None)
+                    if cloud_cover_value is not None:
+                        cloud_cover = cloud_cover_value
                         logger.debug(f"Using current cloud cover: {cloud_cover:.1f}%")
 
             if moon_illumination is None:
+                # moon_info can be Exception | MoonInfo | None due to return_exceptions=True
+                # Mypy has trouble with type narrowing here, so we use explicit checks
                 if isinstance(moon_info, Exception):
                     logger.warning(f"Could not fetch moon info: {moon_info}")
                 elif moon_info is not None:
+                    # moon_info is MoonInfo here
                     moon_illumination = moon_info.illumination
                     logger.debug(f"Using current moon phase: {moon_illumination * 100:.1f}%")
 

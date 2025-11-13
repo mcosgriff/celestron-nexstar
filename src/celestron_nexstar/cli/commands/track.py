@@ -7,6 +7,8 @@ Commands for controlling telescope tracking.
 from typing import Literal
 
 import typer
+from click import Context
+from typer.core import TyperGroup
 
 from celestron_nexstar import TrackingMode
 
@@ -20,7 +22,16 @@ from ..utils.output import (
 from ..utils.state import ensure_connected
 
 
-app = typer.Typer(help="Tracking control commands")
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
+app = typer.Typer(help="Tracking control commands", cls=SortedCommandsGroup)
 
 
 @app.command(rich_help_panel="Tracking Control")
