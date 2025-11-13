@@ -288,7 +288,9 @@ async def _fetch_from_lightpollutionmap_api(lat: float, lon: float) -> float | N
             session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response,
         ):
             if response.status == 200:
-                data = await response.json()
+                # API returns JSON but with text/plain content-type, so parse manually
+                text = await response.text()
+                data = json.loads(text)
                 # API returns brightness value, convert to SQM
                 # Brightness is in nW/cm²/sr, need to convert to mag/arcsec²
                 if "value" in data:

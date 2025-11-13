@@ -1256,9 +1256,47 @@ def run_migrations(
             context = MigrationContext.configure(connection)
             current_rev = context.get_current_revision()
 
-        # Get head revision from script directory
+        # Get head revision(s) from script directory
         script = ScriptDirectory.from_config(alembic_cfg)
-        head_rev = script.get_current_head()
+        try:
+            # Try to get single head first (works when there's no branching)
+            head_rev = script.get_current_head()
+        except Exception:
+            # Multiple heads detected - use get_heads() instead
+            try:
+                heads_list = script.get_heads()
+                if len(heads_list) == 1:
+                    head_rev = heads_list[0]
+                elif len(heads_list) > 1:
+                    # Multiple heads detected - look for a merge migration
+                    console.print("[yellow]⚠[/yellow] Multiple migration heads detected")
+                    console.print(f"[dim]Found {len(heads_list)} head(s): {', '.join(heads_list)}[/dim]")
+
+                    # Search all revisions for a merge migration that combines these heads
+                    merge_found = False
+                    for rev in script.walk_revisions():
+                        if hasattr(rev, "down_revision") and rev.down_revision:
+                            down_rev = rev.down_revision
+                            # Check if this is a merge migration (has tuple of down_revisions)
+                            if isinstance(down_rev, tuple) and len(down_rev) > 1:
+                                # Check if this merge migration combines all current heads
+                                down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
+                                heads_set = set(heads_list)
+                                if down_rev_set == heads_set:
+                                    merge_found = True
+                                    head_rev = rev.revision
+                                    console.print(f"[dim]Found merge migration: {rev.revision}[/dim]\n")
+                                    break
+
+                    if not merge_found:
+                        console.print("[dim]No merge migration found. Will attempt to upgrade all branches.[/dim]\n")
+                        # Use "heads" to upgrade all branches - Alembic will apply merge migrations if they exist
+                        head_rev = "heads"
+                else:
+                    head_rev = None
+            except Exception as e:
+                console.print(f"[red]✗[/red] Error checking migrations: {e}")
+                raise typer.Exit(code=1) from e
 
         # Check if there are pending migrations
         migrations_to_apply: list[str] | str = "unknown"
@@ -1267,37 +1305,27 @@ def run_migrations(
             console.print("[dim]This is normal for a new database. Will apply all migrations.[/dim]\n")
             pending = True
             migrations_to_apply = "all migrations"
-        elif head_rev is not None and current_rev == head_rev:
+        elif head_rev is not None and head_rev != "heads" and current_rev == head_rev:
             console.print("[green]✓[/green] Database is up to date")
             console.print(f"[dim]Current revision: {current_rev}[/dim]\n")
             pending = False
         else:
             # Get the list of revisions that need to be applied
             pending = True
-            migrations_to_apply_list: list[str] = []
             try:
                 # Get the upgrade path from current to head
                 # walk_revisions returns revisions in order from start to end
-                if head_rev is not None and current_rev is not None:
+                if head_rev is not None and current_rev is not None and head_rev != "heads":
                     upgrade_path = list(script.walk_revisions(current_rev, head_rev))
-                    migrations_to_apply_list = [rev.revision for rev in upgrade_path if rev.revision != current_rev]
+                    [rev.revision for rev in upgrade_path if rev.revision != current_rev]
+                elif head_rev == "heads":
+                    # Multiple heads - can't easily determine path, will let Alembic handle it
+                    migrations_to_apply = "multiple branches (will be merged)"
 
                     console.print("[yellow]⚠[/yellow] Database is not up to date")
                     console.print(f"[dim]Current revision: {current_rev}[/dim]")
-                    console.print(f"[dim]Head revision: {head_rev}[/dim]")
-                    console.print(f"[dim]Pending migrations: {len(migrations_to_apply_list)}[/dim]\n")
-
-                    # Show which migrations will be applied
-                    if migrations_to_apply_list:
-                        console.print("[bold]Migrations to apply:[/bold]")
-                        for rev in migrations_to_apply_list:
-                            script_rev = script.get_revision(rev)
-                            if script_rev:
-                                console.print(f"  [cyan]{rev}[/cyan] - {script_rev.doc or '(no description)'}")
-                        console.print()
-                        migrations_to_apply = migrations_to_apply_list
-                    else:
-                        migrations_to_apply = "unknown"
+                    console.print("[dim]Head revision: multiple branches[/dim]")
+                    console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
                 else:
                     migrations_to_apply = "unknown"
             except Exception as e:
@@ -1338,7 +1366,27 @@ def run_migrations(
             with db._engine.connect() as connection:
                 context = MigrationContext.configure(connection)
                 new_rev = context.get_current_revision()
-                head_rev_after = script.get_current_head()
+                try:
+                    head_rev_after = script.get_current_head()
+                except Exception:
+                    # Multiple heads - get the merge migration if it exists
+                    heads_list = script.get_heads()
+                    if len(heads_list) == 1:
+                        head_rev_after = heads_list[0]
+                    else:
+                        # Look for merge migration
+                        head_rev_after = None
+                        for rev in script.walk_revisions():
+                            if hasattr(rev, "down_revision") and rev.down_revision:
+                                down_rev = rev.down_revision
+                                if isinstance(down_rev, tuple) and len(down_rev) > 1:
+                                    down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
+                                    heads_set = set(heads_list)
+                                    if down_rev_set == heads_set:
+                                        head_rev_after = rev.revision
+                                        break
+                        if head_rev_after is None:
+                            head_rev_after = heads_list[0] if heads_list else None
 
                 if new_rev == head_rev_after:
                     console.print(f"[dim]Database is now at revision: {new_rev}[/dim]\n")

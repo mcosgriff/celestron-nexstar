@@ -629,6 +629,46 @@ class StarNameMappingModel(Base):
         return f"<StarNameMapping(hr_number={self.hr_number}, common_name='{self.common_name}')>"
 
 
+class TLEModel(Base):
+    """
+    SQLAlchemy model for Two-Line Element (TLE) satellite data.
+
+    Stores TLE data for satellites (e.g., Starlink) fetched from CelesTrak.
+    TLE data is refreshed periodically as satellite orbits change.
+    """
+
+    __tablename__ = "tle_data"
+
+    # Primary key - NORAD catalog number
+    norad_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # Satellite identification
+    satellite_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    satellite_group: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)  # e.g., "starlink"
+
+    # TLE data (two lines)
+    line1: Mapped[str] = mapped_column(Text, nullable=False)  # First line of TLE
+    line2: Mapped[str] = mapped_column(Text, nullable=False)  # Second line of TLE
+
+    # Metadata
+    epoch: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # TLE epoch time
+
+    # Cache metadata
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_satellite_group", "satellite_group"),
+        Index("idx_fetched_at", "fetched_at"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of TLE data."""
+        return f"<TLE(norad_id={self.norad_id}, name='{self.satellite_name}', group='{self.satellite_group}')>"
+
+
 @contextmanager
 def get_db_session() -> Iterator[Session]:
     """
