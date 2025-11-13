@@ -351,12 +351,16 @@ def search_objects(
             if catalog_name:
                 exact_query = exact_query.filter(CelestialObjectModel.catalog == catalog_name)
 
-            exact_model = session.execute(exact_query).scalar_one_or_none()
-            if exact_model:
-                exact_obj = db._model_to_object(exact_model)
-                if update_positions:
-                    exact_obj = exact_obj.with_current_position()
-                return [(exact_obj, "exact")]
+            exact_models = session.execute(exact_query).scalars().all()
+            if exact_models:
+                # Return all exact matches (there may be multiple objects with same common name)
+                exact_results = []
+                for exact_model in exact_models:
+                    exact_obj = db._model_to_object(exact_model)
+                    if update_positions:
+                        exact_obj = exact_obj.with_current_position()
+                    exact_results.append((exact_obj, "exact"))
+                return exact_results
 
             # Search for substring matches in name (score: 0) - all filtering in database
             # Use ilike() for case-insensitive substring matching

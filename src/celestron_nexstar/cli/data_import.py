@@ -10,6 +10,7 @@ import csv
 import json
 import urllib.request
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from ..api.database import get_database
+from ..api.database import CatalogDatabase, get_database
 from ..api.enums import CelestialObjectType
 from ..api.importers import map_openngc_type, parse_catalog_number, parse_ra_dec
 
@@ -40,6 +41,72 @@ class DataSource:
 
 
 # Parsing functions moved to api.importers
+
+
+def _create_messier_entry(
+    db: CatalogDatabase,
+    messier_number: int,
+    name: str,
+    ra_hours: float,
+    dec_degrees: float,
+    obj_type: CelestialObjectType,
+    magnitude: float | None,
+    common_name: str | None,
+    size_arcmin: float | None,
+    hubble_type: str,
+    common_names: str,
+    constellation: str | None,
+    verbose: bool = False,
+) -> bool:
+    """
+    Create a Messier catalog entry from NGC/IC data.
+
+    Returns:
+        True if entry was created, False if it already existed or failed
+    """
+    messier_name = f"M{messier_number}"
+
+    # Check if Messier entry already exists
+    existing_messier = db.get_by_name(messier_name)
+    if existing_messier:
+        if verbose:
+            console.print(f"[dim]Skipping duplicate Messier: {messier_name}[/dim]")
+        return False
+
+    try:
+        # Use common name from NGC entry
+        messier_common_name = common_name if common_name else None
+
+        # Enhanced description for Messier objects
+        messier_description_parts = []
+        if hubble_type:
+            messier_description_parts.append(f"Hubble type: {hubble_type}")
+        messier_description_parts.append(f"NGC/IC: {name}")
+        if common_names:
+            messier_description_parts.append(f"Also known as: {common_names}")
+        messier_description = "; ".join(messier_description_parts)
+
+        db.insert_object(
+            name=messier_name,
+            catalog="messier",
+            ra_hours=ra_hours,
+            dec_degrees=dec_degrees,
+            object_type=obj_type,
+            magnitude=magnitude,
+            common_name=messier_common_name,
+            catalog_number=messier_number,
+            size_arcmin=size_arcmin,
+            description=messier_description,
+            constellation=constellation,
+        )
+
+        if verbose:
+            console.print(f"[green]Created Messier entry: {messier_name} ({name})[/green]")
+        return True
+    except Exception as e:
+        if verbose:
+            console.print(f"[yellow]Warning: Error creating Messier entry {messier_name}: {e}[/yellow]")
+        return False
 
 
 def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
@@ -165,6 +232,14 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     description_parts.append(f"Also known as: {common_names}")
                 description = "; ".join(description_parts) if description_parts else None
 
+                # Extract Messier number from "M" column (format: "031", "001", etc.)
+                messier_number = None
+                m_col = row.get("M", "").strip()
+                if m_col:
+                    with suppress(ValueError):
+                        # Remove leading zeros and convert to int
+                        messier_number = int(m_col)
+
                 # Check for duplicates before inserting
                 # First check by name (most common case)
                 existing = db.get_by_name(name)
@@ -172,6 +247,23 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     skipped += 1
                     if verbose:
                         console.print(f"[dim]Skipping duplicate: {name}[/dim]")
+                    # Still check if we need to create Messier entry
+                    if messier_number is not None and _create_messier_entry(
+                        db,
+                        messier_number,
+                        name,
+                        ra_hours,
+                        dec_degrees,
+                        obj_type,
+                        magnitude,
+                        common_name,
+                        size_arcmin,
+                        hubble_type,
+                        common_names,
+                        constellation,
+                        verbose,
+                    ):
+                        imported += 1
                     progress.advance(task)
                     continue
 
@@ -180,10 +272,27 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     skipped += 1
                     if verbose:
                         console.print(f"[dim]Skipping duplicate: {catalog} {catalog_number}[/dim]")
+                    # Still check if we need to create Messier entry
+                    if messier_number is not None and _create_messier_entry(
+                        db,
+                        messier_number,
+                        name,
+                        ra_hours,
+                        dec_degrees,
+                        obj_type,
+                        magnitude,
+                        common_name,
+                        size_arcmin,
+                        hubble_type,
+                        common_names,
+                        constellation,
+                        verbose,
+                    ):
+                        imported += 1
                     progress.advance(task)
                     continue
 
-                # Insert into database
+                # Insert NGC/IC object into database
                 try:
                     db.insert_object(
                         name=name,
@@ -205,6 +314,24 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     if verbose:
                         console.print(f"[yellow]Warning: Error importing {name}: {e}[/yellow]")
                     errors += 1
+
+                # If this object has a Messier number, also create a Messier entry
+                if messier_number is not None and _create_messier_entry(
+                    db,
+                    messier_number,
+                    name,
+                    ra_hours,
+                    dec_degrees,
+                    obj_type,
+                    magnitude,
+                    common_name,
+                    size_arcmin,
+                    hubble_type,
+                    common_names,
+                    constellation,
+                    verbose,
+                ):
+                    imported += 1
 
                 progress.advance(task)
 

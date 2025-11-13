@@ -170,6 +170,7 @@ def search(
                     "Name",
                     style="cyan",
                 )
+                table.add_column("Catalog", style="magenta")
                 table.add_column("Type", style="yellow")
                 table.add_column("RA", style="green")
                 table.add_column("Dec", style="green")
@@ -182,7 +183,7 @@ def search(
                     mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
                     desc = obj.common_name or obj.description or ""
 
-                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                    table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
 
                 console.print(table)
                 console.print()  # Blank line between tables
@@ -197,6 +198,7 @@ def search(
                         header_style="white",
                     )
                     table.add_column("Name", style="cyan")
+                    table.add_column("Catalog", style="magenta")
                     table.add_column("Type", style="yellow")
                     table.add_column("RA", style="green")
                     table.add_column("Dec", style="green")
@@ -209,7 +211,7 @@ def search(
                         mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
                         desc = obj.common_name or obj.description or ""
 
-                        table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                        table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
 
                     console.print(table)
                     console.print()
