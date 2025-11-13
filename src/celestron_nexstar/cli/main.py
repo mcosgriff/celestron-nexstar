@@ -38,6 +38,7 @@ from .commands import (
     track,
     vacation,
     variables,
+    weather,
     zodiacal,
 )
 
@@ -457,6 +458,12 @@ app.add_typer(
     ephemeris.app,
     name="ephemeris",
     help="Ephemeris file management",
+    rich_help_panel="Configuration",
+)
+app.add_typer(
+    weather.app,
+    name="weather",
+    help="Current weather conditions",
     rich_help_panel="Configuration",
 )
 

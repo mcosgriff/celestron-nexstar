@@ -197,6 +197,7 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
     - Wind Speed (30% weight)
     - Humidity Impact (20% weight)
     - Temperature Stability (20% weight)
+    - Cloud Cover (applied as multiplier - clouds block observation)
 
     Args:
         weather: Weather data
@@ -291,8 +292,86 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
         stability_score = 0.0  # Rapid changes = unstable
     total_score += stability_score
 
+    # 5. Cloud Cover (applied as multiplier - clouds block observation)
+    # If clouds block the sky, seeing conditions are irrelevant
+    if weather.cloud_cover_percent is not None:
+        cloud_cover = weather.cloud_cover_percent
+        # Calculate cloud factor: 0% clouds = 1.0 (no reduction), 100% clouds = 0.0 (complete blocking)
+        # Use a curve that heavily penalizes high cloud cover
+        if cloud_cover >= 100:
+            cloud_factor = 0.0  # Completely overcast - can't observe
+        elif cloud_cover >= 90:
+            # 90-100%: severe penalty
+            cloud_factor = 0.0 + (100 - cloud_cover) * 0.02  # 0.0-0.2
+        elif cloud_cover >= 80:
+            # 80-90%: very heavy penalty
+            cloud_factor = 0.2 + (90 - cloud_cover) * 0.08  # 0.2-1.0
+        elif cloud_cover >= 50:
+            # 50-80%: significant penalty
+            cloud_factor = 1.0 - ((cloud_cover - 50) / 50.0) * 0.5  # 1.0-0.5
+        elif cloud_cover >= 20:
+            # 20-50%: moderate penalty
+            cloud_factor = 1.0 - ((cloud_cover - 20) / 30.0) * 0.3  # 1.0-0.7
+        else:
+            # 0-20%: minimal impact
+            cloud_factor = 1.0 - (cloud_cover / 20.0) * 0.1  # 1.0-0.9
+
+        # Apply cloud factor as multiplier
+        total_score *= cloud_factor
+    # If cloud cover unavailable, don't apply penalty (assume clear)
+
     # Ensure score is between 0-100
     return max(0.0, min(100.0, total_score))
+
+
+def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
+    """
+    Determine if a weather forecast is stale.
+
+    A forecast is stale if:
+    1. It's for a time in the past, OR
+    2. It was fetched too long ago relative to how far in the future it's forecasting
+
+    Args:
+        forecast: WeatherForecastModel instance
+        now: Current datetime (timezone-aware, UTC)
+
+    Returns:
+        True if forecast is stale, False otherwise
+    """
+    # Ensure both timestamps are timezone-aware (UTC)
+    forecast_ts = forecast.forecast_timestamp
+    if forecast_ts.tzinfo is None:
+        forecast_ts = forecast_ts.replace(tzinfo=UTC)
+    elif forecast_ts.tzinfo != UTC:
+        forecast_ts = forecast_ts.astimezone(UTC)
+
+    fetched_at = forecast.fetched_at
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=UTC)
+    elif fetched_at.tzinfo != UTC:
+        fetched_at = fetched_at.astimezone(UTC)
+
+    # Forecasts for past times are always stale
+    if forecast_ts < now:
+        return True
+
+    # Calculate how far in the future this forecast is
+    hours_ahead = (forecast_ts - now).total_seconds() / 3600
+
+    # Calculate how long ago it was fetched
+    fetch_age_hours = (now - fetched_at).total_seconds() / 3600
+
+    # Staleness thresholds based on forecast horizon
+    if hours_ahead <= 6:
+        # Near-term (0-6 hours ahead): refresh every 2 hours
+        return fetch_age_hours > 2
+    elif hours_ahead <= 24:
+        # Medium-term (6-24 hours ahead): refresh every 6 hours
+        return fetch_age_hours > 6
+    else:
+        # Long-term (24+ hours ahead): refresh every 12 hours
+        return fetch_age_hours > 12
 
 
 def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
@@ -334,27 +413,29 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
         existing_forecasts = []
         with db._get_session() as session:
-            # Check if we have recent data (fetched within last hour)
             now = datetime.now(UTC)
-            stale_threshold = now - timedelta(hours=1)
 
-            # Query for forecasts for this location that are not stale
-            existing_forecasts = (
+            # Query for forecasts for this location (we'll filter stale ones after)
+            # Get a wider range to check staleness intelligently
+            all_forecasts = (
                 session.query(WeatherForecastModel)
                 .filter(
                     and_(
                         WeatherForecastModel.latitude == location.latitude,
                         WeatherForecastModel.longitude == location.longitude,
-                        WeatherForecastModel.fetched_at >= stale_threshold,
+                        # Only consider forecasts that are not too old (max 24 hours fetch age)
+                        WeatherForecastModel.fetched_at >= now - timedelta(hours=24),
                     )
                 )
                 .order_by(WeatherForecastModel.forecast_timestamp)
                 .all()
             )
 
-        # If we have enough recent forecasts covering the requested hours, return them
-        # Check if we have forecasts covering at least the requested number of hours
-        if existing_forecasts and len(existing_forecasts) >= hours and len(existing_forecasts) > 0:
+            # Filter out stale forecasts using intelligent staleness check
+            existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
+
+        # If we have enough non-stale forecasts covering the requested hours, return them
+        if existing_forecasts and len(existing_forecasts) >= hours:
             # Check if the forecasts cover a sufficient time range
             # Get the time span of cached forecasts
             first_ts = existing_forecasts[0].forecast_timestamp
@@ -366,13 +447,22 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
             time_span_hours = (last_ts - first_ts).total_seconds() / 3600
 
-            # If we have enough hours of coverage, use cached data
-            if time_span_hours >= hours - 1:  # Allow 1 hour tolerance
+            # Calculate what time range we need
+            needed_end_time = now + timedelta(hours=hours)
+
+            # Check if cached forecasts cover the needed time range
+            if first_ts <= now and last_ts >= needed_end_time - timedelta(hours=1):  # Allow 1 hour tolerance
                 logger.debug(
                     f"Using {len(existing_forecasts)} cached weather forecasts from database (spanning {time_span_hours:.1f} hours)"
                 )
+                # Filter to only return forecasts within the requested time range
+                filtered_forecasts = [
+                    f
+                    for f in existing_forecasts
+                    if f.forecast_timestamp >= now and f.forecast_timestamp <= needed_end_time
+                ][:hours]
                 forecasts = []
-                for forecast in existing_forecasts[:hours]:
+                for forecast in filtered_forecasts:
                     forecasts.append(
                         HourlySeeingForecast(
                             timestamp=forecast.forecast_timestamp,
@@ -388,9 +478,11 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
         # If we get here, we need to fetch from API (either no cache, stale cache, or insufficient coverage)
         if existing_forecasts:
-            logger.debug(f"Found {len(existing_forecasts)} cached forecasts, but need {hours} hours, fetching from API")
+            logger.debug(
+                f"Found {len(existing_forecasts)} cached forecasts, but need {hours} hours of coverage, fetching from API"
+            )
         else:
-            logger.debug("No recent cached forecasts found, fetching from API")
+            logger.debug("No valid cached forecasts found, fetching from API")
     except Exception as e:
         logger.warning(f"Error checking database for weather forecasts: {e}")
         # Continue to fetch from API
@@ -512,16 +604,24 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
             db = get_database()
             with db._get_session() as session:
-                # Delete stale forecasts for this location
+                # Delete stale forecasts for this location using intelligent staleness check
                 now = datetime.now(UTC)
-                stale_threshold = now - timedelta(hours=1)
-                session.query(WeatherForecastModel).filter(
-                    and_(
-                        WeatherForecastModel.latitude == location.latitude,
-                        WeatherForecastModel.longitude == location.longitude,
-                        WeatherForecastModel.fetched_at < stale_threshold,
+                # Get all forecasts for this location to check staleness
+                all_location_forecasts = (
+                    session.query(WeatherForecastModel)
+                    .filter(
+                        and_(
+                            WeatherForecastModel.latitude == location.latitude,
+                            WeatherForecastModel.longitude == location.longitude,
+                        )
                     )
-                ).delete()
+                    .all()
+                )
+
+                # Delete forecasts that are stale
+                for forecast in all_location_forecasts:
+                    if _is_forecast_stale(forecast, now):
+                        session.delete(forecast)
 
                 # Insert new forecasts
                 for forecast_item in forecasts:
