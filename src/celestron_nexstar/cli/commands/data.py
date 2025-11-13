@@ -813,6 +813,113 @@ def stats() -> None:
         # Silently skip if there's an error (table might not exist)
         pass
 
+    # Seed data statistics
+    try:
+        from ...api.database_seeder import get_seed_status
+        from ...api.models import get_db_session
+
+        with get_db_session() as db_session:
+            seed_status = get_seed_status(db_session)
+
+            seed_table = Table(title="\nSeed Data (Static Reference Data)")
+            seed_table.add_column("Data Type", style="cyan")
+            seed_table.add_column("Count", justify="right", style="green")
+            seed_table.add_column("Status", width=15)
+
+            total_seed_records = 0
+            for data_type, count in sorted(seed_status.items()):
+                total_seed_records += count
+                status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+                display_name = data_type.replace("_", " ").title()
+                seed_table.add_row(display_name, f"{count:,}", status_str)
+
+            if total_seed_records > 0:
+                seed_table.add_row("", "", "")
+                seed_table.add_row("[bold]Total[/bold]", f"[bold]{total_seed_records:,}[/bold]", "")
+
+            console.print(seed_table)
+    except Exception:
+        # Silently skip if there's an error (tables might not exist)
+        pass
+
+    # TLE data statistics
+    try:
+        from sqlalchemy import func, select
+
+        from ...api.models import TLEModel, get_db_session
+
+        with get_db_session() as db_session:
+            # Check if table exists
+            table_exists = db_session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'")
+            ).fetchone()
+
+            if table_exists:
+                total_tle_count = db_session.scalar(select(func.count(TLEModel.norad_id))) or 0
+
+                if total_tle_count > 0:
+                    # Get counts by group
+                    group_counts = (
+                        db_session.execute(
+                            select(
+                                TLEModel.satellite_group,
+                                func.count(TLEModel.norad_id),
+                            )
+                            .where(TLEModel.satellite_group.isnot(None))
+                            .group_by(TLEModel.satellite_group)
+                            .order_by(TLEModel.satellite_group)
+                        )
+                    ).fetchall()
+
+                    # Get unique satellite count
+                    unique_satellites = db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id)))) or 0
+
+                    # Get last fetched time
+                    last_fetched = db_session.scalar(
+                        select(func.max(TLEModel.fetched_at)).where(TLEModel.fetched_at.isnot(None))
+                    )
+
+                    # Get oldest TLE epoch (to show data freshness)
+                    oldest_epoch = db_session.scalar(select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
+                    newest_epoch = db_session.scalar(select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
+
+                    tle_table = Table(title="\nTLE Data (Satellite Orbital Elements)")
+                    tle_table.add_column("Metric", style="cyan")
+                    tle_table.add_column("Value", justify="right", style="green")
+
+                    tle_table.add_row("Total TLE records", f"{total_tle_count:,}")
+                    tle_table.add_row("Unique satellites", f"{unique_satellites:,}")
+
+                    if last_fetched:
+                        last_fetched_str = last_fetched.strftime("%Y-%m-%d %H:%M:%S")
+                        tle_table.add_row("Last fetched", last_fetched_str)
+
+                    if oldest_epoch and newest_epoch:
+                        oldest_str = oldest_epoch.strftime("%Y-%m-%d")
+                        newest_str = newest_epoch.strftime("%Y-%m-%d")
+                        tle_table.add_row("TLE epoch range", f"{oldest_str} to {newest_str}")
+
+                    console.print(tle_table)
+
+                    # Groups table if we have group data
+                    if group_counts:
+                        group_table = Table(title="TLE Data by Satellite Group")
+                        group_table.add_column("Group", style="cyan")
+                        group_table.add_column("Satellites", justify="right", style="green")
+
+                        for group_name, count in group_counts:
+                            display_name = group_name.title() if group_name else "Unknown"
+                            group_table.add_row(display_name, f"{count:,}")
+
+                        console.print(group_table)
+                else:
+                    console.print("\n[dim]TLE data: [yellow]No data imported[/yellow][/dim]")
+            else:
+                console.print("\n[dim]TLE data: [yellow]Table not created[/yellow][/dim]")
+    except Exception:
+        # Silently skip if there's an error (table might not exist)
+        pass
+
     # Database info
     if db_stats.last_updated:
         console.print(f"\n[dim]Last updated: {db_stats.last_updated.strftime('%Y-%m-%d %H:%M:%S')}[/dim]")

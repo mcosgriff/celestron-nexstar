@@ -37,6 +37,7 @@ PLANET_NAMES = {
     "saturn": ("6 SATURN BARYCENTER", "de440s.bsp"),
     "uranus": ("7 URANUS BARYCENTER", "de440s.bsp"),
     "neptune": ("8 NEPTUNE BARYCENTER", "de440s.bsp"),
+    "pluto": ("9 PLUTO BARYCENTER", "de440s.bsp"),  # Dwarf planet
     "moon": ("MOON", "de421.bsp"),  # de440s doesn't include Moon
     # Jupiter moons (jup365.bsp)
     "io": ("io", "jup365.bsp"),
@@ -101,7 +102,7 @@ def _get_ephemeris(bsp_file: str) -> SpiceKernel:
 
 
 @deal.pre(
-    lambda planet_name, observer_lat, observer_lon, dt: planet_name.lower() in PLANET_NAMES,
+    lambda planet_name, *args, **kwargs: planet_name.lower() in PLANET_NAMES,
     message="Planet name must be valid",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Position must be calculated")
@@ -143,7 +144,17 @@ def get_planetary_position(
         raise ValueError(f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}")
 
     # Get ephemeris name and required BSP file
+    # ephemeris_name is the SPICE target name (e.g., "299 VENUS")
+    # We need to use just the name part for Skyfield (e.g., "VENUS")
     ephemeris_name, bsp_file = PLANET_NAMES[planet_key]
+
+    # Extract just the name part if it's a numeric ID format (e.g., "299 VENUS" -> "VENUS")
+    # Skyfield can handle both formats, but numeric IDs sometimes fail
+    if " " in ephemeris_name and ephemeris_name[0].isdigit():
+        # Format is like "299 VENUS" - extract the name part
+        spice_target = ephemeris_name.split(" ", 1)[1]
+    else:
+        spice_target = ephemeris_name
 
     # Load the appropriate ephemeris file
     try:
@@ -169,7 +180,7 @@ def get_planetary_position(
     earth = eph["earth"]
 
     try:
-        target = eph[ephemeris_name]
+        target = eph[spice_target]
     except KeyError:
         # Try uppercase version (JPL ephemeris files often use uppercase)
         try:

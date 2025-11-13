@@ -392,75 +392,19 @@ class CatalogDatabase:
                 logger.warning(f"FTS table count mismatch: {fts_count} vs {objects_count} objects")
 
     @deal.pre(
-        lambda self,
-        name,
-        catalog,
-        ra_hours,
-        dec_degrees,
-        object_type,
-        magnitude,
-        common_name,
-        catalog_number,
-        size_arcmin,
-        description,
-        constellation,
-        is_dynamic,
-        ephemeris_name,
-        parent_planet: name and len(name.strip()) > 0,
+        lambda self, name, *args, **kwargs: name and len(name.strip()) > 0,
         message="Name must be non-empty",
     )  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self,
-        name,
-        catalog,
-        ra_hours,
-        dec_degrees,
-        object_type,
-        magnitude,
-        common_name,
-        catalog_number,
-        size_arcmin,
-        description,
-        constellation,
-        is_dynamic,
-        ephemeris_name,
-        parent_planet: catalog and len(catalog.strip()) > 0,
+        lambda self, name, catalog, *args, **kwargs: catalog and len(catalog.strip()) > 0,
         message="Catalog must be non-empty",
     )  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self,
-        name,
-        catalog,
-        ra_hours,
-        dec_degrees,
-        object_type,
-        magnitude,
-        common_name,
-        catalog_number,
-        size_arcmin,
-        description,
-        constellation,
-        is_dynamic,
-        ephemeris_name,
-        parent_planet: 0 <= ra_hours < 24,
+        lambda self, name, catalog, ra_hours, *args, **kwargs: 0 <= ra_hours < 24,
         message="RA must be 0-24 hours",
     )  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self,
-        name,
-        catalog,
-        ra_hours,
-        dec_degrees,
-        object_type,
-        magnitude,
-        common_name,
-        catalog_number,
-        size_arcmin,
-        description,
-        constellation,
-        is_dynamic,
-        ephemeris_name,
-        parent_planet: -90 <= dec_degrees <= 90,
+        lambda self, name, catalog, ra_hours, dec_degrees, *args, **kwargs: -90 <= dec_degrees <= 90,
         message="Dec must be -90 to +90 degrees",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result > 0, message="Insert must return positive ID")
@@ -935,11 +879,15 @@ class CatalogDatabase:
         ephemeris_name = str(model.ephemeris_name) if model.ephemeris_name else str(name) if name else ""
         if model.is_dynamic and is_dynamic_object(ephemeris_name):
             try:
-                ra, dec = get_planetary_position(ephemeris_name)
+                # Convert to lowercase for get_planetary_position (it expects lowercase planet names)
+                planet_name = ephemeris_name.lower()
+                ra, dec = get_planetary_position(planet_name)
                 from dataclasses import replace
 
                 obj = replace(obj, ra_hours=ra, dec_degrees=dec)
-            except (ValueError, KeyError):
+            except (ValueError, KeyError, FileNotFoundError) as e:
+                # Log the error but use stored coordinates as fallback
+                logger.debug(f"Could not calculate position for {ephemeris_name}: {e}")
                 pass  # Use stored coordinates as fallback
 
         return obj

@@ -809,6 +809,16 @@ planets:
     type: planet
     description: Ice giant, appears as small blue disk
 
+  - name: Pluto
+    common_name: null
+    ra_hours: 0.0
+    dec_degrees: 0.0
+    magnitude: 14.4
+    type: planet
+    description: Dwarf planet, very challenging to observe (requires large telescope)
+    is_dynamic: true
+    ephemeris_name: pluto
+
   - name: Moon
     common_name: Luna
     ra_hours: 0.0
