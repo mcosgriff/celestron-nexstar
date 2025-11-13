@@ -586,20 +586,14 @@ def show_next_3_days_weather(
             seeing_scores = [f.seeing_score for f in day_forecasts]
 
             # Format date
-            if tz:
-                date_str = day.strftime("%a %b %d")
-            else:
-                date_str = day.strftime("%a %b %d")
+            date_str = day.strftime("%a %b %d") if tz else day.strftime("%a %b %d")
 
             # Temperature range
             temp_str = "-"
             if temps:
                 temp_min = min(temps)
                 temp_max = max(temps)
-                if temp_min == temp_max:
-                    temp_str = f"{temp_min:.0f}°F"
-                else:
-                    temp_str = f"{temp_min:.0f}–{temp_max:.0f}°F"
+                temp_str = f"{temp_min:.0f}°F" if temp_min == temp_max else f"{temp_min:.0f}–{temp_max:.0f}°F"
 
             # Average cloud cover
             cloud_str = "-"
