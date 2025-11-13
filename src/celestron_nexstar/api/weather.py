@@ -673,7 +673,8 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     """
     Fetch current weather data for the observer location.
 
-    Uses Open-Meteo API (free, no API key required) via aiohttp.
+    Checks database first using current location and current time.
+    If not found or stale, fetches from Open-Meteo API and stores in database.
 
     Args:
         location: Observer location with latitude and longitude
@@ -681,6 +682,71 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     Returns:
         WeatherData with current conditions, or error message if failed
     """
+    from sqlalchemy import and_, inspect
+
+    from .database import get_database
+    from .geohash_utils import encode
+    from .models import Base, WeatherForecastModel
+
+    db = get_database()
+
+    # Ensure weather_forecast table exists
+    try:
+        inspector = inspect(db._engine)
+        if "weather_forecast" not in inspector.get_table_names():
+            logger.debug("weather_forecast table not found, creating it...")
+            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+    except Exception as e:
+        logger.debug(f"Could not check/create weather_forecast table: {e}")
+
+    # Use current time for database query
+    now = datetime.now(UTC)
+    current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+    current_hour_end = current_hour_start + timedelta(hours=1)
+
+    # Check database for current weather (within the current hour)
+    try:
+        with db._get_session() as session:
+            # Look for forecasts for the current hour
+            candidates = (
+                session.query(WeatherForecastModel)
+                .filter(
+                    and_(
+                        WeatherForecastModel.latitude == location.latitude,
+                        WeatherForecastModel.longitude == location.longitude,
+                        WeatherForecastModel.forecast_timestamp >= current_hour_start,
+                        WeatherForecastModel.forecast_timestamp < current_hour_end,
+                    )
+                )
+                .order_by(WeatherForecastModel.forecast_timestamp.desc())
+                .all()
+            )
+
+            # Find the first non-stale forecast
+            existing = None
+            for candidate in candidates:
+                if not _is_forecast_stale(candidate, now):
+                    existing = candidate
+                    break
+
+            if existing:
+                # Convert database model to WeatherData
+                logger.debug("Using cached weather data from database")
+                return WeatherData(
+                    temperature_c=existing.temperature_f,
+                    dew_point_f=existing.dew_point_f,
+                    humidity_percent=existing.humidity_percent,
+                    cloud_cover_percent=existing.cloud_cover_percent,
+                    wind_speed_ms=existing.wind_speed_mph,
+                    visibility_km=None,
+                    condition=None,
+                    last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
+                )
+    except Exception as e:
+        logger.debug(f"Error checking database for current weather: {e}")
+
+    # Not in cache or stale, fetch from API
+    logger.debug("Fetching current weather from Open-Meteo API")
     try:
         url = "https://api.open-meteo.com/v1/forecast"
         params: dict[str, str | int | float | list[str]] = {
@@ -771,7 +837,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             else:
                 condition = "Cloudy"
 
-        return WeatherData(
+        weather_data = WeatherData(
             temperature_c=temp_f,
             dew_point_f=dew_point_f,
             humidity_percent=humidity,
@@ -781,6 +847,64 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             condition=condition,
             last_updated="now",
         )
+
+        # Store in database for future use
+        if not weather_data.error:
+            try:
+                location_geohash = encode(location.latitude, location.longitude, precision=9)
+
+                with db._get_session() as session:
+                    # Check if forecast already exists for this hour
+                    existing = (
+                        session.query(WeatherForecastModel)
+                        .filter(
+                            and_(
+                                WeatherForecastModel.latitude == location.latitude,
+                                WeatherForecastModel.longitude == location.longitude,
+                                WeatherForecastModel.forecast_timestamp >= current_hour_start,
+                                WeatherForecastModel.forecast_timestamp < current_hour_end,
+                            )
+                        )
+                        .first()
+                    )
+
+                    # Calculate seeing score
+                    seeing_score = calculate_seeing_conditions(weather_data)
+
+                    if existing:
+                        # Update existing forecast
+                        existing.geohash = location_geohash
+                        existing.temperature_f = weather_data.temperature_c
+                        existing.dew_point_f = weather_data.dew_point_f
+                        existing.humidity_percent = weather_data.humidity_percent
+                        existing.cloud_cover_percent = weather_data.cloud_cover_percent
+                        existing.wind_speed_mph = weather_data.wind_speed_ms
+                        existing.seeing_score = seeing_score
+                        existing.fetched_at = now
+                    else:
+                        # Insert new forecast
+                        db_forecast = WeatherForecastModel(
+                            latitude=location.latitude,
+                            longitude=location.longitude,
+                            geohash=location_geohash,
+                            forecast_timestamp=current_hour_start,
+                            temperature_f=weather_data.temperature_c,
+                            dew_point_f=weather_data.dew_point_f,
+                            humidity_percent=weather_data.humidity_percent,
+                            cloud_cover_percent=weather_data.cloud_cover_percent,
+                            wind_speed_mph=weather_data.wind_speed_ms,
+                            seeing_score=seeing_score,
+                            fetched_at=now,
+                        )
+                        session.add(db_forecast)
+
+                    session.commit()
+                    logger.debug("Stored current weather in database")
+            except Exception as e:
+                logger.warning(f"Error storing current weather in database: {e}")
+                # Continue and return weather anyway
+
+        return weather_data
 
     except Exception as e:
         logger.exception("Error fetching weather from Open-Meteo (async)")
