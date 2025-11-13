@@ -256,6 +256,12 @@ module = [
     "pandas.*",
     "click",
     "click.*",
+    "dbus",
+    "dbus.*",
+    "CoreLocation",
+    "CoreLocation.*",
+    "winrt",
+    "winrt.*",
 ]
 ignore_missing_imports = true
 

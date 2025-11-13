@@ -13,6 +13,7 @@ from typer.core import TyperGroup
 
 from celestron_nexstar.api.observer import (
     ObserverLocation,
+    detect_location_automatically,
     geocode_location,
     get_observer_location,
     set_observer_location,
@@ -267,4 +268,64 @@ def get_observer(
 
     except Exception as e:
         print_error(f"Failed to get observer location: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command("detect", rich_help_panel="Observer Location")
+def detect_location(
+    save: bool = typer.Option(True, "--save/--no-save", help="Save detected location to config"),
+) -> None:
+    """
+    Automatically detect your location.
+
+    Tries multiple methods:
+    1. System location services (GPS, if available and permitted)
+    2. IP-based geolocation (fallback, less accurate)
+
+    This will prompt you for permission before accessing location services.
+
+    Examples:
+        nexstar location detect
+        nexstar location detect --no-save  # Detect but don't save
+    """
+    try:
+        console.print("\n[cyan]Detecting your location...[/cyan]\n")
+        console.print(
+            "[dim]This may use your IP address or system location services (if available and permitted).[/dim]\n"
+        )
+
+        detected = asyncio.run(detect_location_automatically())
+
+        # Display results
+        lat_dir = "N" if detected.latitude >= 0 else "S"
+        lon_dir = "E" if detected.longitude >= 0 else "W"
+
+        print_success("Location detected!")
+        table = Table(show_header=False)
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="green")
+
+        if detected.name:
+            table.add_row("Location", detected.name)
+        table.add_row("Latitude", f"{abs(detected.latitude):.4f}°{lat_dir}")
+        table.add_row("Longitude", f"{abs(detected.longitude):.4f}°{lon_dir}")
+        if detected.elevation:
+            table.add_row("Elevation", f"{detected.elevation:.0f} m")
+
+        console.print(table)
+
+        if save:
+            set_observer_location(detected, save=True)
+            print_success("\nLocation saved to config!")
+        else:
+            print_info("\nLocation not saved. Use --save to save it.")
+
+    except ValueError as e:
+        print_error(str(e))
+        print_info("\nYou can set your location manually:")
+        print_info('  nexstar location set-observer "City, State"')
+        print_info("  nexstar location set-observer --lat 40.7128 --lon -74.0060")
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        print_error(f"Failed to detect location: {e}")
         raise typer.Exit(code=1) from e

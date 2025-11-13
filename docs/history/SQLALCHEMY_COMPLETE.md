@@ -34,7 +34,7 @@ class ObservationModel(Base):
         "CelestialObjectModel",
         back_populates="observations"
     )
-```python
+```
 
 ### 2. Observations Table
 
@@ -114,7 +114,7 @@ parent_planet: str | None
 created_at: datetime
 updated_at: datetime
 observations: list[ObservationModel]  # Relationship
-```python
+```
 
 ### ObservationModel
 
@@ -139,7 +139,7 @@ sketch_path: str | None
 created_at: datetime
 updated_at: datetime
 celestial_object: CelestialObjectModel  # Relationship
-```python
+```
 
 ### UserPreferenceModel
 
@@ -150,7 +150,7 @@ category: str
 description: str | None
 created_at: datetime
 updated_at: datetime
-```python
+```
 
 ## 🔨 Next Steps (To Complete)
 
@@ -170,7 +170,7 @@ def get_by_id(self, object_id: int) -> CelestialObject | None:
     with self.Session() as session:
         model = session.get(CelestialObjectModel, object_id)
         return self._model_to_object(model) if model else None
-```python
+```
 
 **Benefits**:
 
@@ -201,7 +201,7 @@ obj = CelestialObjectModel(
 )
 session.add(obj)
 session.commit()
-```python
+```
 
 ### Step 3: Add Observation Management
 
@@ -219,7 +219,7 @@ nexstar observation show 123
 
 # Export observations
 nexstar observation export observations.csv
-```bash
+```
 
 ### Step 4: Add Preferences Management
 
@@ -238,7 +238,7 @@ nexstar prefs list
 # Export/import
 nexstar prefs export my_settings.json
 nexstar prefs import my_settings.json
-```bash
+```
 
 ## 💡 Usage Examples
 
@@ -279,7 +279,7 @@ with db.Session() as session:
     print(f"{obj.name} has {len(obj.observations)} observations")
     for obs in obj.observations:
         print(f"  - {obs.observed_at}: {obs.rating}/5 stars")
-```python
+```
 
 ### Working with Preferences (Future)
 
@@ -311,7 +311,7 @@ with db.Session() as session:
     equipment_prefs = session.query(UserPreferenceModel)
         .filter(UserPreferenceModel.category == "equipment")
         .all()
-```python
+```
 
 ## 🎯 Benefits Achieved
 
@@ -377,7 +377,7 @@ alembic upgrade head --sql
 
 # Auto-generate migration after model changes
 alembic revision --autogenerate -m "Description"
-```bash
+```
 
 ## 📝 Files Created/Modified
 
@@ -397,22 +397,26 @@ alembic revision --autogenerate -m "Description"
 ## 🎉 What We Have Now
 
 1. **Professional Database Schema**
+
    - Clean, normalized tables
    - Proper foreign keys
    - Cascade rules
 
 2. **Observation Logging**
+
    - Track every observation
    - Record conditions
    - Rate your views
    - Attach images/sketches
 
 3. **User Preferences**
+
    - Flexible key-value store
    - JSON values for complex data
    - Categorized settings
 
 4. **Type-Safe Models**
+
    - Full SQLAlchemy ORM
    - Relationships working
    - Ready for queries
@@ -435,8 +439,8 @@ You can start using the new tables immediately:
 
 ---
 
-*Completed: 2025-11-06*
-*Database Version: 24a9158bd045*
-*Total Objects: 9,721*
-*New Tables: observations, user_preferences*
-*Relationships: ✅ Working*
+_Completed: 2025-11-06_
+_Database Version: 24a9158bd045_
+_Total Objects: 9,721_
+_New Tables: observations, user_preferences_
+_Relationships: ✅ Working_

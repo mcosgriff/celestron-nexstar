@@ -28,7 +28,7 @@ Phase 1 of the catalog expansion is **complete**! We've successfully migrated fr
 - description, constellation
 - is_dynamic, ephemeris_name, parent_planet
 - timestamps (created_at, updated_at)
-```text
+```
 
 ### 2. Database API
 

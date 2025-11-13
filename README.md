@@ -107,7 +107,8 @@ Browse and search extensive catalogs:
 - **Fuzzy search**: Find objects quickly (`catalog search andromeda`)
 - **Visibility filtering**: Filter by telescope capabilities and sky conditions
 - **Interactive object type selection**: Choose from all object types or filter by specific type (planets, deep_sky, messier, etc.)
-- **Geocoding**: Set location by address (`location geocode "New York, NY"`)
+- **Automatic location detection**: Detect your location using system services or IP geolocation (`location detect`)
+- **Geocoding**: Set location by address (`location set-observer "New York, NY"`)
 - **Offline ephemeris**: Download JPL data for field use without internet
 - **Dynamic ephemeris sync**: Automatically fetch and sync ephemeris file metadata from NASA JPL's NAIF servers
 - **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
@@ -276,6 +277,9 @@ catalog info M57                      # Detailed information
 optics config --telescope nexstar_6se --eyepiece 25
 location set --lat 34.05 --lon -118.24 --name "LA"
 location geocode "Griffith Observatory, Los Angeles"
+location detect                                                  # Automatically detect your location
+location set-observer "New York, NY"                            # Set observer location for calculations
+location detect --no-save                                       # Detect location without saving
 ephemeris download recommended  # DE421 + Jupiter moons (Skyfield's default recommendation)
 ephemeris download standard      # ~20MB, includes planets + Jupiter/Saturn moons
 ```
@@ -335,14 +339,31 @@ nexstar aurora tonight --export                                # Aurora forecast
 nexstar vacation plan "Denver, CO" --export                   # Vacation plan
 ```
 
-**Database Initialization** (one-time setup)
+### Database Initialization
 
 ```bash
+nexstar data setup                                              # First-time database setup (creates schema, imports data)
+nexstar data migrate                                            # Apply pending database migrations
+nexstar data migrate --dry-run                                  # Preview migrations without applying
 nexstar data init-static                                        # Initialize offline data
 nexstar data sync-ephemeris                                     # Sync ephemeris file metadata from NAIF
 nexstar data sync-ephemeris --list                             # Preview available ephemeris files
 nexstar data stats                                              # Show database statistics
 ```
+
+**Database Migrations:**
+
+The database schema is managed using Alembic migrations. When you update the software, you may need to apply database migrations:
+
+```bash
+# Check and apply any pending migrations
+nexstar data migrate
+
+# Preview what would be migrated (without applying)
+nexstar data migrate --dry-run
+```
+
+Migrations are automatically applied during `nexstar data setup`, but if you're updating an existing installation, run `nexstar data migrate` to ensure your database schema is up to date.
 
 ### Shell Tips
 
@@ -363,6 +384,41 @@ Connect your Celestron NexStar telescope via USB:
 - **Linux**: `/dev/ttyUSB0` (may need: `sudo usermod -a -G dialout $USER`)
 - **Windows**: `COM3`, `COM4`, etc. (check Device Manager)
 
+### Location Setup
+
+Your location is needed for accurate astronomical calculations. You can set it in several ways:
+
+**Automatic Detection (Recommended):**
+
+```bash
+nexstar location detect
+```
+
+This command will:
+
+1. Try to use system location services (GPS, if available and permitted)
+   - **Linux**: Uses GeoClue2 (requires `dbus-python` and geoclue2 service)
+   - **macOS**: Uses CoreLocation (requires PyObjC)
+   - **Windows**: Uses Windows Location API (requires `winrt`)
+2. Fall back to IP-based geolocation (less accurate, but works everywhere)
+
+The command will prompt you for permission before accessing location services, similar to how web browsers request location access.
+
+**Manual Setup:**
+
+```bash
+# By city/address (geocoded automatically)
+nexstar location set-observer "New York, NY"
+
+# By coordinates
+nexstar location set-observer --lat 40.7128 --lon -74.0060 --name "New York"
+
+# View current location
+nexstar location get-observer
+```
+
+**Note:** The observer location is separate from the telescope's internal location setting. The observer location is used for CLI calculations (planetary positions, visibility, etc.), while the telescope location is used for the telescope's internal tracking calculations.
+
 ### First-Time Setup
 
 ```bash
@@ -371,7 +427,16 @@ uv run nexstar shell
 
 # Follow the setup wizard or configure manually:
 optics config --telescope nexstar_6se --eyepiece 25
-location geocode "Your City, State"
+
+# Set your location (choose one method):
+location detect                                                  # Automatically detect location (recommended)
+# OR
+location set-observer "Your City, State"                        # Geocode from address
+# OR
+location set-observer --lat 34.05 --lon -118.24                 # Manual coordinates
+
+# Initialize database and download ephemeris
+nexstar data setup                                               # First-time database setup
 nexstar data sync-ephemeris                                     # Sync ephemeris file metadata
 ephemeris download recommended                                  # Download recommended set (DE421 + Jupiter moons)
 
@@ -543,14 +608,46 @@ pre-commit run
 - Check no other software is using the port
 - On Linux, ensure user has serial port permissions: `sudo usermod -a -G dialout $USER` (logout/login required)
 
-#### Movement Issues
+### Location Detection Issues
+
+**Automatic detection not working:**
+
+- **System services unavailable**: If system location services aren't available, the command will automatically fall back to IP-based geolocation
+- **Permission denied**: On Linux, ensure GeoClue2 is running and your application has location permissions
+  - Check GeoClue2 status: `systemctl --user status geoclue`
+  - Grant permissions via your desktop environment's privacy settings
+- **IP geolocation inaccurate**: IP-based location is approximate (city-level). For better accuracy, use manual coordinates or system location services
+- **Manual setup**: If automatic detection fails, you can always set your location manually:
+
+  ```bash
+  nexstar location set-observer "Your City, State"
+  # OR
+  nexstar location set-observer --lat YOUR_LAT --lon YOUR_LON
+  ```
+
+### Database Migration Issues
+
+**Migrations not applying:**
+
+- Ensure you're using the latest version of the software
+- Check database file permissions: `ls -l ~/.nexstar/catalogs.db`
+- Try running migrations manually: `nexstar data migrate`
+- If migrations fail, you may need to rebuild the database: `nexstar data rebuild` (this will re-import all data)
+
+**Database schema out of date:**
+
+- Run `nexstar data migrate` to apply pending migrations
+- Check migration status: `nexstar data migrate --dry-run`
+- If issues persist, see the [Database Initialization](#database-initialization) section above
+
+### Movement Issues
 
 - Press ESC to stop if telescope is moving unexpectedly
 - Check tracking mode is appropriate for setup
 - Verify coordinates are within valid ranges
 - Ensure telescope is not at mechanical limit
 
-#### Position Tracking Not Working
+### Position Tracking Not Working
 
 - Tracking auto-starts after `align` commands
 - Manually start: `tracking start`
