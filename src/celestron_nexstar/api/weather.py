@@ -637,16 +637,16 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             except (ValueError, TypeError):
                 return None
 
-        current_vars = current.get("variables", {})
-        temp_f = safe_float(current_vars.get("temperature_2m"))
-        humidity = safe_float(current_vars.get("relative_humidity_2m"))
-        cloud_cover = safe_float(current_vars.get("cloud_cover"))
-        wind_speed_mph = safe_float(current_vars.get("wind_speed_10m"))
-        weather_code = current_vars.get("weather_code")
+        # Open-Meteo API returns data directly in current object, not nested under "variables"
+        temp_f = safe_float(current.get("temperature_2m"))
+        humidity = safe_float(current.get("relative_humidity_2m"))
+        cloud_cover = safe_float(current.get("cloud_cover"))
+        wind_speed_mph = safe_float(current.get("wind_speed_10m"))
+        weather_code = current.get("weather_code")
 
         # Get dew point from hourly data (first hour)
-        hourly_vars = hourly.get("variables", {})
-        dew_point_values = hourly_vars.get("dew_point_2m", [])
+        # Open-Meteo API returns hourly data directly in hourly object
+        dew_point_values = hourly.get("dew_point_2m", [])
         dew_point_f = safe_float(dew_point_values[0]) if dew_point_values else None
 
         # If dew point not available, calculate from temp/humidity

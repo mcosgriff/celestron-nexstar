@@ -12,16 +12,11 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import requests_cache
+from retry_requests import retry
 
-try:
-    import requests_cache
-    from retry_requests import retry
-
-    REQUESTS_AVAILABLE = True
-except ImportError:
-    REQUESTS_AVAILABLE = False
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -46,11 +41,17 @@ class AuroraForecast:
     timestamp: datetime
     kp_index: float  # Geomagnetic Kp index (0-9)
     visibility_level: str  # "none", "low", "moderate", "high", "very_high"
-    latitude_required: float  # Minimum latitude where visible
+    latitude_required: float  # Minimum latitude where visible (auroral boundary)
     is_visible: bool  # Whether aurora is visible at observer's location
+    visibility_probability: float  # Probability of visibility (0.0-1.0) using AgentCalc algorithm
     cloud_cover_percent: float | None = None
     moon_illumination: float | None = None
+    bortle_class: int | None = None  # Bortle class (1-9) for light pollution adjustment
+    sqm_value: float | None = None  # SQM value (mag/arcsec²) for verification
     is_dark: bool = True  # Whether it's dark enough (after sunset, before sunrise)
+    peak_viewing_start: datetime | None = None  # Start of best viewing window
+    peak_viewing_end: datetime | None = None  # End of best viewing window
+    is_forecasted: bool = False  # Whether Kp is forecasted (vs observed)
 
 
 @dataclass
@@ -96,10 +97,6 @@ def _get_kp_forecast(days: int = 3) -> list[tuple[datetime, float]] | None:
     Returns:
         List of (datetime, kp_value) tuples, or None if unavailable
     """
-    if not REQUESTS_AVAILABLE:
-        logger.debug("requests_cache not available, cannot fetch Kp forecast")
-        return None
-
     try:
         # Setup cached session
         cache_dir = Path.home() / ".cache" / "celestron-nexstar"
@@ -158,10 +155,6 @@ def _get_kp_index() -> float | None:
     Returns:
         Current Kp index (0-9) or None if unavailable
     """
-    if not REQUESTS_AVAILABLE:
-        logger.debug("requests_cache not available, cannot fetch Kp index")
-        return None
-
     try:
         # Setup cached session
         cache_dir = Path.home() / ".cache" / "celestron-nexstar"
@@ -250,32 +243,99 @@ def _get_kp_index() -> float | None:
         return None
 
 
-def _kp_to_min_latitude(kp: float) -> float:
+def _kp_to_auroral_boundary(kp: float) -> float:
     """
-    Get minimum latitude required for aurora visibility based on Kp index.
+    Calculate auroral boundary latitude using AgentCalc formula.
+
+    Uses the continuous formula: φ_b = 66 - 3K
+    where K is the Kp index (0-9) and φ_b is the equatorward boundary
+    of the auroral oval in degrees latitude.
+
+    Reference: https://agentcalc.com/aurora-visibility-calculator
 
     Args:
         kp: Kp index (0-9)
 
     Returns:
-        Minimum latitude in degrees (absolute value)
+        Auroral boundary latitude in degrees (absolute value)
     """
-    if kp >= 9.0:
-        return 40.0  # Extreme activity
-    elif kp >= 8.0:
-        return 45.0  # Very high activity
-    elif kp >= 7.0:
-        return 50.0  # High activity
-    elif kp >= 6.0:
-        return 55.0  # Moderate-high activity
-    elif kp >= 5.0:
-        return 60.0  # Moderate activity
-    elif kp >= 4.0:
-        return 65.0  # Low-moderate activity
-    elif kp >= 3.0:
-        return 70.0  # Low activity
-    else:
-        return 75.0  # Very low activity - only polar regions
+    # Clamp Kp to valid range
+    kp = max(0.0, min(9.0, kp))
+
+    # AgentCalc formula: φ_b = 66 - 3K
+    boundary_lat = 66.0 - (3.0 * kp)
+
+    # Clamp to reasonable bounds (aurora can't go below ~30° even at Kp 9)
+    return max(30.0, min(75.0, boundary_lat))
+
+
+def _calculate_aurora_probability(
+    observer_lat: float,
+    kp: float,
+    cloud_cover_percent: float | None = None,
+    bortle_class: int | None = None,
+    moon_illumination: float | None = None,
+) -> float:
+    """
+    Calculate aurora visibility probability using AgentCalc logistic model.
+
+    Uses the logistic probability function:
+    P = 1 / (1 + e^(-(φ - φ_b)))
+
+    Then applies multiplicative adjustments for:
+    - Cloud cover: (1 - C/100)
+    - Light pollution (Bortle): (1 - B/12)
+    - Moon illumination: (1 - M/200)
+
+    Reference: https://agentcalc.com/aurora-visibility-calculator
+
+    Args:
+        observer_lat: Observer latitude in degrees (absolute value used)
+        kp: Kp index (0-9)
+        cloud_cover_percent: Cloud cover percentage (0-100), None if unknown
+        bortle_class: Bortle class (1-9), None if unknown
+        moon_illumination: Moon illumination fraction (0.0-1.0), None if unknown
+
+    Returns:
+        Probability of visibility (0.0-1.0)
+    """
+    import math
+
+    # Use absolute latitude
+    observer_lat = abs(observer_lat)
+
+    # Calculate auroral boundary
+    boundary_lat = _kp_to_auroral_boundary(kp)
+
+    # Calculate latitude difference (how far north of boundary)
+    lat_diff = observer_lat - boundary_lat
+
+    # Logistic probability function: P = 1 / (1 + e^(-(φ - φ_b)))
+    # This gives high probability when observer is well north of boundary
+    base_probability = 1.0 / (1.0 + math.exp(-lat_diff))
+
+    # Apply multiplicative adjustments
+    adjusted_probability = base_probability
+
+    # Cloud cover adjustment: (1 - C/100)
+    if cloud_cover_percent is not None:
+        cloud_factor = 1.0 - (cloud_cover_percent / 100.0)
+        adjusted_probability *= max(0.0, cloud_factor)
+
+    # Light pollution (Bortle class) adjustment: (1 - B/12)
+    if bortle_class is not None:
+        bortle_factor = 1.0 - (bortle_class / 12.0)
+        adjusted_probability *= max(0.0, bortle_factor)
+
+    # Moon illumination adjustment: (1 - M/200)
+    # Convert moon illumination fraction (0.0-1.0) to percentage
+    if moon_illumination is not None:
+        moon_percent = moon_illumination * 100.0
+        moon_factor = 1.0 - (moon_percent / 200.0)
+        adjusted_probability *= max(0.0, moon_factor)
+
+    # Clamp to [0, 1]
+    return max(0.0, min(1.0, adjusted_probability))
 
 
 def _kp_to_visibility_level(kp: float) -> str:
@@ -305,6 +365,7 @@ def get_aurora_forecast(
     dt: datetime | None = None,
     cloud_cover_percent: float | None = None,
     moon_illumination: float | None = None,
+    bortle_class: int | None = None,
     is_dark: bool = True,
 ) -> AuroraForecast | None:
     """
@@ -323,47 +384,196 @@ def get_aurora_forecast(
     if dt is None:
         dt = datetime.now(UTC)
 
-    kp = _get_kp_index()
-    if kp is None:
-        return None
+    # Normalize dt to UTC
+    dt_utc = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    now_utc = datetime.now(UTC)
 
-    # Get minimum latitude and visibility level
-    min_lat = _kp_to_min_latitude(kp)
+    # Try to get forecasted Kp if checking future time, or if checking "tonight"
+    # (even if current time is during the day, we want tonight's forecast)
+    kp = None
+    peak_viewing_start = None
+    peak_viewing_end = None
+    is_forecasted = False
+    is_future = dt_utc > now_utc
+    is_tonight_check = not is_future and is_dark  # Current time is during nighttime
+    is_tonight_forecast = not is_future and not is_dark  # Current time is daytime, checking tonight
+
+    if is_future or is_tonight_check or is_tonight_forecast:
+        # For future times or "tonight" checks, try to get forecasted Kp
+        forecast_data = _get_kp_forecast(days=3)
+        if forecast_data:
+            # If checking "tonight" (current nighttime or tonight's forecast), get max Kp during nighttime period
+            if is_dark or is_tonight_forecast:
+                try:
+                    from .sun_moon import calculate_sun_times
+
+                    # For "tonight" forecast during daytime, use today's sunset/sunrise
+                    # For current nighttime, use current dt
+                    check_time = dt_utc if is_dark else now_utc
+                    sun_times = calculate_sun_times(location.latitude, location.longitude, check_time)
+                    sunset = sun_times.get("sunset")
+                    sunrise = sun_times.get("sunrise")
+
+                    if sunset and sunrise:
+                        sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+                        sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
+
+                        # For "tonight" forecast during daytime, sunrise might be next day
+                        if is_tonight_forecast and sunrise_utc < sunset_utc:
+                            sunrise_utc = sunrise_utc + timedelta(days=1)
+
+                        # Find max Kp during nighttime period (tonight)
+                        max_kp = None
+                        for forecast_time, forecast_kp in forecast_data:
+                            # Check if forecast time is during tonight's nighttime period
+                            if sunset_utc <= sunrise_utc:  # Normal case
+                                if (sunset_utc <= forecast_time <= sunrise_utc) and (
+                                    max_kp is None or forecast_kp > max_kp
+                                ):
+                                    max_kp = forecast_kp
+                            else:  # Polar regions (sunset after sunrise)
+                                if (forecast_time >= sunset_utc or forecast_time <= sunrise_utc) and (
+                                    max_kp is None or forecast_kp > max_kp
+                                ):
+                                    max_kp = forecast_kp
+
+                        if max_kp is not None:
+                            kp = max_kp
+                            logger.debug(
+                                f"Using max forecasted Kp {kp:.1f} during tonight's nighttime period (sunset: {sunset_utc}, sunrise: {sunrise_utc})"
+                            )
+
+                            # Find time window when Kp is highest (peak viewing window)
+                            # Look for consecutive hours with Kp >= max_kp - 0.5
+                            high_kp_periods = []
+                            current_start = None
+                            for forecast_time, forecast_kp in forecast_data:
+                                if sunset_utc <= forecast_time <= sunrise_utc and forecast_kp >= max_kp - 0.5:
+                                    if current_start is None:
+                                        current_start = forecast_time
+                                else:
+                                    if current_start is not None:
+                                        high_kp_periods.append((current_start, forecast_time))
+                                        current_start = None
+                            if current_start is not None:
+                                high_kp_periods.append((current_start, sunrise_utc))
+
+                            if high_kp_periods:
+                                # Use the longest period, or the one closest to midnight
+                                best_period = max(high_kp_periods, key=lambda p: (p[1] - p[0]).total_seconds())
+                                peak_viewing_start = best_period[0]
+                                peak_viewing_end = best_period[1]
+                                is_forecasted = True
+                            else:
+                                peak_viewing_start = None
+                                peak_viewing_end = None
+                                is_forecasted = False
+                        else:
+                            peak_viewing_start = None
+                            peak_viewing_end = None
+                            is_forecasted = False
+                    else:
+                        peak_viewing_start = None
+                        peak_viewing_end = None
+                        is_forecasted = False
+                except Exception as e:
+                    logger.debug(f"Could not calculate nighttime Kp max: {e}")
+                    peak_viewing_start = None
+                    peak_viewing_end = None
+                    is_forecasted = False
+
+            # If we don't have a nighttime max, try to get Kp closest to the target time
+            if kp is None:
+                # Find forecast entry closest to target time
+                closest_time = None
+                closest_kp = None
+                min_diff = None
+                for forecast_time, forecast_kp in forecast_data:
+                    diff = abs((forecast_time - dt_utc).total_seconds())
+                    if min_diff is None or diff < min_diff:
+                        min_diff = diff
+                        closest_time = forecast_time
+                        closest_kp = forecast_kp
+
+                if closest_kp is not None:
+                    kp = closest_kp
+                    logger.debug(f"Using forecasted Kp {kp:.1f} for {dt_utc} (closest forecast: {closest_time})")
+
+    # Fall back to current Kp if no forecast available
+    if kp is None:
+        kp = _get_kp_index()
+        if kp is None:
+            return None
+
+    # Calculate auroral boundary using AgentCalc formula
+    boundary_lat = _kp_to_auroral_boundary(kp)
     visibility_level = _kp_to_visibility_level(kp)
 
-    # Check if location is far enough north
-    is_visible = abs(location.latitude) >= min_lat
+    # Calculate visibility probability using AgentCalc logistic model
+    visibility_probability = _calculate_aurora_probability(
+        observer_lat=location.latitude,
+        kp=kp,
+        cloud_cover_percent=cloud_cover_percent,
+        bortle_class=bortle_class,  # Use provided bortle_class if available
+        moon_illumination=moon_illumination,
+    )
+
+    # Determine binary visibility (probability > 0.5 = visible)
+    is_visible = visibility_probability > 0.5
+
+    # If checking "tonight" during daytime, we need to check if it will be dark tonight
+    # and adjust visibility accordingly
+    will_be_dark_tonight = is_dark
+    if is_tonight_forecast:
+        # We're checking for tonight during the day, so calculate if it will be dark tonight
+        try:
+            from .sun_moon import calculate_sun_times
+
+            check_time = now_utc
+            sun_times = calculate_sun_times(location.latitude, location.longitude, check_time)
+            sunset = sun_times.get("sunset")
+            sunrise = sun_times.get("sunrise")
+
+            if sunset and sunrise:
+                sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+                sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
+                if sunrise_utc < sunset_utc:
+                    sunrise_utc = sunrise_utc + timedelta(days=1)
+                # It will be dark tonight (after sunset, before sunrise)
+                will_be_dark_tonight = True
+        except Exception as e:
+            logger.debug(f"Could not calculate if it will be dark tonight: {e}")
+            # Assume it will be dark tonight
+            will_be_dark_tonight = True
 
     # Adjust visibility based on conditions
-    # Even if geomagnetically active, need dark skies and clear weather
-    if not is_dark:
+    # Even if geomagnetically active, need dark skies
+    # Note: Cloud cover, moon, and light pollution are already factored into probability
+    if not will_be_dark_tonight:
         is_visible = False
         visibility_level = "none"
-    elif cloud_cover_percent is not None and cloud_cover_percent > 50:
-        # Heavy cloud cover blocks aurora
-        is_visible = False
-        visibility_level = (
-            "moderate" if visibility_level in ["very_high", "high"] else "none"
-        )  # Still active, just blocked by clouds
-
-    # Moon phase affects visibility (bright moon washes out faint aurora)
-    if moon_illumination is not None and moon_illumination > 0.7:
-        # Bright moon (>70% illuminated) reduces visibility
-        if visibility_level == "low":
-            is_visible = False
-            visibility_level = "none"
-        elif visibility_level == "moderate":
-            visibility_level = "low"
+        # Set probability to 0 if not dark
+        visibility_probability = 0.0
+    else:
+        # Probability already accounts for clouds, moon, and light pollution
+        # Just ensure visibility matches probability threshold
+        is_visible = visibility_probability > 0.5
 
     return AuroraForecast(
         timestamp=dt,
         kp_index=kp,
         visibility_level=visibility_level,
-        latitude_required=min_lat,
+        latitude_required=boundary_lat,
         is_visible=is_visible,
+        visibility_probability=visibility_probability,
         cloud_cover_percent=cloud_cover_percent,
         moon_illumination=moon_illumination,
-        is_dark=is_dark,
+        bortle_class=bortle_class,
+        sqm_value=None,  # Set by caller if available
+        is_dark=will_be_dark_tonight if is_tonight_forecast else is_dark,
+        peak_viewing_start=peak_viewing_start,
+        peak_viewing_end=peak_viewing_end,
+        is_forecasted=is_forecasted,
     )
 
 
@@ -384,64 +594,192 @@ def check_aurora_visibility(
     if dt is None:
         dt = datetime.now(UTC)
 
-    # Get weather data for cloud cover
-    cloud_cover = None
-    try:
-        import asyncio
+    # Normalize dt to UTC
+    dt_utc = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    now_utc = datetime.now(UTC)
 
-        from .weather import fetch_weather
-
-        weather = asyncio.run(fetch_weather(location))
-        cloud_cover = weather.cloud_cover_percent
-    except Exception as e:
-        logger.debug(f"Could not fetch weather for aurora check: {e}")
-
-    # Get moon illumination
-    moon_illumination = None
-    try:
-        from .solar_system import get_moon_info
-
-        moon_info = get_moon_info(location.latitude, location.longitude, dt)
-        if moon_info:
-            moon_illumination = moon_info.illumination
-    except Exception as e:
-        logger.debug(f"Could not fetch moon info for aurora check: {e}")
-
-    # Check if it's dark (after sunset, before sunrise)
+    # Check if it's dark (after sunset, before sunrise) - needed for weather logic
     is_dark = False
     try:
         from .sun_moon import calculate_sun_times
 
-        sun_times = calculate_sun_times(location.latitude, location.longitude, dt)
+        sun_times = calculate_sun_times(location.latitude, location.longitude, dt_utc)
         sunset = sun_times.get("sunset")
         sunrise = sun_times.get("sunrise")
 
         if sunset and sunrise:
             # Normalize to same day for comparison
-            dt_utc = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-
-            sunset = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
-
-            sunrise = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
+            sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+            sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
 
             # Check if current time is after sunset or before sunrise
             # Handle case where sunrise is next day
-            if sunset > sunrise:  # Sunset is later in day
-                is_dark = dt_utc >= sunset or dt_utc <= sunrise
+            if sunset_utc <= sunrise_utc:  # Normal case
+                is_dark = sunset_utc <= dt_utc <= sunrise_utc
             else:  # Sunrise is next day (polar regions)
-                is_dark = dt_utc >= sunset and dt_utc <= sunrise + timedelta(days=1)
+                is_dark = dt_utc >= sunset_utc or dt_utc <= sunrise_utc
     except Exception as e:
-        logger.debug(f"Could not calculate sun times for aurora check: {e}")
+        logger.debug(f"Could not calculate sun times for is_dark check: {e}")
         # Assume dark if we can't determine
         is_dark = True
 
-    return get_aurora_forecast(
+    # Get weather and moon data in parallel for better performance
+    cloud_cover = None
+    moon_illumination = None
+    bortle_class = None
+    sqm_value = None
+
+    try:
+        import asyncio
+
+        from .light_pollution import get_light_pollution_data
+        from .solar_system import get_moon_info
+        from .weather import fetch_hourly_weather_forecast, fetch_weather
+
+        # Check if we're looking for "tonight" (current time is during the day)
+        is_tonight_check = not is_dark and dt_utc <= now_utc + timedelta(hours=1)
+
+        if is_tonight_check:
+            # For "tonight" checks during the day, get forecasted cloud cover for tonight
+            try:
+                # Get sunset/sunrise times
+                sun_times = calculate_sun_times(location.latitude, location.longitude, dt_utc)
+                sunset = sun_times.get("sunset")
+                sunrise = sun_times.get("sunrise")
+
+                if sunset and sunrise:
+                    sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
+                    sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
+                    if sunrise_utc < sunset_utc:
+                        sunrise_utc = sunrise_utc + timedelta(days=1)
+
+                    # Get hourly forecast for tonight
+                    hours_needed = int((sunrise_utc - sunset_utc).total_seconds() / 3600) + 1
+                    from .weather import HourlySeeingForecast, fetch_hourly_weather_forecast
+
+                    hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
+                        location, hours=hours_needed
+                    )
+
+                    if hourly_forecasts:
+                        # Find forecasts during tonight's nighttime period
+                        # Timestamps are already timezone-aware (UTC)
+                        tonight_forecasts = [
+                            f
+                            for f in hourly_forecasts
+                            if f.timestamp is not None and sunset_utc <= f.timestamp <= sunrise_utc
+                        ]
+
+                        if tonight_forecasts:
+                            # Use weighted average cloud cover for tonight
+                            # Weight peak viewing hours (midnight-2am local) more heavily
+                            cloud_covers_weighted = []
+                            total_weight = 0.0
+                            for f in tonight_forecasts:
+                                if f.cloud_cover_percent is not None and f.timestamp is not None:
+                                    # Weight: 2.0 for midnight-2am, 1.5 for 10pm-midnight and 2am-4am, 1.0 otherwise
+                                    hour = f.timestamp.hour
+                                    if 0 <= hour < 2:  # Midnight-2am (peak viewing)
+                                        weight = 2.0
+                                    elif (22 <= hour < 24) or (2 <= hour < 4):  # 10pm-midnight or 2am-4am
+                                        weight = 1.5
+                                    else:
+                                        weight = 1.0
+                                    cloud_covers_weighted.append((f.cloud_cover_percent, weight))
+                                    total_weight += weight
+
+                            if cloud_covers_weighted and total_weight > 0:
+                                cloud_cover = sum(cc * w for cc, w in cloud_covers_weighted) / total_weight
+                                logger.debug(
+                                    f"Using weighted forecasted cloud cover for tonight: {cloud_cover:.1f}% (weighted avg of {len(cloud_covers_weighted)} hours)"
+                                )
+
+                            # Get moon phase for tonight (use middle of nighttime period)
+                            try:
+                                midnight_tonight = sunset_utc + (sunrise_utc - sunset_utc) / 2
+                                moon_info = get_moon_info(location.latitude, location.longitude, midnight_tonight)
+                                if moon_info:
+                                    moon_illumination = moon_info.illumination
+                                    logger.debug(
+                                        f"Using moon phase for tonight (midnight): {moon_illumination * 100:.1f}%"
+                                    )
+                            except Exception as e:
+                                logger.debug(f"Could not get moon phase for tonight: {e}")
+            except Exception as e:
+                logger.debug(f"Could not get forecasted cloud cover for tonight: {e}")
+
+        # Fall back to current weather if we don't have forecasted data
+        if cloud_cover is None or moon_illumination is None or bortle_class is None:
+            # Fetch weather, moon, and light pollution data in parallel
+            async def fetch_all() -> tuple[Any, Any, Any]:
+                weather_task = fetch_weather(location)
+                moon_task = asyncio.to_thread(get_moon_info, location.latitude, location.longitude, dt)
+                lp_task = get_light_pollution_data(location.latitude, location.longitude)
+                weather, moon_info, lp_data = await asyncio.gather(
+                    weather_task, moon_task, lp_task, return_exceptions=True
+                )
+                return weather, moon_info, lp_data
+
+            weather, moon_info, lp_data = asyncio.run(fetch_all())
+
+            if cloud_cover is None:
+                if isinstance(weather, Exception):
+                    logger.warning(f"Weather fetch error: {weather}")
+                elif hasattr(weather, "error") and weather.error:
+                    logger.warning(f"Weather fetch error: {weather.error}")
+                elif hasattr(weather, "cloud_cover_percent"):
+                    cloud_cover = getattr(weather, "cloud_cover_percent", None)
+                    if cloud_cover is not None:
+                        logger.debug(f"Using current cloud cover: {cloud_cover:.1f}%")
+
+            if moon_illumination is None:
+                if isinstance(moon_info, Exception):
+                    logger.warning(f"Could not fetch moon info: {moon_info}")
+                elif moon_info is not None:
+                    moon_illumination = moon_info.illumination
+                    logger.debug(f"Using current moon phase: {moon_illumination * 100:.1f}%")
+
+            if bortle_class is None:
+                if isinstance(lp_data, Exception):
+                    logger.debug(f"Could not fetch light pollution data: {lp_data}")
+                elif lp_data:
+                    bortle_class = lp_data.bortle_class.value
+                    sqm_value = lp_data.sqm_value
+                    logger.debug(f"Using Bortle class: {bortle_class} (SQM: {sqm_value:.2f})")
+    except Exception as e:
+        logger.warning(f"Could not fetch weather/moon/light-pollution for aurora check: {e}", exc_info=True)
+
+    # Note: is_dark is already calculated above for weather logic
+    # Note: cloud_cover and moon_illumination are now fetched above
+
+    forecast = get_aurora_forecast(
         location=location,
         dt=dt,
         cloud_cover_percent=cloud_cover,
         moon_illumination=moon_illumination,
+        bortle_class=bortle_class,
         is_dark=is_dark,
     )
+
+    # Update Bortle class and SQM if they were fetched but weren't available when forecast was created
+    if forecast and bortle_class is not None and forecast.bortle_class is None:
+        forecast.bortle_class = bortle_class
+        forecast.sqm_value = sqm_value
+        # Recalculate probability with all factors including Bortle class
+        forecast.visibility_probability = _calculate_aurora_probability(
+            observer_lat=location.latitude,
+            kp=forecast.kp_index,
+            cloud_cover_percent=cloud_cover,
+            bortle_class=bortle_class,
+            moon_illumination=moon_illumination,
+        )
+        # Update visibility based on recalculated probability
+        forecast.is_visible = forecast.visibility_probability > 0.5
+    elif forecast and sqm_value is not None:
+        # Set SQM value even if Bortle class was already set
+        forecast.sqm_value = sqm_value
+
+    return forecast
 
 
 def get_aurora_visibility_windows(
@@ -472,7 +810,7 @@ def get_aurora_visibility_windows(
     current_visibility = "none"
 
     for forecast_time, kp_value in forecast:
-        min_required_lat = _kp_to_min_latitude(kp_value)
+        min_required_lat = _kp_to_auroral_boundary(kp_value)
         visibility_level = _kp_to_visibility_level(kp_value)
 
         # Check if aurora is visible at this location

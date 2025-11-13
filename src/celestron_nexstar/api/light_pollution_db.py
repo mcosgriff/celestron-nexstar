@@ -553,12 +553,39 @@ def _process_png_to_database(
         b_values = img_array[y_grid, x_grid, 2]
 
         # Convert RGB to SQM (vectorized)
-        # Vectorize the _rgb_to_sqm function
+        # Use the same weighted brightness calculation as _rgb_to_sqm()
         r_norm = r_values / 255.0
         g_norm = g_values / 255.0
         b_norm = b_values / 255.0
-        brightness = (r_norm + g_norm + b_norm) / 3.0
-        sqm_values = 22.0 - (brightness * 5.0)  # Approximate conversion
+        # Weighted brightness (luminance): 0.299*R + 0.587*G + 0.114*B
+        brightness = 0.299 * r_norm + 0.587 * g_norm + 0.114 * b_norm
+
+        # Apply the same piecewise conversion as _rgb_to_sqm()
+        # This matches the more accurate conversion function
+        sqm_values = np.where(
+            brightness < 0.01,  # Very dark (black)
+            22.0,
+            np.where(
+                brightness < 0.1,  # Dark blue
+                21.5 + (brightness / 0.1) * 0.5,
+                np.where(
+                    brightness < 0.3,  # Blue to green
+                    20.5 + ((brightness - 0.1) / 0.2) * 1.0,
+                    np.where(
+                        brightness < 0.6,  # Green to yellow
+                        19.0 + ((brightness - 0.3) / 0.3) * 1.5,
+                        np.where(
+                            brightness < 0.9,  # Yellow to red
+                            18.0 + ((brightness - 0.6) / 0.3) * 1.0,
+                            # Red to white
+                            17.0 + ((brightness - 0.9) / 0.1) * 0.5,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        # Clamp to reasonable range
+        sqm_values = np.clip(sqm_values, 17.0, 22.0)
 
         # Round to grid resolution (vectorized)
         lat_rounded = np.round(lats / grid_resolution) * grid_resolution

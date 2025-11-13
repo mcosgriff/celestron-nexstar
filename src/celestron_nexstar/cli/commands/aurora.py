@@ -142,20 +142,54 @@ def _show_aurora_content(
     # Kp Index
     table.add_row("Geomagnetic Activity (Kp)", _format_kp_index(forecast.kp_index))
 
+    # Visibility Probability (AgentCalc algorithm)
+    prob_pct = forecast.visibility_probability * 100.0
+    if prob_pct >= 70:
+        prob_color = "[bold bright_green]"
+        prob_desc = " (Strong odds)"
+    elif prob_pct >= 30:
+        prob_color = "[yellow]"
+        prob_desc = " (Possible)"
+    else:
+        prob_color = "[red]"
+        prob_desc = " (Low odds)"
+    table.add_row("Visibility Probability", f"{prob_color}{prob_pct:.1f}%{prob_desc}[/{prob_color.strip('[]')}]")
+
     # Visibility Level
     table.add_row("Visibility Level", _format_visibility_level(forecast.visibility_level))
 
-    # Location requirements
-    if forecast.latitude_required > abs(location.latitude):
+    # Location requirements (auroral boundary)
+    lat_diff = abs(location.latitude) - forecast.latitude_required
+    if lat_diff < 0:
         table.add_row(
-            "Location Status",
-            f"[yellow]Your latitude ({abs(location.latitude):.1f}°) is below the minimum required ({forecast.latitude_required:.1f}°)[/yellow]",
+            "Auroral Boundary",
+            f"[yellow]Your latitude ({abs(location.latitude):.1f}°) is {abs(lat_diff):.1f}° below the boundary ({forecast.latitude_required:.1f}°)[/yellow]",
         )
     else:
         table.add_row(
-            "Location Status",
-            f"[green]Your latitude ({abs(location.latitude):.1f}°) is sufficient (minimum: {forecast.latitude_required:.1f}°)[/green]",
+            "Auroral Boundary",
+            f"[green]Your latitude ({abs(location.latitude):.1f}°) is {lat_diff:.1f}° above the boundary ({forecast.latitude_required:.1f}°)[/green]",
         )
+
+    # Light pollution (Bortle class)
+    if forecast.bortle_class is not None:
+        bortle_colors = {
+            1: "[bold bright_green]Class 1 - Excellent[/bold bright_green]",
+            2: "[bright_green]Class 2 - Excellent[/bright_green]",
+            3: "[green]Class 3 - Rural[/green]",
+            4: "[yellow]Class 4 - Rural/Suburban[/yellow]",
+            5: "[yellow]Class 5 - Suburban[/yellow]",
+            6: "[red]Class 6 - Bright Suburban[/red]",
+            7: "[red]Class 7 - Suburban/Urban[/red]",
+            8: "[bold red]Class 8 - City[/bold red]",
+            9: "[bold red]Class 9 - Inner City[/bold red]",
+        }
+        bortle_str = bortle_colors.get(forecast.bortle_class, f"Class {forecast.bortle_class}")
+        if forecast.sqm_value is not None:
+            bortle_str += f" (SQM: {forecast.sqm_value:.2f})"
+        table.add_row("Light Pollution (Bortle)", bortle_str)
+    else:
+        table.add_row("Light Pollution (Bortle)", "[dim]Unknown[/dim]")
 
     # Darkness
     if forecast.is_dark:
@@ -185,6 +219,18 @@ def _show_aurora_content(
             table.add_row("Moon Phase", f"[red]{moon_pct:.0f}% illuminated (Bright moon - may wash out aurora)[/red]")
     else:
         table.add_row("Moon Phase", "[dim]Unknown[/dim]")
+
+    # Peak viewing window
+    if forecast.peak_viewing_start and forecast.peak_viewing_end:
+        start_str = forecast.peak_viewing_start.strftime("%I:%M %p")
+        end_str = forecast.peak_viewing_end.strftime("%I:%M %p")
+        table.add_row("Peak Viewing Window", f"[green]{start_str} - {end_str}[/green]")
+
+    # Forecast confidence
+    if forecast.is_forecasted:
+        table.add_row("Data Source", "[yellow]Forecasted (predicted)[/yellow]")
+    else:
+        table.add_row("Data Source", "[green]Observed (current)[/green]")
 
     output_console.print(table)
 
