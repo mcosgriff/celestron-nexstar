@@ -1237,7 +1237,7 @@ def show_clear_sky_chart(
         console.print(f"[dim]Forecast for next {days} days...[/dim]\n")
 
         # Fetch hourly forecast
-        hourly_forecast = fetch_hourly_weather_forecast(location, hours=hours)
+        hourly_forecast = asyncio.run(fetch_hourly_weather_forecast(location, hours=hours))
         if not hourly_forecast:
             console.print("[yellow]Hourly forecast data not available.[/yellow]")
             return

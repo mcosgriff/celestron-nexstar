@@ -412,6 +412,7 @@ def _get_ephemeris_files() -> dict[str, EphemerisFileInfo]:
 
     # Fallback: try to load from NAIF
     try:
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         files = asyncio.run(_load_ephemeris_files_from_naif())
         if files:
             logger.info(f"Loaded {len(files)} ephemeris files from NAIF summaries")

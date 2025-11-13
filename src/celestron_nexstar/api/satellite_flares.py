@@ -529,19 +529,8 @@ def get_starlink_passes(
     import asyncio
 
     try:
-        # Run async function
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _get_starlink_satellites(db_session))
-                    satellites = future.result(timeout=60)
-            else:
-                satellites = loop.run_until_complete(_get_starlink_satellites(db_session))
-        except RuntimeError:
-            satellites = asyncio.run(_get_starlink_satellites(db_session))
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        satellites = asyncio.run(_get_starlink_satellites(db_session))
     except Exception as e:
         logger.error(f"Failed to get Starlink satellites: {e}")
         return []
@@ -711,18 +700,8 @@ def get_stations_passes(
     import asyncio
 
     try:
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _get_stations_satellites(db_session))
-                    satellites = future.result(timeout=60)
-            else:
-                satellites = loop.run_until_complete(_get_stations_satellites(db_session))
-        except RuntimeError:
-            satellites = asyncio.run(_get_stations_satellites(db_session))
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        satellites = asyncio.run(_get_stations_satellites(db_session))
     except Exception as e:
         logger.error(f"Failed to get space station satellites: {e}")
         return []
@@ -765,18 +744,8 @@ def get_visual_passes(
     import asyncio
 
     try:
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _get_visual_satellites(db_session))
-                    satellites = future.result(timeout=60)
-            else:
-                satellites = loop.run_until_complete(_get_visual_satellites(db_session))
-        except RuntimeError:
-            satellites = asyncio.run(_get_visual_satellites(db_session))
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        satellites = asyncio.run(_get_visual_satellites(db_session))
     except Exception as e:
         logger.error(f"Failed to get visual satellites: {e}")
         return []

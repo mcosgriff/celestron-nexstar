@@ -234,8 +234,9 @@ class ObservationPlanner:
                 from .weather import WeatherData, fetch_hourly_weather_forecast
 
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
-                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
-                    observer_location, hours=hours_ahead
+                # Run async function - this is a sync entry point, so asyncio.run() is safe
+                hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(
+                    fetch_hourly_weather_forecast(observer_location, hours=hours_ahead)
                 )
 
                 if hourly_forecasts:
@@ -263,12 +264,14 @@ class ObservationPlanner:
 
         # Fall back to current weather if we don't have hourly forecast data
         if weather is None:
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
             weather = asyncio.run(fetch_weather(observer_location))
 
         weather_status, weather_warning = assess_observing_conditions(weather)
         is_weather_suitable = weather_status in ("excellent", "good", "fair")
 
         # Get light pollution
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         lp_data = asyncio.run(get_light_pollution_data(lat, lon))
 
         # Get telescope configuration
@@ -331,7 +334,8 @@ class ObservationPlanner:
         hours_needed = 72  # 3 days
 
         # Fetch hourly seeing forecast (if available - requires Pro subscription)
-        hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        hourly_forecast = asyncio.run(fetch_hourly_weather_forecast(observer_location, hours=hours_needed))
         hourly_forecast_tuple = tuple(hourly_forecast)
 
         # Calculate best seeing time windows from hourly forecast

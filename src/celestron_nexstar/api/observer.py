@@ -125,6 +125,7 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
 
                     if Confirm.ask("Detect location automatically?", default=True, console=console):
                         try:
+                            # Run async function - this is a sync entry point, so asyncio.run() is safe
                             detected = asyncio.run(detect_location_automatically())
                             console.print(f"\n[green]✓[/green] Detected: {detected.name}")
                             console.print(

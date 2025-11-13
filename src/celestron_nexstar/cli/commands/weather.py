@@ -241,7 +241,7 @@ def show_today_weather(
         from timezonefinder import TimezoneFinder
 
         location = get_observer_location()
-        forecasts = fetch_hourly_weather_forecast(location, hours=24)
+        forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=24))
 
         if not forecasts:
             print_error("Weather forecast not available")
@@ -379,7 +379,7 @@ def show_next_3_days_weather(
         from timezonefinder import TimezoneFinder
 
         location = get_observer_location()
-        forecasts = fetch_hourly_weather_forecast(location, hours=72)  # 3 days = 72 hours
+        forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=72))  # 3 days = 72 hours
 
         if not forecasts:
             print_error("Weather forecast not available")

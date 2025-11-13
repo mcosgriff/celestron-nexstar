@@ -218,6 +218,7 @@ def populate_star_name_mappings_database(
     # Try to enhance with external sources (optional enhancement)
     try:
         logger.info("Attempting to fetch additional mappings from external sources...")
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         external_mappings = asyncio.run(fetch_star_name_mappings(hr_numbers))
         if external_mappings:
             # Add any new mappings from external sources

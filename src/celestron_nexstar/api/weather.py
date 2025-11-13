@@ -12,20 +12,13 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import aiohttp
 import numpy as np
-import openmeteo_requests
-import requests_cache
-from retry_requests import retry
 
 from celestron_nexstar.api.models import WeatherForecastModel
 
 from .observer import ObserverLocation
-
-
-OPENMETEO_AVAILABLE = True
 
 
 logger = logging.getLogger(__name__)
@@ -360,7 +353,7 @@ def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
         return fetch_age_hours > 12
 
 
-def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
+async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
     """
     Fetch hourly weather forecast and calculate seeing conditions for each hour.
 
@@ -374,16 +367,13 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     Returns:
         List of HourlySeeingForecast objects, or empty list if unavailable
     """
-    if not OPENMETEO_AVAILABLE:
-        logger.debug("openmeteo-requests not available, skipping hourly forecast")
-        return []
-
     # Limit to 7 days (168 hours) - Open-Meteo maximum
     hours = min(hours, 168)
     forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
 
-    # Check database for cached data
-    try:
+    # Helper function to check database (runs in thread pool)
+    def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
+        """Check database for cached forecasts. Returns (forecasts, now)."""
         from sqlalchemy import and_, inspect
 
         from .database import get_database
@@ -392,33 +382,45 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         db = get_database()
 
         # Ensure weather_forecast table exists (create if migration hasn't run yet)
-        inspector = inspect(db._engine)
-        if "weather_forecast" not in inspector.get_table_names():
-            logger.debug("weather_forecast table not found, creating it...")
-            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+        try:
+            inspector = inspect(db._engine)
+            if "weather_forecast" not in inspector.get_table_names():
+                logger.debug("weather_forecast table not found, creating it...")
+                Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+        except Exception as e:
+            logger.debug(f"Could not check/create weather_forecast table: {e}")
 
+        now = datetime.now(UTC)
         existing_forecasts = []
-        with db._get_session() as session:
-            now = datetime.now(UTC)
 
-            # Query for forecasts for this location (we'll filter stale ones after)
-            # Get a wider range to check staleness intelligently
-            all_forecasts = (
-                session.query(WeatherForecastModel)
-                .filter(
-                    and_(
-                        WeatherForecastModel.latitude == location.latitude,
-                        WeatherForecastModel.longitude == location.longitude,
-                        # Only consider forecasts that are not too old (max 24 hours fetch age)
-                        WeatherForecastModel.fetched_at >= now - timedelta(hours=24),
+        try:
+            with db._get_session() as session:
+                # Query for forecasts for this location (we'll filter stale ones after)
+                # Get a wider range to check staleness intelligently
+                all_forecasts = (
+                    session.query(WeatherForecastModel)
+                    .filter(
+                        and_(
+                            WeatherForecastModel.latitude == location.latitude,
+                            WeatherForecastModel.longitude == location.longitude,
+                            # Only consider forecasts that are not too old (max 24 hours fetch age)
+                            WeatherForecastModel.fetched_at >= now - timedelta(hours=24),
+                        )
                     )
+                    .order_by(WeatherForecastModel.forecast_timestamp)
+                    .all()
                 )
-                .order_by(WeatherForecastModel.forecast_timestamp)
-                .all()
-            )
 
-            # Filter out stale forecasts using intelligent staleness check
-            existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
+                # Filter out stale forecasts using intelligent staleness check
+                existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
+        except Exception as e:
+            logger.warning(f"Error checking database for weather forecasts: {e}")
+
+        return existing_forecasts, now
+
+    # Check database for cached data (run in thread pool to avoid blocking)
+    try:
+        existing_forecasts, now = await asyncio.to_thread(_check_database_cache)
 
         # If we have enough non-stale forecasts covering the requested hours, return them
         if existing_forecasts and len(existing_forecasts) >= hours:
@@ -472,75 +474,71 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     except Exception as e:
         logger.warning(f"Error checking database for weather forecasts: {e}")
         # Continue to fetch from API
+        now = datetime.now(UTC)
 
+    # Fetch from API using aiohttp (async)
     try:
-        # Setup the Open-Meteo API client with cache and retry on error
-        cache_dir = Path.home() / ".cache" / "celestron-nexstar"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_session = requests_cache.CachedSession(str(cache_dir / "openmeteo_cache"), expire_after=3600)
-        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-        openmeteo = openmeteo_requests.Client(session=retry_session)
-
-        # Get timezone for the location (simplified - use UTC offset)
-        # Open-Meteo can auto-detect, but we'll use "auto" for timezone
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": location.latitude,
             "longitude": location.longitude,
-            "hourly": [
-                "temperature_2m",
-                "dew_point_2m",
-                "relative_humidity_2m",
-                "cloud_cover",
-                "wind_speed_10m",
-            ],
+            "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
             "timezone": "auto",  # Auto-detect timezone
             "forecast_days": forecast_days,
             "wind_speed_unit": "mph",
             "temperature_unit": "fahrenheit",
         }
 
-        responses = openmeteo.weather_api(url, params=params)
-        response = responses[0]
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
+        ):
+            if response.status != 200:
+                logger.warning(f"Open-Meteo API returned status {response.status}")
+                return []
 
-        # Process hourly data
-        hourly = response.Hourly()
-        hourly_temperature_2m = hourly.Variables(0).ValuesAsNumpy()
-        hourly_dew_point_2m = hourly.Variables(1).ValuesAsNumpy()
-        hourly_relative_humidity_2m = hourly.Variables(2).ValuesAsNumpy()
-        hourly_cloud_cover = hourly.Variables(3).ValuesAsNumpy()
-        hourly_wind_speed_10m = hourly.Variables(4).ValuesAsNumpy()
+            data = await response.json()
 
-        # Get time range
-        time_range = hourly.Time()
-        interval = hourly.Interval()
+        # Process hourly data from JSON response
+        hourly = data.get("hourly", {})
+        hourly_time = hourly.get("time", [])
+        hourly_temperature_2m = hourly.get("temperature_2m", [])
+        hourly_dew_point_2m = hourly.get("dew_point_2m", [])
+        hourly_relative_humidity_2m = hourly.get("relative_humidity_2m", [])
+        hourly_cloud_cover = hourly.get("cloud_cover", [])
+        hourly_wind_speed_10m = hourly.get("wind_speed_10m", [])
+
+        def safe_float(value: float | None) -> float | None:
+            """Convert value to float, returning None if NaN or None."""
+            if value is None:
+                return None
+            if np is not None and np.isnan(value):
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
 
         forecasts = []
         prev_temp: float | None = None
 
         # Process each hour
-        # Note: Open-Meteo API returns forecasts starting from the current time
-        # We need to ensure we get enough data to cover from 1 hour before sunset to sunrise
-        for i in range(len(hourly_temperature_2m)):
-            # Calculate timestamp
-            timestamp_seconds = time_range + (i * interval)
-            timestamp = datetime.fromtimestamp(timestamp_seconds, tz=UTC)
+        for i in range(min(len(hourly_time), hours)):
+            # Parse timestamp from ISO format string
+            try:
+                timestamp_str = hourly_time[i]
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=UTC)
+            except (ValueError, IndexError, TypeError):
+                continue
 
             # Extract weather data (handle NaN values)
-            def safe_float(value: float) -> float | None:
-                """Convert numpy value to float, returning None if NaN."""
-                if np is not None and np.isnan(value):
-                    return None
-                try:
-                    return float(value)
-                except (ValueError, TypeError):
-                    return None
-
-            temp_f = safe_float(hourly_temperature_2m[i])
-            dew_point_f = safe_float(hourly_dew_point_2m[i])
-            humidity = safe_float(hourly_relative_humidity_2m[i])
-            cloud_cover = safe_float(hourly_cloud_cover[i])
-            wind_speed_mph = safe_float(hourly_wind_speed_10m[i])
+            temp_f = safe_float(hourly_temperature_2m[i] if i < len(hourly_temperature_2m) else None)
+            dew_point_f = safe_float(hourly_dew_point_2m[i] if i < len(hourly_dew_point_2m) else None)
+            humidity = safe_float(hourly_relative_humidity_2m[i] if i < len(hourly_relative_humidity_2m) else None)
+            cloud_cover = safe_float(hourly_cloud_cover[i] if i < len(hourly_cloud_cover) else None)
+            wind_speed_mph = safe_float(hourly_wind_speed_10m[i] if i < len(hourly_wind_speed_10m) else None)
 
             # Skip if essential data is missing
             if temp_f is None:
@@ -577,90 +575,89 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 )
             )
 
-            # Stop if we have enough hours
-            if len(forecasts) >= hours:
-                break
-
-        # Store forecasts in database (replace stale data)
-        try:
+        # Store forecasts in database (replace stale data) - run in thread pool
+        def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
+            """Store forecasts in database. Runs in thread pool."""
             from sqlalchemy import and_
 
             from .database import get_database
+            from .geohash_utils import encode
             from .models import WeatherForecastModel
 
             db = get_database()
-            with db._get_session() as session:
-                # Delete stale forecasts for this location using intelligent staleness check
-                now = datetime.now(UTC)
-                # Get all forecasts for this location to check staleness
-                all_location_forecasts = (
-                    session.query(WeatherForecastModel)
-                    .filter(
-                        and_(
-                            WeatherForecastModel.latitude == location.latitude,
-                            WeatherForecastModel.longitude == location.longitude,
-                        )
-                    )
-                    .all()
-                )
-
-                # Delete forecasts that are stale
-                for forecast in all_location_forecasts:
-                    if _is_forecast_stale(forecast, now):
-                        session.delete(forecast)
-
-                # Insert new forecasts
-                for forecast_item in forecasts:
-                    # Check if forecast already exists for this timestamp
-                    existing = (
+            try:
+                with db._get_session() as session:
+                    # Delete stale forecasts for this location using intelligent staleness check
+                    now_db = datetime.now(UTC)
+                    # Get all forecasts for this location to check staleness
+                    all_location_forecasts = (
                         session.query(WeatherForecastModel)
                         .filter(
                             and_(
                                 WeatherForecastModel.latitude == location.latitude,
                                 WeatherForecastModel.longitude == location.longitude,
-                                WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
                             )
                         )
-                        .first()
+                        .all()
                     )
 
-                    # Calculate geohash for this location (precision 9 for ~5m accuracy)
-                    from .geohash_utils import encode
+                    # Delete forecasts that are stale
+                    for forecast in all_location_forecasts:
+                        if _is_forecast_stale(forecast, now_db):
+                            session.delete(forecast)
 
-                    location_geohash = encode(location.latitude, location.longitude, precision=9)
-
-                    if existing:
-                        # Update existing forecast
-                        existing.geohash = location_geohash
-                        existing.temperature_f = forecast_item.temperature_f
-                        existing.dew_point_f = forecast_item.dew_point_f
-                        existing.humidity_percent = forecast_item.humidity_percent
-                        existing.cloud_cover_percent = forecast_item.cloud_cover_percent
-                        existing.wind_speed_mph = forecast_item.wind_speed_mph
-                        existing.seeing_score = forecast_item.seeing_score
-                        existing.fetched_at = now
-                    else:
-                        # Insert new forecast
-                        db_forecast = WeatherForecastModel(
-                            latitude=location.latitude,
-                            longitude=location.longitude,
-                            geohash=location_geohash,
-                            forecast_timestamp=forecast_item.timestamp,
-                            temperature_f=forecast_item.temperature_f,
-                            dew_point_f=forecast_item.dew_point_f,
-                            humidity_percent=forecast_item.humidity_percent,
-                            cloud_cover_percent=forecast_item.cloud_cover_percent,
-                            wind_speed_mph=forecast_item.wind_speed_mph,
-                            seeing_score=forecast_item.seeing_score,
-                            fetched_at=now,
+                    # Insert new forecasts
+                    for forecast_item in forecasts_to_store:
+                        # Check if forecast already exists for this timestamp
+                        existing = (
+                            session.query(WeatherForecastModel)
+                            .filter(
+                                and_(
+                                    WeatherForecastModel.latitude == location.latitude,
+                                    WeatherForecastModel.longitude == location.longitude,
+                                    WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
+                                )
+                            )
+                            .first()
                         )
-                        session.add(db_forecast)
 
-                session.commit()
-                logger.debug(f"Stored {len(forecasts)} weather forecasts in database")
-        except Exception as e:
-            logger.warning(f"Error storing weather forecasts in database: {e}")
-            # Continue and return forecasts anyway
+                        # Calculate geohash for this location (precision 9 for ~5m accuracy)
+                        location_geohash = encode(location.latitude, location.longitude, precision=9)
+
+                        if existing:
+                            # Update existing forecast
+                            existing.geohash = location_geohash
+                            existing.temperature_f = forecast_item.temperature_f
+                            existing.dew_point_f = forecast_item.dew_point_f
+                            existing.humidity_percent = forecast_item.humidity_percent
+                            existing.cloud_cover_percent = forecast_item.cloud_cover_percent
+                            existing.wind_speed_mph = forecast_item.wind_speed_mph
+                            existing.seeing_score = forecast_item.seeing_score
+                            existing.fetched_at = now_db
+                        else:
+                            # Insert new forecast
+                            db_forecast = WeatherForecastModel(
+                                latitude=location.latitude,
+                                longitude=location.longitude,
+                                geohash=location_geohash,
+                                forecast_timestamp=forecast_item.timestamp,
+                                temperature_f=forecast_item.temperature_f,
+                                dew_point_f=forecast_item.dew_point_f,
+                                humidity_percent=forecast_item.humidity_percent,
+                                cloud_cover_percent=forecast_item.cloud_cover_percent,
+                                wind_speed_mph=forecast_item.wind_speed_mph,
+                                seeing_score=forecast_item.seeing_score,
+                                fetched_at=now_db,
+                            )
+                            session.add(db_forecast)
+
+                    session.commit()
+                    logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
+            except Exception as e:
+                logger.warning(f"Error storing weather forecasts in database: {e}")
+
+        if forecasts:
+            await asyncio.to_thread(_store_forecasts_in_db, forecasts)
 
     except Exception as e:
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
@@ -682,66 +679,73 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     Returns:
         WeatherData with current conditions, or error message if failed
     """
-    from sqlalchemy import and_, inspect
-
-    from .database import get_database
-    from .geohash_utils import encode
-    from .models import Base, WeatherForecastModel
-
-    db = get_database()
-
-    # Ensure weather_forecast table exists
-    try:
-        inspector = inspect(db._engine)
-        if "weather_forecast" not in inspector.get_table_names():
-            logger.debug("weather_forecast table not found, creating it...")
-            Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
-    except Exception as e:
-        logger.debug(f"Could not check/create weather_forecast table: {e}")
-
     # Use current time for database query
     now = datetime.now(UTC)
     current_hour_start = now.replace(minute=0, second=0, microsecond=0)
     current_hour_end = current_hour_start + timedelta(hours=1)
 
-    # Check database for current weather (within the current hour)
-    try:
-        with db._get_session() as session:
-            # Look for forecasts for the current hour
-            candidates = (
-                session.query(WeatherForecastModel)
-                .filter(
-                    and_(
-                        WeatherForecastModel.latitude == location.latitude,
-                        WeatherForecastModel.longitude == location.longitude,
-                        WeatherForecastModel.forecast_timestamp >= current_hour_start,
-                        WeatherForecastModel.forecast_timestamp < current_hour_end,
+    # Helper function to check database (runs in thread pool)
+    def _check_database_cache() -> WeatherForecastModel | None:
+        """Check database for cached weather. Returns cached forecast or None."""
+        from sqlalchemy import and_, inspect
+
+        from .database import get_database
+        from .models import Base, WeatherForecastModel
+
+        db = get_database()
+
+        # Ensure weather_forecast table exists
+        try:
+            inspector = inspect(db._engine)
+            if "weather_forecast" not in inspector.get_table_names():
+                logger.debug("weather_forecast table not found, creating it...")
+                Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+        except Exception as e:
+            logger.debug(f"Could not check/create weather_forecast table: {e}")
+
+        try:
+            with db._get_session() as session:
+                # Look for forecasts for the current hour
+                candidates = (
+                    session.query(WeatherForecastModel)
+                    .filter(
+                        and_(
+                            WeatherForecastModel.latitude == location.latitude,
+                            WeatherForecastModel.longitude == location.longitude,
+                            WeatherForecastModel.forecast_timestamp >= current_hour_start,
+                            WeatherForecastModel.forecast_timestamp < current_hour_end,
+                        )
                     )
+                    .order_by(WeatherForecastModel.forecast_timestamp.desc())
+                    .all()
                 )
-                .order_by(WeatherForecastModel.forecast_timestamp.desc())
-                .all()
+
+                # Find the first non-stale forecast
+                for candidate in candidates:
+                    if not _is_forecast_stale(candidate, now):
+                        return candidate
+        except Exception as e:
+            logger.debug(f"Error checking database for current weather: {e}")
+
+        return None
+
+    # Check database for current weather (within the current hour) - run in thread pool
+    try:
+        existing = await asyncio.to_thread(_check_database_cache)
+
+        if existing:
+            # Convert database model to WeatherData
+            logger.debug("Using cached weather data from database")
+            return WeatherData(
+                temperature_c=existing.temperature_f,
+                dew_point_f=existing.dew_point_f,
+                humidity_percent=existing.humidity_percent,
+                cloud_cover_percent=existing.cloud_cover_percent,
+                wind_speed_ms=existing.wind_speed_mph,
+                visibility_km=None,
+                condition=None,
+                last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
             )
-
-            # Find the first non-stale forecast
-            existing = None
-            for candidate in candidates:
-                if not _is_forecast_stale(candidate, now):
-                    existing = candidate
-                    break
-
-            if existing:
-                # Convert database model to WeatherData
-                logger.debug("Using cached weather data from database")
-                return WeatherData(
-                    temperature_c=existing.temperature_f,
-                    dew_point_f=existing.dew_point_f,
-                    humidity_percent=existing.humidity_percent,
-                    cloud_cover_percent=existing.cloud_cover_percent,
-                    wind_speed_ms=existing.wind_speed_mph,
-                    visibility_km=None,
-                    condition=None,
-                    last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
-                )
     except Exception as e:
         logger.debug(f"Error checking database for current weather: {e}")
 
@@ -848,61 +852,75 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             last_updated="now",
         )
 
-        # Store in database for future use
+        # Store in database for future use - run in thread pool
         if not weather_data.error:
-            try:
-                location_geohash = encode(location.latitude, location.longitude, precision=9)
 
-                with db._get_session() as session:
-                    # Check if forecast already exists for this hour
-                    existing = (
-                        session.query(WeatherForecastModel)
-                        .filter(
-                            and_(
-                                WeatherForecastModel.latitude == location.latitude,
-                                WeatherForecastModel.longitude == location.longitude,
-                                WeatherForecastModel.forecast_timestamp >= current_hour_start,
-                                WeatherForecastModel.forecast_timestamp < current_hour_end,
+            def _store_weather_in_db(weather_to_store: WeatherData) -> None:
+                """Store weather in database. Runs in thread pool."""
+                from sqlalchemy import and_
+
+                from .database import get_database
+                from .geohash_utils import encode
+                from .models import WeatherForecastModel
+
+                db = get_database()
+                try:
+                    location_geohash = encode(location.latitude, location.longitude, precision=9)
+                    now_db = datetime.now(UTC)
+                    current_hour_start_db = now_db.replace(minute=0, second=0, microsecond=0)
+                    current_hour_end_db = current_hour_start_db + timedelta(hours=1)
+
+                    with db._get_session() as session:
+                        # Check if forecast already exists for this hour
+                        existing = (
+                            session.query(WeatherForecastModel)
+                            .filter(
+                                and_(
+                                    WeatherForecastModel.latitude == location.latitude,
+                                    WeatherForecastModel.longitude == location.longitude,
+                                    WeatherForecastModel.forecast_timestamp >= current_hour_start_db,
+                                    WeatherForecastModel.forecast_timestamp < current_hour_end_db,
+                                )
                             )
+                            .first()
                         )
-                        .first()
-                    )
 
-                    # Calculate seeing score
-                    seeing_score = calculate_seeing_conditions(weather_data)
+                        # Calculate seeing score
+                        seeing_score = calculate_seeing_conditions(weather_to_store)
 
-                    if existing:
-                        # Update existing forecast
-                        existing.geohash = location_geohash
-                        existing.temperature_f = weather_data.temperature_c
-                        existing.dew_point_f = weather_data.dew_point_f
-                        existing.humidity_percent = weather_data.humidity_percent
-                        existing.cloud_cover_percent = weather_data.cloud_cover_percent
-                        existing.wind_speed_mph = weather_data.wind_speed_ms
-                        existing.seeing_score = seeing_score
-                        existing.fetched_at = now
-                    else:
-                        # Insert new forecast
-                        db_forecast = WeatherForecastModel(
-                            latitude=location.latitude,
-                            longitude=location.longitude,
-                            geohash=location_geohash,
-                            forecast_timestamp=current_hour_start,
-                            temperature_f=weather_data.temperature_c,
-                            dew_point_f=weather_data.dew_point_f,
-                            humidity_percent=weather_data.humidity_percent,
-                            cloud_cover_percent=weather_data.cloud_cover_percent,
-                            wind_speed_mph=weather_data.wind_speed_ms,
-                            seeing_score=seeing_score,
-                            fetched_at=now,
-                        )
-                        session.add(db_forecast)
+                        if existing:
+                            # Update existing forecast
+                            existing.geohash = location_geohash
+                            existing.temperature_f = weather_to_store.temperature_c
+                            existing.dew_point_f = weather_to_store.dew_point_f
+                            existing.humidity_percent = weather_to_store.humidity_percent
+                            existing.cloud_cover_percent = weather_to_store.cloud_cover_percent
+                            existing.wind_speed_mph = weather_to_store.wind_speed_ms
+                            existing.seeing_score = seeing_score
+                            existing.fetched_at = now_db
+                        else:
+                            # Insert new forecast
+                            db_forecast = WeatherForecastModel(
+                                latitude=location.latitude,
+                                longitude=location.longitude,
+                                geohash=location_geohash,
+                                forecast_timestamp=current_hour_start_db,
+                                temperature_f=weather_to_store.temperature_c,
+                                dew_point_f=weather_to_store.dew_point_f,
+                                humidity_percent=weather_to_store.humidity_percent,
+                                cloud_cover_percent=weather_to_store.cloud_cover_percent,
+                                wind_speed_mph=weather_to_store.wind_speed_ms,
+                                seeing_score=seeing_score,
+                                fetched_at=now_db,
+                            )
+                            session.add(db_forecast)
 
-                    session.commit()
-                    logger.debug("Stored current weather in database")
-            except Exception as e:
-                logger.warning(f"Error storing current weather in database: {e}")
-                # Continue and return weather anyway
+                        session.commit()
+                        logger.debug("Stored current weather in database")
+                except Exception as e:
+                    logger.warning(f"Error storing current weather in database: {e}")
+
+            await asyncio.to_thread(_store_weather_in_db, weather_data)
 
         return weather_data
 

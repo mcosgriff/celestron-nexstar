@@ -561,6 +561,7 @@ def find_dark_sites_near(
     """
     # Handle string location
     if isinstance(location, str):
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         location = asyncio.run(geocode_location(location))
 
     sites = []
@@ -650,9 +651,11 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
     """
     # Handle string location
     if isinstance(location, str):
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         location = asyncio.run(geocode_location(location))
 
     # Get light pollution data
+    # Run async function - this is a sync entry point, so asyncio.run() is safe
     light_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
 
     return VacationViewingInfo(

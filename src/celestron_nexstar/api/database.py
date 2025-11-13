@@ -1305,6 +1305,7 @@ def rebuild_database(
             # Use a coarser grid resolution (0.2°) for faster processing during setup
             # Users can re-download with finer resolution later if needed
             logger.info("Downloading World Atlas PNG files (this may take a while)...")
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
             light_pollution_results = asyncio.run(
                 download_world_atlas_data(
                     regions=None,  # All regions
@@ -1364,6 +1365,7 @@ def rebuild_database(
                         if location_query:
                             try:
                                 console.print(f"[dim]Geocoding: {location_query}...[/dim]")
+                                # Run async function - this is a sync entry point, so asyncio.run() is safe
                                 location = asyncio.run(geocode_location(location_query))
                                 set_observer_location(location, save=True)
                                 console.print(f"[green]✓[/green] Location set to: {location.name}")
@@ -1394,7 +1396,8 @@ def rebuild_database(
                     f"Fetching weather forecast for {location.name} ({location.latitude:.2f}°, {location.longitude:.2f}°)"
                 )
                 # Fetch 3 days = 72 hours of weather forecast
-                weather_forecasts = fetch_hourly_weather_forecast(location, hours=72)
+                # Run async function - this is a sync entry point, so asyncio.run() is safe
+                weather_forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=72))
                 if weather_forecasts:
                     logger.info(f"Pre-fetched {len(weather_forecasts)} hours of weather forecast data")
                     static_data["weather_forecast_hours"] = len(weather_forecasts)

@@ -537,6 +537,7 @@ def find_best_viewing_location(
 
     # Check if dark sky is required
     if req.dark_sky_required or req.min_bortle_class:
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
         current_light = asyncio.run(get_light_pollution_data(current_location.latitude, current_location.longitude))
         current_bortle = current_light.bortle_class.value
 

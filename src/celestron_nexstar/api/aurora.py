@@ -666,8 +666,9 @@ def check_aurora_visibility(
 
                 # Get enough hours to cover from now to target time + buffer
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
-                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
-                    location, hours=hours_ahead
+                # Run async function - this is a sync entry point, so asyncio.run() is safe
+                hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(
+                    fetch_hourly_weather_forecast(location, hours=hours_ahead)
                 )
 
                 if hourly_forecasts:
@@ -710,6 +711,7 @@ def check_aurora_visibility(
                 )
                 return weather, moon_info, lp_data
 
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
             weather, moon_info, lp_data = asyncio.run(fetch_all())
 
             if cloud_cover is None:

@@ -546,7 +546,7 @@ def _show_comprehensive_plan_content(
         # Limit to 7 days (168 hours) - API maximum
         hours_needed = min(hours_needed, 168)
 
-        weather_forecast = fetch_hourly_weather_forecast(location, hours=hours_needed)
+        weather_forecast = asyncio.run(fetch_hourly_weather_forecast(location, hours=hours_needed))
 
         if weather_forecast:
             # Group by day and show summary
@@ -829,7 +829,7 @@ def _show_comprehensive_plan_content(
         days_analyzed = 0
 
         # Get weather forecast once for all days
-        weather_forecast_all = fetch_hourly_weather_forecast(location, hours=168)  # 7 days max
+        weather_forecast_all = asyncio.run(fetch_hourly_weather_forecast(location, hours=168))  # 7 days max
         daily_weather_all = defaultdict(list)
         for forecast in weather_forecast_all:
             if forecast.timestamp:
