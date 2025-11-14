@@ -91,9 +91,28 @@ def create_asterisms_json():
 
 
 def create_meteor_showers_json():
-    """Create meteor_showers.json from METEOR_SHOWERS."""
+    """Create meteor_showers.json from _METEOR_SHOWERS_FALLBACK or existing JSON."""
+    # Try to load existing JSON first (source of truth)
+    seed_dir = get_seed_data_path()
+    json_path = seed_dir / "meteor_showers.json"
+
+    if json_path.exists():
+        try:
+            existing_data = load_seed_json("meteor_showers.json")
+            # Ensure all required fields are present
+            for item in existing_data:
+                # Add any missing fields with defaults if needed
+                if "peak_end_month" not in item:
+                    item["peak_end_month"] = item.get("peak_month", 1)
+                if "peak_end_day" not in item:
+                    item["peak_end_day"] = item.get("peak_day", 1)
+            return existing_data
+        except Exception:
+            pass  # Fall through to regenerate from fallback
+
+    # Regenerate from fallback data
     showers = []
-    for s in METEOR_SHOWERS:
+    for s in _METEOR_SHOWERS_FALLBACK:
         showers.append({
             "name": s.name,
             "code": None,
