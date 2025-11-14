@@ -494,7 +494,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
     # Fetch from API using aiohttp (async)
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        params = {
+        params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
             "longitude": location.longitude,
             "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
@@ -504,7 +504,6 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             "temperature_unit": "fahrenheit",
         }
 
-        # Type ignore needed: aiohttp expects specific param types but we have object values
         async with (
             aiohttp.ClientSession() as session,
             session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
@@ -807,7 +806,6 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             "forecast_days": 1,
         }
 
-        # Type ignore needed: aiohttp expects specific param types but we have object values
         async with (
             aiohttp.ClientSession() as session,
             session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
