@@ -4,11 +4,13 @@ Unit tests for Celestial Object Catalog functions.
 Tests catalog loading, searching, and object retrieval with comprehensive coverage.
 """
 
+import asyncio
 import sys
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
 
 # Import directly from catalogs module to avoid import chain issues
 # Add src to path if needed
@@ -17,7 +19,6 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
 # Import catalogs module directly (not through api.__init__)
-import celestron_nexstar.api.catalogs as catalogs_module
 from celestron_nexstar.api.catalogs import (
     CelestialObject,
     get_all_catalogs_dict,
@@ -28,6 +29,7 @@ from celestron_nexstar.api.catalogs import (
 )
 from celestron_nexstar.api.database import CatalogDatabase
 from celestron_nexstar.api.enums import CelestialObjectType
+
 
 # Import search_objects conditionally - it may trigger astropy import
 try:
@@ -131,7 +133,7 @@ class TestCelestialObject(unittest.TestCase):
         """Test with_current_position accepts datetime parameter"""
         dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         with patch("celestron_nexstar.api.catalogs.get_planetary_position", return_value=(15.0, 40.0)) as mock_get:
-            result = self.planet.with_current_position(dt=dt)
+            self.planet.with_current_position(dt=dt)
             mock_get.assert_called_once()
             # Check that dt was passed (via call args)
             call_args = mock_get.call_args
@@ -144,6 +146,14 @@ class TestGetObjectByName(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         self.mock_db = MagicMock(spec=CatalogDatabase)
+        # Mock async methods
+        self.mock_db.get_by_name = AsyncMock()
+        self.mock_db.search = AsyncMock()
+        # Mock the async context manager for _AsyncSession
+        self.mock_session_context = MagicMock()
+        self.mock_session_context.__aenter__ = AsyncMock(return_value=self.mock_db)
+        self.mock_session_context.__aexit__ = AsyncMock(return_value=None)
+        self.mock_db._AsyncSession = MagicMock(return_value=self.mock_session_context)
         self.mock_obj = CelestialObject(
             name="Rigil Kentaurus",
             common_name="Alpha Centauri",
@@ -154,75 +164,76 @@ class TestGetObjectByName(unittest.TestCase):
             catalog="bright_stars",
         )
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_exact_match(self, mock_get_db):
         """Test get_object_by_name with exact match"""
         mock_get_db.return_value = self.mock_db
         self.mock_db.get_by_name.return_value = self.mock_obj
 
-        result = get_object_by_name("Rigil Kentaurus")
+        result = asyncio.run(get_object_by_name("Rigil Kentaurus"))
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
         self.mock_db.get_by_name.assert_called_once_with("Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_without_catalog_name(self, mock_get_db):
         """Test get_object_by_name without optional catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
         self.mock_db.get_by_name.return_value = self.mock_obj
 
         # This should not raise an error about missing catalog_name
-        result = get_object_by_name("Rigil Kentaurus")
+        result = asyncio.run(get_object_by_name("Rigil Kentaurus"))
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_with_catalog_name(self, mock_get_db):
         """Test get_object_by_name with catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
         self.mock_db.get_by_name.return_value = self.mock_obj
 
-        result = get_object_by_name("Rigil Kentaurus", catalog_name="bright_stars")
+        result = asyncio.run(get_object_by_name("Rigil Kentaurus", catalog_name="bright_stars"))
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_no_exact_match_uses_search(self, mock_get_db):
         """Test get_object_by_name falls back to FTS search when no exact match"""
         mock_get_db.return_value = self.mock_db
         self.mock_db.get_by_name.return_value = None
         self.mock_db.search.return_value = [self.mock_obj]
 
-        result = get_object_by_name("Rigil")
+        result = asyncio.run(get_object_by_name("Rigil"))
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
         self.mock_db.get_by_name.assert_called_once_with("Rigil")
         self.mock_db.search.assert_called_once_with("Rigil", limit=20)
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_empty_string(self, mock_get_db):
         """Test get_object_by_name with empty string"""
-        result = get_object_by_name("")
+        # Empty string is caught by deal contract, so expect PreContractError
+        with self.assertRaises(Exception):  # deal.PreContractError
+            asyncio.run(get_object_by_name(""))
 
-        self.assertEqual(result, [])
         mock_get_db.assert_not_called()
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_database_exception(self, mock_get_db):
         """Test get_object_by_name handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
         self.mock_db.get_by_name.side_effect = Exception("Database error")
 
-        result = get_object_by_name("Test")
+        result = asyncio.run(get_object_by_name("Test"))
 
         # Should return empty list on exception
         self.assertEqual(result, [])
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_filters_duplicates(self, mock_get_db):
         """Test get_object_by_name filters duplicate names from search results"""
         mock_get_db.return_value = self.mock_db
@@ -248,12 +259,12 @@ class TestGetObjectByName(unittest.TestCase):
         )
         self.mock_db.search.return_value = [obj1, obj2]
 
-        result = get_object_by_name("Test")
+        result = asyncio.run(get_object_by_name("Test"))
 
         # Should only return one (first match)
         self.assertEqual(len(result), 1)
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_get_object_by_name_filters_by_name_contains(self, mock_get_db):
         """Test get_object_by_name only includes objects where name contains query"""
         mock_get_db.return_value = self.mock_db
@@ -270,7 +281,7 @@ class TestGetObjectByName(unittest.TestCase):
         )
         self.mock_db.search.return_value = [obj]
 
-        result = get_object_by_name("Test")
+        result = asyncio.run(get_object_by_name("Test"))
 
         # Should be empty because name doesn't contain "Test"
         self.assertEqual(result, [])
@@ -283,9 +294,14 @@ class TestSearchObjects(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures"""
         self.mock_db = MagicMock(spec=CatalogDatabase)
-        self.mock_session = MagicMock()
-        self.mock_db._get_session.return_value.__enter__.return_value = self.mock_session
-        self.mock_db._get_session.return_value.__exit__.return_value = None
+        self.mock_db._model_to_object = MagicMock()
+        # Mock async session context manager
+        self.mock_session = AsyncMock()
+        self.mock_session.execute = AsyncMock()
+        self.mock_session_context = MagicMock()
+        self.mock_session_context.__aenter__ = AsyncMock(return_value=self.mock_session)
+        self.mock_session_context.__aexit__ = AsyncMock(return_value=None)
+        self.mock_db._AsyncSession = MagicMock(return_value=self.mock_session_context)
 
         self.mock_obj = CelestialObject(
             name="M31",
@@ -298,7 +314,7 @@ class TestSearchObjects(unittest.TestCase):
             description="Spiral galaxy",
         )
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_exact_match_name(self, mock_get_db):
         """Test search_objects finds exact match by name"""
         mock_get_db.return_value = self.mock_db
@@ -319,15 +335,20 @@ class TestSearchObjects(unittest.TestCase):
         mock_model.constellation = None
 
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = mock_model
+        # Mock the async execute result - search_objects uses result.scalars().all()
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        self.mock_session.execute = AsyncMock(return_value=mock_result)
 
-        result = search_objects("M31")
+        result = asyncio.run(search_objects("M31"))
 
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][0].name, "M31")
         self.assertEqual(result[0][1], "exact")
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_without_catalog_name(self, mock_get_db):
         """Test search_objects without optional catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
@@ -335,14 +356,18 @@ class TestSearchObjects(unittest.TestCase):
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = mock_model
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        self.mock_session.execute = AsyncMock(return_value=mock_result)
 
         # This should not raise an error about missing catalog_name
-        result = search_objects("M31")
+        result = asyncio.run(search_objects("M31"))
 
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_with_catalog_name(self, mock_get_db):
         """Test search_objects with catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
@@ -350,13 +375,17 @@ class TestSearchObjects(unittest.TestCase):
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = mock_model
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        self.mock_session.execute = AsyncMock(return_value=mock_result)
 
-        result = search_objects("M31", catalog_name="messier")
+        result = asyncio.run(search_objects("M31", catalog_name="messier"))
 
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_substring_match_name(self, mock_get_db):
         """Test search_objects finds substring matches in name"""
         mock_get_db.return_value = self.mock_db
@@ -366,15 +395,27 @@ class TestSearchObjects(unittest.TestCase):
         mock_model.name = "M31"
         mock_model.common_name = None
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = None  # No exact match
-        self.mock_session.execute.return_value.scalars.return_value.all.return_value = [mock_model]
+        # First call returns empty (no exact match), second call returns substring match in name
+        # The function makes: exact query, name query, common_name query, FTS query
+        mock_scalars_empty = MagicMock()
+        mock_scalars_empty.all.return_value = []
+        mock_scalars_match = MagicMock()
+        mock_scalars_match.all.return_value = [mock_model]
+        mock_result_empty = MagicMock()
+        mock_result_empty.scalars.return_value = mock_scalars_empty
+        mock_result_match = MagicMock()
+        mock_result_match.scalars.return_value = mock_scalars_match
+        # search_objects does: exact query (empty), name query (match), common_name query (empty), FTS (empty)
+        self.mock_session.execute = AsyncMock(
+            side_effect=[mock_result_empty, mock_result_match, mock_result_empty, mock_result_empty]
+        )
 
-        result = search_objects("M3")
+        result = asyncio.run(search_objects("M3"))
 
         self.assertGreater(len(result), 0)
         # Should find M31 when searching for "M3"
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_with_update_positions_false(self, mock_get_db):
         """Test search_objects with update_positions=False"""
         mock_get_db.return_value = self.mock_db
@@ -382,39 +423,39 @@ class TestSearchObjects(unittest.TestCase):
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = mock_model
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [mock_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        self.mock_session.execute = AsyncMock(return_value=mock_result)
 
-        result = search_objects("M31", update_positions=False)
+        result = asyncio.run(search_objects("M31", update_positions=False))
 
         # Should not call with_current_position
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_empty_query(self, mock_get_db):
         """Test search_objects with empty query"""
         # Empty query should be caught by deal.pre, but test the function handles it
         mock_get_db.return_value = self.mock_db
 
-        # This should be caught by deal contract, but if it gets through, should return empty
-        try:
-            result = search_objects("")
-            self.assertEqual(result, [])
-        except Exception:
-            # Deal contract violation is acceptable
-            pass
+        # This should be caught by deal contract, so expect PreContractError
+        with self.assertRaises(Exception):  # deal.PreContractError
+            asyncio.run(search_objects(""))
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_database_exception(self, mock_get_db):
         """Test search_objects handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
-        self.mock_db._get_session.side_effect = Exception("Database error")
+        self.mock_db._AsyncSession.side_effect = Exception("Database error")
 
-        result = search_objects("M31")
+        result = asyncio.run(search_objects("M31"))
 
         # Should return empty list on exception
         self.assertEqual(result, [])
 
-    @patch("celestron_nexstar.api.catalogs.get_database")
+    @patch("celestron_nexstar.api.database.get_database")
     def test_search_objects_fts_search(self, mock_get_db):
         """Test search_objects uses FTS5 for description search"""
         mock_get_db.return_value = self.mock_db
@@ -430,13 +471,19 @@ class TestSearchObjects(unittest.TestCase):
         self.mock_session.execute.return_value.scalar_one_or_none.return_value = None
         self.mock_session.execute.return_value.scalars.return_value.all.return_value = []
 
-        # FTS search returns a result
-        mock_row = MagicMock()
-        mock_row.__getitem__.return_value = 1
-        self.mock_session.execute.return_value.fetchall.return_value = [(1,)]
-        self.mock_session.get.return_value = mock_model
+        # FTS search returns a result - need to mock multiple execute calls
+        # First: exact match (empty), second: name match (empty), third: FTS
+        mock_scalars_empty = MagicMock()
+        mock_scalars_empty.all.return_value = []
+        mock_result_empty = MagicMock()
+        mock_result_empty.scalars.return_value = mock_scalars_empty
+        # FTS returns rows with id
+        mock_result_fts = MagicMock()
+        mock_result_fts.fetchall.return_value = [(1,)]
+        self.mock_session.execute = AsyncMock(side_effect=[mock_result_empty, mock_result_empty, mock_result_fts])
+        self.mock_session.get = AsyncMock(return_value=mock_model)
 
-        result = search_objects("spiral")
+        result = asyncio.run(search_objects("spiral"))
 
         # Should find objects matching in description
         self.assertIsInstance(result, list)
@@ -445,11 +492,19 @@ class TestSearchObjects(unittest.TestCase):
 class TestCatalogLoading(unittest.TestCase):
     """Test suite for catalog loading functions"""
 
+    def setUp(self):
+        """Clear cache before each test"""
+        from celestron_nexstar.api.catalogs import _catalog_cache
+
+        _catalog_cache.clear()
+
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_catalog_success(self, mock_yaml_load, mock_get_path):
+    def test_get_catalog_success(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog loads catalog from YAML"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "bright_stars": [
                 {
@@ -471,21 +526,25 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(result[0].name, "HR 5459")
         self.assertEqual(result[0].common_name, "Vega")
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_catalog_not_found(self, mock_yaml_load, mock_get_path):
+    def test_get_catalog_not_found(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog raises ValueError for unknown catalog"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {"other_catalog": []}
 
         with self.assertRaises(ValueError):
             get_catalog("nonexistent")
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_all_catalogs_dict(self, mock_yaml_load, mock_get_path):
+    def test_get_all_catalogs_dict(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_all_catalogs_dict loads all catalogs"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "bright_stars": [
                 {
@@ -515,11 +574,13 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(len(result["bright_stars"]), 1)
         self.assertEqual(len(result["messier"]), 1)
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_all_objects(self, mock_yaml_load, mock_get_path):
+    def test_get_all_objects(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_all_objects returns all objects from all catalogs"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "bright_stars": [
                 {
@@ -546,11 +607,13 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 2)  # One from each catalog
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_available_catalogs(self, mock_yaml_load, mock_get_path):
+    def test_get_available_catalogs(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_available_catalogs returns list of catalog names"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "bright_stars": [],
             "messier": [],
@@ -565,11 +628,13 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertIn("planets", result)
         self.assertEqual(len(result), 3)
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_catalog_with_optional_fields(self, mock_yaml_load, mock_get_path):
+    def test_get_catalog_with_optional_fields(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog handles optional fields (common_name, description, etc.)"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "test_catalog": [
                 {
@@ -589,11 +654,13 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertIsNone(result[0].common_name)
         self.assertIsNone(result[0].description)
 
+    @patch("pathlib.Path.open", create=True)
     @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
     @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
-    def test_get_catalog_with_all_fields(self, mock_yaml_load, mock_get_path):
+    def test_get_catalog_with_all_fields(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog handles all optional fields"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
+        mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {
             "test_catalog": [
                 {

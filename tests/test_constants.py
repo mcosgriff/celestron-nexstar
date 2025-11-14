@@ -68,9 +68,7 @@ class TestConstants(unittest.TestCase):
         self.assertEqual(constants_module.MM_PER_INCH, original_values["MM_PER_INCH"])
         self.assertEqual(constants_module.ARCSEC_PER_DEGREE, original_values["ARCSEC_PER_DEGREE"])
         self.assertEqual(constants_module.ARCSEC_PER_ARCMIN, original_values["ARCSEC_PER_ARCMIN"])
-        self.assertEqual(
-            constants_module.DEGREES_PER_HOUR_ANGLE, original_values["DEGREES_PER_HOUR_ANGLE"]
-        )
+        self.assertEqual(constants_module.DEGREES_PER_HOUR_ANGLE, original_values["DEGREES_PER_HOUR_ANGLE"])
         self.assertEqual(constants_module.HUMAN_EYE_PUPIL_MM, original_values["HUMAN_EYE_PUPIL_MM"])
 
 

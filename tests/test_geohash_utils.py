@@ -135,7 +135,7 @@ class TestDecode(unittest.TestCase):
 
         for precision in [1, 5, 7, 9, 12]:
             geohash = encode(lat, lon, precision)
-            decoded_lat, decoded_lon, lat_err, lon_err = decode(geohash)
+            decoded_lat, decoded_lon, _lat_err, _lon_err = decode(geohash)
 
             # Higher precision should have smaller errors
             self.assertGreaterEqual(decoded_lat, -90.0)
@@ -167,7 +167,7 @@ class TestDecode(unittest.TestCase):
     def test_decode_single_character(self):
         """Test decoding single character geohash"""
         geohash = "u"
-        lat, lon, lat_err, lon_err = decode(geohash)
+        lat, lon, _lat_err, _lon_err = decode(geohash)
         self.assertGreaterEqual(lat, -90.0)
         self.assertLessEqual(lat, 90.0)
         self.assertGreaterEqual(lon, -180.0)
@@ -307,11 +307,11 @@ class TestGetNeighborsForSearch(unittest.TestCase):
         geohash = "u09tvqr"
 
         # Large radius should use lower precision
-        result_large = get_neighbors_for_search(geohash, 100.0)
+        get_neighbors_for_search(geohash, 100.0)
         precision_large = get_precision_for_radius(100.0)
 
         # Small radius should use higher precision
-        result_small = get_neighbors_for_search(geohash, 0.1)
+        get_neighbors_for_search(geohash, 0.1)
         precision_small = get_precision_for_radius(0.1)
 
         # Higher precision should generally have more or equal neighbors
@@ -342,7 +342,7 @@ class TestGeohashRoundtrip(unittest.TestCase):
         """Test roundtrip with high precision"""
         original_lat, original_lon = 40.7128, -74.0060
         geohash = encode(original_lat, original_lon, 12)
-        lat, lon, lat_err, lon_err = decode(geohash)
+        lat, lon, _lat_err, _lon_err = decode(geohash)
 
         # With high precision, decoded should be very close to original
         self.assertLess(abs(lat - original_lat), 0.0001)

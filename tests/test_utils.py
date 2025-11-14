@@ -145,7 +145,7 @@ class TestDegreesToDms(unittest.TestCase):
 
     def test_degrees_to_dms_large_value(self):
         """Test conversion of large degree values"""
-        degrees, minutes, seconds, sign = degrees_to_dms(90.0)
+        degrees, _minutes, _seconds, sign = degrees_to_dms(90.0)
         self.assertEqual(degrees, 90)
         self.assertEqual(sign, "+")
 
@@ -253,7 +253,7 @@ class TestRaDecToAltAz(unittest.TestCase):
     def test_ra_dec_to_alt_az_pole(self):
         """Test conversion of pole position"""
         utc_time = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
-        az, alt = ra_dec_to_alt_az(0.0, 90.0, 40.7128, -74.0060, utc_time)
+        _az, alt = ra_dec_to_alt_az(0.0, 90.0, 40.7128, -74.0060, utc_time)
 
         # North celestial pole should be at high altitude for northern observer
         self.assertGreater(alt, 0.0)

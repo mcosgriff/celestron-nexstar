@@ -169,9 +169,7 @@ class TestTelescopeTime(unittest.TestCase):
 
     def test_instantiation_with_defaults(self):
         """Test creating TelescopeTime instance with default values"""
-        time = TelescopeTime(
-            hour=12, minute=30, second=45, month=6, day=15, year=2024
-        )
+        time = TelescopeTime(hour=12, minute=30, second=45, month=6, day=15, year=2024)
         self.assertEqual(time.hour, 12)
         self.assertEqual(time.minute, 30)
         self.assertEqual(time.second, 45)
@@ -183,9 +181,7 @@ class TestTelescopeTime(unittest.TestCase):
 
     def test_instantiation_with_all_fields(self):
         """Test creating TelescopeTime instance with all fields"""
-        time = TelescopeTime(
-            hour=14, minute=30, second=0, month=12, day=25, year=2024, timezone=-5, daylight_savings=1
-        )
+        time = TelescopeTime(hour=14, minute=30, second=0, month=12, day=25, year=2024, timezone=-5, daylight_savings=1)
         self.assertEqual(time.hour, 14)
         self.assertEqual(time.minute, 30)
         self.assertEqual(time.second, 0)
@@ -197,17 +193,13 @@ class TestTelescopeTime(unittest.TestCase):
 
     def test_string_representation(self):
         """Test string representation"""
-        time = TelescopeTime(
-            hour=12, minute=30, second=45, month=6, day=15, year=2024
-        )
+        time = TelescopeTime(hour=12, minute=30, second=45, month=6, day=15, year=2024)
         result = str(time)
         self.assertEqual(result, "2024-06-15 12:30:45")
 
     def test_string_representation_single_digits(self):
         """Test string representation with single digit values"""
-        time = TelescopeTime(
-            hour=1, minute=5, second=3, month=1, day=1, year=2024
-        )
+        time = TelescopeTime(hour=1, minute=5, second=3, month=1, day=1, year=2024)
         result = str(time)
         self.assertEqual(result, "2024-01-01 01:05:03")
 
@@ -226,9 +218,7 @@ class TestTelescopeConfig(unittest.TestCase):
 
     def test_instantiation_with_custom_values(self):
         """Test creating TelescopeConfig instance with custom values"""
-        config = TelescopeConfig(
-            port="/dev/ttyUSB1", baudrate=19200, timeout=3.0, auto_connect=True, verbose=True
-        )
+        config = TelescopeConfig(port="/dev/ttyUSB1", baudrate=19200, timeout=3.0, auto_connect=True, verbose=True)
         self.assertEqual(config.port, "/dev/ttyUSB1")
         self.assertEqual(config.baudrate, 19200)
         self.assertEqual(config.timeout, 3.0)
@@ -288,9 +278,7 @@ class TestDataclassFields(unittest.TestCase):
     def test_telescope_config_fields(self):
         """Test TelescopeConfig has correct fields"""
         field_names = {f.name for f in fields(TelescopeConfig)}
-        self.assertEqual(
-            field_names, {"port", "baudrate", "timeout", "auto_connect", "verbose"}
-        )
+        self.assertEqual(field_names, {"port", "baudrate", "timeout", "auto_connect", "verbose"})
 
 
 if __name__ == "__main__":
