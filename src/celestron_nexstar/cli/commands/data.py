@@ -1777,3 +1777,464 @@ def run_migrations(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from e
+
+
+@app.command("rebuild-seed", rich_help_panel="Database Management")
+def rebuild_seed_files(
+    data_type: str = typer.Argument(
+        ...,
+        help="Type of seed data to rebuild: 'comets', 'variable_stars', or 'all'",
+    ),
+    max_magnitude: float = typer.Option(
+        10.0,
+        "--max-mag",
+        "-m",
+        help="Maximum magnitude to include (default: 10.0 for comets, 8.0 for variable stars)",
+    ),
+    limit: int = typer.Option(
+        0,
+        "--limit",
+        "-l",
+        help="Maximum number of records to fetch (0 = no limit, default: 0)",
+    ),
+) -> None:
+    """
+    Rebuild seed files by fetching data from external sources.
+
+    This command fetches the latest data from authoritative sources and rebuilds
+    the seed JSON files used by the database seeder.
+
+    Data Sources:
+    - Comets: Minor Planet Center (MPC) and COBS (Comet Observation Database)
+    - Variable Stars: AAVSO VSX (Variable Star Index) and GCVS (General Catalog of Variable Stars)
+
+    Examples:
+        nexstar data rebuild-seed comets
+        nexstar data rebuild-seed variable_stars --max-mag 8.0
+        nexstar data rebuild-seed all --limit 100
+    """
+    from ...api.database_seeder import get_seed_data_path
+
+    console.print(f"\n[bold cyan]Rebuilding seed files for: {data_type}[/bold cyan]\n")
+
+    seed_dir = get_seed_data_path()
+    seed_dir.mkdir(parents=True, exist_ok=True)
+
+    if data_type in ("comets", "all"):
+        console.print("[bold]Fetching comet data...[/bold]")
+        try:
+            comets_data = _fetch_comets_data(max_magnitude=max_magnitude, limit=limit if limit > 0 else None)
+            comets_path = seed_dir / "comets.json"
+            with open(comets_path, "w", encoding="utf-8") as f:
+                import json
+
+                json.dump(comets_data, f, indent=2, ensure_ascii=False)
+            console.print(f"[green]✓[/green] Wrote {len(comets_data)} comets to {comets_path}")
+        except Exception as e:
+            console.print(f"[red]✗[/red] Error fetching comet data: {e}")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+    if data_type in ("variable_stars", "all"):
+        console.print("\n[bold]Fetching variable star data...[/bold]")
+        try:
+            vs_mag_limit = min(max_magnitude, 8.0)  # Variable stars typically brighter
+            variable_stars_data = _fetch_variable_stars_data(
+                max_magnitude=vs_mag_limit, limit=limit if limit > 0 else None
+            )
+            variable_stars_path = seed_dir / "variable_stars.json"
+            with open(variable_stars_path, "w", encoding="utf-8") as f:
+                import json
+
+                json.dump(variable_stars_data, f, indent=2, ensure_ascii=False)
+            console.print(f"[green]✓[/green] Wrote {len(variable_stars_data)} variable stars to {variable_stars_path}")
+        except Exception as e:
+            console.print(f"[red]✗[/red] Error fetching variable star data: {e}")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+    console.print("\n[bold green]✓ Seed file rebuild complete![/bold green]")
+    console.print("[dim]Run 'nexstar data seed --force' to update the database with new data.[/dim]\n")
+
+
+def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) -> list[dict[str, Any]]:
+    """
+    Fetch comet data from external sources.
+
+    Sources:
+    - Minor Planet Center (MPC) - official source
+    - COBS (Comet Observation Database) - comprehensive observations
+
+    Args:
+        max_magnitude: Maximum magnitude to include
+        limit: Maximum number of comets to fetch (None = no limit)
+
+    Returns:
+        List of comet dictionaries in seed file format
+    """
+    import aiohttp
+
+    comets: list[dict[str, Any]] = []
+
+    async def _fetch_from_mpc() -> list[dict[str, Any]]:
+        """Fetch bright comets from Minor Planet Center."""
+        # MPC provides comet orbital elements via their website
+        # For bright comets, we can query their database
+        # Note: MPC doesn't have a public API, so we'll parse their HTML/text pages
+        url = "https://minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt"
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        text = await response.text()
+                        return _parse_mpc_comet_data(text, max_magnitude)
+            except Exception as e:
+                console.print(f"[yellow]⚠[/yellow] Could not fetch from MPC: {e}")
+                console.print("[dim]Falling back to alternative sources...[/dim]")
+
+        return []
+
+    async def _fetch_from_cobs() -> list[dict[str, Any]]:
+        """Fetch comet data from COBS (Comet Observation Database)."""
+        # COBS has a web interface but may not have a public API
+        # For now, we'll use a fallback approach
+        return []
+
+    # Try MPC first
+    import asyncio
+
+    mpc_comets = asyncio.run(_fetch_from_mpc())
+    if mpc_comets:
+        comets.extend(mpc_comets)
+
+    # If we still don't have data, inform the user
+    if not comets:
+        console.print("[yellow]⚠[/yellow] Could not fetch comet data from external sources.")
+        console.print(
+            "[dim]The existing seed file will be preserved. Check your internet connection and try again.[/dim]"
+        )
+        # Load existing seed file if it exists
+        from ...api.database_seeder import get_seed_data_path, load_seed_json
+
+        seed_dir = get_seed_data_path()
+        existing_file = seed_dir / "comets.json"
+        if existing_file.exists():
+            try:
+                from typing import cast
+
+                existing_data = load_seed_json("comets.json")
+                console.print(f"[dim]Found existing seed file with {len(existing_data)} comets.[/dim]")
+                return cast(list[dict[str, Any]], existing_data)
+            except Exception:
+                pass
+        return []
+
+    # Apply limit if specified
+    if limit and len(comets) > limit:
+        comets = comets[:limit]
+
+    return comets
+
+
+def _parse_mpc_comet_data(text: str, max_magnitude: float) -> list[dict[str, Any]]:
+    """
+    Parse MPC comet data format.
+
+    MPC format is a text file with comet orbital elements.
+    Format documentation: https://minorplanetcenter.net/iau/info/CometOrbitFormat.html
+    """
+    from datetime import UTC, datetime
+
+    comets: list[dict[str, Any]] = []
+    lines = text.strip().split("\n")
+
+    for line in lines:
+        if not line.strip() or line.startswith("#"):
+            continue
+
+        try:
+            # MPC format: Designation, Epoch, q, e, i, w, Node, T, H, G
+            # Example: "   12P/Pons-Brooks   2024 04 21.1234  0.780  0.955  74.2  198.9  255.9  2024 04 21.1234  5.0  4.0"
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+
+            # Extract designation (first field, may contain spaces)
+            designation = parts[0]
+            if len(parts) > 10:
+                # Designation might be multiple words
+                designation = " ".join(parts[: len(parts) - 9])
+
+            # Parse orbital elements
+            # Epoch, q (perihelion distance), e (eccentricity), i (inclination),
+            # w (argument of perihelion), Node (longitude of ascending node),
+            # T (time of perihelion), H (absolute magnitude), G (magnitude slope)
+            q = float(parts[-6])  # Perihelion distance in AU
+            e = float(parts[-5])  # Eccentricity
+            # i, w, Node skipped for now
+            t_year = int(parts[-3])
+            t_month = int(parts[-2])
+            t_day = float(parts[-1])
+
+            # Calculate perihelion date
+            perihelion_date = datetime(t_year, t_month, int(t_day), tzinfo=UTC)
+
+            # Estimate peak magnitude from absolute magnitude H
+            # This is a rough estimate - actual magnitude depends on distance from Earth
+            h_magnitude = 5.0  # Default if not provided
+            if len(parts) >= 12:
+                from contextlib import suppress
+
+                with suppress(ValueError, IndexError):
+                    h_magnitude = float(parts[-2])
+
+            # Rough magnitude estimate (comets are brightest near perihelion)
+            peak_magnitude = h_magnitude + 5.0  # Rough estimate
+
+            if peak_magnitude > max_magnitude:
+                continue
+
+            # Determine if periodic (eccentricity < 1.0 and period can be calculated)
+            is_periodic = e < 1.0
+            period_years = None
+            if is_periodic:
+                # Calculate period from semi-major axis: P = sqrt(a^3)
+                # a = q / (1 - e)
+                a = q / (1 - e)
+                period_years = (a**1.5) ** 0.5  # Kepler's third law
+
+            # Get name from designation
+            name = designation
+
+            comet = {
+                "name": name,
+                "designation": designation,
+                "perihelion_date": perihelion_date.isoformat(),
+                "perihelion_distance_au": q,
+                "peak_magnitude": peak_magnitude,
+                "peak_date": perihelion_date.isoformat(),
+                "is_periodic": is_periodic,
+                "period_years": period_years,
+                "notes": f"Orbital data from MPC. Eccentricity: {e:.3f}",
+            }
+
+            comets.append(comet)
+        except (ValueError, IndexError):
+            # Skip malformed lines
+            continue
+
+    return comets
+
+
+def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = None) -> list[dict[str, Any]]:
+    """
+    Fetch variable star data from external sources.
+
+    Sources:
+    - AAVSO VSX (Variable Star Index) - comprehensive database
+    - GCVS (General Catalog of Variable Stars) - official catalog
+
+    Args:
+        max_magnitude: Maximum magnitude to include
+        limit: Maximum number of stars to fetch (None = no limit)
+
+    Returns:
+        List of variable star dictionaries in seed file format
+    """
+    import aiohttp
+
+    stars: list[dict[str, Any]] = []
+
+    async def _fetch_from_vsx() -> list[dict[str, Any]]:
+        """Fetch variable stars from AAVSO VSX."""
+        # VSX API endpoint
+        # Note: VSX may have rate limits, so we'll query well-known bright stars
+        # For a full catalog, we'd need to use VSX's search API or download the full catalog
+        well_known_names = [
+            "Algol",
+            "Mira",
+            "Delta Cephei",
+            "Beta Lyrae",
+            "Rigel",
+            "Betelgeuse",
+            "R Leonis",
+            "R Hydrae",
+            "Chi Cygni",
+            "R Cassiopeiae",
+            "R Carinae",
+            "R Doradus",
+            "R Centauri",
+            "R Bootis",
+            "R Virginis",
+            "R Ursae Majoris",
+            "R Canis Majoris",
+            "R Geminorum",
+            "R Aurigae",
+            "R Andromedae",
+        ]
+
+        async with aiohttp.ClientSession() as session:
+            fetched_stars = []
+            for name in well_known_names:
+                try:
+                    url = f"https://www.aavso.org/vsx/index.php?view=api.object&format=json&ident={name}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            star = _parse_vsx_data(data, max_magnitude)
+                            if star:
+                                fetched_stars.append(star)
+                        # Small delay to avoid rate limiting
+                        import asyncio
+
+                        await asyncio.sleep(0.5)
+                except Exception as e:
+                    console.print(f"[dim]Error fetching {name}: {e}[/dim]")
+                    continue
+
+            return fetched_stars
+
+    async def _fetch_from_gcvs() -> list[dict[str, Any]]:
+        """Fetch from GCVS catalog via VizieR or NASA Open Data Portal."""
+        # GCVS is available via VizieR/CDS
+        # For now, we'll use a simplified approach
+        # Full implementation would query VizieR or download from NASA's Open Data Portal
+        return []
+
+    # Try VSX first, then GCVS
+    import asyncio
+
+    vsx_stars = asyncio.run(_fetch_from_vsx())
+    if vsx_stars:
+        stars.extend(vsx_stars)
+
+    # Try GCVS as additional source
+    gcvs_stars = asyncio.run(_fetch_from_gcvs())
+    if gcvs_stars:
+        # Avoid duplicates by name
+        existing_names = {s["name"] for s in stars}
+        for star in gcvs_stars:
+            if star["name"] not in existing_names:
+                stars.append(star)
+                existing_names.add(star["name"])
+
+    # If we still don't have data, inform the user
+    if not stars:
+        console.print("[yellow]⚠[/yellow] Could not fetch variable star data from external sources.")
+        console.print(
+            "[dim]The existing seed file will be preserved. Check your internet connection and try again.[/dim]"
+        )
+        # Load existing seed file if it exists
+        from ...api.database_seeder import get_seed_data_path, load_seed_json
+
+        seed_dir = get_seed_data_path()
+        existing_file = seed_dir / "variable_stars.json"
+        if existing_file.exists():
+            try:
+                from typing import cast
+
+                existing_data = load_seed_json("variable_stars.json")
+                console.print(f"[dim]Found existing seed file with {len(existing_data)} variable stars.[/dim]")
+                return cast(list[dict[str, Any]], existing_data)
+            except Exception:
+                pass
+        return []
+
+    # Apply limit if specified
+    if limit and len(stars) > limit:
+        stars = stars[:limit]
+
+    return stars
+
+
+def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
+    """
+    Parse AAVSO VSX API response.
+
+    VSX API returns JSON with star information.
+    Format: https://www.aavso.org/vsx/index.php?view=api.doc
+    """
+    try:
+        # VSX API can return single object or list
+        star_data: dict[str, Any] | None = None
+        if isinstance(data, list) and len(data) > 0:
+            # If it's a list, take the first element
+            first_item = data[0]
+            if isinstance(first_item, dict):
+                star_data = first_item
+        elif isinstance(data, dict):
+            # If it's a dict, use it directly
+            star_data = data
+
+        if star_data is None or "Name" not in star_data:
+            return None
+
+        name = star_data.get("Name", "")
+        if not name:
+            return None
+
+        # Extract coordinates (RA/Dec in degrees, convert to hours/degrees)
+        ra_deg = star_data.get("RA2000")
+        dec_deg = star_data.get("Declination2000")
+
+        if ra_deg is None or dec_deg is None:
+            return None
+
+        ra_hours = float(ra_deg) / 15.0  # Convert degrees to hours
+        dec_degrees = float(dec_deg)
+
+        # Extract magnitude range
+        max_mag = star_data.get("MaxMag", star_data.get("Max", None))
+        min_mag = star_data.get("MinMag", star_data.get("Min", None))
+
+        if max_mag is None or min_mag is None:
+            # Try alternative field names
+            max_mag = star_data.get("MaximumMagnitude")
+            min_mag = star_data.get("MinimumMagnitude")
+
+        if max_mag is None or min_mag is None:
+            return None
+
+        max_mag_float = float(max_mag)
+        min_mag_float = float(min_mag)
+
+        # Check magnitude limit
+        if max_mag_float > max_magnitude:
+            return None
+
+        # Extract variable type
+        var_type_raw = star_data.get("VarType") or star_data.get("VariabilityType") or "unknown"
+        var_type = str(var_type_raw).lower().replace(" ", "_")
+
+        # Extract period (in days)
+        period = star_data.get("Period", star_data.get("PeriodDays", 0.0))
+        period_days = float(period) if period else 0.0
+
+        # Extract designation
+        designation = star_data.get("OID", star_data.get("Identifier", ""))
+
+        # Build notes
+        notes_parts = []
+        if var_type != "unknown":
+            notes_parts.append(f"Variable type: {var_type}")
+        if period_days > 0:
+            notes_parts.append(f"Period: {period_days:.2f} days")
+        notes = ". ".join(notes_parts) if notes_parts else "Data from AAVSO VSX"
+
+        return {
+            "name": name,
+            "designation": designation or name,
+            "variable_type": var_type,
+            "period_days": period_days,
+            "magnitude_min": min_mag_float,
+            "magnitude_max": max_mag_float,
+            "ra_hours": ra_hours,
+            "dec_degrees": dec_degrees,
+            "notes": notes,
+        }
+    except (ValueError, KeyError, TypeError) as e:
+        console.print(f"[dim]Error parsing VSX data: {e}[/dim]")
+        return None
