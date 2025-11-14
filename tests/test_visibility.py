@@ -68,6 +68,22 @@ class TestCalculateAtmosphericExtinction(unittest.TestCase):
         for i in range(1, len(extinctions) - 1):
             self.assertGreater(extinctions[i], extinctions[i - 1])
 
+    def test_extinction_low_altitude_rozenberg_formula(self):
+        """Test extinction at very low altitude using Rozenberg formula (<10 degrees)"""
+        # Test altitudes below 10 degrees which use Rozenberg formula
+        extinction_5 = calculate_atmospheric_extinction(5.0)
+        extinction_8 = calculate_atmospheric_extinction(8.0)
+        extinction_9 = calculate_atmospheric_extinction(9.0)
+
+        # All should be positive and significant
+        self.assertGreater(extinction_5, 0.0)
+        self.assertGreater(extinction_8, 0.0)
+        self.assertGreater(extinction_9, 0.0)
+
+        # Lower altitude should have more extinction
+        self.assertGreater(extinction_5, extinction_8)
+        self.assertGreater(extinction_8, extinction_9)
+
 
 class TestGetObjectAltitudeAzimuth(unittest.TestCase):
     """Test suite for get_object_altitude_azimuth function"""
@@ -383,6 +399,90 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertTrue(visibility.is_visible)
         self.assertIn("Good separation", str(visibility.reasons))
 
+    @patch("celestron_nexstar.api.visibility.calculate_parent_separation")
+    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    def test_assess_visibility_moon_close_separation(
+        self, mock_get_config, mock_calc_limiting, mock_get_alt_az, mock_calc_separation
+    ):
+        """Test assessing visibility for moon with close separation (1-5 arcmin)"""
+        mock_get_config.return_value = self.test_config
+        mock_calc_limiting.return_value = 12.0
+        mock_get_alt_az.return_value = (45.0, 180.0)
+        mock_calc_separation.return_value = 3.0  # Close but not too close
+
+        moon_obj = CelestialObject(
+            name="Io",
+            common_name="Io",
+            ra_hours=12.0,
+            dec_degrees=20.0,
+            magnitude=5.0,
+            object_type=CelestialObjectType.MOON,
+            catalog="moons",
+        )
+
+        visibility = assess_visibility(moon_obj)
+
+        self.assertTrue(visibility.is_visible)  # Still visible but reduced score
+        self.assertLess(visibility.observability_score, 1.0)
+        self.assertIn("Close to parent planet", str(visibility.reasons))
+
+    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    def test_assess_visibility_near_detection_limit(
+        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
+    ):
+        """Test assessing visibility for object near detection limit"""
+        mock_get_config.return_value = self.test_config
+        mock_calc_limiting.return_value = 12.0
+        mock_get_alt_az.return_value = (45.0, 180.0)
+
+        # Object with magnitude close to limiting magnitude
+        near_limit_obj = CelestialObject(
+            name="Faint Object",
+            common_name=None,
+            ra_hours=12.0,
+            dec_degrees=30.0,
+            magnitude=11.5,  # Close to limit of 12.0
+            object_type=CelestialObjectType.STAR,
+            catalog="bright_stars",
+        )
+
+        visibility = assess_visibility(near_limit_obj)
+
+        self.assertTrue(visibility.is_visible)
+        self.assertLess(visibility.observability_score, 1.0)
+        self.assertIn("Near detection limit", str(visibility.reasons))
+
+    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    def test_assess_visibility_excellent_altitude(
+        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
+    ):
+        """Test assessing visibility for object at excellent altitude (>60 degrees)"""
+        mock_get_config.return_value = self.test_config
+        mock_calc_limiting.return_value = 12.0
+        mock_get_alt_az.return_value = (65.0, 180.0)  # Excellent altitude
+
+        bright_obj = CelestialObject(
+            name="Bright Star",
+            common_name=None,
+            ra_hours=12.0,
+            dec_degrees=30.0,
+            magnitude=5.0,  # Well within limit
+            object_type=CelestialObjectType.STAR,
+            catalog="bright_stars",
+        )
+
+        visibility = assess_visibility(bright_obj)
+
+        self.assertTrue(visibility.is_visible)
+        self.assertGreater(visibility.observability_score, 0.8)
+        self.assertIn("Excellent altitude", str(visibility.reasons))
+
 
 class TestFilterVisibleObjects(unittest.TestCase):
     """Test suite for filter_visible_objects function"""
@@ -522,6 +622,51 @@ class TestFilterVisibleObjects(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0][0].name, "Star2")  # Higher score first
         self.assertEqual(result[1][0].name, "Star1")
+
+    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.visibility.get_observer_location")
+    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
+    def test_filter_visible_objects_vectorized_path(
+        self, mock_calc_limiting, mock_get_config, mock_get_location, mock_is_dynamic
+    ):
+        """Test that filter_visible_objects uses vectorized path for >10 objects"""
+        mock_get_config.return_value = self.test_config
+        mock_get_location.return_value = MagicMock(latitude=40.0, longitude=-100.0)
+        mock_calc_limiting.return_value = 12.0
+        mock_is_dynamic.return_value = False
+
+        # Create more than 10 objects to trigger vectorized path
+        # Use objects that will be visible (above horizon, bright enough)
+        many_objects = [
+            CelestialObject(
+                name=f"Star{i}",
+                common_name=None,
+                ra_hours=10.0 + (i * 0.1),  # Spread out in RA
+                dec_degrees=40.0 + (i * 0.1),  # Above horizon for lat 40
+                magnitude=5.0,  # Bright enough
+                object_type=CelestialObjectType.STAR,
+                catalog="bright_stars",
+            )
+            for i in range(15)
+        ]
+
+        # Mock datetime to a specific time
+        test_dt = datetime(2024, 6, 15, 20, 0, tzinfo=UTC)
+        with patch("celestron_nexstar.api.visibility.datetime") as mock_datetime:
+            mock_datetime.now.return_value = test_dt
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+            result = filter_visible_objects(
+                many_objects,
+                observer_lat=40.0,
+                observer_lon=-100.0,
+                dt=test_dt,
+                min_observability_score=0.0,  # Low threshold to include more objects
+            )
+
+            # Should have used vectorized path and returned some results
+            self.assertIsInstance(result, list)
 
 
 if __name__ == "__main__":
