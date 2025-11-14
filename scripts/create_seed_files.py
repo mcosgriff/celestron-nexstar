@@ -15,15 +15,37 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Import models and data
-from celestron_nexstar.api.constellations import PROMINENT_CONSTELLATIONS, FAMOUS_ASTERISMS
+from celestron_nexstar.api.constellations import Constellation, FAMOUS_ASTERISMS
 from celestron_nexstar.api.meteor_showers import METEOR_SHOWERS
 from celestron_nexstar.api.space_events import SPACE_EVENTS_2025
+from celestron_nexstar.api.database_seeder import get_seed_data_path, load_seed_json
 
 
 def create_constellations_json():
-    """Create constellations.json from PROMINENT_CONSTELLATIONS."""
+    """Create constellations.json from seed data or regenerate from existing JSON."""
+    # Try to load existing JSON first (source of truth)
+    seed_dir = get_seed_data_path()
+    json_path = seed_dir / "constellations.json"
+
+    if json_path.exists():
+        # Load and return existing data (may update fields if needed)
+        data = load_seed_json("constellations.json")
+        # Ensure all required fields are present
+        for item in data:
+            if "magnitude" not in item:
+                item["magnitude"] = 0.0
+            if "hemisphere" not in item:
+                item["hemisphere"] = "Equatorial"
+            if "description" not in item:
+                item["description"] = ""
+        return data
+
+    # Fallback: if JSON doesn't exist, we need the Python data
+    # This should only happen on first run
+    from celestron_nexstar.api.constellations import _PROMINENT_CONSTELLATIONS_FALLBACK
+
     constellations = []
-    for c in PROMINENT_CONSTELLATIONS:
+    for c in _PROMINENT_CONSTELLATIONS_FALLBACK:
         # Calculate boundaries (simplified - use center +/- area estimate)
         area_deg = c.area_sq_deg
         ra_span = (area_deg ** 0.5) / 15.0  # Approximate RA span in hours
@@ -41,6 +63,9 @@ def create_constellations_json():
             "dec_max_degrees": min(90, c.dec_degrees + dec_span / 2),
             "area_sq_deg": c.area_sq_deg,
             "brightest_star": c.brightest_star,
+            "magnitude": c.magnitude,
+            "hemisphere": c.hemisphere,
+            "description": c.description,
             "mythology": None,
             "season": c.season,
         })

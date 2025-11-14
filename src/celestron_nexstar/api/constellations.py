@@ -66,8 +66,9 @@ class Asterism:
 
 
 # Prominent constellations for naked-eye and binocular viewing
-# Focusing on the most recognizable and historically significant ones
-PROMINENT_CONSTELLATIONS = [
+# NOTE: This is only used for seed file generation. Runtime code loads from JSON seed data.
+# See get_prominent_constellations() which loads from seed data.
+_PROMINENT_CONSTELLATIONS_FALLBACK = [
     # Winter Northern Hemisphere
     Constellation(
         name="Orion",
@@ -490,7 +491,26 @@ FAMOUS_ASTERISMS = [
 
 def get_prominent_constellations() -> list[Constellation]:
     """Get list of prominent constellations for naked-eye viewing."""
-    return PROMINENT_CONSTELLATIONS
+    from .database_seeder import load_seed_json
+
+    data = load_seed_json("constellations.json")
+    constellations = []
+    for item in data:
+        # Create Constellation from seed data
+        constellation = Constellation(
+            name=item["name"],
+            abbreviation=item["abbreviation"],
+            ra_hours=item["ra_hours"],
+            dec_degrees=item["dec_degrees"],
+            area_sq_deg=item["area_sq_deg"],
+            brightest_star=item["brightest_star"],
+            magnitude=item.get("magnitude", 0.0),  # Default if missing
+            season=item["season"],
+            hemisphere=item.get("hemisphere", "Equatorial"),  # Default if missing
+            description=item.get("description", ""),  # Default if missing
+        )
+        constellations.append(constellation)
+    return constellations
 
 
 def get_famous_asterisms() -> list[Asterism]:
@@ -525,7 +545,8 @@ def get_visible_constellations(
 
     visible = []
 
-    for constellation in PROMINENT_CONSTELLATIONS:
+    constellations = get_prominent_constellations()
+    for constellation in constellations:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
             constellation.ra_hours,
