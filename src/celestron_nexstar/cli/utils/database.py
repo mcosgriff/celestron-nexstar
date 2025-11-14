@@ -40,15 +40,16 @@ def check_database_setup() -> None:
 
     # Check if schema exists (objects table)
     try:
-        from sqlalchemy import inspect
+        import asyncio
 
-        inspector = inspect(db._engine)
-        if inspector is None:
-            raise _show_setup_error(
-                "Database schema is missing.",
-                "The database file exists but the schema has not been created.",
-            )
-        existing_tables = set(inspector.get_table_names())
+        from sqlalchemy import text
+
+        async def _check_tables() -> set[str]:
+            async with db._engine.begin() as conn:
+                result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                return {row[0] for row in result.fetchall()}
+
+        existing_tables = asyncio.run(_check_tables())
 
         if "objects" not in existing_tables:
             raise _show_setup_error(

@@ -314,7 +314,6 @@ def setup(
         nexstar data setup --force  # Skip confirmation prompt
     """
     from rich.table import Table
-    from sqlalchemy import inspect
 
     from ...api.database import get_database, rebuild_database
     from ..data_import import DATA_SOURCES
@@ -327,48 +326,50 @@ def setup(
     # Check if database exists and has data
     if db.db_path.exists():
         try:
-            inspector = inspect(db._engine)
-            if inspector is None:
+            import asyncio
+
+            from sqlalchemy import text
+
+            async def _check_tables() -> set[str]:
+                async with db._engine.begin() as conn:
+                    result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+                    return {row[0] for row in result.fetchall()}
+
+            existing_tables = asyncio.run(_check_tables())
+            if "objects" not in existing_tables:
                 console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
                 should_rebuild = True
             else:
-                existing_tables = set(inspector.get_table_names())
-                if "objects" not in existing_tables:
-                    console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
-                    should_rebuild = True
-                else:
-                    # Check if we have catalog data
-                    from sqlalchemy import func, select
+                # Check if we have catalog data
+                from sqlalchemy import func, select
 
-                    from ...api.models import CelestialObjectModel
+                from ...api.models import CelestialObjectModel
 
-                    with db._get_session_sync() as session:
-                        object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
-                        if object_count > 0:
-                            console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
-                            console.print(
-                                "[dim]To import all available data, the database needs to be rebuilt.[/dim]\n"
-                            )
+                with db._get_session_sync() as session:
+                    object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+                    if object_count > 0:
+                        console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
+                        console.print("[dim]To import all available data, the database needs to be rebuilt.[/dim]\n")
 
-                            if not force:
-                                try:
-                                    response = typer.prompt(
-                                        "Do you want to delete the existing database and rebuild with all data? (yes/no)",
-                                        default="no",
+                        if not force:
+                            try:
+                                response = typer.prompt(
+                                    "Do you want to delete the existing database and rebuild with all data? (yes/no)",
+                                    default="no",
+                                )
+                                if response.lower() not in ("yes", "y"):
+                                    console.print(
+                                        "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
                                     )
-                                    if response.lower() not in ("yes", "y"):
-                                        console.print(
-                                            "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
-                                        )
-                                        raise typer.Exit(code=0) from None
-                                except typer.Abort:
-                                    console.print("\n[dim]Operation cancelled.[/dim]\n")
                                     raise typer.Exit(code=0) from None
+                            except typer.Abort:
+                                console.print("\n[dim]Operation cancelled.[/dim]\n")
+                                raise typer.Exit(code=0) from None
 
-                            should_rebuild = True
-                        else:
-                            console.print("[yellow]⚠[/yellow] Database exists but is empty")
-                            should_rebuild = True
+                        should_rebuild = True
+                    else:
+                        console.print("[yellow]⚠[/yellow] Database exists but is empty")
+                        should_rebuild = True
         except Exception as e:
             console.print(f"[yellow]⚠[/yellow] Error checking database: {e}")
             console.print("[dim]Will rebuild database[/dim]")
