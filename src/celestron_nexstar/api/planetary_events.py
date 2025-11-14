@@ -12,14 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-
-try:
-    from skyfield.api import Topos
-    from skyfield.searchlib import find_minima
-
-    SKYFIELD_AVAILABLE = True
-except ImportError:
-    SKYFIELD_AVAILABLE = False
+# skyfield is a required dependency
+from skyfield.api import Topos
+from skyfield.searchlib import find_minima
 
 from .ephemeris import PLANET_NAMES, _get_ephemeris
 
@@ -144,9 +139,6 @@ def get_planetary_conjunctions(
     Returns:
         List of PlanetaryEvent objects, sorted by date
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate conjunctions")
-        return []
 
     try:
         from .skyfield_utils import get_skyfield_loader
@@ -233,9 +225,6 @@ def get_planetary_oppositions(
     Returns:
         List of PlanetaryEvent objects, sorted by date
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate oppositions")
-        return []
 
     try:
         from .skyfield_utils import get_skyfield_loader
@@ -339,9 +328,6 @@ def get_retrograde_periods(
     Returns:
         List of PlanetaryEvent objects (retrograde_start and retrograde_end)
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate retrograde periods")
-        return []
 
     # Retrograde detection is complex - simplified version
     # For now, return empty list - can be enhanced later

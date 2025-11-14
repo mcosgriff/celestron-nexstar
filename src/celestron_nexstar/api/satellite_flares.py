@@ -11,14 +11,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+# skyfield is a required dependency
+from skyfield.api import wgs84
+from skyfield.sgp4lib import EarthSatellite
 
-try:
-    from skyfield.api import wgs84
-    from skyfield.sgp4lib import EarthSatellite
-
-    SKYFIELD_AVAILABLE = True
-except ImportError:
-    SKYFIELD_AVAILABLE = False
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -117,9 +113,6 @@ def get_bright_satellite_passes(
     Returns:
         List of SatellitePass objects, sorted by rise time
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate satellite passes")
-        return []
 
     passes = []
     start_time = datetime.now(UTC)
@@ -459,8 +452,6 @@ async def _get_group_satellites(
     Raises:
         RuntimeError: If TLE cannot be obtained
     """
-    if not SKYFIELD_AVAILABLE:
-        raise RuntimeError("Skyfield not available")
 
     # Try cache first
     cached_tles = _get_cached_group_tle(group_name, max_satellites, db_session)
@@ -522,9 +513,6 @@ def get_starlink_passes(
     Returns:
         List of SatellitePass objects, sorted by rise time
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate satellite passes")
-        return []
 
     import asyncio
 
@@ -693,9 +681,6 @@ def get_stations_passes(
     Returns:
         List of SatellitePass objects, sorted by rise time
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate satellite passes")
-        return []
 
     import asyncio
 
@@ -737,9 +722,6 @@ def get_visual_passes(
     Returns:
         List of SatellitePass objects, sorted by rise time
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate satellite passes")
-        return []
 
     import asyncio
 

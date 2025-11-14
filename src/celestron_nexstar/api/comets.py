@@ -11,14 +11,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+# skyfield is a required dependency
+import skyfield.api  # noqa: F401
 
-try:
-    # Import skyfield to check availability (imports not used directly in this module)
-    import skyfield.api  # noqa: F401
-
-    SKYFIELD_AVAILABLE = True
-except ImportError:
-    SKYFIELD_AVAILABLE = False
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -147,9 +142,6 @@ def get_visible_comets(
     Returns:
         List of CometVisibility objects, sorted by date
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate comet positions")
-        return []
 
     visibilities = []
     now = datetime.now(UTC)

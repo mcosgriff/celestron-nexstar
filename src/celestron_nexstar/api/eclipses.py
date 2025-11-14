@@ -12,17 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+# skyfield is a required dependency
+from skyfield.api import Topos
 
-try:
-    from skyfield.api import Topos
-
-    SKYFIELD_AVAILABLE = True
-except ImportError:
-    SKYFIELD_AVAILABLE = False
-    # These will be None if skyfield is not available, but code checks SKYFIELD_AVAILABLE first
-    Loader = None
-    Topos = None
-    load = None
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -69,8 +61,6 @@ class EclipseType:
 
 def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[None, None, None, None, None]:
     """Get Skyfield objects for calculations."""
-    if not SKYFIELD_AVAILABLE:
-        return None, None, None, None, None
 
     try:
         from .skyfield_utils import get_skyfield_loader
@@ -201,9 +191,6 @@ def get_next_lunar_eclipse(
     Returns:
         List of Eclipse objects, sorted by date
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate eclipse visibility")
-        return []
 
     ts, earth, sun, moon, eph = _get_skyfield_objects()
     if ts is None or eph is None:
@@ -286,9 +273,6 @@ def get_next_solar_eclipse(
     Returns:
         List of Eclipse objects, sorted by date
     """
-    if not SKYFIELD_AVAILABLE:
-        logger.warning("Skyfield not available, cannot calculate eclipse visibility")
-        return []
 
     ts, earth, sun, moon, eph = _get_skyfield_objects()
     if ts is None or eph is None:
