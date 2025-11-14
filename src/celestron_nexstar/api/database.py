@@ -1135,7 +1135,10 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
     # Run async dispose in sync context
     import asyncio
 
-    asyncio.run(db._engine.dispose())
+    async def _dispose_engine() -> None:
+        await db._engine.dispose()
+
+    asyncio.run(_dispose_engine())
 
     # Copy backup to database location
     shutil.copy2(backup_path, db.db_path)

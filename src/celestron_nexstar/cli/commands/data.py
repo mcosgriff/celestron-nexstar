@@ -1717,7 +1717,10 @@ def run_migrations(
             # Dispose of existing connections to ensure Alembic uses fresh connections
             import asyncio
 
-            asyncio.run(db._engine.dispose())
+            async def _dispose_engine() -> None:
+                await db._engine.dispose()
+
+            asyncio.run(_dispose_engine())
 
             # Use upgrade to head - this will apply ALL pending migrations in sequence
             # Alembic will automatically apply all migrations from current state to head
@@ -1726,7 +1729,7 @@ def run_migrations(
 
             # Verify the new revision after applying migrations
             # Get a fresh connection to ensure we see the updated state
-            asyncio.run(db._engine.dispose())  # Close existing connections
+            asyncio.run(_dispose_engine())  # Close existing connections
             from sqlalchemy import create_engine
 
             sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
