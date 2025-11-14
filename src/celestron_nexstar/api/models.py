@@ -670,6 +670,155 @@ class TLEModel(Base):
         return f"<TLE(norad_id={self.norad_id}, name='{self.satellite_name}', group='{self.satellite_group}')>"
 
 
+class VariableStarModel(Base):
+    """
+    SQLAlchemy model for variable stars.
+
+    Stores information about well-known variable stars including eclipsing binaries,
+    Cepheids, and other variable star types.
+    """
+
+    __tablename__ = "variable_stars"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Star identification
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    designation: Mapped[str] = mapped_column(String(50), nullable=False)  # Bayer/Flamsteed designation
+
+    # Variable star properties
+    variable_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # "eclipsing_binary", "cepheid", etc.
+    period_days: Mapped[float] = mapped_column(Float, nullable=False)
+    magnitude_min: Mapped[float] = mapped_column(Float, nullable=False)  # Brightest
+    magnitude_max: Mapped[float] = mapped_column(Float, nullable=False)  # Dimmest
+
+    # Position
+    ra_hours: Mapped[float] = mapped_column(Float, nullable=False)
+    dec_degrees: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Notes
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_variable_type", "variable_type"),
+        Index("idx_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of variable star."""
+        return f"<VariableStar(id={self.id}, name='{self.name}', type='{self.variable_type}')>"
+
+
+class CometModel(Base):
+    """
+    SQLAlchemy model for comets.
+
+    Stores information about known bright comets including periodic and non-periodic comets.
+    """
+
+    __tablename__ = "comets"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Comet identification
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    designation: Mapped[str] = mapped_column(
+        String(50), nullable=False, unique=True, index=True
+    )  # Official designation
+
+    # Orbital properties
+    perihelion_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    perihelion_distance_au: Mapped[float] = mapped_column(Float, nullable=False)
+    peak_magnitude: Mapped[float] = mapped_column(Float, nullable=False)
+    peak_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    is_periodic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    period_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Notes
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_perihelion_date", "perihelion_date"),
+        Index("idx_peak_date", "peak_date"),
+        Index("idx_is_periodic", "is_periodic"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of comet."""
+        return f"<Comet(id={self.id}, name='{self.name}', designation='{self.designation}')>"
+
+
+class EclipseModel(Base):
+    """
+    SQLAlchemy model for eclipses.
+
+    Stores information about known upcoming lunar and solar eclipses.
+    """
+
+    __tablename__ = "eclipses"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Eclipse identification
+    eclipse_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # "lunar_total", "solar_annular", etc.
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    magnitude: Mapped[float] = mapped_column(Float, nullable=False)  # Eclipse magnitude
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_eclipse_type", "eclipse_type"),
+        Index("idx_eclipse_date", "date"),
+        Index("idx_type_date", "eclipse_type", "date"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of eclipse."""
+        return f"<Eclipse(id={self.id}, type='{self.eclipse_type}', date={self.date})>"
+
+
+class BortleCharacteristicsModel(Base):
+    """
+    SQLAlchemy model for Bortle class characteristics.
+
+    Stores lookup data for Bortle scale sky quality classes.
+    """
+
+    __tablename__ = "bortle_characteristics"
+
+    # Primary key - Bortle class (1-9)
+    bortle_class: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # SQM range
+    sqm_min: Mapped[float] = mapped_column(Float, nullable=False)
+    sqm_max: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Observing characteristics
+    naked_eye_mag: Mapped[float] = mapped_column(Float, nullable=False)  # Naked eye limiting magnitude
+    milky_way: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    airglow: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    zodiacal_light: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Description
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    recommendations: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array as string
+
+    # Indexes
+    __table_args__ = (Index("idx_sqm_range", "sqm_min", "sqm_max"),)
+
+    def __repr__(self) -> str:
+        """String representation of Bortle characteristics."""
+        return f"<BortleCharacteristics(bortle_class={self.bortle_class}, sqm_range=({self.sqm_min}, {self.sqm_max}))>"
+
+
 @asynccontextmanager
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     """

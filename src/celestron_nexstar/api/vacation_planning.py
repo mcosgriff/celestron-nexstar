@@ -256,7 +256,15 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
 
     # Get light pollution data
     # Run async function - this is a sync entry point, so asyncio.run() is safe
-    light_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
+    from typing import Any
+
+    async def _get_light_data() -> Any:
+        from .models import get_db_session
+
+        async with get_db_session() as db_session:
+            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
+
+    light_data = asyncio.run(_get_light_data())
 
     return VacationViewingInfo(
         location=location,

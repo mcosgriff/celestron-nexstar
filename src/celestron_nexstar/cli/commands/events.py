@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import typer
 from click import Context
@@ -166,14 +167,8 @@ def show_viewing_recommendations(
     ]
 
     # If no matches found, try a broader search (all events, regardless of date)
-    if not matching_events:
-        # Get all events from hardcoded lists as fallback
-        from ...api.space_events import SPACE_EVENTS_2025, SPACE_EVENTS_2026
-
-        all_events_fallback = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
-        matching_events = [
-            e for e in all_events_fallback if event_name_lower in e.name.lower() or e.name.lower() in event_name_lower
-        ]
+    # Note: Fallback to hardcoded lists removed - all events are now in database
+    # If no matches found, the error message below will be shown
 
     if not matching_events:
         console.print(f"[red]Error: No event found matching '{event_name}'[/red]")
@@ -353,7 +348,13 @@ def _show_viewing_recommendation_content(
         output_console.print(f"  • Notes: {req.notes}")
 
     # Show current location conditions
-    light_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
+    async def _get_light_data() -> Any:
+        from ...api.models import get_db_session
+
+        async with get_db_session() as db_session:
+            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
+
+    light_data = asyncio.run(_get_light_data())
     output_console.print("\n[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²")

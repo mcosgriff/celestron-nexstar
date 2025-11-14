@@ -1,0 +1,46 @@
+[
+  {
+    "name": "Algol",
+    "designation": "β Persei",
+    "variable_type": "eclipsing_binary",
+    "period_days": 2.867,
+    "magnitude_min": 2.1,
+    "magnitude_max": 3.4,
+    "ra_hours": 3.136,
+    "dec_degrees": 40.956,
+    "notes": "Famous eclipsing binary - 'Demon Star'. Dips every 2.87 days."
+  },
+  {
+    "name": "Delta Cephei",
+    "designation": "δ Cephei",
+    "variable_type": "cepheid",
+    "period_days": 5.366,
+    "magnitude_min": 3.5,
+    "magnitude_max": 4.4,
+    "ra_hours": 22.485,
+    "dec_degrees": 58.415,
+    "notes": "Prototype Cepheid variable. Brightness varies smoothly over 5.37 days."
+  },
+  {
+    "name": "Mira",
+    "designation": "o Ceti",
+    "variable_type": "mira",
+    "period_days": 332.0,
+    "magnitude_min": 2.0,
+    "magnitude_max": 10.1,
+    "ra_hours": 2.322,
+    "dec_degrees": -2.977,
+    "notes": "Long-period variable. Can be naked-eye visible at maximum."
+  },
+  {
+    "name": "Beta Lyrae",
+    "designation": "β Lyrae",
+    "variable_type": "eclipsing_binary",
+    "period_days": 12.94,
+    "magnitude_min": 3.3,
+    "magnitude_max": 4.3,
+    "ra_hours": 18.834,
+    "dec_degrees": 33.363,
+    "notes": "Eclipsing binary with continuous variation."
+  }
+]

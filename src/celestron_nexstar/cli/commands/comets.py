@@ -4,6 +4,7 @@ Comet Tracking Commands
 Find bright comets visible from your location.
 """
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from ...api.comets import CometVisibility, get_upcoming_comets, get_visible_comets
+from ...api.models import get_db_session
 from ...api.observer import ObserverLocation, get_observer_location
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -66,7 +68,11 @@ def show_visible(
         )
         raise typer.Exit(1)
 
-    comets = get_visible_comets(location, months_ahead=months, max_magnitude=max_magnitude)
+    async def _get_comets() -> list[CometVisibility]:
+        async with get_db_session() as db_session:
+            return await get_visible_comets(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
+
+    comets = asyncio.run(_get_comets())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("visible")
@@ -98,7 +104,11 @@ def show_next(
         )
         raise typer.Exit(1)
 
-    comets = get_upcoming_comets(location, months_ahead=months)
+    async def _get_comets() -> list[CometVisibility]:
+        async with get_db_session() as db_session:
+            return await get_upcoming_comets(db_session, location, months_ahead=months)
+
+    comets = asyncio.run(_get_comets())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("next")

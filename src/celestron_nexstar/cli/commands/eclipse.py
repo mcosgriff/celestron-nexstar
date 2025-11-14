@@ -4,6 +4,7 @@ Eclipse Prediction Commands
 Find upcoming lunar and solar eclipses visible from your location.
 """
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from ...api.eclipses import Eclipse, get_next_lunar_eclipse, get_next_solar_eclipse, get_upcoming_eclipses
+from ...api.models import get_db_session
 from ...api.observer import ObserverLocation, get_observer_location
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -79,8 +81,11 @@ def show_next(
         )
         raise typer.Exit(1)
 
-    # Get eclipses
-    eclipses = get_upcoming_eclipses(location, years_ahead=years, eclipse_type=eclipse_type)
+    async def _get_eclipses() -> list[Eclipse]:
+        async with get_db_session() as db_session:
+            return await get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=eclipse_type)
+
+    eclipses = asyncio.run(_get_eclipses())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("next")
@@ -112,7 +117,11 @@ def show_lunar(
         )
         raise typer.Exit(1)
 
-    eclipses = get_next_lunar_eclipse(location, years_ahead=years)
+    async def _get_eclipses() -> list[Eclipse]:
+        async with get_db_session() as db_session:
+            return await get_next_lunar_eclipse(db_session, location, years_ahead=years)
+
+    eclipses = asyncio.run(_get_eclipses())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("lunar")
@@ -144,7 +153,11 @@ def show_solar(
         )
         raise typer.Exit(1)
 
-    eclipses = get_next_solar_eclipse(location, years_ahead=years)
+    async def _get_eclipses() -> list[Eclipse]:
+        async with get_db_session() as db_session:
+            return await get_next_solar_eclipse(db_session, location, years_ahead=years)
+
+    eclipses = asyncio.run(_get_eclipses())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("solar")

@@ -1,0 +1,117 @@
+[
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2025-03-14T06:00:00+00:00",
+    "magnitude": 1.18
+  },
+  {
+    "eclipse_type": "lunar_partial",
+    "date": "2025-09-07T18:00:00+00:00",
+    "magnitude": 0.93
+  },
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2026-03-03T11:00:00+00:00",
+    "magnitude": 1.15
+  },
+  {
+    "eclipse_type": "lunar_partial",
+    "date": "2026-08-28T04:00:00+00:00",
+    "magnitude": 0.93
+  },
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2027-02-20T23:00:00+00:00",
+    "magnitude": 1.24
+  },
+  {
+    "eclipse_type": "lunar_partial",
+    "date": "2027-08-17T12:00:00+00:00",
+    "magnitude": 0.92
+  },
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2028-01-12T04:00:00+00:00",
+    "magnitude": 1.14
+  },
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2028-07-06T18:00:00+00:00",
+    "magnitude": 1.68
+  },
+  {
+    "eclipse_type": "lunar_total",
+    "date": "2029-01-01T00:00:00+00:00",
+    "magnitude": 1.12
+  },
+  {
+    "eclipse_type": "lunar_partial",
+    "date": "2029-06-26T03:00:00+00:00",
+    "magnitude": 0.54
+  },
+  {
+    "eclipse_type": "lunar_partial",
+    "date": "2029-12-20T22:00:00+00:00",
+    "magnitude": 0.92
+  },
+  {
+    "eclipse_type": "solar_partial",
+    "date": "2025-03-29T10:00:00+00:00",
+    "magnitude": 0.94
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2025-10-02T18:00:00+00:00",
+    "magnitude": 0.96
+  },
+  {
+    "eclipse_type": "solar_total",
+    "date": "2026-02-17T12:00:00+00:00",
+    "magnitude": 1.04
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2026-08-12T17:00:00+00:00",
+    "magnitude": 0.94
+  },
+  {
+    "eclipse_type": "solar_total",
+    "date": "2027-08-02T10:00:00+00:00",
+    "magnitude": 1.08
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2028-01-26T15:00:00+00:00",
+    "magnitude": 0.92
+  },
+  {
+    "eclipse_type": "solar_total",
+    "date": "2028-07-22T02:00:00+00:00",
+    "magnitude": 1.06
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2029-01-14T17:00:00+00:00",
+    "magnitude": 0.87
+  },
+  {
+    "eclipse_type": "solar_total",
+    "date": "2029-06-12T04:00:00+00:00",
+    "magnitude": 1.05
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2029-12-05T15:00:00+00:00",
+    "magnitude": 0.94
+  },
+  {
+    "eclipse_type": "solar_total",
+    "date": "2030-06-01T06:00:00+00:00",
+    "magnitude": 1.05
+  },
+  {
+    "eclipse_type": "solar_annular",
+    "date": "2030-11-25T06:00:00+00:00",
+    "magnitude": 0.97
+  }
+]

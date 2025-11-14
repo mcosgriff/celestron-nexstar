@@ -12,11 +12,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.orm import Session
+
 from .utils import ra_dec_to_alt_az
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 logger = logging.getLogger(__name__)
@@ -51,273 +53,61 @@ class MeteorShower:
     description: str  # Notable characteristics
 
 
-# Major annual meteor showers
-# NOTE: This is only used for seed file generation. Runtime code loads from JSON seed data.
-# See get_all_meteor_showers() which loads from seed data.
+# NOTE: Meteor shower data is now stored in database seed files.
+# See get_all_meteor_showers() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 # Data from IMO (International Meteor Organization) and reliable sources
-_METEOR_SHOWERS_FALLBACK = [
-    MeteorShower(
-        name="Quadrantids",
-        activity_start_month=12,
-        activity_start_day=28,
-        activity_end_month=1,
-        activity_end_day=12,
-        peak_month=1,
-        peak_day=3,
-        peak_end_month=1,
-        peak_end_day=4,
-        zhr_peak=120,
-        velocity_km_s=41,
-        radiant_ra_hours=15.3,
-        radiant_dec_degrees=49.5,
-        parent_comet="2003 EH1 (asteroid)",
-        description="Strong shower with short peak. Best viewed after midnight. Named for obsolete constellation Quadrans Muralis",
-    ),
-    MeteorShower(
-        name="Lyrids",
-        activity_start_month=4,
-        activity_start_day=14,
-        activity_end_month=4,
-        activity_end_day=30,
-        peak_month=4,
-        peak_day=22,
-        peak_end_month=4,
-        peak_end_day=23,
-        zhr_peak=18,
-        velocity_km_s=49,
-        radiant_ra_hours=18.1,
-        radiant_dec_degrees=34.0,
-        parent_comet="C/1861 G1 Thatcher",
-        description="Moderate shower with occasional outbursts. Ancient shower observed for 2700 years. Radiant near Vega",
-    ),
-    MeteorShower(
-        name="Eta Aquariids",
-        activity_start_month=4,
-        activity_start_day=19,
-        activity_end_month=5,
-        activity_end_day=28,
-        peak_month=5,
-        peak_day=6,
-        peak_end_month=5,
-        peak_end_day=7,
-        zhr_peak=50,
-        velocity_km_s=66,
-        radiant_ra_hours=22.5,
-        radiant_dec_degrees=-1.0,
-        parent_comet="1P/Halley",
-        description="Fast meteors with persistent trains. Best viewed from southern hemisphere. Dawn shower",
-    ),
-    MeteorShower(
-        name="Southern Delta Aquariids",
-        activity_start_month=7,
-        activity_start_day=12,
-        activity_end_month=8,
-        activity_end_day=23,
-        peak_month=7,
-        peak_day=30,
-        peak_end_month=7,
-        peak_end_day=31,
-        zhr_peak=25,
-        velocity_km_s=41,
-        radiant_ra_hours=22.6,
-        radiant_dec_degrees=-16.0,
-        parent_comet="96P/Machholz",
-        description="Reliable summer shower. Best from southern hemisphere. Faint meteors with few fireballs",
-    ),
-    MeteorShower(
-        name="Alpha Capricornids",
-        activity_start_month=7,
-        activity_start_day=3,
-        activity_end_month=8,
-        activity_end_day=15,
-        peak_month=7,
-        peak_day=30,
-        peak_end_month=7,
-        peak_end_day=31,
-        zhr_peak=5,
-        velocity_km_s=23,
-        radiant_ra_hours=20.3,
-        radiant_dec_degrees=-10.0,
-        parent_comet="169P/NEAT",
-        description="Weak but notable for bright fireballs. Slow meteors. Often overlaps with Delta Aquariids",
-    ),
-    MeteorShower(
-        name="Perseids",
-        activity_start_month=7,
-        activity_start_day=17,
-        activity_end_month=8,
-        activity_end_day=24,
-        peak_month=8,
-        peak_day=12,
-        peak_end_month=8,
-        peak_end_day=13,
-        zhr_peak=100,
-        velocity_km_s=59,
-        radiant_ra_hours=3.1,
-        radiant_dec_degrees=58.0,
-        parent_comet="109P/Swift-Tuttle",
-        description="Most popular meteor shower. Warm nights, high rates, bright meteors. Consistent and reliable",
-    ),
-    MeteorShower(
-        name="Draconids",
-        activity_start_month=10,
-        activity_start_day=6,
-        activity_end_month=10,
-        activity_end_day=10,
-        peak_month=10,
-        peak_day=8,
-        peak_end_month=10,
-        peak_end_day=9,
-        zhr_peak=10,
-        velocity_km_s=20,
-        radiant_ra_hours=17.5,
-        radiant_dec_degrees=54.0,
-        parent_comet="21P/Giacobini-Zinner",
-        description="Usually weak but has produced storms. Best viewed in early evening. Very slow meteors",
-    ),
-    MeteorShower(
-        name="Orionids",
-        activity_start_month=10,
-        activity_start_day=2,
-        activity_end_month=11,
-        activity_end_day=7,
-        peak_month=10,
-        peak_day=21,
-        peak_end_month=10,
-        peak_end_day=22,
-        zhr_peak=20,
-        velocity_km_s=66,
-        radiant_ra_hours=6.3,
-        radiant_dec_degrees=16.0,
-        parent_comet="1P/Halley",
-        description="Fast meteors from Halley's Comet. Persistent trains common. Broad peak lasting several days",
-    ),
-    MeteorShower(
-        name="Southern Taurids",
-        activity_start_month=9,
-        activity_start_day=10,
-        activity_end_month=11,
-        activity_end_day=20,
-        peak_month=10,
-        peak_day=10,
-        peak_end_month=10,
-        peak_end_day=11,
-        zhr_peak=5,
-        velocity_km_s=27,
-        radiant_ra_hours=3.4,
-        radiant_dec_degrees=9.0,
-        parent_comet="2P/Encke",
-        description="Long-lasting shower with bright fireballs. Very slow meteors. Part of Taurid complex",
-    ),
-    MeteorShower(
-        name="Northern Taurids",
-        activity_start_month=10,
-        activity_start_day=20,
-        activity_end_month=12,
-        activity_end_day=10,
-        peak_month=11,
-        peak_day=12,
-        peak_end_month=11,
-        peak_end_day=13,
-        zhr_peak=5,
-        velocity_km_s=29,
-        radiant_ra_hours=3.9,
-        radiant_dec_degrees=22.0,
-        parent_comet="2P/Encke",
-        description="Companion to Southern Taurids. Known for fireballs. Long activity period",
-    ),
-    MeteorShower(
-        name="Leonids",
-        activity_start_month=11,
-        activity_start_day=6,
-        activity_end_month=11,
-        activity_end_day=30,
-        peak_month=11,
-        peak_day=17,
-        peak_end_month=11,
-        peak_end_day=18,
-        zhr_peak=15,
-        velocity_km_s=71,
-        radiant_ra_hours=10.1,
-        radiant_dec_degrees=22.0,
-        parent_comet="55P/Tempel-Tuttle",
-        description="Fast meteors. Famous for meteor storms every 33 years. Last storm in 1999-2002",
-    ),
-    MeteorShower(
-        name="Geminids",
-        activity_start_month=12,
-        activity_start_day=4,
-        activity_end_month=12,
-        activity_end_day=20,
-        peak_month=12,
-        peak_day=14,
-        peak_end_month=12,
-        peak_end_day=15,
-        zhr_peak=150,
-        velocity_km_s=35,
-        radiant_ra_hours=7.5,
-        radiant_dec_degrees=32.0,
-        parent_comet="3200 Phaethon (asteroid)",
-        description="Best shower of the year. High rates, bright meteors, all night viewing. Multi-colored meteors",
-    ),
-    MeteorShower(
-        name="Ursids",
-        activity_start_month=12,
-        activity_start_day=17,
-        activity_end_month=12,
-        activity_end_day=26,
-        peak_month=12,
-        peak_day=22,
-        peak_end_month=12,
-        peak_end_day=23,
-        zhr_peak=10,
-        velocity_km_s=33,
-        radiant_ra_hours=14.5,
-        radiant_dec_degrees=75.0,
-        parent_comet="8P/Tuttle",
-        description="Minor shower but can surprise with outbursts. Radiant near Little Dipper. Best after midnight",
-    ),
-]
 
 
-def get_all_meteor_showers() -> list[MeteorShower]:
+async def get_all_meteor_showers(db_session: AsyncSession) -> list[MeteorShower]:
     """
-    Get list of all major meteor showers.
+    Get list of all major meteor showers from database.
 
-    Loads data from seed JSON file. Falls back to hardcoded data if JSON is unavailable.
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of MeteorShower objects
+
+    Raises:
+        RuntimeError: If no meteor showers found in database (seed data required)
     """
-    from .database_seeder import load_seed_json
+    from sqlalchemy import func, select
 
-    try:
-        data = load_seed_json("meteor_showers.json")
-        showers = []
-        for item in data:
-            # Convert JSON data to MeteorShower dataclass
-            # JSON uses start_month/start_day instead of activity_start_month/activity_start_day
-            # JSON uses notes instead of description
-            # JSON doesn't have peak_end_month/peak_end_day, default to peak_month/peak_day
-            shower = MeteorShower(
-                name=item["name"],
-                activity_start_month=item["start_month"],
-                activity_start_day=item["start_day"],
-                activity_end_month=item["end_month"],
-                activity_end_day=item["end_day"],
-                peak_month=item["peak_month"],
-                peak_day=item["peak_day"],
-                peak_end_month=item.get("peak_end_month", item["peak_month"]),
-                peak_end_day=item.get("peak_end_day", item["peak_day"]),
-                zhr_peak=item["zhr_peak"],
-                velocity_km_s=int(item["velocity_km_s"]),
-                radiant_ra_hours=item["radiant_ra_hours"],
-                radiant_dec_degrees=item["radiant_dec_degrees"],
-                parent_comet=item.get("parent_comet"),
-                description=item.get("notes", ""),
-            )
-            showers.append(shower)
-        return showers
-    except Exception as e:
-        logger.warning(f"Failed to load meteor showers from seed data: {e}. Using fallback data.")
-        return _METEOR_SHOWERS_FALLBACK
+    from .models import MeteorShowerModel
+
+    count = await db_session.scalar(select(func.count(MeteorShowerModel.id)))
+    if count == 0:
+        raise RuntimeError(
+            "No meteor showers found in database. Please seed the database by running: nexstar data seed"
+        )
+
+    result = await db_session.execute(select(MeteorShowerModel))
+    models = result.scalars().all()
+
+    showers = []
+    for model in models:
+        # Handle velocity_km_s which may be None
+        velocity = int(model.velocity_km_s) if model.velocity_km_s is not None else 0
+        shower = MeteorShower(
+            name=model.name,
+            activity_start_month=model.start_month,
+            activity_start_day=model.start_day,
+            activity_end_month=model.end_month,
+            activity_end_day=model.end_day,
+            peak_month=model.peak_month,
+            peak_day=model.peak_day,
+            peak_end_month=model.peak_month,  # Use peak_month as fallback
+            peak_end_day=model.peak_day,  # Use peak_day as fallback
+            zhr_peak=model.zhr_peak,
+            velocity_km_s=velocity,
+            radiant_ra_hours=model.radiant_ra_hours,
+            radiant_dec_degrees=model.radiant_dec_degrees,
+            parent_comet=model.parent_comet,
+            description=model.notes or "",
+        )
+        showers.append(shower)
+    return showers
 
 
 def _is_date_in_range(
@@ -355,11 +145,12 @@ def _is_date_in_range(
         return check_doy >= start_doy or check_doy <= end_doy
 
 
-def get_active_showers(date: datetime | None = None) -> list[MeteorShower]:
+async def get_active_showers(db_session: AsyncSession, date: datetime | None = None) -> list[MeteorShower]:
     """
     Get meteor showers active on a given date.
 
     Args:
+        db_session: Database session
         date: Date to check (default: today)
 
     Returns:
@@ -372,7 +163,8 @@ def get_active_showers(date: datetime | None = None) -> list[MeteorShower]:
     day = date.day
 
     active = []
-    for shower in get_all_meteor_showers():
+    showers = await get_all_meteor_showers(db_session)
+    for shower in showers:
         if _is_date_in_range(
             month,
             day,
@@ -386,7 +178,8 @@ def get_active_showers(date: datetime | None = None) -> list[MeteorShower]:
     return active
 
 
-def get_peak_showers(
+async def get_peak_showers(
+    db_session: AsyncSession,
     date: datetime | None = None,
     tolerance_days: int = 2,
 ) -> list[MeteorShower]:
@@ -394,6 +187,7 @@ def get_peak_showers(
     Get meteor showers at or near peak on a given date.
 
     Args:
+        db_session: Database session
         date: Date to check (default: today)
         tolerance_days: How many days before/after peak to include (default: 2)
 
@@ -423,7 +217,8 @@ def get_peak_showers(
         end_day = end_day - 28
 
     peak = []
-    for shower in get_all_meteor_showers():
+    showers = await get_all_meteor_showers(db_session)
+    for shower in showers:
         # Check if shower peak overlaps with our date range
         if _is_date_in_range(
             shower.peak_month,

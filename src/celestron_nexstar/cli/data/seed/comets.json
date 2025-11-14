@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Tsuchinshan-ATLAS",
+    "designation": "C/2023 A3",
+    "perihelion_date": "2024-09-27T00:00:00+00:00",
+    "perihelion_distance_au": 0.39,
+    "peak_magnitude": 0.5,
+    "peak_date": "2024-10-12T00:00:00+00:00",
+    "is_periodic": false,
+    "period_years": null,
+    "notes": "Potentially bright comet in October 2024. May reach naked-eye visibility."
+  },
+  {
+    "name": "12P/Pons-Brooks",
+    "designation": "12P/Pons-Brooks",
+    "perihelion_date": "2024-04-21T00:00:00+00:00",
+    "perihelion_distance_au": 0.78,
+    "peak_magnitude": 4.5,
+    "peak_date": "2024-04-21T00:00:00+00:00",
+    "is_periodic": true,
+    "period_years": 71.0,
+    "notes": "Periodic comet with 71-year orbit. Known for outbursts."
+  },
+  {
+    "name": "C/2025 A6 (Lemmon)",
+    "designation": "C/2025 A6",
+    "perihelion_date": "2025-10-21T00:00:00+00:00",
+    "perihelion_distance_au": 0.6,
+    "peak_magnitude": 4.3,
+    "peak_date": "2025-10-21T00:00:00+00:00",
+    "is_periodic": false,
+    "period_years": null,
+    "notes": "Non-periodic comet discovered January 2025. May be visible to naked eye."
+  }
+]

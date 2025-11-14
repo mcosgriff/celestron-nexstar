@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit.formatted_text import FormattedText
 
@@ -680,7 +680,14 @@ def get_conditions_info() -> FormattedText:
 
         if lp_location:
             try:
-                lp_data = asyncio.run(get_light_pollution_data(lp_location[0], lp_location[1]))
+
+                async def _get_light_data() -> Any:
+                    from ...api.models import get_db_session
+
+                    async with get_db_session() as db_session:
+                        return await get_light_pollution_data(db_session, lp_location[0], lp_location[1])
+
+                lp_data = asyncio.run(_get_light_data())
 
                 # Display Bortle class with color coding
                 bortle = lp_data.bortle_class

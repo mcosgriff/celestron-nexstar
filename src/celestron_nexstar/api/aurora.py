@@ -703,12 +703,15 @@ def check_aurora_visibility(
         if cloud_cover is None or moon_illumination is None or bortle_class is None:
             # Fetch weather, moon, and light pollution data in parallel
             async def fetch_all() -> tuple[Any, Any, Any]:
+                from .models import get_db_session
+
                 weather_task = fetch_weather(location)
                 moon_task = asyncio.to_thread(get_moon_info, location.latitude, location.longitude, dt)
-                lp_task = get_light_pollution_data(location.latitude, location.longitude)
-                weather, moon_info, lp_data = await asyncio.gather(
-                    weather_task, moon_task, lp_task, return_exceptions=True
-                )
+                async with get_db_session() as db_session:
+                    lp_task = get_light_pollution_data(db_session, location.latitude, location.longitude)
+                    weather, moon_info, lp_data = await asyncio.gather(
+                        weather_task, moon_task, lp_task, return_exceptions=True
+                    )
                 return weather, moon_info, lp_data
 
             # Run async function - this is a sync entry point, so asyncio.run() is safe

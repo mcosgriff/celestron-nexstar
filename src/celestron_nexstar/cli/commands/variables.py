@@ -4,6 +4,7 @@ Variable Star Events Commands
 Find variable star events (eclipses, maxima, minima).
 """
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
+from ...api.models import get_db_session
 from ...api.observer import ObserverLocation, get_observer_location
 from ...api.variable_stars import VariableStarEvent, get_variable_star_events
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
@@ -66,7 +68,11 @@ def show_events(
         )
         raise typer.Exit(1)
 
-    events = get_variable_star_events(location, months_ahead=months, event_type=event_type)
+    async def _get_events() -> list[VariableStarEvent]:
+        async with get_db_session() as db_session:
+            return await get_variable_star_events(db_session, location, months_ahead=months, event_type=event_type)
+
+    events = asyncio.run(_get_events())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("events")

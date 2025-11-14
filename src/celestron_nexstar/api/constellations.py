@@ -13,11 +13,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from sqlalchemy.orm import Session
+
 from .utils import ra_dec_to_alt_az
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 logger = logging.getLogger(__name__)
@@ -65,460 +67,128 @@ class Asterism:
     description: str  # How to find and what it looks like
 
 
-# Prominent constellations for naked-eye and binocular viewing
-# NOTE: This is only used for seed file generation. Runtime code loads from JSON seed data.
-# See get_prominent_constellations() which loads from seed data.
-_PROMINENT_CONSTELLATIONS_FALLBACK = [
-    # Winter Northern Hemisphere
-    Constellation(
-        name="Orion",
-        abbreviation="Ori",
-        ra_hours=5.5,
-        dec_degrees=5.0,
-        area_sq_deg=594,
-        brightest_star="Rigel",
-        magnitude=0.18,
-        season="Winter",
-        hemisphere="Equatorial",
-        description="The Hunter - one of the most recognizable constellations with bright stars and nebulae",
-    ),
-    Constellation(
-        name="Canis Major",
-        abbreviation="CMa",
-        ra_hours=6.75,
-        dec_degrees=-20.0,
-        area_sq_deg=380,
-        brightest_star="Sirius",
-        magnitude=-1.46,
-        season="Winter",
-        hemisphere="Equatorial",
-        description="The Great Dog - contains Sirius, the brightest star in the night sky",
-    ),
-    Constellation(
-        name="Taurus",
-        abbreviation="Tau",
-        ra_hours=4.5,
-        dec_degrees=15.0,
-        area_sq_deg=797,
-        brightest_star="Aldebaran",
-        magnitude=0.87,
-        season="Winter",
-        hemisphere="Northern",
-        description="The Bull - contains the Pleiades and Hyades star clusters",
-    ),
-    Constellation(
-        name="Gemini",
-        abbreviation="Gem",
-        ra_hours=7.0,
-        dec_degrees=22.0,
-        area_sq_deg=514,
-        brightest_star="Pollux",
-        magnitude=1.14,
-        season="Winter",
-        hemisphere="Northern",
-        description="The Twins - features the bright stars Castor and Pollux",
-    ),
-    Constellation(
-        name="Auriga",
-        abbreviation="Aur",
-        ra_hours=6.0,
-        dec_degrees=42.0,
-        area_sq_deg=657,
-        brightest_star="Capella",
-        magnitude=0.08,
-        season="Winter",
-        hemisphere="Northern",
-        description="The Charioteer - contains the brilliant star Capella and several star clusters",
-    ),
-    # Spring Northern Hemisphere
-    Constellation(
-        name="Leo",
-        abbreviation="Leo",
-        ra_hours=10.5,
-        dec_degrees=15.0,
-        area_sq_deg=947,
-        brightest_star="Regulus",
-        magnitude=1.36,
-        season="Spring",
-        hemisphere="Northern",
-        description="The Lion - a prominent zodiac constellation with a distinctive sickle shape",
-    ),
-    Constellation(
-        name="Ursa Major",
-        abbreviation="UMa",
-        ra_hours=11.0,
-        dec_degrees=50.0,
-        area_sq_deg=1280,
-        brightest_star="Alioth",
-        magnitude=1.76,
-        season="Spring",
-        hemisphere="Northern",
-        description="The Great Bear - contains the famous Big Dipper asterism",
-    ),
-    Constellation(
-        name="Boötes",
-        abbreviation="Boo",
-        ra_hours=14.5,
-        dec_degrees=30.0,
-        area_sq_deg=907,
-        brightest_star="Arcturus",
-        magnitude=-0.05,
-        season="Spring",
-        hemisphere="Northern",
-        description="The Herdsman - features brilliant Arcturus, one of the brightest stars",
-    ),
-    Constellation(
-        name="Virgo",
-        abbreviation="Vir",
-        ra_hours=13.5,
-        dec_degrees=-3.0,
-        area_sq_deg=1294,
-        brightest_star="Spica",
-        magnitude=0.98,
-        season="Spring",
-        hemisphere="Equatorial",
-        description="The Maiden - zodiac constellation with the bright star Spica",
-    ),
-    # Summer Northern Hemisphere
-    Constellation(
-        name="Cygnus",
-        abbreviation="Cyg",
-        ra_hours=20.5,
-        dec_degrees=42.0,
-        area_sq_deg=804,
-        brightest_star="Deneb",
-        magnitude=1.25,
-        season="Summer",
-        hemisphere="Northern",
-        description="The Swan - flies along the Milky Way with distinctive cross shape",
-    ),
-    Constellation(
-        name="Lyra",
-        abbreviation="Lyr",
-        ra_hours=18.75,
-        dec_degrees=36.0,
-        area_sq_deg=286,
-        brightest_star="Vega",
-        magnitude=0.03,
-        season="Summer",
-        hemisphere="Northern",
-        description="The Lyre - small but prominent, dominated by brilliant Vega",
-    ),
-    Constellation(
-        name="Aquila",
-        abbreviation="Aql",
-        ra_hours=19.5,
-        dec_degrees=4.0,
-        area_sq_deg=652,
-        brightest_star="Altair",
-        magnitude=0.76,
-        season="Summer",
-        hemisphere="Equatorial",
-        description="The Eagle - features Altair in the Summer Triangle",
-    ),
-    Constellation(
-        name="Scorpius",
-        abbreviation="Sco",
-        ra_hours=16.75,
-        dec_degrees=-26.0,
-        area_sq_deg=497,
-        brightest_star="Antares",
-        magnitude=1.06,
-        season="Summer",
-        hemisphere="Southern",
-        description="The Scorpion - distinctive J-shape with red supergiant Antares",
-    ),
-    Constellation(
-        name="Sagittarius",
-        abbreviation="Sgr",
-        ra_hours=19.0,
-        dec_degrees=-25.0,
-        area_sq_deg=867,
-        brightest_star="Kaus Australis",
-        magnitude=1.79,
-        season="Summer",
-        hemisphere="Southern",
-        description="The Archer - points toward galactic center, rich in deep-sky objects",
-    ),
-    # Fall Northern Hemisphere
-    Constellation(
-        name="Pegasus",
-        abbreviation="Peg",
-        ra_hours=22.5,
-        dec_degrees=20.0,
-        area_sq_deg=1121,
-        brightest_star="Enif",
-        magnitude=2.38,
-        season="Fall",
-        hemisphere="Northern",
-        description="The Winged Horse - features the Great Square of Pegasus",
-    ),
-    Constellation(
-        name="Andromeda",
-        abbreviation="And",
-        ra_hours=1.0,
-        dec_degrees=38.0,
-        area_sq_deg=722,
-        brightest_star="Alpheratz",
-        magnitude=2.07,
-        season="Fall",
-        hemisphere="Northern",
-        description="The Princess - contains the famous Andromeda Galaxy (M31)",
-    ),
-    Constellation(
-        name="Cassiopeia",
-        abbreviation="Cas",
-        ra_hours=1.0,
-        dec_degrees=60.0,
-        area_sq_deg=598,
-        brightest_star="Schedar",
-        magnitude=2.24,
-        season="Fall",
-        hemisphere="Northern",
-        description="The Queen - distinctive W or M shape, circumpolar in northern latitudes",
-    ),
-    Constellation(
-        name="Perseus",
-        abbreviation="Per",
-        ra_hours=3.0,
-        dec_degrees=45.0,
-        area_sq_deg=615,
-        brightest_star="Mirfak",
-        magnitude=1.79,
-        season="Fall",
-        hemisphere="Northern",
-        description="The Hero - contains the variable star Algol and Double Cluster",
-    ),
-    # Year-round Southern Hemisphere
-    Constellation(
-        name="Crux",
-        abbreviation="Cru",
-        ra_hours=12.5,
-        dec_degrees=-60.0,
-        area_sq_deg=68,
-        brightest_star="Acrux",
-        magnitude=0.77,
-        season="Spring",
-        hemisphere="Southern",
-        description="The Southern Cross - most distinctive southern constellation, smallest of all",
-    ),
-    Constellation(
-        name="Centaurus",
-        abbreviation="Cen",
-        ra_hours=13.0,
-        dec_degrees=-47.0,
-        area_sq_deg=1060,
-        brightest_star="Alpha Centauri",
-        magnitude=-0.01,
-        season="Spring",
-        hemisphere="Southern",
-        description="The Centaur - contains Alpha Centauri, closest star system to Earth",
-    ),
-]
+# NOTE: Constellation data is now stored in database seed files.
+# See get_prominent_constellations() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 
-# Famous asterisms for binocular and naked-eye viewing
-FAMOUS_ASTERISMS = [
-    Asterism(
-        name="Big Dipper",
-        alt_names=["The Plough", "Ursa Major asterism"],
-        ra_hours=11.5,
-        dec_degrees=53.0,
-        size_degrees=25.0,
-        parent_constellation="Ursa Major",
-        season="Spring",
-        hemisphere="Northern",
-        member_stars=["Dubhe", "Merak", "Phecda", "Megrez", "Alioth", "Mizar", "Alkaid"],
-        description="Seven bright stars forming a ladle shape. Use the pointer stars (Dubhe and Merak) to find Polaris",
-    ),
-    Asterism(
-        name="Little Dipper",
-        alt_names=["Ursa Minor asterism"],
-        ra_hours=15.0,
-        dec_degrees=75.0,
-        size_degrees=20.0,
-        parent_constellation="Ursa Minor",
-        season="Year-round",
-        hemisphere="Northern",
-        member_stars=["Polaris", "Kochab", "Pherkad"],
-        description="Seven stars forming a smaller ladle. Polaris marks the end of the handle and North Celestial Pole",
-    ),
-    Asterism(
-        name="Summer Triangle",
-        alt_names=["Great Triangle"],
-        ra_hours=19.5,
-        dec_degrees=35.0,
-        size_degrees=50.0,
-        parent_constellation=None,
-        season="Summer",
-        hemisphere="Northern",
-        member_stars=["Vega", "Deneb", "Altair"],
-        description="Large triangle formed by three of the brightest stars in the summer sky",
-    ),
-    Asterism(
-        name="Winter Triangle",
-        alt_names=["Great Southern Triangle"],
-        ra_hours=6.5,
-        dec_degrees=-5.0,
-        size_degrees=60.0,
-        parent_constellation=None,
-        season="Winter",
-        hemisphere="Equatorial",
-        member_stars=["Sirius", "Procyon", "Betelgeuse"],
-        description="Large triangle connecting the brightest stars of winter: Sirius, Procyon, and Betelgeuse",
-    ),
-    Asterism(
-        name="Winter Hexagon",
-        alt_names=["Winter Circle"],
-        ra_hours=6.0,
-        dec_degrees=10.0,
-        size_degrees=70.0,
-        parent_constellation=None,
-        season="Winter",
-        hemisphere="Equatorial",
-        member_stars=["Sirius", "Rigel", "Aldebaran", "Capella", "Pollux", "Procyon"],
-        description="Six bright stars forming a large hexagon dominating winter skies",
-    ),
-    Asterism(
-        name="Spring Triangle",
-        alt_names=["Great Diamond"],
-        ra_hours=13.0,
-        dec_degrees=25.0,
-        size_degrees=55.0,
-        parent_constellation=None,
-        season="Spring",
-        hemisphere="Northern",
-        member_stars=["Arcturus", "Spica", "Regulus"],
-        description="Triangle of three bright stars marking the spring sky",
-    ),
-    Asterism(
-        name="Great Square of Pegasus",
-        alt_names=["Autumn Square"],
-        ra_hours=23.0,
-        dec_degrees=20.0,
-        size_degrees=20.0,
-        parent_constellation="Pegasus",
-        season="Fall",
-        hemisphere="Northern",
-        member_stars=["Markab", "Scheat", "Algenib", "Alpheratz"],
-        description="Four stars forming a large square. Alpheratz actually belongs to Andromeda",
-    ),
-    Asterism(
-        name="Northern Cross",
-        alt_names=["Cygnus Cross"],
-        ra_hours=20.5,
-        dec_degrees=42.0,
-        size_degrees=25.0,
-        parent_constellation="Cygnus",
-        season="Summer",
-        hemisphere="Northern",
-        member_stars=["Deneb", "Albireo", "Sadr"],
-        description="Cross shape formed by the main stars of Cygnus the Swan",
-    ),
-    Asterism(
-        name="Pleiades",
-        alt_names=["Seven Sisters", "M45"],
-        ra_hours=3.75,
-        dec_degrees=24.0,
-        size_degrees=2.0,
-        parent_constellation="Taurus",
-        season="Winter",
-        hemisphere="Northern",
-        member_stars=["Alcyone", "Atlas", "Electra", "Maia", "Merope", "Taygeta", "Pleione"],
-        description="Stunning open star cluster visible to naked eye. Six or seven stars easily visible",
-    ),
-    Asterism(
-        name="Hyades",
-        alt_names=["Face of the Bull"],
-        ra_hours=4.5,
-        dec_degrees=16.0,
-        size_degrees=5.5,
-        parent_constellation="Taurus",
-        season="Winter",
-        hemisphere="Northern",
-        member_stars=["Aldebaran", "Theta Tauri"],
-        description="V-shaped cluster forming the bull's face. Aldebaran is foreground star, not cluster member",
-    ),
-    Asterism(
-        name="Orion's Belt",
-        alt_names=["The Belt", "Three Kings"],
-        ra_hours=5.6,
-        dec_degrees=-1.2,
-        size_degrees=3.0,
-        parent_constellation="Orion",
-        season="Winter",
-        hemisphere="Equatorial",
-        member_stars=["Alnitak", "Alnilam", "Mintaka"],
-        description="Three bright stars in a straight line. Points to Sirius and Aldebaran",
-    ),
-    Asterism(
-        name="Sickle of Leo",
-        alt_names=["Question Mark"],
-        ra_hours=10.3,
-        dec_degrees=18.0,
-        size_degrees=20.0,
-        parent_constellation="Leo",
-        season="Spring",
-        hemisphere="Northern",
-        member_stars=["Regulus", "Algieba", "Adhafera"],
-        description="Backward question mark shape forming the lion's head and mane",
-    ),
-    Asterism(
-        name="Teapot",
-        alt_names=["Sagittarius Teapot"],
-        ra_hours=19.0,
-        dec_degrees=-27.0,
-        size_degrees=15.0,
-        parent_constellation="Sagittarius",
-        season="Summer",
-        hemisphere="Southern",
-        member_stars=["Kaus Australis", "Nunki", "Ascella"],
-        description="Eight stars forming a teapot shape. The spout points toward Scorpius",
-    ),
-    Asterism(
-        name="False Cross",
-        alt_names=["Diamond Cross"],
-        ra_hours=8.75,
-        dec_degrees=-58.0,
-        size_degrees=10.0,
-        parent_constellation=None,
-        season="Spring",
-        hemisphere="Southern",
-        member_stars=["Aspidiske", "Markeb"],
-        description="Cross shape often confused with the Southern Cross, but larger and dimmer",
-    ),
-]
+# Removed _PROMINENT_CONSTELLATIONS_FALLBACK - data is now in constellations.json seed file
+# Removed FAMOUS_ASTERISMS - data is now in asterisms.json seed file and loaded via get_famous_asterisms()
 
 
-def get_prominent_constellations() -> list[Constellation]:
-    """Get list of prominent constellations for naked-eye viewing."""
-    from .database_seeder import load_seed_json
+async def get_prominent_constellations(db_session: AsyncSession) -> list[Constellation]:
+    """
+    Get list of prominent constellations from database.
 
-    data = load_seed_json("constellations.json")
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of Constellation objects
+
+    Raises:
+        RuntimeError: If no constellations found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from .models import ConstellationModel
+
+    count = await db_session.scalar(select(func.count(ConstellationModel.id)))
+    if count == 0:
+        raise RuntimeError(
+            "No constellations found in database. Please seed the database by running: nexstar data seed"
+        )
+
+    result = await db_session.execute(select(ConstellationModel))
+    models = result.scalars().all()
+
     constellations = []
-    for item in data:
-        # Create Constellation from seed data
+    for model in models:
+        # Calculate hemisphere from declination
+        if model.dec_degrees > 30:
+            hemisphere = "Northern"
+        elif model.dec_degrees < -30:
+            hemisphere = "Southern"
+        else:
+            hemisphere = "Equatorial"
+
+        # Use mythology as description, or empty string
+        description = model.mythology or ""
+
+        # Magnitude not stored in model - use 0.0 as placeholder
+        magnitude = 0.0
+
         constellation = Constellation(
-            name=item["name"],
-            abbreviation=item["abbreviation"],
-            ra_hours=item["ra_hours"],
-            dec_degrees=item["dec_degrees"],
-            area_sq_deg=item["area_sq_deg"],
-            brightest_star=item["brightest_star"],
-            magnitude=item.get("magnitude", 0.0),  # Default if missing
-            season=item["season"],
-            hemisphere=item.get("hemisphere", "Equatorial"),  # Default if missing
-            description=item.get("description", ""),  # Default if missing
+            name=model.name,
+            abbreviation=model.abbreviation,
+            ra_hours=model.ra_hours,
+            dec_degrees=model.dec_degrees,
+            area_sq_deg=model.area_sq_deg or 0.0,
+            brightest_star=model.brightest_star or "",
+            magnitude=magnitude,
+            season=model.season or "",
+            hemisphere=hemisphere,
+            description=description,
         )
         constellations.append(constellation)
     return constellations
 
 
-def get_famous_asterisms() -> list[Asterism]:
-    """Get list of famous asterisms for naked-eye viewing."""
-    return FAMOUS_ASTERISMS
+async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
+    """
+    Get list of famous asterisms from database.
+
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of Asterism objects
+
+    Raises:
+        RuntimeError: If no asterisms found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from .models import AsterismModel
+
+    count = await db_session.scalar(select(func.count(AsterismModel.id)))
+    if count == 0:
+        raise RuntimeError("No asterisms found in database. Please seed the database by running: nexstar data seed")
+
+    result = await db_session.execute(select(AsterismModel))
+    models = result.scalars().all()
+
+    asterisms = []
+    for model in models:
+        # Parse alt_names and stars (stored as comma-separated strings)
+        alt_names = model.alt_names.split(",") if model.alt_names else []
+        member_stars = model.stars.split(",") if model.stars else []
+
+        # Calculate hemisphere from declination
+        if model.dec_degrees > 30:
+            hemisphere = "Northern"
+        elif model.dec_degrees < -30:
+            hemisphere = "Southern"
+        else:
+            hemisphere = "Equatorial"
+
+        asterism = Asterism(
+            name=model.name,
+            alt_names=alt_names,
+            ra_hours=model.ra_hours,
+            dec_degrees=model.dec_degrees,
+            size_degrees=model.size_degrees or 0.0,
+            parent_constellation=model.parent_constellation or "",
+            season=model.season or "",
+            hemisphere=hemisphere,
+            member_stars=member_stars,
+            description=model.description or "",
+        )
+        asterisms.append(asterism)
+    return asterisms
 
 
-def get_visible_constellations(
+async def get_visible_constellations(
+    db_session: AsyncSession,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
@@ -528,6 +198,7 @@ def get_visible_constellations(
     Get constellations visible above horizon at given time.
 
     Args:
+        db_session: Database session
         latitude: Observer latitude in degrees
         longitude: Observer longitude in degrees
         observation_time: Time of observation (default: now)
@@ -545,7 +216,7 @@ def get_visible_constellations(
 
     visible = []
 
-    constellations = get_prominent_constellations()
+    constellations = await get_prominent_constellations(db_session)
     for constellation in constellations:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -565,7 +236,8 @@ def get_visible_constellations(
     return visible
 
 
-def get_visible_asterisms(
+async def get_visible_asterisms(
+    db_session: AsyncSession,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
@@ -575,6 +247,7 @@ def get_visible_asterisms(
     Get asterisms visible above horizon at given time.
 
     Args:
+        db_session: Database session
         latitude: Observer latitude in degrees
         longitude: Observer longitude in degrees
         observation_time: Time of observation (default: now)
@@ -592,7 +265,8 @@ def get_visible_asterisms(
 
     visible = []
 
-    for asterism in FAMOUS_ASTERISMS:
+    asterisms = await get_famous_asterisms(db_session)
+    for asterism in asterisms:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
             asterism.ra_hours,

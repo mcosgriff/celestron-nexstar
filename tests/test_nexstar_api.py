@@ -431,13 +431,13 @@ class TestNexStarTelescope(unittest.TestCase):
             with patch.object(self.telescope.protocol, "get_time", return_value=(12, 30, 0, 10, 14, 24, 0, 0)):
                 time_info = self.telescope.get_time()
 
-        self.assertIsInstance(time_info, TelescopeTime)
-        self.assertEqual(time_info.hour, 12)
-        self.assertEqual(time_info.minute, 30)
-        self.assertEqual(time_info.second, 0)
-        self.assertEqual(time_info.month, 10)
-        self.assertEqual(time_info.day, 14)
-        self.assertEqual(time_info.year, 2024)  # 24 + 2000
+            self.assertIsInstance(time_info, TelescopeTime)
+            self.assertEqual(time_info.hour, 12)
+            self.assertEqual(time_info.minute, 30)
+            self.assertEqual(time_info.second, 0)
+            self.assertEqual(time_info.month, 10)
+            self.assertEqual(time_info.day, 14)
+            self.assertEqual(time_info.year, 2024)  # 24 + 2000
 
     def test_get_time_invalid_response(self):
         """Test get_time with invalid response"""

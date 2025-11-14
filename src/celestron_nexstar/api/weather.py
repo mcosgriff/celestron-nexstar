@@ -393,12 +393,12 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                     except Exception:
                         # Table doesn't exist, create it
                         logger.debug("weather_forecast table not found, creating it...")
-                        await conn.run_sync(
-                            lambda sync_conn: Base.metadata.create_all(
-                                sync_conn,
-                                tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                            )
+                    await conn.run_sync(
+                        lambda sync_conn: Base.metadata.create_all(
+                            sync_conn,
+                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
                         )
+                    )
 
             await _check_and_create_table()
         except Exception as e:
@@ -721,12 +721,12 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     except Exception:
                         # Table doesn't exist, create it
                         logger.debug("weather_forecast table not found, creating it...")
-                        await conn.run_sync(
-                            lambda sync_conn: Base.metadata.create_all(
-                                sync_conn,
-                                tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                            )
+                    await conn.run_sync(
+                        lambda sync_conn: Base.metadata.create_all(
+                            sync_conn,
+                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
                         )
+                    )
 
             await _check_and_create_table()
         except Exception as e:

@@ -24,6 +24,7 @@ from ...api.constellations import get_prominent_constellations, get_visible_aste
 from ...api.database import get_database
 from ...api.enums import CelestialObjectType
 from ...api.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
+from ...api.models import get_db_session
 from ...api.observer import get_observer_location
 from ...api.sun_moon import calculate_sun_times
 from ...api.utils import ra_dec_to_alt_az
@@ -204,7 +205,7 @@ def show_tonight(
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
-        _show_tonight_content(file_console)
+        asyncio.run(_show_tonight_content(file_console))
         # Get content from StringIO
         content = file_console.file.getvalue()
         file_console.file.close()
@@ -215,10 +216,10 @@ def show_tonight(
         return
 
     # Normal console output
-    _show_tonight_content(console)
+    asyncio.run(_show_tonight_content(console))
 
 
-def _show_tonight_content(output_console: Console | FileConsole) -> None:
+async def _show_tonight_content(output_console: Console | FileConsole) -> None:
     """
     Generate and display tonight viewing content.
 
@@ -334,8 +335,9 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]Active Meteor Showers[/bold green]")
         output_console.print("[dim]Best observed with naked eye - no equipment needed![/dim]\n")
 
-        active_showers = get_active_showers(now)
-        peak_showers = get_peak_showers(now, tolerance_days=3)
+        async with get_db_session() as db_session:
+            active_showers = await get_active_showers(db_session, now)
+            peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
 
         if active_showers:
             table_showers = Table()
@@ -389,7 +391,10 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
             midnight = midnight.replace(day=midnight.day + 1)
 
         # Get visible constellations (using lower threshold to catch more)
-        visible_constellations = get_visible_constellations(lat, lon, midnight, min_altitude_deg=15.0)
+        async with get_db_session() as db_session:
+            visible_constellations = await get_visible_constellations(
+                db_session, lat, lon, midnight, min_altitude_deg=15.0
+            )
 
         # Track which constellations have low centers (below normal viewing threshold)
         # Normal threshold is 30° for naked-eye
@@ -414,7 +419,8 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 constellations_with_stars.add(star.constellation)
 
         # Add constellations that have visible stars but aren't already in the list
-        all_prominent = get_prominent_constellations()
+        async with get_db_session() as db_session:
+            all_prominent = await get_prominent_constellations(db_session)
         existing_names = {c.name for c, _, _ in visible_constellations}
 
         for constellation in all_prominent:
@@ -571,7 +577,8 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]Star Patterns to Find (Asterisms)[/bold green]")
         output_console.print("[dim]Famous patterns that are easy to recognize[/dim]\n")
 
-        visible_asterisms = get_visible_asterisms(lat, lon, midnight, min_altitude_deg=30.0)
+        async with get_db_session() as db_session:
+            visible_asterisms = await get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=30.0)
 
         if visible_asterisms:
             # Group by familiarity/importance

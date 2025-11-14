@@ -16,6 +16,8 @@ import skyfield.api  # noqa: F401
 
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from .observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "Comet",
     "CometVisibility",
+    "get_known_comets",
     "get_upcoming_comets",
     "get_visible_comets",
 ]
@@ -56,43 +59,51 @@ class CometVisibility:
     notes: str
 
 
-# Known bright comets (2024-2030)
+# NOTE: Comet data is now stored in database seed files.
+# See get_known_comets() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 # Data from Minor Planet Center and comet observation databases
-KNOWN_COMETS = [
-    Comet(
-        name="Tsuchinshan-ATLAS",
-        designation="C/2023 A3",
-        perihelion_date=datetime(2024, 9, 27, tzinfo=UTC),
-        perihelion_distance_au=0.39,
-        peak_magnitude=0.5,
-        peak_date=datetime(2024, 10, 12, tzinfo=UTC),
-        is_periodic=False,
-        period_years=None,
-        notes="Potentially bright comet in October 2024. May reach naked-eye visibility.",
-    ),
-    Comet(
-        name="12P/Pons-Brooks",
-        designation="12P/Pons-Brooks",
-        perihelion_date=datetime(2024, 4, 21, tzinfo=UTC),
-        perihelion_distance_au=0.78,
-        peak_magnitude=4.5,
-        peak_date=datetime(2024, 4, 21, tzinfo=UTC),
-        is_periodic=True,
-        period_years=71.0,
-        notes="Periodic comet with 71-year orbit. Known for outbursts.",
-    ),
-    Comet(
-        name="C/2025 A6 (Lemmon)",
-        designation="C/2025 A6",
-        perihelion_date=datetime(2025, 10, 21, tzinfo=UTC),
-        perihelion_distance_au=0.60,
-        peak_magnitude=4.3,
-        peak_date=datetime(2025, 10, 21, tzinfo=UTC),
-        is_periodic=False,
-        period_years=None,
-        notes="Non-periodic comet discovered January 2025. May be visible to naked eye.",
-    ),
-]
+
+
+async def get_known_comets(db_session: AsyncSession) -> list[Comet]:
+    """
+    Get list of known comets from database.
+
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of Comet objects
+
+    Raises:
+        RuntimeError: If no comets found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from .models import CometModel
+
+    count = await db_session.scalar(select(func.count(CometModel.id)))
+    if count == 0:
+        raise RuntimeError("No comets found in database. Please seed the database by running: nexstar data seed")
+
+    result = await db_session.execute(select(CometModel))
+    models = result.scalars().all()
+
+    comets = []
+    for model in models:
+        comet = Comet(
+            name=model.name,
+            designation=model.designation,
+            perihelion_date=model.perihelion_date,
+            perihelion_distance_au=model.perihelion_distance_au,
+            peak_magnitude=model.peak_magnitude,
+            peak_date=model.peak_date,
+            is_periodic=model.is_periodic,
+            period_years=model.period_years,
+            notes=model.notes,
+        )
+        comets.append(comet)
+    return comets
 
 
 def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
@@ -126,7 +137,8 @@ def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
     return base_magnitude
 
 
-def get_visible_comets(
+async def get_visible_comets(
+    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 12,
     max_magnitude: float = 8.0,
@@ -148,7 +160,8 @@ def get_visible_comets(
     end_date = now + timedelta(days=30 * months_ahead)
 
     # For each known comet, check visibility
-    for comet in KNOWN_COMETS:
+    comets = await get_known_comets(db_session)
+    for comet in comets:
         # Check if comet is active in our time window
         # Comets are typically visible for several months around perihelion
         activity_start = comet.perihelion_date - timedelta(days=90)
@@ -200,7 +213,8 @@ def get_visible_comets(
     return visibilities
 
 
-def get_upcoming_comets(
+async def get_upcoming_comets(
+    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 24,
 ) -> list[CometVisibility]:
@@ -208,10 +222,11 @@ def get_upcoming_comets(
     Get upcoming bright comets.
 
     Args:
+        db_session: Database session
         location: Observer location
         months_ahead: How many months ahead to search (default: 24)
 
     Returns:
         List of CometVisibility objects, sorted by peak date
     """
-    return get_visible_comets(location, months_ahead=months_ahead, max_magnitude=10.0)
+    return await get_visible_comets(db_session, location, months_ahead=months_ahead, max_magnitude=10.0)

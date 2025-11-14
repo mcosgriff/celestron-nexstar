@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
@@ -74,290 +74,10 @@ class SpaceEvent:
     url: str | None = None
 
 
-# Space events from Planetary Society calendar
+# NOTE: Space events data is now stored in database seed files.
+# See get_upcoming_events() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 # Based on https://www.planetary.org/articles/calendar-of-space-events-2025
-SPACE_EVENTS_2025 = [
-    SpaceEvent(
-        name="Quadrantid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 1, 3),
-        description="The Quadrantid meteor shower peaks. The Moon will be a slightly illuminated crescent and should not interfere much with the display.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Northern Hemisphere after midnight",
-        ),
-        url="https://www.planetary.org/articles/calendar-of-space-events-2025",
-    ),
-    SpaceEvent(
-        name="Mars at Opposition",
-        event_type=SpaceEventType.PLANETARY_OPPOSITION,
-        date=datetime(2025, 1, 16),
-        description="Mars will be at its brightest and most visible of the entire year, making this the best time to try to see the red planet.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="naked_eye",
-            notes="Visible all night, best with telescope for detail",
-        ),
-    ),
-    SpaceEvent(
-        name="Venus at Greatest Brightness",
-        event_type=SpaceEventType.PLANETARY_BRIGHTNESS,
-        date=datetime(2025, 2, 16),
-        description="Venus will be at its brightest of the entire year, appearing more than twice as bright as during the planet's dimmest moment of 2025.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="naked_eye",
-            notes="Visible in evening or morning sky depending on elongation",
-        ),
-    ),
-    SpaceEvent(
-        name="Total Lunar Eclipse",
-        event_type=SpaceEventType.LUNAR_ECLIPSE,
-        date=datetime(2025, 3, 14),
-        description="This lunar eclipse will be visible in its entirety from almost all of North America, including the contiguous United States and Central America, as well as from most of South America.",
-        viewing_requirements=ViewingRequirement(
-            min_latitude=-60.0,
-            max_latitude=90.0,
-            min_longitude=-180.0,
-            max_longitude=-30.0,  # Roughly North/South America
-            equipment_needed="naked_eye",
-            notes="Visible from North and South America",
-        ),
-    ),
-    SpaceEvent(
-        name="March Equinox",
-        event_type=SpaceEventType.EQUINOX,
-        date=datetime(2025, 3, 20),
-        description="Spring equinox in Northern Hemisphere, autumn equinox in Southern Hemisphere.",
-        viewing_requirements=ViewingRequirement(equipment_needed="naked_eye"),
-    ),
-    SpaceEvent(
-        name="Partial Solar Eclipse",
-        event_type=SpaceEventType.SOLAR_ECLIPSE,
-        date=datetime(2025, 3, 29),
-        description="The solar eclipse will be best viewed from northeastern Canada, but will also be visible to a lesser extent from most of Europe and parts of North Africa and Russia.",
-        viewing_requirements=ViewingRequirement(
-            min_latitude=30.0,
-            max_latitude=80.0,
-            min_longitude=-100.0,
-            max_longitude=60.0,
-            equipment_needed="telescope",
-            notes="NEVER look directly at the Sun without proper solar filters",
-        ),
-    ),
-    SpaceEvent(
-        name="Saturn's Rings Edge-On",
-        event_type=SpaceEventType.OTHER,
-        date=datetime(2025, 3, 1),  # Approximate - "sometime this month"
-        description="Saturn's rings will be oriented edge-on toward Earth, making them difficult to see.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="telescope",
-            notes="Rings will appear as a thin line, very difficult to see",
-        ),
-    ),
-    SpaceEvent(
-        name="Mercury at Greatest Elongation",
-        event_type=SpaceEventType.PLANETARY_ELONGATION,
-        date=datetime(2025, 4, 21),
-        description="Mercury will appear farthest from the Sun in the sky than at any other time in the year, making this the best time to see the planet in 2025.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="binoculars",
-            notes="Best viewed just after sunset or before sunrise",
-        ),
-    ),
-    SpaceEvent(
-        name="Lyrid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 4, 22),
-        description="The Lyrid meteor shower peaks. The Moon will be only slightly illuminated and should not interfere much with the display.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Northern Hemisphere after midnight",
-        ),
-    ),
-    SpaceEvent(
-        name="Eta Aquariid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 5, 6),
-        description="The Eta Aquariid meteor shower peaks. The Moon will be mostly illuminated, which may make it harder to spot this shower.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Southern Hemisphere, but visible in Northern Hemisphere",
-        ),
-    ),
-    SpaceEvent(
-        name="Venus at Greatest Elongation",
-        event_type=SpaceEventType.PLANETARY_ELONGATION,
-        date=datetime(2025, 5, 31),
-        description="Venus will appear farthest from the Sun, and so higher in the night sky, than at any other time of the year.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="naked_eye",
-            notes="Visible in evening or morning sky depending on elongation",
-        ),
-    ),
-    SpaceEvent(
-        name="June Solstice",
-        event_type=SpaceEventType.SOLSTICE,
-        date=datetime(2025, 6, 21),
-        description="Summer solstice in Northern Hemisphere, winter solstice in Southern Hemisphere.",
-        viewing_requirements=ViewingRequirement(equipment_needed="naked_eye"),
-    ),
-    SpaceEvent(
-        name="Southern Delta Aquariid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 7, 31),
-        description="The Southern Delta Aquariid meteor shower peaks. The Moon will be only slightly illuminated, so it should not interfere much with views of this shower.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Southern Hemisphere",
-        ),
-    ),
-    SpaceEvent(
-        name="Perseid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 8, 12),
-        description="The Perseid meteor shower peaks. The Moon will be almost full, which could make it much harder to see many of these meteors.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Northern Hemisphere. Moon will interfere this year.",
-        ),
-    ),
-    SpaceEvent(
-        name="Total Lunar Eclipse",
-        event_type=SpaceEventType.LUNAR_ECLIPSE,
-        date=datetime(2025, 9, 7),
-        description="The lunar eclipse will be visible in its entirety from most of Asia, Russia, Australia, and eastern Africa.",
-        viewing_requirements=ViewingRequirement(
-            min_latitude=-50.0,
-            max_latitude=80.0,
-            min_longitude=20.0,
-            max_longitude=180.0,
-            equipment_needed="naked_eye",
-            notes="Visible from Asia, Russia, Australia, and eastern Africa",
-        ),
-    ),
-    SpaceEvent(
-        name="Partial Solar Eclipse",
-        event_type=SpaceEventType.SOLAR_ECLIPSE,
-        date=datetime(2025, 9, 21),
-        description="This eclipse will only be visible to those in New Zealand, Antarctica, and the south Pacific Ocean.",
-        viewing_requirements=ViewingRequirement(
-            min_latitude=-90.0,
-            max_latitude=-30.0,
-            min_longitude=150.0,
-            max_longitude=180.0,
-            equipment_needed="telescope",
-            notes="NEVER look directly at the Sun without proper solar filters",
-        ),
-    ),
-    SpaceEvent(
-        name="Saturn at Opposition",
-        event_type=SpaceEventType.PLANETARY_OPPOSITION,
-        date=datetime(2025, 9, 21),
-        description="Saturn will be at its brightest and most visible of the entire year, so this will be the best time to see it.",
-        viewing_requirements=ViewingRequirement(
-            equipment_needed="telescope",
-            notes="Visible all night, best with telescope to see rings",
-        ),
-    ),
-    SpaceEvent(
-        name="Neptune at Opposition",
-        event_type=SpaceEventType.PLANETARY_OPPOSITION,
-        date=datetime(2025, 9, 23),
-        description="Neptune will be at its brightest and most visible of the entire year. It will still be relatively dim and difficult to see, but with the right equipment (like a capable telescope), this will be the best time to try to see it.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="telescope",
-            notes="Requires telescope and dark skies",
-        ),
-    ),
-    SpaceEvent(
-        name="September Equinox",
-        event_type=SpaceEventType.EQUINOX,
-        date=datetime(2025, 9, 22),
-        description="Autumn equinox in Northern Hemisphere, spring equinox in Southern Hemisphere.",
-        viewing_requirements=ViewingRequirement(equipment_needed="naked_eye"),
-    ),
-    SpaceEvent(
-        name="Orionid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 10, 21),
-        description="The Orionid meteor shower peaks. This shower will peak during a new Moon, making for excellent viewing.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Excellent viewing conditions with new moon",
-        ),
-    ),
-    SpaceEvent(
-        name="Leonid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 11, 17),
-        description="The Leonid meteor shower peaks. The Moon will be a slightly illuminated crescent and should not interfere much with the display.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Northern Hemisphere after midnight",
-        ),
-    ),
-    SpaceEvent(
-        name="Uranus at Opposition",
-        event_type=SpaceEventType.PLANETARY_OPPOSITION,
-        date=datetime(2025, 11, 21),
-        description="Uranus will be at its brightest and most visible of the entire year. It will still be relatively dim and so only visible to most naked-eye stargazers under a very dark sky, but easier to spot with binoculars or a telescope.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=3,
-            equipment_needed="binoculars",
-            notes="Visible with binoculars or telescope, very dark sky helps",
-        ),
-    ),
-    SpaceEvent(
-        name="Geminid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 12, 14),
-        description="The Geminid meteor shower peaks. The Moon will be about one-third illuminated, which could partially reduce the visibility of this shower, but there will still be plenty to see.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="One of the best meteor showers of the year",
-        ),
-    ),
-    SpaceEvent(
-        name="December Solstice",
-        event_type=SpaceEventType.SOLSTICE,
-        date=datetime(2025, 12, 21),
-        description="Winter solstice in Northern Hemisphere, summer solstice in Southern Hemisphere.",
-        viewing_requirements=ViewingRequirement(equipment_needed="naked_eye"),
-    ),
-    SpaceEvent(
-        name="Ursid Meteor Shower Peak",
-        event_type=SpaceEventType.METEOR_SHOWER,
-        date=datetime(2025, 12, 22),
-        description="The Ursid meteor shower peaks. The Moon will be a barely illuminated crescent and should not affect meteor viewing.",
-        viewing_requirements=ViewingRequirement(
-            dark_sky_required=True,
-            min_bortle_class=4,
-            equipment_needed="naked_eye",
-            notes="Best viewed from Northern Hemisphere",
-        ),
-    ),
-]
-
-# 2026 events (to be populated when available)
-SPACE_EVENTS_2026: list[SpaceEvent] = []
 
 
 def populate_space_events_database(db_session: Session) -> None:
@@ -470,57 +190,48 @@ def get_upcoming_events(
             db_events = asyncio.run(_get_ordered_events())
 
         # If we have events in the database, use them
-        if db_events:
-            filtered = []
-            for db_event in db_events:
-                req = ViewingRequirement(
-                    min_latitude=db_event.min_latitude,
-                    max_latitude=db_event.max_latitude,
-                    min_longitude=db_event.min_longitude,
-                    max_longitude=db_event.max_longitude,
-                    dark_sky_required=db_event.dark_sky_required,
-                    min_bortle_class=db_event.min_bortle_class,
-                    equipment_needed=db_event.equipment_needed,
-                    notes=db_event.viewing_notes,
-                )
+        if not db_events:
+            raise RuntimeError(
+                "No space events found in database. Please seed the database by running: nexstar data seed"
+            )
 
-                event = SpaceEvent(
-                    name=db_event.name,
-                    event_type=SpaceEventType(db_event.event_type),
-                    date=db_event.date,
-                    description=db_event.description,
-                    viewing_requirements=req,
-                    source=db_event.source,
-                    url=db_event.url,
-                )
-                filtered.append(event)
+        filtered = []
+        for db_event in db_events:
+            req = ViewingRequirement(
+                min_latitude=db_event.min_latitude,
+                max_latitude=db_event.max_latitude,
+                min_longitude=db_event.min_longitude,
+                max_longitude=db_event.max_longitude,
+                dark_sky_required=db_event.dark_sky_required,
+                min_bortle_class=db_event.min_bortle_class,
+                equipment_needed=db_event.equipment_needed,
+                notes=db_event.viewing_notes,
+            )
 
-            return filtered
-    except Exception as e:
-        logger.debug(f"Could not query space events from database: {e}, falling back to hardcoded lists")
-
-    # Fallback to hardcoded lists
-    all_events = SPACE_EVENTS_2025 + SPACE_EVENTS_2026
-
-    # Filter by date range
-    filtered = []
-    for event in all_events:
-        # Make event date timezone-aware if it's naive
-        event_date = event.date
-        if event_date.tzinfo is None:
-            event_date = event_date.replace(tzinfo=UTC)
-
-        if start_date <= event_date <= end_date:
+            event = SpaceEvent(
+                name=db_event.name,
+                event_type=SpaceEventType(db_event.event_type),
+                date=db_event.date,
+                description=db_event.description,
+                viewing_requirements=req,
+                source=db_event.source,
+                url=db_event.url,
+            )
             filtered.append(event)
 
-    # Filter by event type if specified
-    if event_types:
-        filtered = [evt for evt in filtered if evt.event_type in event_types]
+        # Filter by event type if specified
+        if event_types:
+            filtered = [evt for evt in filtered if evt.event_type in event_types]
 
-    # Sort by date
-    filtered.sort(key=lambda evt: evt.date)
+        # Sort by date
+        filtered.sort(key=lambda evt: evt.date)
 
-    return filtered
+        return filtered
+    except Exception as e:
+        logger.error(f"Could not query space events from database: {e}")
+        raise RuntimeError(
+            "No space events found in database. Please seed the database by running: nexstar data seed"
+        ) from e
 
 
 def is_event_visible_from_location(event: SpaceEvent, location: ObserverLocation) -> bool:
@@ -582,7 +293,13 @@ def find_best_viewing_location(
     # Check if dark sky is required
     if req.dark_sky_required or req.min_bortle_class:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
-        current_light = asyncio.run(get_light_pollution_data(current_location.latitude, current_location.longitude))
+        async def _get_light_data() -> Any:
+            from .models import get_db_session
+
+            async with get_db_session() as db_session:
+                return await get_light_pollution_data(db_session, current_location.latitude, current_location.longitude)
+
+        current_light = asyncio.run(_get_light_data())
         current_bortle = current_light.bortle_class.value
 
         # Check if current location meets requirements

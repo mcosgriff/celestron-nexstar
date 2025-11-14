@@ -1,0 +1,101 @@
+[
+  {
+    "bortle_class": 1,
+    "sqm_min": 21.99,
+    "sqm_max": 22.0,
+    "naked_eye_mag": 7.6,
+    "milky_way": true,
+    "airglow": true,
+    "zodiacal_light": true,
+    "description": "Excellent dark-sky site. Zodiacal light, gegenschein, and zodiacal band visible.",
+    "recommendations": "[\"Perfect for all types of observing\", \"Ideal for deep-sky imaging\"]"
+  },
+  {
+    "bortle_class": 2,
+    "sqm_min": 21.89,
+    "sqm_max": 21.99,
+    "naked_eye_mag": 7.1,
+    "milky_way": true,
+    "airglow": true,
+    "zodiacal_light": true,
+    "description": "Typical truly dark site. Airglow weakly visible near horizon.",
+    "recommendations": "[\"Excellent for all deep-sky objects\", \"Good for Milky Way photography\"]"
+  },
+  {
+    "bortle_class": 3,
+    "sqm_min": 21.69,
+    "sqm_max": 21.89,
+    "naked_eye_mag": 6.6,
+    "milky_way": true,
+    "airglow": false,
+    "zodiacal_light": true,
+    "description": "Rural sky. Some light pollution evident at horizon.",
+    "recommendations": "[\"Very good for deep-sky observing\", \"Milky Way structure visible\"]"
+  },
+  {
+    "bortle_class": 4,
+    "sqm_min": 20.49,
+    "sqm_max": 21.69,
+    "naked_eye_mag": 6.1,
+    "milky_way": true,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "Rural/suburban transition. Light domes visible in several directions.",
+    "recommendations": "[\"Good for most deep-sky objects\", \"Brighter galaxies and nebulae visible\"]"
+  },
+  {
+    "bortle_class": 5,
+    "sqm_min": 19.5,
+    "sqm_max": 20.49,
+    "naked_eye_mag": 5.6,
+    "milky_way": true,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "Suburban sky. Milky Way washed out near horizon.",
+    "recommendations": "[\"Focus on brighter deep-sky objects\", \"Planets and Moon excellent\"]"
+  },
+  {
+    "bortle_class": 6,
+    "sqm_min": 18.94,
+    "sqm_max": 19.5,
+    "naked_eye_mag": 5.1,
+    "milky_way": false,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "Bright suburban sky. Milky Way barely visible.",
+    "recommendations": "[\"Bright objects only\", \"Excellent for planets and Moon\"]"
+  },
+  {
+    "bortle_class": 7,
+    "sqm_min": 18.38,
+    "sqm_max": 18.94,
+    "naked_eye_mag": 4.6,
+    "milky_way": false,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "Suburban/urban transition. Sky grayish white.",
+    "recommendations": "[\"Messier objects still visible\", \"Focus on planets, Moon, double stars\"]"
+  },
+  {
+    "bortle_class": 8,
+    "sqm_min": 0,
+    "sqm_max": 18.38,
+    "naked_eye_mag": 4.1,
+    "milky_way": false,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "City sky. Bright objects only.",
+    "recommendations": "[\"Planets, Moon, brightest clusters\", \"Consider narrowband filters\"]"
+  },
+  {
+    "bortle_class": 9,
+    "sqm_min": 0,
+    "sqm_max": 17.5,
+    "naked_eye_mag": 4.0,
+    "milky_way": false,
+    "airglow": false,
+    "zodiacal_light": false,
+    "description": "Inner-city sky. Severely light polluted.",
+    "recommendations": "[\"Moon and planets only\", \"Consider remote observing\"]"
+  }
+]

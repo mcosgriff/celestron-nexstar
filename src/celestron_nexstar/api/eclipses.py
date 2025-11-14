@@ -17,6 +17,8 @@ from skyfield.api import Topos
 
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from .observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -175,7 +177,8 @@ def _get_moon_phase_at_time(ts: Any, earth: Any, sun: Any, moon: Any | None, t: 
         return 0.5
 
 
-def get_next_lunar_eclipse(
+async def get_next_lunar_eclipse(
+    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 5,
 ) -> list[Eclipse]:
@@ -200,7 +203,8 @@ def get_next_lunar_eclipse(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=365 * years_ahead)
 
-    for eclipse_data in KNOWN_ECLIPSES:
+    known_eclipses = await get_known_eclipses(db_session)
+    for eclipse_data in known_eclipses:
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
@@ -227,39 +231,50 @@ def get_next_lunar_eclipse(
     return eclipses
 
 
-# Known upcoming eclipses (2024-2030)
+# NOTE: Eclipse data is now stored in database seed files.
+# See get_known_eclipses() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 # Data from NASA's Five Millennium Catalog
-# Defined here so it can be used by both lunar and solar functions
-KNOWN_ECLIPSES = [
-    # Lunar Eclipses
-    {"type": "lunar_total", "date": datetime(2025, 3, 14, 6, 0, tzinfo=UTC), "magnitude": 1.18},
-    {"type": "lunar_partial", "date": datetime(2025, 9, 7, 18, 0, tzinfo=UTC), "magnitude": 0.93},
-    {"type": "lunar_total", "date": datetime(2026, 3, 3, 11, 0, tzinfo=UTC), "magnitude": 1.15},
-    {"type": "lunar_partial", "date": datetime(2026, 8, 28, 4, 0, tzinfo=UTC), "magnitude": 0.93},
-    {"type": "lunar_total", "date": datetime(2027, 2, 20, 23, 0, tzinfo=UTC), "magnitude": 1.24},
-    {"type": "lunar_partial", "date": datetime(2027, 8, 17, 12, 0, tzinfo=UTC), "magnitude": 0.92},
-    {"type": "lunar_total", "date": datetime(2028, 1, 12, 4, 0, tzinfo=UTC), "magnitude": 1.14},
-    {"type": "lunar_total", "date": datetime(2028, 7, 6, 18, 0, tzinfo=UTC), "magnitude": 1.68},
-    {"type": "lunar_total", "date": datetime(2029, 1, 1, 0, 0, tzinfo=UTC), "magnitude": 1.12},
-    {"type": "lunar_partial", "date": datetime(2029, 6, 26, 3, 0, tzinfo=UTC), "magnitude": 0.54},
-    {"type": "lunar_partial", "date": datetime(2029, 12, 20, 22, 0, tzinfo=UTC), "magnitude": 0.92},
-    # Solar Eclipses
-    {"type": "solar_partial", "date": datetime(2025, 3, 29, 10, 0, tzinfo=UTC), "magnitude": 0.94},
-    {"type": "solar_annular", "date": datetime(2025, 10, 2, 18, 0, tzinfo=UTC), "magnitude": 0.96},
-    {"type": "solar_total", "date": datetime(2026, 2, 17, 12, 0, tzinfo=UTC), "magnitude": 1.04},
-    {"type": "solar_annular", "date": datetime(2026, 8, 12, 17, 0, tzinfo=UTC), "magnitude": 0.94},
-    {"type": "solar_total", "date": datetime(2027, 8, 2, 10, 0, tzinfo=UTC), "magnitude": 1.08},
-    {"type": "solar_annular", "date": datetime(2028, 1, 26, 15, 0, tzinfo=UTC), "magnitude": 0.92},
-    {"type": "solar_total", "date": datetime(2028, 7, 22, 2, 0, tzinfo=UTC), "magnitude": 1.06},
-    {"type": "solar_annular", "date": datetime(2029, 1, 14, 17, 0, tzinfo=UTC), "magnitude": 0.87},
-    {"type": "solar_total", "date": datetime(2029, 6, 12, 4, 0, tzinfo=UTC), "magnitude": 1.05},
-    {"type": "solar_annular", "date": datetime(2029, 12, 5, 15, 0, tzinfo=UTC), "magnitude": 0.94},
-    {"type": "solar_total", "date": datetime(2030, 6, 1, 6, 0, tzinfo=UTC), "magnitude": 1.05},
-    {"type": "solar_annular", "date": datetime(2030, 11, 25, 6, 0, tzinfo=UTC), "magnitude": 0.97},
-]
 
 
-def get_next_solar_eclipse(
+async def get_known_eclipses(db_session: AsyncSession) -> list[dict[str, Any]]:
+    """
+    Get list of known eclipses from database.
+
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of dicts with keys: type, date, magnitude
+
+    Raises:
+        RuntimeError: If no eclipses found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from .models import EclipseModel
+
+    count = await db_session.scalar(select(func.count(EclipseModel.id)))
+    if count == 0:
+        raise RuntimeError("No eclipses found in database. Please seed the database by running: nexstar data seed")
+
+    result = await db_session.execute(select(EclipseModel))
+    models = result.scalars().all()
+
+    eclipses = []
+    for model in models:
+        eclipses.append(
+            {
+                "type": model.eclipse_type,
+                "date": model.date,
+                "magnitude": model.magnitude,
+            }
+        )
+    return eclipses
+
+
+async def get_next_solar_eclipse(
+    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 10,
 ) -> list[Eclipse]:
@@ -282,7 +297,8 @@ def get_next_solar_eclipse(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=365 * years_ahead)
 
-    for eclipse_data in KNOWN_ECLIPSES:
+    known_eclipses = await get_known_eclipses(db_session)
+    for eclipse_data in known_eclipses:
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
@@ -376,7 +392,8 @@ def _calculate_solar_eclipse(
         return None
 
 
-def get_upcoming_eclipses(
+async def get_upcoming_eclipses(
+    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 5,
     eclipse_type: str | None = None,
@@ -385,6 +402,7 @@ def get_upcoming_eclipses(
     Get all upcoming eclipses (lunar and solar) visible from location.
 
     Args:
+        db_session: Database session
         location: Observer location
         years_ahead: How many years ahead to search
         eclipse_type: Filter by type ("lunar" or "solar"), or None for all
@@ -392,14 +410,14 @@ def get_upcoming_eclipses(
     Returns:
         List of Eclipse objects, sorted by date
     """
-    all_eclipses = []
+    all_eclipses: list[Eclipse] = []
 
     if eclipse_type is None or eclipse_type == "lunar":
-        lunar_eclipses = get_next_lunar_eclipse(location, years_ahead=years_ahead)
+        lunar_eclipses = await get_next_lunar_eclipse(db_session, location, years_ahead=years_ahead)
         all_eclipses.extend(lunar_eclipses)
 
     if eclipse_type is None or eclipse_type == "solar":
-        solar_eclipses = get_next_solar_eclipse(location, years_ahead=years_ahead)
+        solar_eclipses = await get_next_solar_eclipse(db_session, location, years_ahead=years_ahead)
         all_eclipses.extend(solar_eclipses)
 
     # Sort by date

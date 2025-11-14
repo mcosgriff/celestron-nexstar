@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 
 if TYPE_CHECKING:
     from .observer import ObserverLocation
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "VariableStar",
     "VariableStarEvent",
+    "get_known_variable_stars",
     "get_variable_star_events",
 ]
 
@@ -51,53 +54,52 @@ class VariableStarEvent:
     notes: str
 
 
-# Well-known variable stars
-KNOWN_VARIABLE_STARS = [
-    VariableStar(
-        name="Algol",
-        designation="β Persei",
-        variable_type="eclipsing_binary",
-        period_days=2.867,
-        magnitude_min=2.1,
-        magnitude_max=3.4,
-        ra_hours=3.136,
-        dec_degrees=40.956,
-        notes="Famous eclipsing binary - 'Demon Star'. Dips every 2.87 days.",
-    ),
-    VariableStar(
-        name="Delta Cephei",
-        designation="δ Cephei",
-        variable_type="cepheid",
-        period_days=5.366,
-        magnitude_min=3.5,
-        magnitude_max=4.4,
-        ra_hours=22.485,
-        dec_degrees=58.415,
-        notes="Prototype Cepheid variable. Brightness varies smoothly over 5.37 days.",
-    ),
-    VariableStar(
-        name="Mira",
-        designation="o Ceti",  # Using Latin 'o' instead of Greek omicron
-        variable_type="mira",
-        period_days=332.0,
-        magnitude_min=2.0,
-        magnitude_max=10.1,
-        ra_hours=2.322,
-        dec_degrees=-2.977,
-        notes="Long-period variable. Can be naked-eye visible at maximum.",
-    ),
-    VariableStar(
-        name="Beta Lyrae",
-        designation="β Lyrae",
-        variable_type="eclipsing_binary",
-        period_days=12.94,
-        magnitude_min=3.3,
-        magnitude_max=4.3,
-        ra_hours=18.834,
-        dec_degrees=33.363,
-        notes="Eclipsing binary with continuous variation.",
-    ),
-]
+# NOTE: Variable star data is now stored in database seed files.
+# See get_known_variable_stars() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
+
+
+async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableStar]:
+    """
+    Get list of known variable stars from database.
+
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of VariableStar objects
+
+    Raises:
+        RuntimeError: If no variable stars found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from .models import VariableStarModel
+
+    count = await db_session.scalar(select(func.count(VariableStarModel.id)))
+    if count == 0:
+        raise RuntimeError(
+            "No variable stars found in database. Please seed the database by running: nexstar data seed"
+        )
+
+    result = await db_session.execute(select(VariableStarModel))
+    models = result.scalars().all()
+
+    stars = []
+    for model in models:
+        star = VariableStar(
+            name=model.name,
+            designation=model.designation,
+            variable_type=model.variable_type,
+            period_days=model.period_days,
+            magnitude_min=model.magnitude_min,
+            magnitude_max=model.magnitude_max,
+            ra_hours=model.ra_hours,
+            dec_degrees=model.dec_degrees,
+            notes=model.notes,
+        )
+        stars.append(star)
+    return stars
 
 
 def _calculate_next_event(
@@ -129,7 +131,8 @@ def _calculate_next_event(
     return event_date
 
 
-def get_variable_star_events(
+async def get_variable_star_events(
+    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 6,
     event_type: str | None = None,
@@ -149,7 +152,8 @@ def get_variable_star_events(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    for star in KNOWN_VARIABLE_STARS:
+    stars = await get_known_variable_stars(db_session)
+    for star in stars:
         # Calculate next minimum and maximum
         if event_type is None or event_type == "minimum":
             next_minimum = _calculate_next_event(star, now, "minimum")

@@ -272,7 +272,15 @@ class ObservationPlanner:
 
         # Get light pollution
         # Run async function - this is a sync entry point, so asyncio.run() is safe
-        lp_data = asyncio.run(get_light_pollution_data(lat, lon))
+        from typing import Any
+
+        async def _get_light_data() -> Any:
+            from .models import get_db_session
+
+            async with get_db_session() as db_session:
+                return await get_light_pollution_data(db_session, lat, lon)
+
+        lp_data = asyncio.run(_get_light_data())
 
         # Get telescope configuration
         config = get_current_configuration()

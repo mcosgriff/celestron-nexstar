@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from .meteor_showers import MeteorShower, get_all_meteor_showers, get_radiant_position
+from .meteor_showers import MeteorShower, get_radiant_position
 from .solar_system import MoonInfo, get_moon_info
 
 
@@ -94,7 +94,19 @@ def get_enhanced_meteor_predictions(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    all_showers = get_all_meteor_showers()
+    # This function is sync but calls async get_all_meteor_showers
+    # We need to handle this properly
+    import asyncio
+
+    from .models import get_db_session
+
+    async def _get_showers() -> list[MeteorShower]:
+        async with get_db_session() as db_session:
+            from .meteor_showers import get_all_meteor_showers
+
+            return await get_all_meteor_showers(db_session)
+
+    all_showers = asyncio.run(_get_showers())
 
     # For each shower, find peak dates in the forecast period
     current_date = now

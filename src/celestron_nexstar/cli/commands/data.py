@@ -608,6 +608,10 @@ def seed_database(
                 "meteor_showers": "meteor_showers.json",
                 "dark_sky_sites": "dark_sky_sites.json",
                 "space_events": "space_events.json",
+                "variable_stars": "variable_stars.json",
+                "comets": "comets.json",
+                "eclipses": "eclipses.json",
+                "bortle_characteristics": "bortle_characteristics.json",
             }
 
             for data_type, filename in seed_file_map.items():
@@ -900,6 +904,10 @@ def stats() -> None:
             "meteor_showers": "meteor_showers.json",
             "dark_sky_sites": "dark_sky_sites.json",
             "space_events": "space_events.json",
+            "variable_stars": "variable_stars.json",
+            "comets": "comets.json",
+            "eclipses": "eclipses.json",
+            "bortle_characteristics": "bortle_characteristics.json",
         }
 
         for data_type, filename in seed_file_map.items():

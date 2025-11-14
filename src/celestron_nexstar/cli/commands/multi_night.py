@@ -10,7 +10,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 from zoneinfo import ZoneInfo
 
 import typer
@@ -883,7 +883,13 @@ def _show_best_night_content(output_console: Console | FileConsole, object_name:
         )
 
         # Get light pollution data for observer location
-        light_pollution_data = asyncio.run(get_light_pollution_data(lat, lon))
+        async def _get_light_data() -> Any:
+            from ...api.models import get_db_session
+
+            async with get_db_session() as db_session:
+                return await get_light_pollution_data(db_session, lat, lon)
+
+        light_pollution_data = asyncio.run(_get_light_data())
         output_console.print(
             f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n"
         )
@@ -1245,7 +1251,13 @@ def show_clear_sky_chart(
             return
 
         # Get light pollution for darkness calculation
-        lp_data = asyncio.run(get_light_pollution_data(lat, lon))
+        async def _get_light_data() -> Any:
+            from ...api.models import get_db_session
+
+            async with get_db_session() as db_session:
+                return await get_light_pollution_data(db_session, lat, lon)
+
+        lp_data = asyncio.run(_get_light_data())
 
         # Calculate transparency and darkness for each hour
         chart_data = []

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    pass
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -79,90 +79,9 @@ class LightPollutionData:
     cached: bool = False  # Whether data came from cache
 
 
-# Bortle class characteristics
-BORTLE_CHARACTERISTICS = {
-    BortleClass.CLASS_1: {
-        "sqm_range": (21.99, 22.00),
-        "naked_eye_mag": 7.6,
-        "milky_way": True,
-        "airglow": True,
-        "zodiacal_light": True,
-        "description": "Excellent dark-sky site. Zodiacal light, gegenschein, and zodiacal band visible.",
-        "recommendations": ("Perfect for all types of observing", "Ideal for deep-sky imaging"),
-    },
-    BortleClass.CLASS_2: {
-        "sqm_range": (21.89, 21.99),
-        "naked_eye_mag": 7.1,
-        "milky_way": True,
-        "airglow": True,
-        "zodiacal_light": True,
-        "description": "Typical truly dark site. Airglow weakly visible near horizon.",
-        "recommendations": ("Excellent for all deep-sky objects", "Good for Milky Way photography"),
-    },
-    BortleClass.CLASS_3: {
-        "sqm_range": (21.69, 21.89),
-        "naked_eye_mag": 6.6,
-        "milky_way": True,
-        "airglow": False,
-        "zodiacal_light": True,
-        "description": "Rural sky. Some light pollution evident at horizon.",
-        "recommendations": ("Very good for deep-sky observing", "Milky Way structure visible"),
-    },
-    BortleClass.CLASS_4: {
-        "sqm_range": (20.49, 21.69),
-        "naked_eye_mag": 6.1,
-        "milky_way": True,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "Rural/suburban transition. Light domes visible in several directions.",
-        "recommendations": ("Good for most deep-sky objects", "Brighter galaxies and nebulae visible"),
-    },
-    BortleClass.CLASS_5: {
-        "sqm_range": (19.50, 20.49),
-        "naked_eye_mag": 5.6,
-        "milky_way": True,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "Suburban sky. Milky Way washed out near horizon.",
-        "recommendations": ("Focus on brighter deep-sky objects", "Planets and Moon excellent"),
-    },
-    BortleClass.CLASS_6: {
-        "sqm_range": (18.94, 19.50),
-        "naked_eye_mag": 5.1,
-        "milky_way": False,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "Bright suburban sky. Milky Way barely visible.",
-        "recommendations": ("Bright objects only", "Excellent for planets and Moon"),
-    },
-    BortleClass.CLASS_7: {
-        "sqm_range": (18.38, 18.94),
-        "naked_eye_mag": 4.6,
-        "milky_way": False,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "Suburban/urban transition. Sky grayish white.",
-        "recommendations": ("Messier objects still visible", "Focus on planets, Moon, double stars"),
-    },
-    BortleClass.CLASS_8: {
-        "sqm_range": (0, 18.38),
-        "naked_eye_mag": 4.1,
-        "milky_way": False,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "City sky. Bright objects only.",
-        "recommendations": ("Planets, Moon, brightest clusters", "Consider narrowband filters"),
-    },
-    BortleClass.CLASS_9: {
-        "sqm_range": (0, 17.5),
-        "naked_eye_mag": 4.0,
-        "milky_way": False,
-        "airglow": False,
-        "zodiacal_light": False,
-        "description": "Inner-city sky. Severely light polluted.",
-        "recommendations": ("Moon and planets only", "Consider remote observing"),
-    },
-}
+# NOTE: Bortle class characteristics are now stored in database seed files.
+# See _get_bortle_characteristics() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
 
 
 def sqm_to_bortle(sqm: float) -> BortleClass:
@@ -187,10 +106,52 @@ def sqm_to_bortle(sqm: float) -> BortleClass:
         return BortleClass.CLASS_9
 
 
-def _create_light_pollution_data(sqm: float, source: str | None = None, cached: bool = False) -> LightPollutionData:
+async def _get_bortle_characteristics(db_session: AsyncSession, bortle_class: BortleClass) -> dict[str, Any]:
+    """
+    Get Bortle class characteristics from database.
+
+    Args:
+        db_session: Database session
+        bortle_class: Bortle class enum value
+
+    Returns:
+        Dictionary with characteristics
+
+    Raises:
+        RuntimeError: If Bortle characteristics not found in database (seed data required)
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from .models import BortleCharacteristicsModel
+
+    model = await db_session.scalar(
+        select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
+    )
+    if model is None:
+        raise RuntimeError(
+            f"Bortle class {bortle_class.value} characteristics not found in database. "
+            "Please seed the database by running: nexstar data seed"
+        )
+
+    return {
+        "sqm_range": (model.sqm_min, model.sqm_max),
+        "naked_eye_mag": model.naked_eye_mag,
+        "milky_way": model.milky_way,
+        "airglow": model.airglow,
+        "zodiacal_light": model.zodiacal_light,
+        "description": model.description,
+        "recommendations": json.loads(model.recommendations),
+    }
+
+
+async def _create_light_pollution_data(
+    db_session: AsyncSession, sqm: float, source: str | None = None, cached: bool = False
+) -> LightPollutionData:
     """Create LightPollutionData from SQM value."""
     bortle = sqm_to_bortle(sqm)
-    chars: dict[str, Any] = BORTLE_CHARACTERISTICS[bortle]
+    chars = await _get_bortle_characteristics(db_session, bortle)
 
     return LightPollutionData(
         bortle_class=bortle,
@@ -373,7 +334,9 @@ def _estimate_sqm_from_location(lat: float, lon: float) -> float:
     return 20.0
 
 
-async def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
+async def get_light_pollution_data(
+    db_session: AsyncSession, lat: float, lon: float, force_refresh: bool = False
+) -> LightPollutionData:
     """
     Get light pollution data for a location.
 
@@ -401,8 +364,8 @@ async def get_light_pollution_data(lat: float, lon: float, force_refresh: bool =
                     age = datetime.now(UTC) - cache_time.replace(tzinfo=UTC)
                     if age < timedelta(hours=CACHE_STALE_HOURS):
                         logger.debug(f"Using cached light pollution data for {lat},{lon}")
-                        return _create_light_pollution_data(
-                            location_data["sqm"], location_data.get("source"), cached=True
+                        return await _create_light_pollution_data(
+                            db_session, location_data["sqm"], location_data.get("source"), cached=True
                         )
                 except (ValueError, KeyError):
                     pass
@@ -431,11 +394,11 @@ async def get_light_pollution_data(lat: float, lon: float, force_refresh: bool =
     cache_data["timestamp"] = datetime.now(UTC).isoformat()
     _save_cache(cache_data)
 
-    return _create_light_pollution_data(sqm, source, cached=False)
+    return await _create_light_pollution_data(db_session, sqm, source, cached=False)
 
 
 async def get_light_pollution_data_batch(
-    locations: list[tuple[float, float]], force_refresh: bool = False
+    db_session: AsyncSession, locations: list[tuple[float, float]], force_refresh: bool = False
 ) -> dict[tuple[float, float], LightPollutionData]:
     """
     Get light pollution data for multiple locations concurrently.
@@ -450,7 +413,7 @@ async def get_light_pollution_data_batch(
     Returns:
         Dictionary mapping (lat, lon) to LightPollutionData
     """
-    tasks = [get_light_pollution_data(lat, lon, force_refresh) for lat, lon in locations]
+    tasks = [get_light_pollution_data(db_session, lat, lon, force_refresh) for lat, lon in locations]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     data_map: dict[tuple[float, float], LightPollutionData] = {}
@@ -459,13 +422,13 @@ async def get_light_pollution_data_batch(
             logger.error(f"Error fetching data for {lat},{lon}: {result}")
             # Use fallback estimation
             sqm = _estimate_sqm_from_location(lat, lon)
-            data_map[(lat, lon)] = _create_light_pollution_data(sqm, "estimated", cached=False)
+            data_map[(lat, lon)] = await _create_light_pollution_data(db_session, sqm, "estimated", cached=False)
         elif isinstance(result, LightPollutionData):
             data_map[(lat, lon)] = result
         else:
             # Unexpected type, use fallback
             logger.warning(f"Unexpected result type for {lat},{lon}: {type(result)}")
             sqm = _estimate_sqm_from_location(lat, lon)
-            data_map[(lat, lon)] = _create_light_pollution_data(sqm, "estimated", cached=False)
+            data_map[(lat, lon)] = await _create_light_pollution_data(db_session, sqm, "estimated", cached=False)
 
     return data_map

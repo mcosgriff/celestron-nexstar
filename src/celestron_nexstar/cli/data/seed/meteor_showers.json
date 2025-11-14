@@ -15,7 +15,9 @@
     "velocity_km_s": 41.0,
     "parent_comet": "2003 EH1 (asteroid)",
     "best_time": null,
-    "notes": "Strong shower with short peak. Best viewed after midnight. Named for obsolete constellation Quadrans Muralis"
+    "notes": "Strong shower with short peak. Best viewed after midnight. Named for obsolete constellation Quadrans Muralis",
+    "peak_end_month": 1,
+    "peak_end_day": 3
   },
   {
     "name": "Lyrids",
@@ -33,7 +35,9 @@
     "velocity_km_s": 49.0,
     "parent_comet": "C/1861 G1 Thatcher",
     "best_time": null,
-    "notes": "Moderate shower with occasional outbursts. Ancient shower observed for 2700 years. Radiant near Vega"
+    "notes": "Moderate shower with occasional outbursts. Ancient shower observed for 2700 years. Radiant near Vega",
+    "peak_end_month": 4,
+    "peak_end_day": 22
   },
   {
     "name": "Eta Aquariids",
@@ -51,7 +55,9 @@
     "velocity_km_s": 66.0,
     "parent_comet": "1P/Halley",
     "best_time": null,
-    "notes": "Fast meteors with persistent trains. Best viewed from southern hemisphere. Dawn shower"
+    "notes": "Fast meteors with persistent trains. Best viewed from southern hemisphere. Dawn shower",
+    "peak_end_month": 5,
+    "peak_end_day": 6
   },
   {
     "name": "Southern Delta Aquariids",
@@ -69,7 +75,9 @@
     "velocity_km_s": 41.0,
     "parent_comet": "96P/Machholz",
     "best_time": null,
-    "notes": "Reliable summer shower. Best from southern hemisphere. Faint meteors with few fireballs"
+    "notes": "Reliable summer shower. Best from southern hemisphere. Faint meteors with few fireballs",
+    "peak_end_month": 7,
+    "peak_end_day": 30
   },
   {
     "name": "Alpha Capricornids",
@@ -87,7 +95,9 @@
     "velocity_km_s": 23.0,
     "parent_comet": "169P/NEAT",
     "best_time": null,
-    "notes": "Weak but notable for bright fireballs. Slow meteors. Often overlaps with Delta Aquariids"
+    "notes": "Weak but notable for bright fireballs. Slow meteors. Often overlaps with Delta Aquariids",
+    "peak_end_month": 7,
+    "peak_end_day": 30
   },
   {
     "name": "Perseids",
@@ -105,7 +115,9 @@
     "velocity_km_s": 59.0,
     "parent_comet": "109P/Swift-Tuttle",
     "best_time": null,
-    "notes": "Most popular meteor shower. Warm nights, high rates, bright meteors. Consistent and reliable"
+    "notes": "Most popular meteor shower. Warm nights, high rates, bright meteors. Consistent and reliable",
+    "peak_end_month": 8,
+    "peak_end_day": 12
   },
   {
     "name": "Draconids",
@@ -123,7 +135,9 @@
     "velocity_km_s": 20.0,
     "parent_comet": "21P/Giacobini-Zinner",
     "best_time": null,
-    "notes": "Usually weak but has produced storms. Best viewed in early evening. Very slow meteors"
+    "notes": "Usually weak but has produced storms. Best viewed in early evening. Very slow meteors",
+    "peak_end_month": 10,
+    "peak_end_day": 8
   },
   {
     "name": "Orionids",
@@ -141,7 +155,9 @@
     "velocity_km_s": 66.0,
     "parent_comet": "1P/Halley",
     "best_time": null,
-    "notes": "Fast meteors from Halley's Comet. Persistent trains common. Broad peak lasting several days"
+    "notes": "Fast meteors from Halley's Comet. Persistent trains common. Broad peak lasting several days",
+    "peak_end_month": 10,
+    "peak_end_day": 21
   },
   {
     "name": "Southern Taurids",
@@ -159,7 +175,9 @@
     "velocity_km_s": 27.0,
     "parent_comet": "2P/Encke",
     "best_time": null,
-    "notes": "Long-lasting shower with bright fireballs. Very slow meteors. Part of Taurid complex"
+    "notes": "Long-lasting shower with bright fireballs. Very slow meteors. Part of Taurid complex",
+    "peak_end_month": 10,
+    "peak_end_day": 10
   },
   {
     "name": "Northern Taurids",
@@ -177,7 +195,9 @@
     "velocity_km_s": 29.0,
     "parent_comet": "2P/Encke",
     "best_time": null,
-    "notes": "Companion to Southern Taurids. Known for fireballs. Long activity period"
+    "notes": "Companion to Southern Taurids. Known for fireballs. Long activity period",
+    "peak_end_month": 11,
+    "peak_end_day": 12
   },
   {
     "name": "Leonids",
@@ -195,7 +215,9 @@
     "velocity_km_s": 71.0,
     "parent_comet": "55P/Tempel-Tuttle",
     "best_time": null,
-    "notes": "Fast meteors. Famous for meteor storms every 33 years. Last storm in 1999-2002"
+    "notes": "Fast meteors. Famous for meteor storms every 33 years. Last storm in 1999-2002",
+    "peak_end_month": 11,
+    "peak_end_day": 17
   },
   {
     "name": "Geminids",
@@ -213,7 +235,9 @@
     "velocity_km_s": 35.0,
     "parent_comet": "3200 Phaethon (asteroid)",
     "best_time": null,
-    "notes": "Best shower of the year. High rates, bright meteors, all night viewing. Multi-colored meteors"
+    "notes": "Best shower of the year. High rates, bright meteors, all night viewing. Multi-colored meteors",
+    "peak_end_month": 12,
+    "peak_end_day": 14
   },
   {
     "name": "Ursids",
@@ -231,6 +255,8 @@
     "velocity_km_s": 33.0,
     "parent_comet": "8P/Tuttle",
     "best_time": null,
-    "notes": "Minor shower but can surprise with outbursts. Radiant near Little Dipper. Best after midnight"
+    "notes": "Minor shower but can surprise with outbursts. Radiant near Little Dipper. Best after midnight",
+    "peak_end_month": 12,
+    "peak_end_day": 22
   }
 ]

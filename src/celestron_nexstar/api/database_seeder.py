@@ -17,11 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import (
     AsterismModel,
+    BortleCharacteristicsModel,
+    CometModel,
     ConstellationModel,
     DarkSkySiteModel,
+    EclipseModel,
     MeteorShowerModel,
     SpaceEventModel,
     StarNameMappingModel,
+    VariableStarModel,
 )
 
 
@@ -358,6 +362,200 @@ async def seed_space_events(db_session: AsyncSession, force: bool = False) -> in
     return added
 
 
+async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed variable stars into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing data before seeding
+
+    Returns:
+        Number of records added
+    """
+    logger.info("Seeding variable stars...")
+
+    if force:
+        await db_session.execute(delete(VariableStarModel))
+        await db_session.commit()
+        logger.info("Cleared existing variable stars")
+
+    # Load seed data
+    data = load_seed_json("variable_stars.json")
+
+    added = 0
+    for item in data:
+        name = item["name"]
+
+        # Check if already exists (idempotent)
+        existing = await db_session.scalar(select(VariableStarModel).where(VariableStarModel.name == name))
+        if existing:
+            continue
+
+        # Create new variable star
+        star = VariableStarModel(**item)
+        db_session.add(star)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} variable stars")
+    else:
+        logger.info("Variable stars already seeded (no new records)")
+
+    return added
+
+
+async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed comets into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing data before seeding
+
+    Returns:
+        Number of records added
+    """
+    logger.info("Seeding comets...")
+
+    if force:
+        await db_session.execute(delete(CometModel))
+        await db_session.commit()
+        logger.info("Cleared existing comets")
+
+    # Load seed data
+    data = load_seed_json("comets.json")
+
+    added = 0
+    for item in data:
+        designation = item["designation"]
+
+        # Check if already exists (idempotent)
+        existing = await db_session.scalar(select(CometModel).where(CometModel.designation == designation))
+        if existing:
+            continue
+
+        # Parse datetime strings
+        from datetime import datetime
+
+        item["perihelion_date"] = datetime.fromisoformat(item["perihelion_date"].replace("Z", "+00:00"))
+        item["peak_date"] = datetime.fromisoformat(item["peak_date"].replace("Z", "+00:00"))
+
+        # Create new comet
+        comet = CometModel(**item)
+        db_session.add(comet)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} comets")
+    else:
+        logger.info("Comets already seeded (no new records)")
+
+    return added
+
+
+async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed eclipses into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing data before seeding
+
+    Returns:
+        Number of records added
+    """
+    logger.info("Seeding eclipses...")
+
+    if force:
+        await db_session.execute(delete(EclipseModel))
+        await db_session.commit()
+        logger.info("Cleared existing eclipses")
+
+    # Load seed data
+    data = load_seed_json("eclipses.json")
+
+    added = 0
+    for item in data:
+        eclipse_type = item["eclipse_type"]
+        date_str = item["date"]
+
+        # Parse date
+        from datetime import datetime
+
+        eclipse_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+
+        # Check if already exists (idempotent) - match by type and date
+        existing = await db_session.scalar(
+            select(EclipseModel).where(EclipseModel.eclipse_type == eclipse_type, EclipseModel.date == eclipse_date)
+        )
+        if existing:
+            continue
+
+        # Create new eclipse
+        eclipse_data = {**item}
+        eclipse_data["date"] = eclipse_date
+        eclipse = EclipseModel(**eclipse_data)
+        db_session.add(eclipse)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} eclipses")
+    else:
+        logger.info("Eclipses already seeded (no new records)")
+
+    return added
+
+
+async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed Bortle characteristics into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing data before seeding
+
+    Returns:
+        Number of records added
+    """
+    logger.info("Seeding Bortle characteristics...")
+
+    if force:
+        await db_session.execute(delete(BortleCharacteristicsModel))
+        await db_session.commit()
+        logger.info("Cleared existing Bortle characteristics")
+
+    # Load seed data
+    data = load_seed_json("bortle_characteristics.json")
+
+    added = 0
+    for item in data:
+        bortle_class = item["bortle_class"]
+
+        # Check if already exists (idempotent)
+        existing = await db_session.scalar(
+            select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == bortle_class)
+        )
+        if existing:
+            continue
+
+        # Create new Bortle characteristics
+        chars = BortleCharacteristicsModel(**item)
+        db_session.add(chars)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} Bortle characteristics")
+    else:
+        logger.info("Bortle characteristics already seeded (no new records)")
+
+    return added
+
+
 async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, int]:
     """
     Seed all static reference data into the database.
@@ -425,6 +623,42 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
         logger.error(f"Failed to seed space events: {e}")
         results["space_events"] = 0
 
+    try:
+        results["variable_stars"] = await seed_variable_stars(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Variable stars seed file not found, skipping")
+        results["variable_stars"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed variable stars: {e}")
+        results["variable_stars"] = 0
+
+    try:
+        results["comets"] = await seed_comets(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Comets seed file not found, skipping")
+        results["comets"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed comets: {e}")
+        results["comets"] = 0
+
+    try:
+        results["eclipses"] = await seed_eclipses(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Eclipses seed file not found, skipping")
+        results["eclipses"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed eclipses: {e}")
+        results["eclipses"] = 0
+
+    try:
+        results["bortle_characteristics"] = await seed_bortle_characteristics(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Bortle characteristics seed file not found, skipping")
+        results["bortle_characteristics"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed bortle characteristics: {e}")
+        results["bortle_characteristics"] = 0
+
     return results
 
 
@@ -481,5 +715,33 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
         status["space_events"] = count_result or 0
     except Exception:
         status["space_events"] = 0
+
+    # Variable stars
+    try:
+        count_result = await db_session.scalar(select(func.count(VariableStarModel.id)))
+        status["variable_stars"] = count_result or 0
+    except Exception:
+        status["variable_stars"] = 0
+
+    # Comets
+    try:
+        count_result = await db_session.scalar(select(func.count(CometModel.id)))
+        status["comets"] = count_result or 0
+    except Exception:
+        status["comets"] = 0
+
+    # Eclipses
+    try:
+        count_result = await db_session.scalar(select(func.count(EclipseModel.id)))
+        status["eclipses"] = count_result or 0
+    except Exception:
+        status["eclipses"] = 0
+
+    # Bortle characteristics
+    try:
+        count_result = await db_session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
+        status["bortle_characteristics"] = count_result or 0
+    except Exception:
+        status["bortle_characteristics"] = 0
 
     return status

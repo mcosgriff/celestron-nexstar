@@ -23,6 +23,7 @@ from ...api.eclipses import get_next_lunar_eclipse, get_next_solar_eclipse
 from ...api.iss_tracking import get_iss_passes
 from ...api.light_pollution import BortleClass
 from ...api.meteor_shower_predictions import get_enhanced_meteor_predictions
+from ...api.models import get_db_session
 from ...api.observer import ObserverLocation, geocode_location
 from ...api.planetary_events import get_planetary_conjunctions, get_planetary_oppositions
 from ...api.solar_system import get_moon_info, get_sun_info
@@ -446,8 +447,15 @@ def _show_comprehensive_plan_content(
         else:
             years_ahead = max(1, days_ahead // 365)
 
-        lunar_eclipses = get_next_lunar_eclipse(location, years_ahead=years_ahead)
-        solar_eclipses = get_next_solar_eclipse(location, years_ahead=years_ahead)
+        from ...api.eclipses import Eclipse
+
+        async def _get_eclipses() -> tuple[list[Eclipse], list[Eclipse]]:
+            async with get_db_session() as db_session:
+                lunar = await get_next_lunar_eclipse(db_session, location, years_ahead=years_ahead)
+                solar = await get_next_solar_eclipse(db_session, location, years_ahead=years_ahead)
+                return lunar, solar
+
+        lunar_eclipses, solar_eclipses = asyncio.run(_get_eclipses())
 
         # Filter eclipses within date range
         all_eclipses = []
@@ -511,7 +519,13 @@ def _show_comprehensive_plan_content(
         else:
             months_ahead = max(1, days_ahead // 30)
 
-        comets = get_visible_comets(location, months_ahead=months_ahead)
+        from ...api.comets import CometVisibility
+
+        async def _get_comets() -> list[CometVisibility]:
+            async with get_db_session() as db_session:
+                return await get_visible_comets(db_session, location, months_ahead=months_ahead)
+
+        comets = asyncio.run(_get_comets())
 
         # Filter comets visible during date range (if we have visibility dates)
         if start_date and end_date and comets:
