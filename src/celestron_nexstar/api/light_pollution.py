@@ -286,11 +286,11 @@ async def _fetch_from_darksky_api(lat: float, lon: float) -> float | None:
 
 async def _fetch_sqm(lat: float, lon: float) -> float | None:
     """
-    Fetch SQM value from available sources (async).
+    Fetch SQM value from database (offline only).
 
-    Tries database first, then APIs only if database doesn't have data.
+    Only uses database - no external API calls. Designed to work offline.
     """
-    # Try database first (offline, fast, preferred)
+    # Try database only (offline, fast, preferred)
     try:
         from .database import get_database
         from .light_pollution_db import get_sqm_from_database
@@ -301,42 +301,16 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
             logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
             return sqm
         else:
-            logger.debug(f"No SQM data in database for {lat},{lon}, will try API as fallback")
+            logger.debug(f"No SQM data in database for {lat},{lon}")
     except Exception as e:
-        logger.debug(f"Database lookup failed: {e}, will try API as fallback")
+        logger.debug(f"Database lookup failed: {e}")
         import traceback
 
         logger.debug(traceback.format_exc())
 
-    # Only try APIs if database doesn't have data
-    # Note: API calls may fail due to network issues or API changes
-    logger.debug("Attempting to fetch from external API (database lookup returned no data)")
-    sqm = await _fetch_from_lightpollutionmap_api(lat, lon)
-    if sqm is not None:
-        logger.info(f"Fetched SQM {sqm:.2f} from API for {lat},{lon}")
-        return sqm
-
-    # Try fallback API (currently not implemented)
-    sqm = await _fetch_from_darksky_api(lat, lon)
-    if sqm is not None:
-        logger.info(f"Fetched SQM {sqm:.2f} from fallback API for {lat},{lon}")
-        return sqm
-
-    logger.debug("No SQM data available from database or APIs")
+    # No API fallback - database only for offline operation
+    logger.debug("No SQM data available in database")
     return None
-
-
-def _estimate_sqm_from_location(lat: float, lon: float) -> float:
-    """
-    Estimate SQM value without database or API data (fallback).
-
-    Uses simple heuristic based on latitude and rough estimates.
-    This is a last resort when database and APIs are unavailable.
-    """
-    # Very rough estimation: assume suburban (Bortle 5) as default
-    # In a real implementation, you might use population density data
-    logger.warning("Using estimated SQM value (database and API unavailable)")
-    return 20.0
 
 
 async def get_light_pollution_data(
@@ -345,8 +319,7 @@ async def get_light_pollution_data(
     """
     Get light pollution data for a location.
 
-    Uses async HTTP to fetch data from APIs with intelligent caching.
-    Only fetches new data if cache is stale or force_refresh is True.
+    Uses database only (offline). Requires light pollution data to be loaded into database.
 
     Args:
         lat: Latitude in degrees
@@ -355,6 +328,9 @@ async def get_light_pollution_data(
 
     Returns:
         Light pollution data
+
+    Raises:
+        RuntimeError: If no light pollution data found in database for this location
     """
     cache_key = _get_cache_key(lat, lon)
 
@@ -375,27 +351,24 @@ async def get_light_pollution_data(
                 except (ValueError, KeyError):
                     pass
 
-    # Need to fetch new data
+    # Need to fetch new data from database
     logger.info(f"Fetching light pollution data for {lat},{lon}")
     sqm = await _fetch_sqm(lat, lon)
 
     if sqm is None:
-        # Fallback to estimation
-        sqm = _estimate_sqm_from_location(lat, lon)
-        source = "estimated"
-    else:
-        # Determine source based on where we got the data
-        # Check if it came from database by trying a quick lookup
-        try:
-            from .database import get_database
-            from .light_pollution_db import get_sqm_from_database
+        # No data in database - raise error with instructions
+        raise RuntimeError(
+            f"No light pollution data found in database for location ({lat:.4f}, {lon:.4f}).\n"
+            "To load light pollution data into the database, run:\n"
+            "  nexstar data download-light-pollution\n"
+            "Or for a specific region:\n"
+            "  nexstar data download-light-pollution --region north_america\n"
+            "  nexstar data download-light-pollution --region europe\n"
+            "Available regions: world, north_america, south_america, europe, africa, asia, australia"
+        )
 
-            db = get_database()
-            db_sqm = get_sqm_from_database(lat, lon, db)
-            source = "database" if db_sqm is not None and abs(db_sqm - sqm) < 0.01 else "lightpollutionmap.info"
-        except Exception:
-            # If we can't determine, assume API
-            source = "lightpollutionmap.info"
+    # Data came from database (offline source)
+    source = "database"
 
     # Save to cache
     cache_data = _load_cache() or {"data": {}, "timestamp": datetime.now(UTC).isoformat()}
@@ -420,7 +393,7 @@ async def get_light_pollution_data_batch(
     Get light pollution data for multiple locations concurrently.
 
     Fetches data for multiple locations concurrently for a full night of viewing.
-    Uses caching to avoid redundant API calls.
+    Uses caching to avoid redundant database lookups.
 
     Args:
         locations: List of (lat, lon) tuples
@@ -428,6 +401,7 @@ async def get_light_pollution_data_batch(
 
     Returns:
         Dictionary mapping (lat, lon) to LightPollutionData
+        Only includes locations that have data in the database.
     """
     tasks = [get_light_pollution_data(db_session, lat, lon, force_refresh) for lat, lon in locations]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -436,15 +410,13 @@ async def get_light_pollution_data_batch(
     for (lat, lon), result in zip(locations, results, strict=False):
         if isinstance(result, Exception):
             logger.error(f"Error fetching data for {lat},{lon}: {result}")
-            # Use fallback estimation
-            sqm = _estimate_sqm_from_location(lat, lon)
-            data_map[(lat, lon)] = await _create_light_pollution_data(db_session, sqm, "estimated", cached=False)
+            # Skip locations without data - don't use fallback estimation
+            continue
         elif isinstance(result, LightPollutionData):
             data_map[(lat, lon)] = result
         else:
-            # Unexpected type, use fallback
+            # Unexpected type
             logger.warning(f"Unexpected result type for {lat},{lon}: {type(result)}")
-            sqm = _estimate_sqm_from_location(lat, lon)
-            data_map[(lat, lon)] = await _create_light_pollution_data(db_session, sqm, "estimated", cached=False)
+            continue
 
     return data_map
