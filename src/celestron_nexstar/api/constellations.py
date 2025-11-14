@@ -101,36 +101,7 @@ async def get_prominent_constellations(db_session: AsyncSession) -> list[Constel
     result = await db_session.execute(select(ConstellationModel))
     models = result.scalars().all()
 
-    constellations = []
-    for model in models:
-        # Calculate hemisphere from declination
-        if model.dec_degrees > 30:
-            hemisphere = "Northern"
-        elif model.dec_degrees < -30:
-            hemisphere = "Southern"
-        else:
-            hemisphere = "Equatorial"
-
-        # Use mythology as description, or empty string
-        description = model.mythology or ""
-
-        # Magnitude not stored in model - use 0.0 as placeholder
-        magnitude = 0.0
-
-        constellation = Constellation(
-            name=model.name,
-            abbreviation=model.abbreviation,
-            ra_hours=model.ra_hours,
-            dec_degrees=model.dec_degrees,
-            area_sq_deg=model.area_sq_deg or 0.0,
-            brightest_star=model.brightest_star or "",
-            magnitude=magnitude,
-            season=model.season or "",
-            hemisphere=hemisphere,
-            description=description,
-        )
-        constellations.append(constellation)
-    return constellations
+    return [model.to_constellation() for model in models]
 
 
 async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
@@ -157,34 +128,7 @@ async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
     result = await db_session.execute(select(AsterismModel))
     models = result.scalars().all()
 
-    asterisms = []
-    for model in models:
-        # Parse alt_names and stars (stored as comma-separated strings)
-        alt_names = model.alt_names.split(",") if model.alt_names else []
-        member_stars = model.stars.split(",") if model.stars else []
-
-        # Calculate hemisphere from declination
-        if model.dec_degrees > 30:
-            hemisphere = "Northern"
-        elif model.dec_degrees < -30:
-            hemisphere = "Southern"
-        else:
-            hemisphere = "Equatorial"
-
-        asterism = Asterism(
-            name=model.name,
-            alt_names=alt_names,
-            ra_hours=model.ra_hours,
-            dec_degrees=model.dec_degrees,
-            size_degrees=model.size_degrees or 0.0,
-            parent_constellation=model.parent_constellation or "",
-            season=model.season or "",
-            hemisphere=hemisphere,
-            member_stars=member_stars,
-            description=model.description or "",
-        )
-        asterisms.append(asterism)
-    return asterisms
+    return [model.to_asterism() for model in models]
 
 
 async def get_visible_constellations(

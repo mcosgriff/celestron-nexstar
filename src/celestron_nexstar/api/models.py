@@ -10,11 +10,19 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+if TYPE_CHECKING:
+    from .comets import Comet
+    from .constellations import Asterism, Constellation
+    from .meteor_showers import MeteorShower
+    from .variable_stars import VariableStar
 
 
 class Base(DeclarativeBase):
@@ -365,6 +373,42 @@ class ConstellationModel(Base):
     mythology: Mapped[str | None] = mapped_column(Text, nullable=True)  # Mythology/story
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season (N hemisphere)
 
+    def to_constellation(self) -> Constellation:
+        """
+        Convert ConstellationModel to Constellation dataclass.
+
+        Returns:
+            Constellation dataclass instance
+        """
+        from .constellations import Constellation
+
+        # Calculate hemisphere from declination
+        if self.dec_degrees > 30:
+            hemisphere = "Northern"
+        elif self.dec_degrees < -30:
+            hemisphere = "Southern"
+        else:
+            hemisphere = "Equatorial"
+
+        # Use mythology as description, or empty string
+        description = self.mythology or ""
+
+        # Magnitude not stored in model - use 0.0 as placeholder
+        magnitude = 0.0
+
+        return Constellation(
+            name=self.name,
+            abbreviation=self.abbreviation,
+            ra_hours=self.ra_hours,
+            dec_degrees=self.dec_degrees,
+            area_sq_deg=self.area_sq_deg or 0.0,
+            brightest_star=self.brightest_star or "",
+            magnitude=magnitude,
+            season=self.season or "",
+            hemisphere=hemisphere,
+            description=description,
+        )
+
     def __repr__(self) -> str:
         """String representation of constellation."""
         return f"<Constellation(id={self.id}, name='{self.name}', abbr='{self.abbreviation}')>"
@@ -399,6 +443,40 @@ class AsterismModel(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     stars: Mapped[str | None] = mapped_column(Text, nullable=True)  # Component stars (comma-separated)
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season
+
+    def to_asterism(self) -> Asterism:
+        """
+        Convert AsterismModel to Asterism dataclass.
+
+        Returns:
+            Asterism dataclass instance
+        """
+        from .constellations import Asterism
+
+        # Parse alt_names and stars (stored as comma-separated strings)
+        alt_names = self.alt_names.split(",") if self.alt_names else []
+        member_stars = self.stars.split(",") if self.stars else []
+
+        # Calculate hemisphere from declination
+        if self.dec_degrees > 30:
+            hemisphere = "Northern"
+        elif self.dec_degrees < -30:
+            hemisphere = "Southern"
+        else:
+            hemisphere = "Equatorial"
+
+        return Asterism(
+            name=self.name,
+            alt_names=alt_names,
+            ra_hours=self.ra_hours,
+            dec_degrees=self.dec_degrees,
+            size_degrees=self.size_degrees or 0.0,
+            parent_constellation=self.parent_constellation or "",
+            season=self.season or "",
+            hemisphere=hemisphere,
+            member_stars=member_stars,
+            description=self.description or "",
+        )
 
     def __repr__(self) -> str:
         """String representation of asterism."""
@@ -446,6 +524,36 @@ class MeteorShowerModel(Base):
 
     # Composite index for finding active showers by date
     __table_args__ = (Index("idx_peak_date", "peak_month", "peak_day"),)
+
+    def to_meteor_shower(self) -> MeteorShower:
+        """
+        Convert MeteorShowerModel to MeteorShower dataclass.
+
+        Returns:
+            MeteorShower dataclass instance
+        """
+        from .meteor_showers import MeteorShower
+
+        # Handle velocity_km_s which may be None
+        velocity = int(self.velocity_km_s) if self.velocity_km_s is not None else 0
+
+        return MeteorShower(
+            name=self.name,
+            activity_start_month=self.start_month,
+            activity_start_day=self.start_day,
+            activity_end_month=self.end_month,
+            activity_end_day=self.end_day,
+            peak_month=self.peak_month,
+            peak_day=self.peak_day,
+            peak_end_month=self.peak_month,  # Use peak_month as fallback
+            peak_end_day=self.peak_day,  # Use peak_day as fallback
+            zhr_peak=self.zhr_peak,
+            velocity_km_s=velocity,
+            radiant_ra_hours=self.radiant_ra_hours,
+            radiant_dec_degrees=self.radiant_dec_degrees,
+            parent_comet=self.parent_comet,
+            description=self.notes or "",
+        )
 
 
 class DarkSkySiteModel(Base):
@@ -708,6 +816,27 @@ class VariableStarModel(Base):
         Index("idx_position", "ra_hours", "dec_degrees"),
     )
 
+    def to_variable_star(self) -> VariableStar:
+        """
+        Convert VariableStarModel to VariableStar dataclass.
+
+        Returns:
+            VariableStar dataclass instance
+        """
+        from .variable_stars import VariableStar
+
+        return VariableStar(
+            name=self.name,
+            designation=self.designation,
+            variable_type=self.variable_type,
+            period_days=self.period_days,
+            magnitude_min=self.magnitude_min,
+            magnitude_max=self.magnitude_max,
+            ra_hours=self.ra_hours,
+            dec_degrees=self.dec_degrees,
+            notes=self.notes,
+        )
+
     def __repr__(self) -> str:
         """String representation of variable star."""
         return f"<VariableStar(id={self.id}, name='{self.name}', type='{self.variable_type}')>"
@@ -748,6 +877,27 @@ class CometModel(Base):
         Index("idx_peak_date", "peak_date"),
         Index("idx_is_periodic", "is_periodic"),
     )
+
+    def to_comet(self) -> Comet:
+        """
+        Convert CometModel to Comet dataclass.
+
+        Returns:
+            Comet dataclass instance
+        """
+        from .comets import Comet
+
+        return Comet(
+            name=self.name,
+            designation=self.designation,
+            perihelion_date=self.perihelion_date,
+            perihelion_distance_au=self.perihelion_distance_au,
+            peak_magnitude=self.peak_magnitude,
+            peak_date=self.peak_date,
+            is_periodic=self.is_periodic,
+            period_years=self.period_years,
+            notes=self.notes,
+        )
 
     def __repr__(self) -> str:
         """String representation of comet."""

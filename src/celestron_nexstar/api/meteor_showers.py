@@ -85,29 +85,7 @@ async def get_all_meteor_showers(db_session: AsyncSession) -> list[MeteorShower]
     result = await db_session.execute(select(MeteorShowerModel))
     models = result.scalars().all()
 
-    showers = []
-    for model in models:
-        # Handle velocity_km_s which may be None
-        velocity = int(model.velocity_km_s) if model.velocity_km_s is not None else 0
-        shower = MeteorShower(
-            name=model.name,
-            activity_start_month=model.start_month,
-            activity_start_day=model.start_day,
-            activity_end_month=model.end_month,
-            activity_end_day=model.end_day,
-            peak_month=model.peak_month,
-            peak_day=model.peak_day,
-            peak_end_month=model.peak_month,  # Use peak_month as fallback
-            peak_end_day=model.peak_day,  # Use peak_day as fallback
-            zhr_peak=model.zhr_peak,
-            velocity_km_s=velocity,
-            radiant_ra_hours=model.radiant_ra_hours,
-            radiant_dec_degrees=model.radiant_dec_degrees,
-            parent_comet=model.parent_comet,
-            description=model.notes or "",
-        )
-        showers.append(shower)
-    return showers
+    return [model.to_meteor_shower() for model in models]
 
 
 def _is_date_in_range(

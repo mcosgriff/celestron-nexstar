@@ -89,21 +89,7 @@ async def get_known_comets(db_session: AsyncSession) -> list[Comet]:
     result = await db_session.execute(select(CometModel))
     models = result.scalars().all()
 
-    comets = []
-    for model in models:
-        comet = Comet(
-            name=model.name,
-            designation=model.designation,
-            perihelion_date=model.perihelion_date,
-            perihelion_distance_au=model.perihelion_distance_au,
-            peak_magnitude=model.peak_magnitude,
-            peak_date=model.peak_date,
-            is_periodic=model.is_periodic,
-            period_years=model.period_years,
-            notes=model.notes,
-        )
-        comets.append(comet)
-    return comets
+    return [model.to_comet() for model in models]
 
 
 def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:

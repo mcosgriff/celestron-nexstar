@@ -85,21 +85,7 @@ async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableSta
     result = await db_session.execute(select(VariableStarModel))
     models = result.scalars().all()
 
-    stars = []
-    for model in models:
-        star = VariableStar(
-            name=model.name,
-            designation=model.designation,
-            variable_type=model.variable_type,
-            period_days=model.period_days,
-            magnitude_min=model.magnitude_min,
-            magnitude_max=model.magnitude_max,
-            ra_hours=model.ra_hours,
-            dec_degrees=model.dec_degrees,
-            notes=model.notes,
-        )
-        stars.append(star)
-    return stars
+    return [model.to_variable_star() for model in models]
 
 
 def _calculate_next_event(
