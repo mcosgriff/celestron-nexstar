@@ -8,12 +8,12 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.astronomy.zodiacal_light import (
     ZodiacalLightWindow,
     get_gegenschein_windows,
     get_zodiacal_light_windows,
 )
+from celestron_nexstar.api.location.observer import ObserverLocation
 
 
 class TestZodiacalLightWindow(unittest.TestCase):

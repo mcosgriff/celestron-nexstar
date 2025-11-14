@@ -9,8 +9,9 @@ Create Date: 2025-01-27 15:00:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy import text
+
+from alembic import op
 
 
 # revision identifiers, used by Alembic.
@@ -49,9 +50,7 @@ def upgrade() -> None:
 
     # Populate geohash for all existing rows
     # Fetch all rows with lat/lon
-    result = conn.execute(
-        text("SELECT id, latitude, longitude FROM light_pollution_grid WHERE geohash IS NULL")
-    )
+    result = conn.execute(text("SELECT id, latitude, longitude FROM light_pollution_grid WHERE geohash IS NULL"))
     rows = result.fetchall()
 
     if rows:
@@ -117,9 +116,7 @@ def upgrade() -> None:
 
     # Recreate indexes
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_geohash ON light_pollution_grid(geohash)"))
-    conn.execute(
-        text("CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude)")
-    )
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_region ON light_pollution_grid(region)"))
 
     conn.commit()
@@ -175,9 +172,7 @@ def downgrade() -> None:
     conn.execute(text("ALTER TABLE light_pollution_grid_new RENAME TO light_pollution_grid"))
 
     # Recreate indexes (without geohash)
-    conn.execute(
-        text("CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude)")
-    )
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_region ON light_pollution_grid(region)"))
 
     conn.commit()

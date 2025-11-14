@@ -8,7 +8,6 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.astronomy.variable_stars import (
     KNOWN_VARIABLE_STARS,
     VariableStar,
@@ -16,6 +15,7 @@ from celestron_nexstar.api.astronomy.variable_stars import (
     _calculate_next_event,
     get_variable_star_events,
 )
+from celestron_nexstar.api.location.observer import ObserverLocation
 
 
 class TestVariableStar(unittest.TestCase):
@@ -25,7 +25,7 @@ class TestVariableStar(unittest.TestCase):
         """Test creating a VariableStar"""
         star = VariableStar(
             name="Test Star",
-            designation="α Test",
+            designation="α Test",  # noqa: RUF001
             variable_type="cepheid",
             period_days=5.5,
             magnitude_min=3.0,
@@ -35,7 +35,7 @@ class TestVariableStar(unittest.TestCase):
             notes="A test star",
         )
         self.assertEqual(star.name, "Test Star")
-        self.assertEqual(star.designation, "α Test")
+        self.assertEqual(star.designation, "α Test")  # noqa: RUF001
         self.assertEqual(star.variable_type, "cepheid")
         self.assertEqual(star.period_days, 5.5)
         self.assertEqual(star.magnitude_min, 3.0)
@@ -52,7 +52,7 @@ class TestVariableStarEvent(unittest.TestCase):
         """Test creating a VariableStarEvent"""
         star = VariableStar(
             name="Test Star",
-            designation="α Test",
+            designation="α Test",  # noqa: RUF001
             variable_type="cepheid",
             period_days=5.5,
             magnitude_min=3.0,
@@ -124,7 +124,7 @@ class TestCalculateNextEvent(unittest.TestCase):
         """Set up test fixtures"""
         self.test_star = VariableStar(
             name="Test Star",
-            designation="α Test",
+            designation="α Test",  # noqa: RUF001
             variable_type="cepheid",
             period_days=5.0,
             magnitude_min=3.0,

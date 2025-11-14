@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import serial
+from celestron_nexstar.api.telescope.telescope.protocol import NexStarProtocol
 from returns.result import Failure
 
 from celestron_nexstar.api.core.exceptions import (
@@ -16,7 +17,6 @@ from celestron_nexstar.api.core.exceptions import (
     TelescopeConnectionError,
     TelescopeTimeoutError,
 )
-from celestron_nexstar.api.telescope.telescope.protocol import NexStarProtocol
 
 
 class TestNexStarProtocol(unittest.TestCase):

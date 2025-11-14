@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.observation.optics import EyepieceSpecs, OpticalConfiguration, TelescopeModel, TelescopeSpecs
 from celestron_nexstar.api.observation.visibility import (
     VisibilityInfo,

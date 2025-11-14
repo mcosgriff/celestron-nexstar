@@ -19,7 +19,7 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
 # Import catalogs module directly (not through api.__init__)
-from celestron_nexstar.api.catalogs.catalogs import (
+from celestron_nexstar.api.catalogs.catalogs import (  # noqa: E402
     CelestialObject,
     get_all_catalogs_dict,
     get_all_objects,
@@ -27,8 +27,8 @@ from celestron_nexstar.api.catalogs.catalogs import (
     get_catalog,
     get_object_by_name,
 )
-from celestron_nexstar.api.database.database import CatalogDatabase
-from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.core.enums import CelestialObjectType  # noqa: E402
+from celestron_nexstar.api.database.database import CatalogDatabase  # noqa: E402
 
 
 # Import search_objects conditionally - it may trigger astropy import
@@ -217,7 +217,7 @@ class TestGetObjectByName(unittest.TestCase):
     def test_get_object_by_name_empty_string(self, mock_get_db):
         """Test get_object_by_name with empty string"""
         # Empty string is caught by deal contract, so expect PreContractError
-        with self.assertRaises(Exception):  # deal.PreContractError
+        with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
             asyncio.run(get_object_by_name(""))
 
         mock_get_db.assert_not_called()
@@ -441,7 +441,7 @@ class TestSearchObjects(unittest.TestCase):
         mock_get_db.return_value = self.mock_db
 
         # This should be caught by deal contract, so expect PreContractError
-        with self.assertRaises(Exception):  # deal.PreContractError
+        with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
             asyncio.run(search_objects(""))
 
     @patch("celestron_nexstar.api.database.database.get_database")

@@ -5,11 +5,14 @@ Revises: 1a2b3c4d5e6f
 Create Date: 2025-01-27 17:00:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy import text
+
+from alembic import op
+
 
 # revision identifiers, used by Alembic.
 revision: str = "3c4d5e6f7a8b"

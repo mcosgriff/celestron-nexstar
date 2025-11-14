@@ -5,12 +5,9 @@ Tests vacation planning functionality including dark sky site finding
 and viewing information retrieval.
 """
 
-import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.location.light_pollution import BortleClass
-from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.events.vacation_planning import (
     DarkSkySite,
     VacationViewingInfo,
@@ -19,6 +16,8 @@ from celestron_nexstar.api.events.vacation_planning import (
     get_vacation_viewing_info,
     populate_dark_sky_sites_database,
 )
+from celestron_nexstar.api.location.light_pollution import BortleClass
+from celestron_nexstar.api.location.observer import ObserverLocation
 
 
 class TestHaversineDistance(unittest.TestCase):
@@ -194,13 +193,15 @@ class TestFindDarkSitesNear(unittest.TestCase):
             # Mock database query to fail/return empty
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
+            with (
+                patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load,
+                patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors,
+            ):
                 # Use a geohash that will match the search area
                 # For location 40.0, -100.0, a nearby geohash would be similar
-                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
-                    # Mock neighbors to include the site's geohash prefix
-                    mock_neighbors.return_value = ["9yf0", "9yf1", "9yf2"]
-                    mock_load.return_value = [
+                # Mock neighbors to include the site's geohash prefix
+                mock_neighbors.return_value = ["9yf0", "9yf1", "9yf2"]
+                mock_load.return_value = [
                         {
                             "name": "Test Site",
                             "latitude": 40.1,
@@ -211,7 +212,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
                             "geohash": "9yf01234567",  # Full geohash
                         }
                     ]
-                    result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
+            result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
 
         self.assertIsInstance(result, list)
 
@@ -220,10 +221,12 @@ class TestFindDarkSitesNear(unittest.TestCase):
         with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
-                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
-                    mock_neighbors.return_value = ["9yf0", "9yf1"]
-                    mock_load.return_value = [
+            with (
+                patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load,
+                patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors,
+            ):
+                mock_neighbors.return_value = ["9yf0", "9yf1"]
+                mock_load.return_value = [
                         {
                             "name": "Bright Site",
                             "latitude": 40.1,
@@ -243,7 +246,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
                             "geohash": "9yf11234567",
                         },
                     ]
-                    result = find_dark_sites_near(self.test_location, min_bortle=BortleClass.CLASS_4)
+                result = find_dark_sites_near(self.test_location, min_bortle=BortleClass.CLASS_4)
 
         # Should only include sites with bortle <= 4
         self.assertIsInstance(result, list)
@@ -291,12 +294,14 @@ class TestFindDarkSitesNear(unittest.TestCase):
         with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
-                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
-                    # Return geohashes that will match the site prefixes
-                    # The code checks if item_prefix.startswith(search_prefix), so search_prefix should be shorter or equal
-                    mock_neighbors.return_value = ["9yf012345", "9yf212345"]  # 9-char prefixes
-                    mock_load.return_value = [
+            with (
+                patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load,
+                patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors,
+            ):
+                # Return geohashes that will match the site prefixes
+                # The code checks if item_prefix.startswith(search_prefix), so search_prefix should be shorter or equal
+                mock_neighbors.return_value = ["9yf012345", "9yf212345"]  # 9-char prefixes
+                mock_load.return_value = [
                         {
                             "name": "Far Site",
                             "latitude": 40.5,
@@ -316,7 +321,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
                             "geohash": "9yf01234567",  # Starts with 9yf012345
                         },
                     ]
-                    result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
+                result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
 
         # Should be sorted by distance (nearest first)
         self.assertGreater(len(result), 1)

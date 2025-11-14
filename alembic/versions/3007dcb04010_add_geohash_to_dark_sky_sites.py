@@ -5,9 +5,11 @@ Revises: 20251112195700
 Create Date: 2025-11-12 20:47:47.532055
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 

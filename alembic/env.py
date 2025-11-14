@@ -6,7 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Import models for autogenerate support
-from celestron_nexstar.api.models import Base
+from celestron_nexstar.api.database.models import Base
 
 
 # this is the Alembic Config object, which provides

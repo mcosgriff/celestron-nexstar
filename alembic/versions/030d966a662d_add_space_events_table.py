@@ -6,6 +6,7 @@ Create Date: 2025-11-09 19:21:40.515011
 
 """
 
+import contextlib
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -77,11 +78,9 @@ def upgrade() -> None:
 
     for fts_table in fts_tables:
         if fts_table in existing_tables:
-            try:
-                op.execute(f"DROP TABLE IF EXISTS {fts_table}")
-            except Exception:
+            with contextlib.suppress(Exception):
                 # Ignore errors - table might be locked or already dropped
-                pass
+                op.execute(f"DROP TABLE IF EXISTS {fts_table}")
 
     # Drop light_pollution_grid if it exists
     if "light_pollution_grid" in existing_tables:
@@ -157,9 +156,9 @@ def downgrade() -> None:
     )
     op.create_table(
         "objects_fts_idx",
-        sa.Column("segid", sa.NullType(), nullable=False),
-        sa.Column("term", sa.NullType(), nullable=False),
-        sa.Column("pgno", sa.NullType(), nullable=True),
+        sa.Column("segid", sa.Text(), nullable=False),
+        sa.Column("term", sa.Text(), nullable=False),
+        sa.Column("pgno", sa.Integer(), nullable=True),
         sa.PrimaryKeyConstraint("segid", "term"),
     )
     op.create_table(
@@ -170,15 +169,15 @@ def downgrade() -> None:
     )
     op.create_table(
         "objects_fts_config",
-        sa.Column("k", sa.NullType(), nullable=False),
-        sa.Column("v", sa.NullType(), nullable=True),
+        sa.Column("k", sa.Text(), nullable=False),
+        sa.Column("v", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("k"),
     )
     op.create_table(
         "objects_fts",
-        sa.Column("name", sa.NullType(), nullable=True),
-        sa.Column("common_name", sa.NullType(), nullable=True),
-        sa.Column("description", sa.NullType(), nullable=True),
+        sa.Column("name", sa.Text(), nullable=True),
+        sa.Column("common_name", sa.Text(), nullable=True),
+        sa.Column("description", sa.Text(), nullable=True),
     )
     with op.batch_alter_table("space_events", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_space_events_name"))

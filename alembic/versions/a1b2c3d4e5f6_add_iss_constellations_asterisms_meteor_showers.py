@@ -94,7 +94,11 @@ def upgrade() -> None:
     # Create indexes for constellations
     if "constellations" in existing_tables or "constellations" not in existing_tables:  # Always try to create indexes
         with op.batch_alter_table("constellations", schema=None) as batch_op:
-            const_indexes = [idx["name"] for idx in inspector.get_indexes("constellations")] if "constellations" in inspector.get_table_names() else []
+            const_indexes = (
+                [idx["name"] for idx in inspector.get_indexes("constellations")]
+                if "constellations" in inspector.get_table_names()
+                else []
+            )
             if "ix_constellations_name" not in const_indexes:
                 batch_op.create_index(batch_op.f("ix_constellations_name"), ["name"], unique=False)
 
@@ -119,7 +123,11 @@ def upgrade() -> None:
     # Create indexes for asterisms
     if "asterisms" in existing_tables or "asterisms" not in existing_tables:
         with op.batch_alter_table("asterisms", schema=None) as batch_op:
-            asterism_indexes = [idx["name"] for idx in inspector.get_indexes("asterisms")] if "asterisms" in inspector.get_table_names() else []
+            asterism_indexes = (
+                [idx["name"] for idx in inspector.get_indexes("asterisms")]
+                if "asterisms" in inspector.get_table_names()
+                else []
+            )
             if "ix_asterisms_name" not in asterism_indexes:
                 batch_op.create_index(batch_op.f("ix_asterisms_name"), ["name"], unique=False)
 
@@ -151,7 +159,11 @@ def upgrade() -> None:
     # Create indexes for meteor_showers
     if "meteor_showers" in existing_tables or "meteor_showers" not in existing_tables:
         with op.batch_alter_table("meteor_showers", schema=None) as batch_op:
-            meteor_indexes = [idx["name"] for idx in inspector.get_indexes("meteor_showers")] if "meteor_showers" in inspector.get_table_names() else []
+            meteor_indexes = (
+                [idx["name"] for idx in inspector.get_indexes("meteor_showers")]
+                if "meteor_showers" in inspector.get_table_names()
+                else []
+            )
             if "ix_meteor_showers_name" not in meteor_indexes:
                 batch_op.create_index(batch_op.f("ix_meteor_showers_name"), ["name"], unique=False)
             if "ix_meteor_showers_peak_month" not in meteor_indexes:

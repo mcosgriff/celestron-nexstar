@@ -10,10 +10,9 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.database.models import WeatherForecastModel
+from celestron_nexstar.api.location import weather
 from celestron_nexstar.api.location.observer import ObserverLocation
-from celestron_nexstar.api import weather
 from celestron_nexstar.api.location.weather import (
-    HourlySeeingForecast,
     WeatherData,
     assess_observing_conditions,
     calculate_dew_point_fahrenheit,
@@ -28,37 +27,37 @@ from celestron_nexstar.api.location.weather import (
 class TestCalculateDewPointFahrenheit(unittest.TestCase):
     """Test suite for calculate_dew_point_fahrenheit function"""
 
-    def test_calculate_dew_point_typical_conditions(self):
+    def test_calculate_dew_point_typical_conditions(self) -> None:
         """Test dew point calculation for typical conditions"""
         # 70°F, 50% humidity
         dew_point = calculate_dew_point_fahrenheit(70.0, 50.0)
         self.assertGreater(dew_point, 50.0)
         self.assertLess(dew_point, 70.0)
 
-    def test_calculate_dew_point_high_humidity(self):
+    def test_calculate_dew_point_high_humidity(self) -> None:
         """Test dew point calculation for high humidity"""
         # 70°F, 90% humidity - dew point should be close to temperature
         dew_point = calculate_dew_point_fahrenheit(70.0, 90.0)
         self.assertGreater(dew_point, 65.0)
         self.assertLess(dew_point, 70.0)
 
-    def test_calculate_dew_point_low_humidity(self):
+    def test_calculate_dew_point_low_humidity(self) -> None:
         """Test dew point calculation for low humidity"""
         # 70°F, 20% humidity - dew point should be much lower
         dew_point = calculate_dew_point_fahrenheit(70.0, 20.0)
         self.assertLess(dew_point, 50.0)
 
-    def test_calculate_dew_point_saturated(self):
+    def test_calculate_dew_point_saturated(self) -> None:
         """Test dew point at 100% humidity (should equal temperature)"""
         dew_point = calculate_dew_point_fahrenheit(70.0, 100.0)
         self.assertAlmostEqual(dew_point, 70.0, places=1)
 
-    def test_calculate_dew_point_freezing(self):
+    def test_calculate_dew_point_freezing(self) -> None:
         """Test dew point calculation at freezing temperature"""
         dew_point = calculate_dew_point_fahrenheit(32.0, 50.0)
         self.assertLess(dew_point, 32.0)
 
-    def test_calculate_dew_point_consistency(self):
+    def test_calculate_dew_point_consistency(self) -> None:
         """Test that dew point is always less than or equal to temperature"""
         test_cases = [
             (32.0, 50.0),
@@ -75,25 +74,25 @@ class TestGetWeatherApiKey(unittest.TestCase):
     """Test suite for get_weather_api_key function"""
 
     @patch.dict("os.environ", {"OPENWEATHER_API_KEY": "test_key_1"})
-    def test_get_weather_api_key_from_openweather(self):
+    def test_get_weather_api_key_from_openweather(self) -> None:
         """Test getting API key from OPENWEATHER_API_KEY"""
         key = get_weather_api_key()
         self.assertEqual(key, "test_key_1")
 
     @patch.dict("os.environ", {"OWM_API_KEY": "test_key_2"}, clear=True)
-    def test_get_weather_api_key_from_owm(self):
+    def test_get_weather_api_key_from_owm(self) -> None:
         """Test getting API key from OWM_API_KEY"""
         key = get_weather_api_key()
         self.assertEqual(key, "test_key_2")
 
     @patch.dict("os.environ", {}, clear=True)
-    def test_get_weather_api_key_not_set(self):
+    def test_get_weather_api_key_not_set(self) -> None:
         """Test getting API key when not set"""
         key = get_weather_api_key()
         self.assertIsNone(key)
 
     @patch.dict("os.environ", {"OPENWEATHER_API_KEY": "key1", "OWM_API_KEY": "key2"})
-    def test_get_weather_api_key_prefers_openweather(self):
+    def test_get_weather_api_key_prefers_openweather(self) -> None:
         """Test that OPENWEATHER_API_KEY takes precedence"""
         key = get_weather_api_key()
         self.assertEqual(key, "key1")
@@ -102,7 +101,7 @@ class TestGetWeatherApiKey(unittest.TestCase):
 class TestAssessObservingConditions(unittest.TestCase):
     """Test suite for assess_observing_conditions function"""
 
-    def test_assess_conditions_excellent_clear(self):
+    def test_assess_conditions_excellent_clear(self) -> None:
         """Test assessment for excellent conditions (clear skies)"""
         weather = WeatherData(
             cloud_cover_percent=5.0,
@@ -114,21 +113,21 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "excellent")
         self.assertIn("Good observing conditions", warning)
 
-    def test_assess_conditions_poor_cloudy(self):
+    def test_assess_conditions_poor_cloudy(self) -> None:
         """Test assessment for poor conditions (very cloudy)"""
         weather = WeatherData(cloud_cover_percent=90.0)
         status, warning = assess_observing_conditions(weather)
         self.assertEqual(status, "poor")
         self.assertIn("Very cloudy", warning)
 
-    def test_assess_conditions_fair_partly_cloudy(self):
+    def test_assess_conditions_fair_partly_cloudy(self) -> None:
         """Test assessment for fair conditions (partly cloudy)"""
         weather = WeatherData(cloud_cover_percent=60.0)
         status, warning = assess_observing_conditions(weather)
         self.assertEqual(status, "fair")
         self.assertIn("Partly cloudy", warning)
 
-    def test_assess_conditions_high_humidity(self):
+    def test_assess_conditions_high_humidity(self) -> None:
         """Test assessment with high humidity"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -138,7 +137,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertIn(status, ["good", "fair"])
         self.assertIn("High humidity", warning)
 
-    def test_assess_conditions_poor_visibility(self):
+    def test_assess_conditions_poor_visibility(self) -> None:
         """Test assessment with poor visibility"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -148,7 +147,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "fair")
         self.assertIn("Poor visibility", warning)
 
-    def test_assess_conditions_strong_wind(self):
+    def test_assess_conditions_strong_wind(self) -> None:
         """Test assessment with strong wind"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -158,7 +157,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "fair")
         self.assertIn("Strong wind", warning)
 
-    def test_assess_conditions_precipitation(self):
+    def test_assess_conditions_precipitation(self) -> None:
         """Test assessment with precipitation"""
         weather = WeatherData(
             cloud_cover_percent=50.0,
@@ -168,28 +167,28 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "poor")
         self.assertIn("Precipitation", warning)
 
-    def test_assess_conditions_error(self):
+    def test_assess_conditions_error(self) -> None:
         """Test assessment with error"""
         weather = WeatherData(error="API error")
         status, warning = assess_observing_conditions(weather)
         self.assertEqual(status, "unavailable")
         self.assertEqual(warning, "API error")
 
-    def test_assess_conditions_no_cloud_data(self):
+    def test_assess_conditions_no_cloud_data(self) -> None:
         """Test assessment when cloud data is unavailable"""
         weather = WeatherData(cloud_cover_percent=None)
         status, warning = assess_observing_conditions(weather)
         self.assertEqual(status, "unavailable")
         self.assertIn("Cloud data unavailable", warning)
 
-    def test_assess_conditions_good_cloud_cover(self):
+    def test_assess_conditions_good_cloud_cover(self) -> None:
         """Test assessment for good conditions (20-50% cloud cover)"""
         weather = WeatherData(cloud_cover_percent=35.0)
         status, warning = assess_observing_conditions(weather)
         self.assertEqual(status, "good")
         self.assertIn("Some clouds", warning)
 
-    def test_assess_conditions_high_humidity_downgrades_excellent(self):
+    def test_assess_conditions_high_humidity_downgrades_excellent(self) -> None:
         """Test that high humidity downgrades excellent to good"""
         weather = WeatherData(
             cloud_cover_percent=5.0,  # Excellent
@@ -199,7 +198,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "good")  # Downgraded from excellent
         self.assertIn("High humidity", warning)
 
-    def test_assess_conditions_high_humidity_downgrades_good(self):
+    def test_assess_conditions_high_humidity_downgrades_good(self) -> None:
         """Test that high humidity downgrades good to fair"""
         weather = WeatherData(
             cloud_cover_percent=30.0,  # Good
@@ -209,7 +208,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "fair")  # Downgraded from good
         self.assertIn("High humidity", warning)
 
-    def test_assess_conditions_moderate_humidity_downgrades_excellent(self):
+    def test_assess_conditions_moderate_humidity_downgrades_excellent(self) -> None:
         """Test that moderate humidity downgrades excellent to good"""
         weather = WeatherData(
             cloud_cover_percent=5.0,  # Excellent
@@ -219,7 +218,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "good")  # Downgraded from excellent
         self.assertIn("Moderate humidity", warning)
 
-    def test_assess_conditions_reduced_visibility(self):
+    def test_assess_conditions_reduced_visibility(self) -> None:
         """Test assessment with reduced visibility (5-10 km)"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -229,7 +228,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "good")  # Downgraded from excellent
         self.assertIn("Reduced visibility", warning)
 
-    def test_assess_conditions_moderate_wind(self):
+    def test_assess_conditions_moderate_wind(self) -> None:
         """Test assessment with moderate wind (15-25 mph)"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -239,7 +238,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "good")  # Downgraded from excellent
         self.assertIn("Moderate wind", warning)
 
-    def test_assess_conditions_fog(self):
+    def test_assess_conditions_fog(self) -> None:
         """Test assessment with fog conditions"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -249,7 +248,7 @@ class TestAssessObservingConditions(unittest.TestCase):
         self.assertEqual(status, "fair")  # Downgraded from excellent/good
         self.assertIn("Reduced visibility", warning)
 
-    def test_assess_conditions_mist(self):
+    def test_assess_conditions_mist(self) -> None:
         """Test assessment with mist conditions"""
         weather = WeatherData(
             cloud_cover_percent=10.0,
@@ -263,7 +262,7 @@ class TestAssessObservingConditions(unittest.TestCase):
 class TestCalculateSeeingConditions(unittest.TestCase):
     """Test suite for calculate_seeing_conditions function"""
 
-    def test_calculate_seeing_optimal_conditions(self):
+    def test_calculate_seeing_optimal_conditions(self) -> None:
         """Test seeing calculation for optimal conditions"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -276,7 +275,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         self.assertGreater(score, 80.0)
         self.assertLessEqual(score, 100.0)
 
-    def test_calculate_seeing_high_clouds(self):
+    def test_calculate_seeing_high_clouds(self) -> None:
         """Test seeing calculation with high cloud cover (blocks measurement)"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -285,19 +284,19 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertEqual(score, 0.0)
 
-    def test_calculate_seeing_error(self):
+    def test_calculate_seeing_error(self) -> None:
         """Test seeing calculation with error (returns default)"""
         weather = WeatherData(error="API error")
         score = calculate_seeing_conditions(weather)
         self.assertEqual(score, 50.0)
 
-    def test_calculate_seeing_no_temperature(self):
+    def test_calculate_seeing_no_temperature(self) -> None:
         """Test seeing calculation without temperature (returns default)"""
         weather = WeatherData(temperature_c=None)
         score = calculate_seeing_conditions(weather)
         self.assertEqual(score, 50.0)
 
-    def test_calculate_seeing_low_wind(self):
+    def test_calculate_seeing_low_wind(self) -> None:
         """Test seeing calculation with low wind (insufficient mixing)"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -307,7 +306,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         # Should be reduced due to low wind
         self.assertLess(score, 100.0)
 
-    def test_calculate_seeing_high_wind(self):
+    def test_calculate_seeing_high_wind(self) -> None:
         """Test seeing calculation with high wind (turbulence)"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -317,7 +316,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         # Should be reduced due to high wind
         self.assertLess(score, 50.0)
 
-    def test_calculate_seeing_high_humidity(self):
+    def test_calculate_seeing_high_humidity(self) -> None:
         """Test seeing calculation with high humidity"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -327,7 +326,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         # Should be reduced due to high humidity
         self.assertLess(score, 100.0)
 
-    def test_calculate_seeing_temperature_stability(self):
+    def test_calculate_seeing_temperature_stability(self) -> None:
         """Test seeing calculation with temperature stability"""
         weather = WeatherData(temperature_c=70.0)
         # Very stable
@@ -336,19 +335,19 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score_unstable = calculate_seeing_conditions(weather, temperature_change_per_hour=6.0)
         self.assertGreater(score_stable, score_unstable)
 
-    def test_calculate_seeing_score_range(self):
+    def test_calculate_seeing_score_range(self) -> None:
         """Test that seeing score is always between 0 and 100"""
         test_cases = [
             WeatherData(temperature_c=70.0, wind_speed_ms=100.0),  # Extreme wind
             WeatherData(temperature_c=70.0, humidity_percent=100.0),  # Saturated
             WeatherData(temperature_c=70.0, dew_point_f=69.0),  # Very close to dew point
         ]
-        for weather in test_cases:
-            score = calculate_seeing_conditions(weather)
+        for test_weather in test_cases:
+            score = calculate_seeing_conditions(test_weather)
             self.assertGreaterEqual(score, 0.0)
             self.assertLessEqual(score, 100.0)
 
-    def test_calculate_seeing_temp_spread_10_to_15(self):
+    def test_calculate_seeing_temp_spread_10_to_15(self) -> None:
         """Test seeing calculation with temp spread 10-15°F"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -357,7 +356,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_temp_spread_5_to_10(self):
+    def test_calculate_seeing_temp_spread_5_to_10(self) -> None:
         """Test seeing calculation with temp spread 5-10°F"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -366,7 +365,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_temp_spread_30_plus(self):
+    def test_calculate_seeing_temp_spread_30_plus(self) -> None:
         """Test seeing calculation with temp spread >=30°F"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -375,7 +374,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_wind_10_to_15_mph(self):
+    def test_calculate_seeing_wind_10_to_15_mph(self) -> None:
         """Test seeing calculation with wind 10-15 mph"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -386,7 +385,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         # Should be less than optimal (30 points for wind), but other factors contribute
         self.assertLess(score, 100.0)
 
-    def test_calculate_seeing_wind_15_to_20_mph(self):
+    def test_calculate_seeing_wind_15_to_20_mph(self) -> None:
         """Test seeing calculation with wind 15-20 mph"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -397,7 +396,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         # Wind score should be reduced, but other factors (temp spread, humidity, stability) contribute
         self.assertLess(score, 100.0)
 
-    def test_calculate_seeing_humidity_30_to_60(self):
+    def test_calculate_seeing_humidity_30_to_60(self) -> None:
         """Test seeing calculation with humidity 30-60%"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -406,7 +405,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_humidity_60_to_80(self):
+    def test_calculate_seeing_humidity_60_to_80(self) -> None:
         """Test seeing calculation with humidity 60-80%"""
         weather = WeatherData(
             temperature_c=70.0,
@@ -415,31 +414,31 @@ class TestCalculateSeeingConditions(unittest.TestCase):
         score = calculate_seeing_conditions(weather)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_stability_0_5_to_1_0(self):
+    def test_calculate_seeing_stability_0_5_to_1_0(self) -> None:
         """Test seeing calculation with stability 0.5-1.0°F/hour"""
         weather = WeatherData(temperature_c=70.0)
         score = calculate_seeing_conditions(weather, temperature_change_per_hour=0.8)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_stability_1_0_to_2_0(self):
+    def test_calculate_seeing_stability_1_0_to_2_0(self) -> None:
         """Test seeing calculation with stability 1.0-2.0°F/hour"""
         weather = WeatherData(temperature_c=70.0)
         score = calculate_seeing_conditions(weather, temperature_change_per_hour=1.5)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_stability_2_0_to_3_0(self):
+    def test_calculate_seeing_stability_2_0_to_3_0(self) -> None:
         """Test seeing calculation with stability 2.0-3.0°F/hour"""
         weather = WeatherData(temperature_c=70.0)
         score = calculate_seeing_conditions(weather, temperature_change_per_hour=2.5)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_stability_3_0_to_5_0(self):
+    def test_calculate_seeing_stability_3_0_to_5_0(self) -> None:
         """Test seeing calculation with stability 3.0-5.0°F/hour"""
         weather = WeatherData(temperature_c=70.0)
         score = calculate_seeing_conditions(weather, temperature_change_per_hour=4.0)
         self.assertGreater(score, 0.0)
 
-    def test_calculate_seeing_stability_over_5_0(self):
+    def test_calculate_seeing_stability_over_5_0(self) -> None:
         """Test seeing calculation with stability >5.0°F/hour"""
         weather = WeatherData(temperature_c=70.0)
         score = calculate_seeing_conditions(weather, temperature_change_per_hour=6.0)
@@ -449,7 +448,7 @@ class TestCalculateSeeingConditions(unittest.TestCase):
 class TestIsForecastStale(unittest.TestCase):
     """Test suite for _is_forecast_stale function"""
 
-    def test_forecast_stale_past_time(self):
+    def test_forecast_stale_past_time(self) -> None:
         """Test that forecast for past time is stale"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         past_time = datetime(2024, 6, 15, 10, 0, tzinfo=UTC)
@@ -467,7 +466,7 @@ class TestIsForecastStale(unittest.TestCase):
 
         self.assertTrue(weather._is_forecast_stale(forecast, now))
 
-    def test_forecast_stale_near_term_old(self):
+    def test_forecast_stale_near_term_old(self) -> None:
         """Test that near-term forecast (>2 hours old) is stale"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 15, 13, 0, tzinfo=UTC)  # 1 hour ahead
@@ -486,7 +485,7 @@ class TestIsForecastStale(unittest.TestCase):
 
         self.assertTrue(weather._is_forecast_stale(forecast, now))
 
-    def test_forecast_fresh_near_term(self):
+    def test_forecast_fresh_near_term(self) -> None:
         """Test that near-term forecast (<2 hours old) is fresh"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 15, 13, 0, tzinfo=UTC)  # 1 hour ahead
@@ -505,7 +504,7 @@ class TestIsForecastStale(unittest.TestCase):
 
         self.assertFalse(weather._is_forecast_stale(forecast, now))
 
-    def test_forecast_stale_medium_term_old(self):
+    def test_forecast_stale_medium_term_old(self) -> None:
         """Test that medium-term forecast (>6 hours old) is stale"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 15, 20, 0, tzinfo=UTC)  # 8 hours ahead
@@ -524,7 +523,7 @@ class TestIsForecastStale(unittest.TestCase):
 
         self.assertTrue(weather._is_forecast_stale(forecast, now))
 
-    def test_forecast_stale_long_term_old(self):
+    def test_forecast_stale_long_term_old(self) -> None:
         """Test that long-term forecast (>12 hours old) is stale"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 16, 12, 0, tzinfo=UTC)  # 24 hours ahead
@@ -543,7 +542,7 @@ class TestIsForecastStale(unittest.TestCase):
 
         self.assertTrue(weather._is_forecast_stale(forecast, now))
 
-    def test_forecast_timezone_naive(self):
+    def test_forecast_timezone_naive(self) -> None:
         """Test that timezone-naive timestamps are handled"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 15, 13, 0)  # Naive
@@ -564,9 +563,9 @@ class TestIsForecastStale(unittest.TestCase):
         result = weather._is_forecast_stale(forecast, now)
         self.assertIsInstance(result, bool)
 
-    def test_forecast_timezone_different(self):
+    def test_forecast_timezone_different(self) -> None:
         """Test that different timezone timestamps are converted to UTC"""
-        from datetime import timezone, timedelta
+        from datetime import timedelta, timezone
 
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         # Create timestamps in a different timezone (e.g., EST = UTC-5)
@@ -589,7 +588,7 @@ class TestIsForecastStale(unittest.TestCase):
         result = weather._is_forecast_stale(forecast, now)
         self.assertIsInstance(result, bool)
 
-    def test_forecast_stale_long_term_fresh(self):
+    def test_forecast_stale_long_term_fresh(self) -> None:
         """Test that long-term forecast (<12 hours old) is fresh"""
         now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
         future_time = datetime(2024, 6, 16, 13, 0, tzinfo=UTC)  # 25 hours ahead (>24, so long-term)
@@ -612,12 +611,12 @@ class TestIsForecastStale(unittest.TestCase):
 class TestFetchWeather(unittest.TestCase):
     """Test suite for fetch_weather function"""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
     @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_success(self, mock_session_class):
+    def test_fetch_weather_success(self, mock_session_class: MagicMock) -> None:
         """Test successful weather fetch"""
         # Mock response
         mock_response = AsyncMock()
@@ -655,7 +654,7 @@ class TestFetchWeather(unittest.TestCase):
         self.assertIsNone(weather.error)
 
     @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_api_error(self, mock_session_class):
+    def test_fetch_weather_api_error(self, mock_session_class: MagicMock) -> None:
         """Test weather fetch with API error"""
         # Mock response with error
         mock_response = AsyncMock()
@@ -675,7 +674,7 @@ class TestFetchWeather(unittest.TestCase):
         self.assertIsNotNone(weather.error)
 
     @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_network_error(self, mock_session_class):
+    def test_fetch_weather_network_error(self, mock_session_class: MagicMock) -> None:
         """Test weather fetch with network error"""
         import aiohttp
         # Mock session that raises exception
@@ -694,13 +693,13 @@ class TestFetchWeather(unittest.TestCase):
 class TestFetchWeatherDatabaseCache(unittest.TestCase):
     """Test suite for fetch_weather database cache functionality"""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    def test_fetch_weather_uses_database_cache(self, mock_is_stale, mock_get_db):
+    def test_fetch_weather_uses_database_cache(self, mock_is_stale: MagicMock, mock_get_db: MagicMock) -> None:
         """Test that fetch_weather uses cached data from database when available"""
         # Mock database with cached forecast
         now = datetime.now(UTC)
@@ -747,7 +746,7 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
         self.assertEqual(weather_data.temperature_c, 70.0)
 
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_fetch_weather_handles_database_error(self, mock_get_db):
+    def test_fetch_weather_handles_database_error(self, mock_get_db: MagicMock) -> None:
         """Test that fetch_weather handles database errors gracefully"""
         # Mock database to raise exception
         mock_get_db.side_effect = Exception("Database error")
@@ -771,13 +770,13 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
 class TestFetchHourlyWeatherForecast(unittest.TestCase):
     """Test suite for fetch_hourly_weather_forecast function"""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    def test_fetch_hourly_weather_forecast_uses_cache(self, mock_is_stale, mock_get_db):
+    def test_fetch_hourly_weather_forecast_uses_cache(self, mock_is_stale: MagicMock, mock_get_db: MagicMock) -> None:
         """Test that fetch_hourly_weather_forecast uses cached data when available"""
         # Mock database with cached forecasts
         now = datetime.now(UTC)
@@ -826,7 +825,7 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
         self.assertGreater(len(forecasts), 0)
 
     @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_hourly_weather_forecast_api_fallback(self, mock_session_class):
+    def test_fetch_hourly_weather_forecast_api_fallback(self, mock_session_class: MagicMock) -> None:
         """Test that fetch_hourly_weather_forecast falls back to API when cache is empty"""
         # Mock database to return empty cache
         with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
@@ -879,7 +878,7 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
 
             self.assertIsInstance(forecasts, list)
 
-    def test_fetch_hourly_weather_forecast_limits_hours(self):
+    def test_fetch_hourly_weather_forecast_limits_hours(self) -> None:
         """Test that fetch_hourly_weather_forecast limits hours to 168 (7 days)"""
         # Should limit to 168 hours even if more requested
         with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
@@ -922,7 +921,7 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
 class TestFetchWeatherBatch(unittest.TestCase):
     """Test suite for fetch_weather_batch function"""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures"""
         self.test_locations = [
             ObserverLocation(latitude=40.0, longitude=-100.0, name="Location 1"),
@@ -930,10 +929,10 @@ class TestFetchWeatherBatch(unittest.TestCase):
         ]
 
     @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_success(self, mock_fetch):
+    def test_fetch_weather_batch_success(self, mock_fetch: MagicMock) -> None:
         """Test successful batch weather fetch"""
         # Mock successful responses - use AsyncMock to return coroutines
-        async def mock_weather(loc):
+        async def mock_weather(loc: ObserverLocation) -> WeatherData:
             return WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
         # Use AsyncMock so it returns a coroutine
         mock_fetch.return_value = AsyncMock(return_value=WeatherData(temperature_c=70.0, cloud_cover_percent=10.0))()
@@ -953,17 +952,20 @@ class TestFetchWeatherBatch(unittest.TestCase):
                 raise
 
     @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_with_errors(self, mock_fetch):
+    def test_fetch_weather_batch_with_errors(self, mock_fetch: MagicMock) -> None:
         """Test batch weather fetch with some errors"""
         # Mock one success and one error
         call_count = [0]
-        async def mock_weather(loc):
+        async def mock_weather(loc: ObserverLocation) -> WeatherData:
             call_count[0] += 1
             if call_count[0] == 1:
                 return WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
             else:
                 raise Exception("API error")
-        mock_fetch.return_value = AsyncMock(side_effect=[mock_weather(None), mock_weather(None)])()
+        # Create mock locations for testing
+        loc1 = ObserverLocation(latitude=40.0, longitude=-100.0, name="Location 1")
+        loc2 = ObserverLocation(latitude=35.0, longitude=-110.0, name="Location 2")
+        mock_fetch.return_value = AsyncMock(side_effect=[mock_weather(loc1), mock_weather(loc2)])()
 
         # ObserverLocation is not hashable, so this test will fail
         try:
@@ -976,10 +978,10 @@ class TestFetchWeatherBatch(unittest.TestCase):
                 raise
 
     @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_unexpected_result(self, mock_fetch):
+    def test_fetch_weather_batch_unexpected_result(self, mock_fetch: MagicMock) -> None:
         """Test batch weather fetch with unexpected result type"""
         # Mock unexpected result type
-        async def mock_weather(loc):
+        async def mock_weather(loc: ObserverLocation) -> str:
             return "unexpected"  # Not WeatherData or Exception
         mock_fetch.return_value = AsyncMock(return_value="unexpected")()
 

@@ -8,8 +8,6 @@ Create Date: 2025-11-12 19:57:00.000000
 
 from collections.abc import Sequence
 
-from alembic import op
-
 
 # revision identifiers, used by Alembic.
 revision: str = "20251112195700"

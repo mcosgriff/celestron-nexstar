@@ -39,12 +39,28 @@ def get_seed_data_path() -> Path:
     Returns:
         Path to seed data directory
     """
-    # Seed data is stored in cli/data/seed relative to this module
-    # This module is in api/, so we need to go up and into cli/data/seed
-    current_file = Path(__file__)
-    # api/database_seeder.py -> api/ -> celestron_nexstar/ -> cli/ -> data/ -> seed/
-    seed_dir = current_file.parent.parent / "cli" / "data" / "seed"
-    return seed_dir
+    # Seed data is stored in cli/data/seed relative to the package root
+    # Find the package root by looking for the seed directory in parent directories
+    current_file = Path(__file__).resolve()
+
+    # Search up the directory tree to find the package root (celestron_nexstar/)
+    # The seed directory should be at: package_root/cli/data/seed
+    for parent in current_file.parents:
+        seed_dir = parent / "cli" / "data" / "seed"
+        if seed_dir.exists() and seed_dir.is_dir():
+            return seed_dir
+
+    # Fallback: try the expected path structure
+    # api/database/database_seeder.py -> api/database/ -> api/ -> celestron_nexstar/ -> cli/ -> data/ -> seed/
+    seed_dir = current_file.parent.parent.parent / "cli" / "data" / "seed"
+    if seed_dir.exists():
+        return seed_dir
+
+    # If still not found, raise an error
+    raise FileNotFoundError(
+        f"Could not find seed data directory. Searched from {current_file}. "
+        f"Expected to find cli/data/seed in a parent directory."
+    )
 
 
 def load_seed_json(filename: str) -> Any:
