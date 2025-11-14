@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.observer import (
+from celestron_nexstar.api.location.observer import (
     DEFAULT_LOCATION,
     ObserverLocation,
     clear_observer_location,
@@ -50,8 +50,8 @@ class TestObserverLocation(unittest.TestCase):
 class TestConfigPath(unittest.TestCase):
     """Test suite for configuration path management."""
 
-    @patch("celestron_nexstar.api.observer.Path.mkdir")
-    @patch("celestron_nexstar.api.observer.Path.home")
+    @patch("celestron_nexstar.api.location.observer.Path.mkdir")
+    @patch("celestron_nexstar.api.location.observer.Path.home")
     def test_get_config_path(self, mock_home, mock_mkdir):
         """Test getting the config path."""
         mock_home.return_value = Path("/home/testuser")
@@ -70,7 +70,7 @@ class TestSaveLoadLocation(unittest.TestCase):
             latitude=34.0522, longitude=-118.2437, elevation=100.0, name="Los Angeles"
         )
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_save_location(self, mock_get_config_path):
         """Test saving a location to config file."""
         mock_path = MagicMock()
@@ -84,7 +84,7 @@ class TestSaveLoadLocation(unittest.TestCase):
         # Verify json.dump was called
         self.assertTrue(mock_file.write.called or hasattr(mock_file, "__enter__"))
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_load_location_file_not_exists(self, mock_get_config_path):
         """Test loading location when config file doesn't exist."""
         mock_path = MagicMock()
@@ -95,7 +95,7 @@ class TestSaveLoadLocation(unittest.TestCase):
 
         self.assertEqual(location, DEFAULT_LOCATION)
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_load_location_success(self, mock_get_config_path):
         """Test successfully loading a location from config file."""
         mock_path = MagicMock()
@@ -116,7 +116,7 @@ class TestSaveLoadLocation(unittest.TestCase):
         self.assertEqual(location.elevation, 100.0)
         self.assertEqual(location.name, "Los Angeles")
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_load_location_corrupted_file(self, mock_get_config_path):
         """Test loading location with corrupted config file."""
         mock_path = MagicMock()
@@ -129,7 +129,7 @@ class TestSaveLoadLocation(unittest.TestCase):
 
         self.assertEqual(location, DEFAULT_LOCATION)
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_load_location_missing_keys(self, mock_get_config_path):
         """Test loading location with missing required keys."""
         mock_path = MagicMock()
@@ -143,7 +143,7 @@ class TestSaveLoadLocation(unittest.TestCase):
 
         self.assertEqual(location, DEFAULT_LOCATION)
 
-    @patch("celestron_nexstar.api.observer.get_config_path")
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
     def test_load_location_no_elevation(self, mock_get_config_path):
         """Test loading location without elevation (should default to 0.0)."""
         mock_path = MagicMock()
@@ -177,7 +177,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
         """Clean up after each test."""
         clear_observer_location()
 
-    @patch("celestron_nexstar.api.observer.load_location")
+    @patch("celestron_nexstar.api.location.observer.load_location")
     def test_get_observer_location_first_call(self, mock_load):
         """Test getting observer location on first call (loads from file)."""
         test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
@@ -188,7 +188,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
         self.assertEqual(location, test_location)
         mock_load.assert_called_once()
 
-    @patch("celestron_nexstar.api.observer.load_location")
+    @patch("celestron_nexstar.api.location.observer.load_location")
     def test_get_observer_location_cached(self, mock_load):
         """Test that subsequent calls use cached location."""
         test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
@@ -203,7 +203,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
         # Should only load once, then use cache
         mock_load.assert_called_once()
 
-    @patch("celestron_nexstar.api.observer.save_location")
+    @patch("celestron_nexstar.api.location.observer.save_location")
     def test_set_observer_location_with_save(self, mock_save):
         """Test setting observer location with save=True."""
         test_location = ObserverLocation(latitude=45.0, longitude=-90.0, name="New Location")
@@ -217,7 +217,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
         current = get_observer_location()
         self.assertEqual(current, test_location)
 
-    @patch("celestron_nexstar.api.observer.save_location")
+    @patch("celestron_nexstar.api.location.observer.save_location")
     def test_set_observer_location_without_save(self, mock_save):
         """Test setting observer location with save=False."""
         test_location = ObserverLocation(latitude=45.0, longitude=-90.0, name="New Location")
@@ -231,7 +231,7 @@ class TestGetSetObserverLocation(unittest.TestCase):
         current = get_observer_location()
         self.assertEqual(current, test_location)
 
-    @patch("celestron_nexstar.api.observer.load_location")
+    @patch("celestron_nexstar.api.location.observer.load_location")
     def test_clear_observer_location(self, mock_load):
         """Test clearing cached observer location."""
         test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")

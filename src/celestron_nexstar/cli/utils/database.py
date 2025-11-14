@@ -13,7 +13,7 @@ from typing import NoReturn, TypeVar
 import typer
 from rich.console import Console
 
-from ...api.database import get_database
+from celestron_nexstar.api.database.database import get_database
 
 
 T = TypeVar("T", bound=Callable[..., object])
@@ -60,7 +60,7 @@ def check_database_setup() -> None:
         # Check if there's any catalog data
         from sqlalchemy import func, select
 
-        from ...api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         with db._get_session_sync() as session:
             result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0

@@ -1,0 +1,218 @@
+"""
+Comet Tracking and Predictions
+
+Tracks bright comets and their visibility from observer location.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+# skyfield is a required dependency
+import skyfield.api  # noqa: F401
+
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from celestron_nexstar.api.location.observer import ObserverLocation
+
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "Comet",
+    "CometVisibility",
+    "get_known_comets",
+    "get_upcoming_comets",
+    "get_visible_comets",
+]
+
+
+@dataclass
+class Comet:
+    """Information about a comet."""
+
+    name: str
+    designation: str  # Official designation (e.g., "C/2023 A3")
+    perihelion_date: datetime  # Closest approach to sun
+    perihelion_distance_au: float  # Distance from sun at perihelion (AU)
+    peak_magnitude: float  # Expected peak magnitude
+    peak_date: datetime  # Expected peak brightness date
+    is_periodic: bool  # Whether comet is periodic
+    period_years: float | None  # Orbital period in years (if periodic)
+    notes: str  # Additional information
+
+
+@dataclass
+class CometVisibility:
+    """Comet visibility information for a specific date."""
+
+    comet: Comet
+    date: datetime
+    magnitude: float  # Current magnitude
+    altitude: float  # Altitude above horizon
+    is_visible: bool  # Whether comet is above horizon
+    best_viewing_time: datetime | None  # Best time to view (when highest)
+    notes: str
+
+
+# NOTE: Comet data is now stored in database seed files.
+# See get_known_comets() which loads from database.
+# To regenerate seed files, run: python scripts/create_seed_files.py
+# Data from Minor Planet Center and comet observation databases
+
+
+async def get_known_comets(db_session: AsyncSession) -> list[Comet]:
+    """
+    Get list of known comets from database.
+
+    Args:
+        db_session: Database session
+
+    Returns:
+        List of Comet objects
+
+    Raises:
+        RuntimeError: If no comets found in database (seed data required)
+    """
+    from sqlalchemy import func, select
+
+    from celestron_nexstar.api.database.models import CometModel
+
+    count = await db_session.scalar(select(func.count(CometModel.id)))
+    if count == 0:
+        raise RuntimeError("No comets found in database. Please seed the database by running: nexstar data seed")
+
+    result = await db_session.execute(select(CometModel))
+    models = result.scalars().all()
+
+    return [model.to_comet() for model in models]
+
+
+def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
+    """
+    Estimate comet magnitude at a given date.
+
+    Simplified model based on distance from sun and Earth.
+
+    Args:
+        comet: Comet information
+        date: Date to estimate magnitude for
+
+    Returns:
+        Estimated magnitude
+    """
+    # Days from perihelion
+    days_from_perihelion = (date - comet.perihelion_date).days
+
+    # Simplified magnitude model
+    # Comets are brightest near perihelion
+    # Magnitude increases (gets dimmer) as distance increases
+    if abs(days_from_perihelion) < 30:
+        # Near perihelion - use peak magnitude
+        base_magnitude = comet.peak_magnitude
+    else:
+        # Farther from perihelion - magnitude increases
+        # Rough approximation: +0.1 mag per 10 days
+        magnitude_increase = abs(days_from_perihelion) / 10.0 * 0.1
+        base_magnitude = comet.peak_magnitude + magnitude_increase
+
+    return base_magnitude
+
+
+async def get_visible_comets(
+    db_session: AsyncSession,
+    location: ObserverLocation,
+    months_ahead: int = 12,
+    max_magnitude: float = 8.0,
+) -> list[CometVisibility]:
+    """
+    Get comets visible from observer location.
+
+    Args:
+        location: Observer location
+        months_ahead: How many months ahead to search (default: 12)
+        max_magnitude: Maximum magnitude to include (default: 8.0)
+
+    Returns:
+        List of CometVisibility objects, sorted by date
+    """
+
+    visibilities = []
+    now = datetime.now(UTC)
+    end_date = now + timedelta(days=30 * months_ahead)
+
+    # For each known comet, check visibility
+    comets = await get_known_comets(db_session)
+    for comet in comets:
+        # Check if comet is active in our time window
+        # Comets are typically visible for several months around perihelion
+        activity_start = comet.perihelion_date - timedelta(days=90)
+        activity_end = comet.perihelion_date + timedelta(days=180)
+
+        if activity_end < now or activity_start > end_date:
+            continue
+
+        # Check visibility at peak and around it
+        check_dates = [
+            comet.peak_date,
+            comet.peak_date - timedelta(days=30),
+            comet.peak_date + timedelta(days=30),
+        ]
+
+        for check_date in check_dates:
+            if now <= check_date <= end_date:
+                magnitude = _estimate_comet_magnitude(comet, check_date)
+
+                if magnitude <= max_magnitude:
+                    # Estimate altitude (simplified - would need actual ephemeris)
+                    # For now, assume reasonable altitude if in activity window
+                    altitude = 30.0  # Placeholder - would calculate from ephemeris
+                    is_visible = altitude > 0
+
+                    # Best viewing time (simplified - would calculate transit)
+                    best_time = check_date.replace(hour=2, minute=0)  # 2 AM local
+
+                    notes = f"Magnitude {magnitude:.1f}"
+                    if magnitude < 6.0:
+                        notes += " - potentially visible to naked eye"
+                    elif magnitude < 8.0:
+                        notes += " - visible with binoculars"
+
+                    visibilities.append(
+                        CometVisibility(
+                            comet=comet,
+                            date=check_date,
+                            magnitude=magnitude,
+                            altitude=altitude,
+                            is_visible=is_visible,
+                            best_viewing_time=best_time,
+                            notes=notes,
+                        )
+                    )
+
+    # Sort by date
+    visibilities.sort(key=lambda v: v.date)
+    return visibilities
+
+
+async def get_upcoming_comets(
+    db_session: AsyncSession,
+    location: ObserverLocation,
+    months_ahead: int = 24,
+) -> list[CometVisibility]:
+    """
+    Get upcoming bright comets.
+
+    Args:
+        db_session: Database session
+        location: Observer location
+        months_ahead: How many months ahead to search (default: 24)
+
+    Returns:
+        List of CometVisibility objects, sorted by peak date
+    """
+    return await get_visible_comets(db_session, location, months_ahead=months_ahead, max_magnitude=10.0)

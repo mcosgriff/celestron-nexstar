@@ -9,9 +9,9 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.light_pollution import BortleClass
-from celestron_nexstar.api.observer import ObserverLocation
-from celestron_nexstar.api.vacation_planning import (
+from celestron_nexstar.api.location.light_pollution import BortleClass
+from celestron_nexstar.api.location.observer import ObserverLocation
+from celestron_nexstar.api.events.vacation_planning import (
     DarkSkySite,
     VacationViewingInfo,
     _haversine_distance,
@@ -119,14 +119,14 @@ class TestFindDarkSitesNear(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.vacation_planning.asyncio.run")
-    @patch("celestron_nexstar.api.vacation_planning.geocode_location")
+    @patch("celestron_nexstar.api.events.vacation_planning.asyncio.run")
+    @patch("celestron_nexstar.api.events.vacation_planning.geocode_location")
     def test_find_dark_sites_near_with_string_location(self, mock_geocode, mock_asyncio_run):
         """Test find_dark_sites_near with string location"""
         mock_asyncio_run.return_value = self.test_location
         mock_geocode.return_value = self.test_location
 
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             # Mock the async _get_sites function
             mock_db_sites = []
             mock_run.side_effect = [
@@ -134,7 +134,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
                 mock_db_sites,  # Second call for _get_sites
             ]
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
                 mock_load.return_value = []
                 result = find_dark_sites_near("Test Location")
 
@@ -142,18 +142,18 @@ class TestFindDarkSitesNear(unittest.TestCase):
 
     def test_find_dark_sites_near_with_observer_location(self):
         """Test find_dark_sites_near with ObserverLocation"""
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             # Mock the async _get_sites function to return empty list
             mock_run.return_value = []
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
                 mock_load.return_value = []
                 result = find_dark_sites_near(self.test_location)
 
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 0)
 
-    @patch("celestron_nexstar.api.models.get_db_session")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     def test_find_dark_sites_near_with_database_sites(self, mock_get_session):
         """Test find_dark_sites_near with database sites"""
         # Mock database site
@@ -176,7 +176,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
         mock_session_context.__aexit__ = AsyncMock(return_value=None)
         mock_get_session.return_value = mock_session_context
 
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             # Mock the async _get_sites function to return the mock sites
             async def _get_sites():
                 return [mock_db_site]
@@ -190,14 +190,14 @@ class TestFindDarkSitesNear(unittest.TestCase):
 
     def test_find_dark_sites_near_with_json_fallback(self):
         """Test find_dark_sites_near with JSON fallback"""
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             # Mock database query to fail/return empty
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
                 # Use a geohash that will match the search area
                 # For location 40.0, -100.0, a nearby geohash would be similar
-                with patch("celestron_nexstar.api.geohash_utils.get_neighbors_for_search") as mock_neighbors:
+                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
                     # Mock neighbors to include the site's geohash prefix
                     mock_neighbors.return_value = ["9yf0", "9yf1", "9yf2"]
                     mock_load.return_value = [
@@ -217,11 +217,11 @@ class TestFindDarkSitesNear(unittest.TestCase):
 
     def test_find_dark_sites_near_filters_by_bortle_class(self):
         """Test find_dark_sites_near filters by minimum Bortle class"""
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
-                with patch("celestron_nexstar.api.geohash_utils.get_neighbors_for_search") as mock_neighbors:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
+                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
                     mock_neighbors.return_value = ["9yf0", "9yf1"]
                     mock_load.return_value = [
                         {
@@ -252,11 +252,11 @@ class TestFindDarkSitesNear(unittest.TestCase):
 
     def test_find_dark_sites_near_filters_by_distance(self):
         """Test find_dark_sites_near filters by maximum distance"""
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
-                with patch("celestron_nexstar.api.geohash_utils.get_neighbors_for_search") as mock_neighbors:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
+                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
                     # Return geohashes that will match both sites
                     mock_neighbors.return_value = ["9yf0", "c2b2"]
                     mock_load.return_value = [
@@ -288,11 +288,11 @@ class TestFindDarkSitesNear(unittest.TestCase):
 
     def test_find_dark_sites_near_sorts_by_distance(self):
         """Test find_dark_sites_near sorts results by distance"""
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = Exception("Database error")
 
-            with patch("celestron_nexstar.api.database_seeder.load_seed_json") as mock_load:
-                with patch("celestron_nexstar.api.geohash_utils.get_neighbors_for_search") as mock_neighbors:
+            with patch("celestron_nexstar.api.database.database_seeder.load_seed_json") as mock_load:
+                with patch("celestron_nexstar.api.location.geohash_utils.get_neighbors_for_search") as mock_neighbors:
                     # Return geohashes that will match the site prefixes
                     # The code checks if item_prefix.startswith(search_prefix), so search_prefix should be shorter or equal
                     mock_neighbors.return_value = ["9yf012345", "9yf212345"]  # 9-char prefixes
@@ -331,14 +331,14 @@ class TestGetVacationViewingInfo(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.vacation_planning.asyncio.run")
-    @patch("celestron_nexstar.api.vacation_planning.geocode_location")
+    @patch("celestron_nexstar.api.events.vacation_planning.asyncio.run")
+    @patch("celestron_nexstar.api.events.vacation_planning.geocode_location")
     def test_get_vacation_viewing_info_with_string_location(self, mock_geocode, mock_asyncio_run):
         """Test get_vacation_viewing_info with string location"""
         mock_asyncio_run.return_value = self.test_location
         mock_geocode.return_value = self.test_location
 
-        from celestron_nexstar.api.light_pollution import LightPollutionData
+        from celestron_nexstar.api.location.light_pollution import LightPollutionData
 
         mock_light_data = LightPollutionData(
             bortle_class=BortleClass.CLASS_4,
@@ -351,7 +351,7 @@ class TestGetVacationViewingInfo(unittest.TestCase):
             recommendations=("Bring telescope",),
         )
 
-        with patch("celestron_nexstar.api.vacation_planning.asyncio.run") as mock_run:
+        with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
             mock_run.side_effect = [
                 self.test_location,  # First call for geocode
                 mock_light_data,  # Second call for get_light_pollution_data
@@ -362,11 +362,11 @@ class TestGetVacationViewingInfo(unittest.TestCase):
         self.assertIsInstance(result, VacationViewingInfo)
         self.assertEqual(result.location, self.test_location)
 
-    @patch("celestron_nexstar.api.vacation_planning.asyncio.run")
-    @patch("celestron_nexstar.api.vacation_planning.get_light_pollution_data")
+    @patch("celestron_nexstar.api.events.vacation_planning.asyncio.run")
+    @patch("celestron_nexstar.api.events.vacation_planning.get_light_pollution_data")
     def test_get_vacation_viewing_info_with_observer_location(self, mock_get_light, mock_asyncio_run):
         """Test get_vacation_viewing_info with ObserverLocation"""
-        from celestron_nexstar.api.light_pollution import LightPollutionData
+        from celestron_nexstar.api.location.light_pollution import LightPollutionData
 
         mock_light_data = LightPollutionData(
             bortle_class=BortleClass.CLASS_3,
@@ -394,8 +394,8 @@ class TestGetVacationViewingInfo(unittest.TestCase):
 class TestPopulateDarkSkySitesDatabase(unittest.TestCase):
     """Test suite for populate_dark_sky_sites_database function"""
 
-    @patch("celestron_nexstar.api.vacation_planning.asyncio.run")
-    @patch("celestron_nexstar.api.database_seeder.seed_dark_sky_sites")
+    @patch("celestron_nexstar.api.events.vacation_planning.asyncio.run")
+    @patch("celestron_nexstar.api.database.database_seeder.seed_dark_sky_sites")
     def test_populate_dark_sky_sites_database(self, mock_seed, mock_asyncio_run):
         """Test populate_dark_sky_sites_database"""
         mock_session = MagicMock()

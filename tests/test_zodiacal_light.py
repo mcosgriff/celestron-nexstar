@@ -8,8 +8,8 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from celestron_nexstar.api.observer import ObserverLocation
-from celestron_nexstar.api.zodiacal_light import (
+from celestron_nexstar.api.location.observer import ObserverLocation
+from celestron_nexstar.api.astronomy.zodiacal_light import (
     ZodiacalLightWindow,
     get_gegenschein_windows,
     get_zodiacal_light_windows,
@@ -51,8 +51,8 @@ class TestGetZodiacalLightWindows(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.zodiacal_light.get_sun_info")
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.get_sun_info")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_zodiacal_light_windows_default(self, mock_datetime, mock_get_sun_info):
         """Test get_zodiacal_light_windows with default parameters"""
         # Mock current time
@@ -70,8 +70,8 @@ class TestGetZodiacalLightWindows(unittest.TestCase):
 
         self.assertIsInstance(windows, list)
 
-    @patch("celestron_nexstar.api.zodiacal_light.get_sun_info")
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.get_sun_info")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_zodiacal_light_windows_spring_evening(self, mock_datetime, mock_get_sun_info):
         """Test zodiacal light windows for spring evening (optimal)"""
         mock_now = datetime(2024, 4, 1, 12, 0, tzinfo=UTC)
@@ -92,8 +92,8 @@ class TestGetZodiacalLightWindows(unittest.TestCase):
                 if 3 <= window.date.month <= 5:
                     self.assertEqual(window.viewing_quality, "excellent")
 
-    @patch("celestron_nexstar.api.zodiacal_light.get_sun_info")
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.get_sun_info")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_zodiacal_light_windows_autumn_morning(self, mock_datetime, mock_get_sun_info):
         """Test zodiacal light windows for autumn morning (optimal)"""
         mock_now = datetime(2024, 10, 1, 12, 0, tzinfo=UTC)
@@ -114,8 +114,8 @@ class TestGetZodiacalLightWindows(unittest.TestCase):
                 if 9 <= window.date.month <= 11:
                     self.assertEqual(window.viewing_quality, "excellent")
 
-    @patch("celestron_nexstar.api.zodiacal_light.get_sun_info")
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.get_sun_info")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_zodiacal_light_windows_sorted(self, mock_datetime, mock_get_sun_info):
         """Test that windows are sorted by start time"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -134,8 +134,8 @@ class TestGetZodiacalLightWindows(unittest.TestCase):
             for i in range(len(windows) - 1):
                 self.assertLessEqual(windows[i].start_time, windows[i + 1].start_time)
 
-    @patch("celestron_nexstar.api.zodiacal_light.get_sun_info")
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.get_sun_info")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_zodiacal_light_windows_window_times(self, mock_datetime, mock_get_sun_info):
         """Test that window times are calculated correctly"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -178,7 +178,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_default(self, mock_datetime):
         """Test get_gegenschein_windows with default parameters"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -189,7 +189,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
 
         self.assertIsInstance(windows, list)
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_autumn_winter(self, mock_datetime):
         """Test gegenschein windows for autumn/winter (optimal)"""
         mock_now = datetime(2024, 10, 1, 12, 0, tzinfo=UTC)
@@ -204,7 +204,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
             if 9 <= month <= 11 or month >= 12 or month <= 2:
                 self.assertEqual(window.viewing_quality, "excellent")
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_sorted(self, mock_datetime):
         """Test that windows are sorted by start time"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -218,7 +218,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
             for i in range(len(windows) - 1):
                 self.assertLessEqual(windows[i].start_time, windows[i + 1].start_time)
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_midnight_type(self, mock_datetime):
         """Test that gegenschein windows have midnight type"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -230,7 +230,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
         for window in windows:
             self.assertEqual(window.window_type, "midnight")
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_time_range(self, mock_datetime):
         """Test that gegenschein windows are around midnight ± 2 hours"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -247,7 +247,7 @@ class TestGetGegenscheinWindows(unittest.TestCase):
             self.assertEqual(window.start_time, expected_start)
             self.assertEqual(window.end_time, expected_end)
 
-    @patch("celestron_nexstar.api.zodiacal_light.datetime")
+    @patch("celestron_nexstar.api.astronomy.zodiacal_light.datetime")
     def test_get_gegenschein_windows_sun_altitude(self, mock_datetime):
         """Test that gegenschein windows have correct sun altitude"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)

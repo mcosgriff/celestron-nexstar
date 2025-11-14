@@ -6,7 +6,7 @@ Tests coordinate conversions and astronomical calculations.
 import unittest
 from datetime import datetime
 
-from celestron_nexstar.api.utils import (
+from celestron_nexstar.api.core.utils import (
     alt_az_to_ra_dec,
     angular_separation,
     calculate_julian_date,

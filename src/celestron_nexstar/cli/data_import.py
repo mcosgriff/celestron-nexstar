@@ -19,9 +19,9 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
 
-from ..api.database import CatalogDatabase, get_database
-from ..api.enums import CelestialObjectType
-from ..api.importers import map_openngc_type, parse_catalog_number, parse_ra_dec
+from celestron_nexstar.api.catalogs.importers import map_openngc_type, parse_catalog_number, parse_ra_dec
+from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import CatalogDatabase, get_database
 
 
 console = Console()

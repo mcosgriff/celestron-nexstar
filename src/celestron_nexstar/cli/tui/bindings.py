@@ -33,7 +33,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("1")
     def focus_dataset(event: KeyPressEvent) -> None:
         """Focus dataset pane."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         state.focused_pane = "dataset"
@@ -42,7 +42,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("2")
     def focus_conditions(event: KeyPressEvent) -> None:
         """Focus conditions pane."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         state.focused_pane = "conditions"
@@ -51,7 +51,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("3")
     def focus_visible(event: KeyPressEvent) -> None:
         """Focus visible objects pane."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         state.focused_pane = "visible"
@@ -72,7 +72,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("up")
     def move_up(event: KeyPressEvent) -> None:
         """Move selection up in visible objects pane."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -82,7 +82,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("down")
     def move_down(event: KeyPressEvent) -> None:
         """Move selection down in visible objects pane."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -92,7 +92,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("enter")
     def show_detail(event: KeyPressEvent) -> None:
         """Toggle detail view for selected object."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible" and state.get_selected_object():
@@ -102,7 +102,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("u")
     def toggle_time_mode(event: KeyPressEvent) -> None:
         """Toggle between local and UTC time display."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         state.toggle_time_mode()
@@ -116,7 +116,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("s")
     def cycle_sort(event: KeyPressEvent) -> None:
         """Cycle through sort options."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -135,7 +135,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("r")
     def toggle_reverse(event: KeyPressEvent) -> None:
         """Toggle sort direction."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -148,7 +148,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("f")
     def filter_menu(event: KeyPressEvent) -> None:
         """Toggle filter menu or cycle type filter."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -168,7 +168,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("/")
     def search_mode(event: KeyPressEvent) -> None:
         """Enter search mode (will prompt for text)."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible":
@@ -181,7 +181,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("escape")
     def close_search_or_filter(event: KeyPressEvent) -> None:
         """Close search mode or filter menu."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.search_mode:
@@ -204,7 +204,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("g")
     def goto_object(event: KeyPressEvent) -> None:
         """Goto selected object."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "visible" and state.get_selected_object():
@@ -240,7 +240,7 @@ def create_key_bindings() -> KeyBindings:
     @kb.add("l")
     def update_location(event: KeyPressEvent) -> None:
         """Update observer location (geocode address)."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         if state.focused_pane == "conditions":

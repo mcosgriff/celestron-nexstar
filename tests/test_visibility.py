@@ -8,10 +8,10 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from celestron_nexstar.api.catalogs import CelestialObject
-from celestron_nexstar.api.enums import CelestialObjectType, SkyBrightness
-from celestron_nexstar.api.optics import EyepieceSpecs, OpticalConfiguration, TelescopeModel, TelescopeSpecs
-from celestron_nexstar.api.visibility import (
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+from celestron_nexstar.api.observation.optics import EyepieceSpecs, OpticalConfiguration, TelescopeModel, TelescopeSpecs
+from celestron_nexstar.api.observation.visibility import (
     VisibilityInfo,
     assess_visibility,
     calculate_atmospheric_extinction,
@@ -100,9 +100,9 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
             catalog="bright_stars",
         )
 
-    @patch("celestron_nexstar.api.visibility.ra_dec_to_alt_az")
-    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
-    @patch("celestron_nexstar.api.visibility.get_observer_location")
+    @patch("celestron_nexstar.api.observation.visibility.ra_dec_to_alt_az")
+    @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.observation.visibility.get_observer_location")
     def test_get_object_altitude_azimuth_fixed_object(self, mock_get_location, mock_is_dynamic, mock_ra_dec_to_alt_az):
         """Test getting altitude/azimuth for a fixed object"""
         mock_get_location.return_value = MagicMock(latitude=40.0, longitude=-100.0)
@@ -115,10 +115,10 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
         self.assertEqual(az, 180.0)
         mock_is_dynamic.assert_called_once_with(self.test_obj.name)
 
-    @patch("celestron_nexstar.api.visibility.ra_dec_to_alt_az")
-    @patch("celestron_nexstar.api.visibility.get_planetary_position")
-    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
-    @patch("celestron_nexstar.api.visibility.get_observer_location")
+    @patch("celestron_nexstar.api.observation.visibility.ra_dec_to_alt_az")
+    @patch("celestron_nexstar.api.observation.visibility.get_planetary_position")
+    @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.observation.visibility.get_observer_location")
     def test_get_object_altitude_azimuth_dynamic_object(
         self, mock_get_location, mock_is_dynamic, mock_get_position, mock_ra_dec_to_alt_az
     ):
@@ -144,8 +144,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
         self.assertEqual(az, 90.0)
         mock_get_position.assert_called_once()
 
-    @patch("celestron_nexstar.api.visibility.ra_dec_to_alt_az")
-    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.observation.visibility.ra_dec_to_alt_az")
+    @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")
     def test_get_object_altitude_azimuth_with_explicit_location(self, mock_is_dynamic, mock_ra_dec_to_alt_az):
         """Test getting altitude/azimuth with explicit observer location"""
         mock_is_dynamic.return_value = False
@@ -156,8 +156,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
         self.assertEqual(alt, 50.0)
         self.assertEqual(az, 270.0)
 
-    @patch("celestron_nexstar.api.visibility.ra_dec_to_alt_az")
-    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.observation.visibility.ra_dec_to_alt_az")
+    @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")
     def test_get_object_altitude_azimuth_with_datetime(self, mock_is_dynamic, mock_ra_dec_to_alt_az):
         """Test getting altitude/azimuth with explicit datetime"""
         mock_is_dynamic.return_value = False
@@ -173,8 +173,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
 class TestCalculateParentSeparation(unittest.TestCase):
     """Test suite for calculate_parent_separation function"""
 
-    @patch("celestron_nexstar.api.visibility.angular_separation")
-    @patch("celestron_nexstar.api.visibility.get_planetary_position")
+    @patch("celestron_nexstar.api.observation.visibility.angular_separation")
+    @patch("celestron_nexstar.api.observation.visibility.get_planetary_position")
     def test_calculate_parent_separation_jupiter_moon(self, mock_get_position, mock_angular_separation):
         """Test calculating separation for a Jupiter moon"""
         mock_get_position.side_effect = [
@@ -188,8 +188,8 @@ class TestCalculateParentSeparation(unittest.TestCase):
         self.assertIsNotNone(separation)
         self.assertAlmostEqual(separation, 6.0, places=1)  # 0.1 degrees = 6 arcminutes
 
-    @patch("celestron_nexstar.api.visibility.angular_separation")
-    @patch("celestron_nexstar.api.visibility.get_planetary_position")
+    @patch("celestron_nexstar.api.observation.visibility.angular_separation")
+    @patch("celestron_nexstar.api.observation.visibility.get_planetary_position")
     def test_calculate_parent_separation_saturn_moon(self, mock_get_position, mock_angular_separation):
         """Test calculating separation for a Saturn moon"""
         mock_get_position.side_effect = [
@@ -213,7 +213,7 @@ class TestCalculateParentSeparation(unittest.TestCase):
         separation = calculate_parent_separation("Moon")
         self.assertIsNone(separation)
 
-    @patch("celestron_nexstar.api.visibility.get_planetary_position")
+    @patch("celestron_nexstar.api.observation.visibility.get_planetary_position")
     def test_calculate_parent_separation_error_handling(self, mock_get_position):
         """Test error handling when position calculation fails"""
         mock_get_position.side_effect = Exception("Ephemeris error")
@@ -246,9 +246,9 @@ class TestAssessVisibility(unittest.TestCase):
             eyepiece=EyepieceSpecs(focal_length_mm=10.0, apparent_fov_deg=50.0),
         )
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_visible_object(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -264,9 +264,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertEqual(visibility.altitude_deg, 45.0)
         self.assertGreater(visibility.observability_score, 0.0)
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_below_horizon(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -281,9 +281,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertEqual(visibility.observability_score, 0.0)
         self.assertIn("Below horizon", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_too_faint(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -308,9 +308,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertEqual(visibility.observability_score, 0.0)
         self.assertIn("Too faint", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_low_altitude(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -325,9 +325,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertLess(visibility.observability_score, 1.0)
         self.assertIn("Low altitude", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_position_error(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -342,10 +342,10 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertEqual(visibility.observability_score, 0.0)
         self.assertIn("Cannot calculate position", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.calculate_parent_separation")
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_parent_separation")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_moon_too_close(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az, mock_calc_separation
     ):
@@ -371,10 +371,10 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertEqual(visibility.observability_score, 0.0)
         self.assertIn("Too close to parent", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.calculate_parent_separation")
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_parent_separation")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_moon_good_separation(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az, mock_calc_separation
     ):
@@ -399,10 +399,10 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertTrue(visibility.is_visible)
         self.assertIn("Good separation", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.calculate_parent_separation")
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_parent_separation")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_moon_close_separation(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az, mock_calc_separation
     ):
@@ -428,9 +428,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertLess(visibility.observability_score, 1.0)
         self.assertIn("Close to parent planet", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_near_detection_limit(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -456,9 +456,9 @@ class TestAssessVisibility(unittest.TestCase):
         self.assertLess(visibility.observability_score, 1.0)
         self.assertIn("Near detection limit", str(visibility.reasons))
 
-    @patch("celestron_nexstar.api.visibility.get_object_altitude_azimuth")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_assess_visibility_excellent_altitude(
         self, mock_get_config, mock_calc_limiting, mock_get_alt_az
     ):
@@ -519,15 +519,15 @@ class TestFilterVisibleObjects(unittest.TestCase):
             eyepiece=EyepieceSpecs(focal_length_mm=10.0, apparent_fov_deg=50.0),
         )
 
-    @patch("celestron_nexstar.api.visibility.assess_visibility")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.assess_visibility")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_filter_visible_objects_empty_list(self, mock_get_config, mock_assess):
         """Test filtering empty list"""
         result = filter_visible_objects([])
         self.assertEqual(result, [])
 
-    @patch("celestron_nexstar.api.visibility.assess_visibility")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.assess_visibility")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_filter_visible_objects_filters_invisible(
         self, mock_get_config, mock_assess
     ):
@@ -563,8 +563,8 @@ class TestFilterVisibleObjects(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][0].name, "Vega")
 
-    @patch("celestron_nexstar.api.visibility.assess_visibility")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.assess_visibility")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
     def test_filter_visible_objects_sorts_by_score(
         self, mock_get_config, mock_assess
     ):
@@ -623,10 +623,10 @@ class TestFilterVisibleObjects(unittest.TestCase):
         self.assertEqual(result[0][0].name, "Star2")  # Higher score first
         self.assertEqual(result[1][0].name, "Star1")
 
-    @patch("celestron_nexstar.api.visibility.is_dynamic_object")
-    @patch("celestron_nexstar.api.visibility.get_observer_location")
-    @patch("celestron_nexstar.api.visibility.get_current_configuration")
-    @patch("celestron_nexstar.api.visibility.calculate_limiting_magnitude")
+    @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")
+    @patch("celestron_nexstar.api.observation.visibility.get_observer_location")
+    @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
+    @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     def test_filter_visible_objects_vectorized_path(
         self, mock_calc_limiting, mock_get_config, mock_get_location, mock_is_dynamic
     ):
@@ -653,7 +653,7 @@ class TestFilterVisibleObjects(unittest.TestCase):
 
         # Mock datetime to a specific time
         test_dt = datetime(2024, 6, 15, 20, 0, tzinfo=UTC)
-        with patch("celestron_nexstar.api.visibility.datetime") as mock_datetime:
+        with patch("celestron_nexstar.api.observation.visibility.datetime") as mock_datetime:
             mock_datetime.now.return_value = test_dt
             mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 

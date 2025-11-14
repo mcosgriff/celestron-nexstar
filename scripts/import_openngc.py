@@ -20,8 +20,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from celestron_nexstar.api.database import get_database
-from celestron_nexstar.api.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import get_database
+from celestron_nexstar.api.core.enums import CelestialObjectType
 
 
 # Add src to path

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from prompt_toolkit.formatted_text import FormattedText
 
-from ...api.catalogs import CelestialObject
-from ...api.visibility import VisibilityInfo
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+from celestron_nexstar.api.observation.visibility import VisibilityInfo
 
 
 def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo) -> FormattedText:
@@ -26,7 +26,7 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
     # Try to get additional details from database
     import asyncio
 
-    from ...api.database import get_database
+    from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
     db_obj = asyncio.run(db.get_by_name(obj.name))
@@ -74,7 +74,7 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
 
     # Get additional fields from database if available
     if db_obj:
-        from ...api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         with db._get_session_sync() as session:
             model = (
@@ -141,7 +141,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     # Try to get additional details from database
     import asyncio
 
-    from ...api.database import get_database
+    from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
     db_obj = asyncio.run(db.get_by_name(obj.name))
@@ -178,7 +178,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
 
     # Get additional fields from database if available
     if db_obj:
-        from ...api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         with db._get_session_sync() as session:
             model = (
@@ -223,7 +223,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
 
 def show_object_detail_interactive() -> None:
     """Show detail for the currently selected object (legacy function)."""
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     selected = state.get_selected_object()

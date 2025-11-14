@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 from returns.result import Failure, Success
 
-from celestron_nexstar.api.exceptions import TelescopeConnectionError
-from celestron_nexstar.api.telescope import NexStarTelescope
-from celestron_nexstar.api.types import (
+from celestron_nexstar.api.core.exceptions import TelescopeConnectionError
+from celestron_nexstar.api.telescope.telescope import NexStarTelescope
+from celestron_nexstar.api.core.types import (
     AlignmentMode,
     EquatorialCoordinates,
     GeographicLocation,

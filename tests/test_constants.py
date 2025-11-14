@@ -6,7 +6,7 @@ Tests all physical and astronomical constants used throughout the API.
 
 import unittest
 
-from celestron_nexstar.api.constants import (
+from celestron_nexstar.api.core.constants import (
     ARCSEC_PER_ARCMIN,
     ARCSEC_PER_DEGREE,
     DEGREES_PER_HOUR_ANGLE,
@@ -63,7 +63,7 @@ class TestConstants(unittest.TestCase):
             "HUMAN_EYE_PUPIL_MM": HUMAN_EYE_PUPIL_MM,
         }
         # Re-import to ensure values are consistent
-        import celestron_nexstar.api.constants as constants_module
+        import celestron_nexstar.api.core.constants as constants_module
 
         self.assertEqual(constants_module.MM_PER_INCH, original_values["MM_PER_INCH"])
         self.assertEqual(constants_module.ARCSEC_PER_DEGREE, original_values["ARCSEC_PER_DEGREE"])

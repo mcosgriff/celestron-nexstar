@@ -15,28 +15,34 @@ Example:
     >>> telescope.disconnect()
 """
 
-# Re-export everything from the api package for backward compatibility
-from celestron_nexstar.api import (
-    AlignmentMode,
+# Main telescope class
+# Coordinate converter
+from celestron_nexstar.api.catalogs.converters import CoordinateConverter
+
+# Exceptions
+from celestron_nexstar.api.core.exceptions import (
     CommandError,
-    # Coordinate converter class
-    CoordinateConverter,
+    InvalidCoordinateError,
+    NexStarError,
+    NotConnectedError,
+    TelescopeConnectionError,
+    TelescopeTimeoutError,
+)
+
+# Type definitions
+from celestron_nexstar.api.core.types import (
+    AlignmentMode,
     EquatorialCoordinates,
     GeographicLocation,
     HorizontalCoordinates,
-    InvalidCoordinateError,
-    # Exceptions
-    NexStarError,
-    # Main telescope class
-    NexStarTelescope,
-    NotConnectedError,
     TelescopeConfig,
-    TelescopeConnectionError,
     TelescopeInfo,
     TelescopeTime,
-    TelescopeTimeoutError,
-    # Type definitions
     TrackingMode,
+)
+
+# Coordinate conversion utilities
+from celestron_nexstar.api.core.utils import (
     alt_az_to_ra_dec,
     angular_separation,
     calculate_julian_date,
@@ -48,9 +54,9 @@ from celestron_nexstar.api import (
     format_ra,
     hours_to_hms,
     ra_dec_to_alt_az,
-    # Coordinate conversions
     ra_to_hours,
 )
+from celestron_nexstar.api.telescope.telescope import NexStarTelescope
 
 
 __version__ = "0.2.0"  # Bumped version for new architecture

@@ -9,10 +9,10 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.models import WeatherForecastModel
-from celestron_nexstar.api.observer import ObserverLocation
+from celestron_nexstar.api.database.models import WeatherForecastModel
+from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api import weather
-from celestron_nexstar.api.weather import (
+from celestron_nexstar.api.location.weather import (
     HourlySeeingForecast,
     WeatherData,
     assess_observing_conditions,
@@ -616,7 +616,7 @@ class TestFetchWeather(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.weather.aiohttp.ClientSession")
+    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
     def test_fetch_weather_success(self, mock_session_class):
         """Test successful weather fetch"""
         # Mock response
@@ -654,7 +654,7 @@ class TestFetchWeather(unittest.TestCase):
         self.assertIsInstance(weather, WeatherData)
         self.assertIsNone(weather.error)
 
-    @patch("celestron_nexstar.api.weather.aiohttp.ClientSession")
+    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
     def test_fetch_weather_api_error(self, mock_session_class):
         """Test weather fetch with API error"""
         # Mock response with error
@@ -674,7 +674,7 @@ class TestFetchWeather(unittest.TestCase):
         self.assertIsInstance(weather, WeatherData)
         self.assertIsNotNone(weather.error)
 
-    @patch("celestron_nexstar.api.weather.aiohttp.ClientSession")
+    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
     def test_fetch_weather_network_error(self, mock_session_class):
         """Test weather fetch with network error"""
         import aiohttp
@@ -698,8 +698,8 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.database.get_database")
-    @patch("celestron_nexstar.api.weather._is_forecast_stale")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
     def test_fetch_weather_uses_database_cache(self, mock_is_stale, mock_get_db):
         """Test that fetch_weather uses cached data from database when available"""
         # Mock database with cached forecast
@@ -746,14 +746,14 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
         self.assertIsNone(weather_data.error)
         self.assertEqual(weather_data.temperature_c, 70.0)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_fetch_weather_handles_database_error(self, mock_get_db):
         """Test that fetch_weather handles database errors gracefully"""
         # Mock database to raise exception
         mock_get_db.side_effect = Exception("Database error")
 
         # Should fall back to API
-        with patch("celestron_nexstar.api.weather.aiohttp.ClientSession") as mock_session_class:
+        with patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession") as mock_session_class:
             mock_response = AsyncMock()
             mock_response.status = 500
             mock_response.text = AsyncMock(return_value="Error")
@@ -775,8 +775,8 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.database.get_database")
-    @patch("celestron_nexstar.api.weather._is_forecast_stale")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
     def test_fetch_hourly_weather_forecast_uses_cache(self, mock_is_stale, mock_get_db):
         """Test that fetch_hourly_weather_forecast uses cached data when available"""
         # Mock database with cached forecasts
@@ -825,11 +825,11 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
         self.assertIsInstance(forecasts, list)
         self.assertGreater(len(forecasts), 0)
 
-    @patch("celestron_nexstar.api.weather.aiohttp.ClientSession")
+    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
     def test_fetch_hourly_weather_forecast_api_fallback(self, mock_session_class):
         """Test that fetch_hourly_weather_forecast falls back to API when cache is empty"""
         # Mock database to return empty cache
-        with patch("celestron_nexstar.api.database.get_database") as mock_get_db:
+        with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
             mock_db = MagicMock()
             mock_session = AsyncMock()
             mock_result = MagicMock()
@@ -882,7 +882,7 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
     def test_fetch_hourly_weather_forecast_limits_hours(self):
         """Test that fetch_hourly_weather_forecast limits hours to 168 (7 days)"""
         # Should limit to 168 hours even if more requested
-        with patch("celestron_nexstar.api.database.get_database") as mock_get_db:
+        with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
             mock_db = MagicMock()
             mock_session = AsyncMock()
             mock_result = MagicMock()
@@ -902,7 +902,7 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
             mock_db._engine = mock_engine
             mock_get_db.return_value = mock_db
 
-            with patch("celestron_nexstar.api.weather.aiohttp.ClientSession") as mock_session_class:
+            with patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession") as mock_session_class:
                 mock_response = AsyncMock()
                 mock_response.status = 200
                 mock_response.json = AsyncMock(return_value={"hourly": {"time": []}})
@@ -929,7 +929,7 @@ class TestFetchWeatherBatch(unittest.TestCase):
             ObserverLocation(latitude=35.0, longitude=-110.0, name="Location 2"),
         ]
 
-    @patch("celestron_nexstar.api.weather.fetch_weather")
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
     def test_fetch_weather_batch_success(self, mock_fetch):
         """Test successful batch weather fetch"""
         # Mock successful responses - use AsyncMock to return coroutines
@@ -952,7 +952,7 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.weather.fetch_weather")
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
     def test_fetch_weather_batch_with_errors(self, mock_fetch):
         """Test batch weather fetch with some errors"""
         # Mock one success and one error
@@ -975,7 +975,7 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.weather.fetch_weather")
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
     def test_fetch_weather_batch_unexpected_result(self, mock_fetch):
         """Test batch weather fetch with unexpected result type"""
         # Mock unexpected result type

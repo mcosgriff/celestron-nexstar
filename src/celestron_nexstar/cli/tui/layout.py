@@ -15,7 +15,7 @@ from prompt_toolkit.layout.containers import (
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 
-from .panes import (
+from celestron_nexstar.cli.tui.panes import (
     get_conditions_info,
     get_dataset_info,
     get_header_info,

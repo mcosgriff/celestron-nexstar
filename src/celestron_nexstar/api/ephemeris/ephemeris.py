@@ -1,0 +1,289 @@
+"""
+Ephemeris Calculations for Solar System Objects
+
+Uses Skyfield library to calculate real-time positions of planets and moons.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+from functools import lru_cache
+
+import deal
+from skyfield.jpllib import SpiceKernel
+
+from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+
+
+logger = logging.getLogger(__name__)
+
+
+__all__ = [
+    "PLANET_NAMES",
+    "get_planet_magnitude",
+    "get_planetary_position",
+    "is_dynamic_object",
+]
+
+
+# Planet names mapping to Skyfield ephemeris names and required BSP files
+# Note: JPL ephemeris files use uppercase object names
+PLANET_NAMES = {
+    "mercury": ("199 MERCURY", "de440s.bsp"),  # Use numeric ID for planets
+    "venus": ("299 VENUS", "de440s.bsp"),
+    "mars": ("4 MARS BARYCENTER", "de440s.bsp"),  # Use barycenter for Mars
+    "jupiter": ("5 JUPITER BARYCENTER", "de440s.bsp"),
+    "saturn": ("6 SATURN BARYCENTER", "de440s.bsp"),
+    "uranus": ("7 URANUS BARYCENTER", "de440s.bsp"),
+    "neptune": ("8 NEPTUNE BARYCENTER", "de440s.bsp"),
+    "pluto": ("9 PLUTO BARYCENTER", "de440s.bsp"),  # Dwarf planet
+    "moon": ("MOON", "de421.bsp"),  # de440s doesn't include Moon
+    # Jupiter moons (jup365.bsp)
+    "io": ("io", "jup365.bsp"),
+    "europa": ("europa", "jup365.bsp"),
+    "ganymede": ("ganymede", "jup365.bsp"),
+    "callisto": ("callisto", "jup365.bsp"),
+    # Saturn moons (sat441.bsp)
+    "titan": ("titan", "sat441.bsp"),
+    "rhea": ("rhea", "sat441.bsp"),
+    "iapetus": ("iapetus", "sat441.bsp"),
+    "dione": ("dione", "sat441.bsp"),
+    "tethys": ("tethys", "sat441.bsp"),
+    "enceladus": ("enceladus", "sat441.bsp"),
+    "mimas": ("mimas", "sat441.bsp"),
+    "hyperion": ("hyperion", "sat441.bsp"),
+    # Uranus moons (ura184_part-1.bsp)
+    "ariel": ("ariel", "ura184_part-1.bsp"),
+    "umbriel": ("umbriel", "ura184_part-1.bsp"),
+    "titania": ("titania", "ura184_part-1.bsp"),
+    "oberon": ("oberon", "ura184_part-1.bsp"),
+    "miranda": ("miranda", "ura184_part-1.bsp"),
+    # Neptune moon (nep097.bsp)
+    "triton": ("triton", "nep097.bsp"),
+    # Mars moons (mar099s.bsp) - very challenging to observe!
+    "phobos": ("phobos", "mar099s.bsp"),
+    "deimos": ("deimos", "mar099s.bsp"),
+}
+
+
+# Cache for loaded ephemeris files
+_ephemeris_cache: dict[str, SpiceKernel] = {}
+
+
+@lru_cache(maxsize=10)
+def _get_ephemeris(bsp_file: str) -> SpiceKernel:
+    """
+    Load ephemeris data from a specific BSP file.
+
+    Cached to avoid reloading files on every call.
+    Will attempt to load from ~/.skyfield/ directory (or SKYFIELD_DIR env var).
+
+    Args:
+        bsp_file: Name of the BSP file to load
+
+    Returns:
+        Loaded ephemeris data
+
+    Raises:
+        FileNotFoundError: If BSP file is not found
+    """
+    if bsp_file in _ephemeris_cache:
+        return _ephemeris_cache[bsp_file]
+
+    # Use centralized Skyfield loader
+    loader = get_skyfield_loader()
+
+    # Load file - will download to configured directory if not present
+    eph = loader(bsp_file)
+
+    _ephemeris_cache[bsp_file] = eph
+    return eph
+
+
+@deal.pre(
+    lambda planet_name, *args, **kwargs: planet_name.lower() in PLANET_NAMES,
+    message="Planet name must be valid",
+)  # type: ignore[misc,arg-type]
+@deal.post(lambda result: result is not None, message="Position must be calculated")
+@deal.post(lambda result: len(result) == 2, message="Position must be (ra, dec) tuple")
+@deal.post(lambda result: 0 <= result[0] < 24, message="RA must be 0-24 hours")
+@deal.post(lambda result: -90 <= result[1] <= 90, message="Dec must be -90 to +90 degrees")
+@deal.raises(ValueError, FileNotFoundError)
+def get_planetary_position(
+    planet_name: str,
+    observer_lat: float | None = None,
+    observer_lon: float | None = None,
+    dt: datetime | None = None,
+) -> tuple[float, float]:
+    """
+    Calculate the current RA/Dec position of a solar system object.
+
+    Args:
+        planet_name: Name of planet or moon (case-insensitive)
+        observer_lat: Observer's latitude in degrees (default: uses saved location)
+        observer_lon: Observer's longitude in degrees (default: uses saved location)
+        dt: Datetime to calculate position for (default: now in UTC)
+
+    Returns:
+        Tuple of (ra_hours, dec_degrees)
+
+    Raises:
+        ValueError: If planet name is not recognized
+    """
+    # Use saved observer location if not specified
+    if observer_lat is None or observer_lon is None:
+        from celestron_nexstar.api.location.observer import get_observer_location
+
+        location = get_observer_location()
+        observer_lat = location.latitude
+        observer_lon = location.longitude
+    planet_key = planet_name.lower()
+
+    if planet_key not in PLANET_NAMES:
+        raise ValueError(f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}")
+
+    # Get ephemeris name and required BSP file
+    # ephemeris_name is the SPICE target name (e.g., "299 VENUS")
+    # We need to use just the name part for Skyfield (e.g., "VENUS")
+    ephemeris_name, bsp_file = PLANET_NAMES[planet_key]
+
+    # Extract just the name part if it's a numeric ID format (e.g., "299 VENUS" -> "VENUS")
+    # Skyfield can handle both formats, but numeric IDs sometimes fail
+    if " " in ephemeris_name and ephemeris_name[0].isdigit():
+        # Format is like "299 VENUS" - extract the name part
+        spice_target = ephemeris_name.split(" ", 1)[1]
+    else:
+        spice_target = ephemeris_name
+
+    # Load the appropriate ephemeris file
+    try:
+        eph = _get_ephemeris(bsp_file)
+    except FileNotFoundError:
+        raise ValueError(
+            f"Ephemeris file {bsp_file} not found. "
+            f"Download it with: nexstar ephemeris download {bsp_file.replace('.bsp', '')}"
+        ) from None
+
+    # Get timescale and current time
+    loader = get_skyfield_loader()
+    ts = loader.timescale()
+    if dt is None:
+        dt = datetime.now(UTC)
+    elif dt.tzinfo is None:
+        # Assume UTC if no timezone
+        dt = dt.replace(tzinfo=UTC)
+
+    t = ts.from_datetime(dt)
+
+    # Get Earth and target body
+    earth = eph["earth"]
+
+    try:
+        target = eph[spice_target]
+    except KeyError:
+        # Try uppercase version (JPL ephemeris files often use uppercase)
+        try:
+            target = eph[ephemeris_name.upper()]
+        except KeyError:
+            # List available objects for better error message
+            available_objects = sorted(eph.names())
+            # Filter to strings only and convert to lowercase for comparison
+            mars_objects = [
+                str(obj) for obj in available_objects if isinstance(obj, str) and "mars" in str(obj).lower()
+            ]
+            error_msg = (
+                f"Object '{ephemeris_name}' not found in {bsp_file}.\n"
+                f"Available objects containing 'mars': {', '.join(mars_objects) if mars_objects else 'none'}\n"
+                f"Available objects: {', '.join(str(obj) for obj in available_objects[:20])}...\n"
+                f"The ephemeris file may be missing or corrupted, or the object name may be incorrect."
+            )
+            raise ValueError(error_msg) from None
+
+    # Calculate apparent position from Earth
+    astrometric = earth.at(t).observe(target)
+    ra, dec, _distance = astrometric.radec()
+
+    # Convert RA from hours and Dec from degrees
+    ra_hours = ra.hours
+    dec_degrees = dec.degrees
+
+    return (ra_hours, dec_degrees)
+
+
+@deal.pre(lambda object_name: object_name is not None, message="Object name required")  # type: ignore[misc,arg-type]
+@deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
+def is_dynamic_object(object_name: str) -> bool:
+    """
+    Check if an object has dynamic (time-varying) coordinates.
+
+    Args:
+        object_name: Name of the celestial object
+
+    Returns:
+        True if object position changes over time (planets, moons)
+    """
+    # Ensure object_name is a string (handle cases where it might be an integer)
+    if not object_name:
+        return False
+    return str(object_name).lower() in PLANET_NAMES
+
+
+@deal.pre(lambda planet_name: planet_name.lower() in PLANET_NAMES, message="Planet name must be valid")  # type: ignore[misc,arg-type]
+@deal.post(
+    lambda result: result is None or (isinstance(result, float) and -5 <= result <= 30),
+    message="Magnitude must be None or reasonable range",
+)
+def get_planet_magnitude(planet_name: str) -> float | None:
+    """
+    Get approximate magnitude for a planet.
+
+    Note: Actual magnitude varies with distance and phase.
+    These are typical/average values.
+
+    Args:
+        planet_name: Name of the planet
+
+    Returns:
+        Approximate magnitude or None if not available
+    """
+    # Approximate typical magnitudes
+    # Source: NASA JPL Horizons and various astronomical databases
+    magnitudes = {
+        # Planets
+        "mercury": -0.4,
+        "venus": -4.4,
+        "mars": -2.0,
+        "jupiter": -2.5,
+        "saturn": 0.2,
+        "uranus": 5.7,
+        "neptune": 7.8,
+        "moon": -12.6,
+        # Jupiter moons (Galilean satellites - easily visible with 6SE)
+        "io": 5.0,
+        "europa": 5.3,
+        "ganymede": 4.6,
+        "callisto": 5.6,
+        # Saturn moons (Titan visible with 6SE, others challenging)
+        "titan": 8.4,
+        "rhea": 9.7,
+        "iapetus": 10.2,  # Variable: 10.2-11.9
+        "dione": 10.4,
+        "tethys": 10.3,
+        "enceladus": 11.7,
+        "mimas": 12.9,
+        "hyperion": 14.2,
+        # Uranus moons (very challenging - need excellent conditions)
+        "titania": 13.7,
+        "oberon": 13.9,
+        "umbriel": 14.5,
+        "ariel": 14.2,
+        "miranda": 15.8,
+        # Neptune moon (extremely challenging)
+        "triton": 13.5,
+        # Mars moons (nearly impossible with amateur equipment)
+        "phobos": 11.8,  # Very close to Mars, overwhelmed by planet's glare
+        "deimos": 12.9,  # Even more challenging
+    }
+
+    return magnitudes.get(planet_name.lower())

@@ -10,9 +10,8 @@ from typing import TypeVar
 from rich.prompt import Prompt
 from rich.table import Table
 
-from celestron_nexstar.api.catalogs import CelestialObject
-
-from .output import console
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+from celestron_nexstar.cli.utils.output import console
 
 
 T = TypeVar("T")

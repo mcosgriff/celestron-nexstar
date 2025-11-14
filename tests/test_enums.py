@@ -6,7 +6,7 @@ Tests all enumeration classes used throughout the API.
 
 import unittest
 
-from celestron_nexstar.api.enums import (
+from celestron_nexstar.api.core.enums import (
     Axis,
     CelestialObjectType,
     Direction,

@@ -9,38 +9,28 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 # Import and register subcommands
-from .commands import (
-    align,
+from celestron_nexstar.cli.commands.astronomy import (
     aurora,
     binoculars,
-    catalog,
     comets,
-    connect,
-    dashboard,
-    data,
     eclipse,
-    ephemeris,
     events,
-    goto,
     iss,
-    location,
     meteors,
-    move,
-    multi_night,
     naked_eye,
     occultations,
-    optics,
     planets,
-    position,
     satellites,
-    telescope,
-    time,
-    track,
-    vacation,
     variables,
-    weather,
     zodiacal,
 )
+from celestron_nexstar.cli.commands.dashboard import dashboard
+from celestron_nexstar.cli.commands.data import catalog, data, ephemeris
+from celestron_nexstar.cli.commands.location import location, weather
+from celestron_nexstar.cli.commands.observation import multi_night, telescope
+from celestron_nexstar.cli.commands.optics import optics
+from celestron_nexstar.cli.commands.telescope import align, connect, goto, move, position, time, track
+from celestron_nexstar.cli.commands.vacation import vacation
 
 
 # Create main app
@@ -140,10 +130,9 @@ def show_all_config(
 
     from rich.table import Table
 
-    from celestron_nexstar.api.observer import get_observer_location
-    from celestron_nexstar.api.optics import get_current_configuration
-
-    from .utils.output import print_error, print_info, print_json
+    from celestron_nexstar.api.location.observer import get_observer_location
+    from celestron_nexstar.api.observation.optics import get_current_configuration
+    from celestron_nexstar.cli.utils.output import print_error, print_info, print_json
 
     try:
         # Get all configuration
@@ -535,10 +524,9 @@ def shell() -> None:
     from prompt_toolkit.key_binding.key_processor import KeyPressEvent
     from prompt_toolkit.styles import Style
 
-    from celestron_nexstar.api.movement import MovementController
-    from celestron_nexstar.api.tracking import PositionTracker
-
-    from .tutorial import TutorialSystem
+    from celestron_nexstar.api.telescope.movement import MovementController
+    from celestron_nexstar.api.telescope.tracking import PositionTracker
+    from celestron_nexstar.cli.tutorial import TutorialSystem
 
     # Helper function to get port with correct type
     def get_port() -> str | None:

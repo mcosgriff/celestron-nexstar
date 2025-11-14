@@ -8,8 +8,8 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from celestron_nexstar.api.observer import ObserverLocation
-from celestron_nexstar.api.variable_stars import (
+from celestron_nexstar.api.location.observer import ObserverLocation
+from celestron_nexstar.api.astronomy.variable_stars import (
     KNOWN_VARIABLE_STARS,
     VariableStar,
     VariableStarEvent,
@@ -185,7 +185,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_default(self, mock_datetime):
         """Test get_variable_star_events with default parameters"""
         # Mock current time
@@ -199,7 +199,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         # Should have events for all known stars
         self.assertGreater(len(events), 0)
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_filtered_by_type(self, mock_datetime):
         """Test get_variable_star_events filtered by event type"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -213,7 +213,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         for event in events:
             self.assertEqual(event.event_type, "minimum")
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_months_ahead(self, mock_datetime):
         """Test get_variable_star_events with custom months_ahead"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -228,7 +228,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         for event in events:
             self.assertLessEqual(event.date, end_date)
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_sorted_by_date(self, mock_datetime):
         """Test that events are sorted by date"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -242,7 +242,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
             for i in range(len(events) - 1):
                 self.assertLessEqual(events[i].date, events[i + 1].date)
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_contains_star_info(self, mock_datetime):
         """Test that events contain star information"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)
@@ -260,7 +260,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
             self.assertIsInstance(event.is_visible, bool)
             self.assertIsInstance(event.notes, str)
 
-    @patch("celestron_nexstar.api.variable_stars.datetime")
+    @patch("celestron_nexstar.api.astronomy.variable_stars.datetime")
     def test_get_variable_star_events_magnitude_correct(self, mock_datetime):
         """Test that event magnitude matches star magnitude for event type"""
         mock_now = datetime(2024, 6, 1, 12, 0, tzinfo=UTC)

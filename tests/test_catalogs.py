@@ -19,7 +19,7 @@ if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
 # Import catalogs module directly (not through api.__init__)
-from celestron_nexstar.api.catalogs import (
+from celestron_nexstar.api.catalogs.catalogs import (
     CelestialObject,
     get_all_catalogs_dict,
     get_all_objects,
@@ -27,13 +27,13 @@ from celestron_nexstar.api.catalogs import (
     get_catalog,
     get_object_by_name,
 )
-from celestron_nexstar.api.database import CatalogDatabase
-from celestron_nexstar.api.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import CatalogDatabase
+from celestron_nexstar.api.core.enums import CelestialObjectType
 
 
 # Import search_objects conditionally - it may trigger astropy import
 try:
-    from celestron_nexstar.api.catalogs import search_objects
+    from celestron_nexstar.api.catalogs.catalogs import search_objects
 except Exception:
     # If import fails due to astropy/deal conflict, skip search_objects tests
     search_objects = None
@@ -115,7 +115,7 @@ class TestCelestialObject(unittest.TestCase):
 
     def test_with_current_position_dynamic_object(self):
         """Test with_current_position updates position for dynamic objects"""
-        with patch("celestron_nexstar.api.catalogs.get_planetary_position", return_value=(12.0, 30.0)):
+        with patch("celestron_nexstar.api.catalogs.catalogs.get_planetary_position", return_value=(12.0, 30.0)):
             result = self.planet.with_current_position()
             self.assertIsNot(result, self.planet)  # Should return new object
             self.assertEqual(result.ra_hours, 12.0)
@@ -123,7 +123,7 @@ class TestCelestialObject(unittest.TestCase):
 
     def test_with_current_position_dynamic_object_failure(self):
         """Test with_current_position handles ephemeris calculation failure"""
-        with patch("celestron_nexstar.api.catalogs.get_planetary_position", side_effect=ValueError("Not found")):
+        with patch("celestron_nexstar.api.catalogs.catalogs.get_planetary_position", side_effect=ValueError("Not found")):
             result = self.planet.with_current_position()
             # Should return original object on failure
             self.assertEqual(result.ra_hours, 10.0)
@@ -132,7 +132,7 @@ class TestCelestialObject(unittest.TestCase):
     def test_with_current_position_with_datetime(self):
         """Test with_current_position accepts datetime parameter"""
         dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-        with patch("celestron_nexstar.api.catalogs.get_planetary_position", return_value=(15.0, 40.0)) as mock_get:
+        with patch("celestron_nexstar.api.catalogs.catalogs.get_planetary_position", return_value=(15.0, 40.0)) as mock_get:
             self.planet.with_current_position(dt=dt)
             mock_get.assert_called_once()
             # Check that dt was passed (via call args)
@@ -164,7 +164,7 @@ class TestGetObjectByName(unittest.TestCase):
             catalog="bright_stars",
         )
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_exact_match(self, mock_get_db):
         """Test get_object_by_name with exact match"""
         mock_get_db.return_value = self.mock_db
@@ -176,7 +176,7 @@ class TestGetObjectByName(unittest.TestCase):
         self.assertEqual(result[0].name, "Rigil Kentaurus")
         self.mock_db.get_by_name.assert_called_once_with("Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_without_catalog_name(self, mock_get_db):
         """Test get_object_by_name without optional catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
@@ -188,7 +188,7 @@ class TestGetObjectByName(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_with_catalog_name(self, mock_get_db):
         """Test get_object_by_name with catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
@@ -199,7 +199,7 @@ class TestGetObjectByName(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, "Rigil Kentaurus")
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_no_exact_match_uses_search(self, mock_get_db):
         """Test get_object_by_name falls back to FTS search when no exact match"""
         mock_get_db.return_value = self.mock_db
@@ -213,7 +213,7 @@ class TestGetObjectByName(unittest.TestCase):
         self.mock_db.get_by_name.assert_called_once_with("Rigil")
         self.mock_db.search.assert_called_once_with("Rigil", limit=20)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_empty_string(self, mock_get_db):
         """Test get_object_by_name with empty string"""
         # Empty string is caught by deal contract, so expect PreContractError
@@ -222,7 +222,7 @@ class TestGetObjectByName(unittest.TestCase):
 
         mock_get_db.assert_not_called()
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_database_exception(self, mock_get_db):
         """Test get_object_by_name handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
@@ -233,7 +233,7 @@ class TestGetObjectByName(unittest.TestCase):
         # Should return empty list on exception
         self.assertEqual(result, [])
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_filters_duplicates(self, mock_get_db):
         """Test get_object_by_name filters duplicate names from search results"""
         mock_get_db.return_value = self.mock_db
@@ -264,7 +264,7 @@ class TestGetObjectByName(unittest.TestCase):
         # Should only return one (first match)
         self.assertEqual(len(result), 1)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_object_by_name_filters_by_name_contains(self, mock_get_db):
         """Test get_object_by_name only includes objects where name contains query"""
         mock_get_db.return_value = self.mock_db
@@ -314,11 +314,11 @@ class TestSearchObjects(unittest.TestCase):
             description="Spiral galaxy",
         )
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_exact_match_name(self, mock_get_db):
         """Test search_objects finds exact match by name"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         mock_model.name = "M31"
@@ -348,11 +348,11 @@ class TestSearchObjects(unittest.TestCase):
         self.assertEqual(result[0][0].name, "M31")
         self.assertEqual(result[0][1], "exact")
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_without_catalog_name(self, mock_get_db):
         """Test search_objects without optional catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
@@ -367,11 +367,11 @@ class TestSearchObjects(unittest.TestCase):
 
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_with_catalog_name(self, mock_get_db):
         """Test search_objects with catalog_name parameter"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
@@ -385,11 +385,11 @@ class TestSearchObjects(unittest.TestCase):
 
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_substring_match_name(self, mock_get_db):
         """Test search_objects finds substring matches in name"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         mock_model.name = "M31"
@@ -415,11 +415,11 @@ class TestSearchObjects(unittest.TestCase):
         self.assertGreater(len(result), 0)
         # Should find M31 when searching for "M3"
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_with_update_positions_false(self, mock_get_db):
         """Test search_objects with update_positions=False"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         self.mock_db._model_to_object.return_value = self.mock_obj
@@ -434,7 +434,7 @@ class TestSearchObjects(unittest.TestCase):
         # Should not call with_current_position
         self.assertIsInstance(result, list)
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_empty_query(self, mock_get_db):
         """Test search_objects with empty query"""
         # Empty query should be caught by deal.pre, but test the function handles it
@@ -444,7 +444,7 @@ class TestSearchObjects(unittest.TestCase):
         with self.assertRaises(Exception):  # deal.PreContractError
             asyncio.run(search_objects(""))
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_database_exception(self, mock_get_db):
         """Test search_objects handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
@@ -455,11 +455,11 @@ class TestSearchObjects(unittest.TestCase):
         # Should return empty list on exception
         self.assertEqual(result, [])
 
-    @patch("celestron_nexstar.api.database.get_database")
+    @patch("celestron_nexstar.api.database.database.get_database")
     def test_search_objects_fts_search(self, mock_get_db):
         """Test search_objects uses FTS5 for description search"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import CelestialObjectModel
 
         mock_model = MagicMock(spec=CelestialObjectModel)
         mock_model.id = 1
@@ -494,13 +494,13 @@ class TestCatalogLoading(unittest.TestCase):
 
     def setUp(self):
         """Clear cache before each test"""
-        from celestron_nexstar.api.catalogs import _catalog_cache
+        from celestron_nexstar.api.catalogs.catalogs import _catalog_cache
 
         _catalog_cache.clear()
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_catalog_success(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog loads catalog from YAML"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -527,8 +527,8 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(result[0].common_name, "Vega")
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_catalog_not_found(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog raises ValueError for unknown catalog"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -539,8 +539,8 @@ class TestCatalogLoading(unittest.TestCase):
             get_catalog("nonexistent")
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_all_catalogs_dict(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_all_catalogs_dict loads all catalogs"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -575,8 +575,8 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(len(result["messier"]), 1)
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_all_objects(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_all_objects returns all objects from all catalogs"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -608,8 +608,8 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(len(result), 2)  # One from each catalog
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_available_catalogs(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_available_catalogs returns list of catalog names"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -629,8 +629,8 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertEqual(len(result), 3)
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_catalog_with_optional_fields(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog handles optional fields (common_name, description, etc.)"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")
@@ -655,8 +655,8 @@ class TestCatalogLoading(unittest.TestCase):
         self.assertIsNone(result[0].description)
 
     @patch("pathlib.Path.open", create=True)
-    @patch("celestron_nexstar.api.catalogs._get_catalogs_path")
-    @patch("celestron_nexstar.api.catalogs.yaml.safe_load")
+    @patch("celestron_nexstar.api.catalogs.catalogs._get_catalogs_path")
+    @patch("celestron_nexstar.api.catalogs.catalogs.yaml.safe_load")
     def test_get_catalog_with_all_fields(self, mock_yaml_load, mock_get_path, mock_open):
         """Test get_catalog handles all optional fields"""
         mock_get_path.return_value = Path("/test/catalogs.yaml")

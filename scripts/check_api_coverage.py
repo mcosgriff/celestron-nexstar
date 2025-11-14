@@ -32,13 +32,13 @@ def main() -> int:
 
     # Modules we're checking coverage for (excluding utils.py due to astropy issue)
     modules_to_check = [
-        "celestron_nexstar.api.constants",
-        "celestron_nexstar.api.enums",
-        "celestron_nexstar.api.exceptions",
-        "celestron_nexstar.api.types",
-        "celestron_nexstar.api.converters",
-        "celestron_nexstar.api.geohash_utils",
-        "celestron_nexstar.api.protocol",
+        "celestron_nexstar.api.core.constants",
+        "celestron_nexstar.api.core.enums",
+        "celestron_nexstar.api.core.exceptions",
+        "celestron_nexstar.api.core.types",
+        "celestron_nexstar.api.catalogs.catalogs.converters",
+        "celestron_nexstar.api.location.geohash_utils",
+        "celestron_nexstar.api.telescope.telescope.protocol",
     ]
 
     # Use coverage run with unittest to avoid pytest collection issues

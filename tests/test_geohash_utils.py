@@ -6,7 +6,7 @@ Tests geohash encoding, decoding, and spatial search utilities.
 
 import unittest
 
-from celestron_nexstar.api.geohash_utils import (
+from celestron_nexstar.api.location.geohash_utils import (
     decode,
     encode,
     get_neighbors_for_search,

@@ -277,15 +277,15 @@ disable_error_code = ["misc"]  # Disable "Class cannot subclass" errors for Type
 
 # Allow untyped decorators for cachetools.cached (doesn't preserve types)
 [[tool.mypy.overrides]]
-module = "celestron_nexstar.api.catalogs"
+module = "celestron_nexstar.api.catalogs.*"
 disallow_untyped_decorators = false
 warn_unused_ignores = false  # Type ignores needed for cachetools.cached return types
 
 # Suppress unused ignore warnings for alembic import and deal contracts
 [[tool.mypy.overrides]]
 module = [
-    "celestron_nexstar.api.database",
-    "celestron_nexstar.cli.commands.data",
+    "celestron_nexstar.api.database.*",
+    "celestron_nexstar.cli.commands.data.*",
 ]
 warn_unused_ignores = false  # Type ignore needed for alembic.command import and deal contracts
 
@@ -293,13 +293,12 @@ warn_unused_ignores = false  # Type ignore needed for alembic.command import and
 # Deal contracts use lambdas that mypy cannot properly infer types for
 [[tool.mypy.overrides]]
 module = [
-    "celestron_nexstar.api.telescope",
-    "celestron_nexstar.api.observer",
-    "celestron_nexstar.api.catalogs",
-    "celestron_nexstar.api.ephemeris",
-    "celestron_nexstar.api.protocol",
-    "celestron_nexstar.api.database",
-    "celestron_nexstar.api.alignment",
+    "celestron_nexstar.api.telescope.*",
+    "celestron_nexstar.api.location.observer",
+    "celestron_nexstar.api.catalogs.*",
+    "celestron_nexstar.api.ephemeris.*",
+    "celestron_nexstar.api.database.*",
+    "celestron_nexstar.api.observation.*",
 ]
 warn_unused_ignores = false  # Type ignores needed for deal contracts
 disable_error_code = ["misc", "arg-type"]  # Disable lambda type inference errors for deal contracts

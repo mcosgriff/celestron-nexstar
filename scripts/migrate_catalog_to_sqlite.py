@@ -21,8 +21,8 @@ from pathlib import Path
 
 import yaml
 
-from celestron_nexstar.api.database import CatalogDatabase
-from celestron_nexstar.api.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import CatalogDatabase
+from celestron_nexstar.api.core.enums import CelestialObjectType
 
 
 # Add src to path for imports
@@ -97,7 +97,7 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
     # Set metadata using SQLAlchemy
     from sqlalchemy.orm import Session
 
-    from celestron_nexstar.api.models import MetadataModel
+    from celestron_nexstar.api.database.models import MetadataModel
 
     with Session(db._engine) as session:
         # Insert or update metadata

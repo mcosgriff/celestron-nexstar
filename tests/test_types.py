@@ -7,7 +7,7 @@ Tests all type definitions including enums and dataclasses.
 import unittest
 from dataclasses import fields
 
-from celestron_nexstar.api.types import (
+from celestron_nexstar.api.core.types import (
     AlignmentMode,
     EquatorialCoordinates,
     GeographicLocation,

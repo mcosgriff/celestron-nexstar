@@ -10,8 +10,8 @@ sys.path.insert(0, str(project_root / "src"))
 
 from sqlalchemy import inspect, text
 
-from celestron_nexstar.api.database import get_database
-from celestron_nexstar.api.models import CelestialObjectModel, StarNameMappingModel
+from celestron_nexstar.api.database.database import get_database
+from celestron_nexstar.api.database.models import CelestialObjectModel, StarNameMappingModel
 
 
 def main():

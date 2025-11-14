@@ -13,8 +13,8 @@ from prompt_toolkit.layout.containers import FloatContainer
 from prompt_toolkit.layout.layout import Layout
 from rich.console import Console
 
-from .bindings import create_key_bindings
-from .layout import create_layout
+from celestron_nexstar.cli.tui.bindings import create_key_bindings
+from celestron_nexstar.cli.tui.layout import create_layout
 
 
 console = Console()
@@ -23,7 +23,7 @@ console = Console()
 def _change_telescope_interactive() -> None:
     """Interactive telescope selection."""
     try:
-        from ...api.optics import (
+        from celestron_nexstar.api.observation.optics import (
             TelescopeModel,
             get_current_configuration,
             get_telescope_specs,
@@ -83,7 +83,7 @@ def _change_telescope_interactive() -> None:
 def _change_eyepiece_interactive() -> None:
     """Interactive eyepiece selection."""
     try:
-        from ...api.optics import (
+        from celestron_nexstar.api.observation.optics import (
             COMMON_EYEPIECES,
             get_current_configuration,
             set_current_configuration,
@@ -180,7 +180,7 @@ def _change_eyepiece_interactive() -> None:
 def _goto_selected_object() -> None:
     """Goto selected object with telescope."""
     try:
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         selected = state.get_selected_object()
@@ -192,7 +192,7 @@ def _goto_selected_object() -> None:
         obj, vis_info = selected
 
         # Check telescope connection
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         session: PromptSession[str] = PromptSession()
@@ -233,7 +233,7 @@ def _goto_selected_object() -> None:
 def _connect_telescope_interactive() -> None:
     """Interactive telescope connection."""
     try:
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         session: PromptSession[str] = PromptSession()
@@ -241,7 +241,7 @@ def _connect_telescope_interactive() -> None:
             console.print("\n[bold]Telescope is already connected[/bold]\n")
             disconnect = session.prompt("Disconnect? (y/N): ").strip().lower()
             if disconnect == "y":
-                from ..utils.state import clear_telescope
+                from celestron_nexstar.cli.utils.state import clear_telescope
 
                 telescope.disconnect()
                 clear_telescope()
@@ -270,7 +270,7 @@ def _connect_telescope_interactive() -> None:
         telescope = NexStarTelescope(config)
         telescope.connect()
 
-        from ..utils.state import set_telescope
+        from celestron_nexstar.cli.utils.state import set_telescope
 
         set_telescope(telescope)
 
@@ -287,7 +287,7 @@ def _connect_telescope_interactive() -> None:
 def _park_telescope_interactive() -> None:
     """Interactive telescope parking."""
     try:
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         session: PromptSession[str] = PromptSession()
@@ -325,7 +325,7 @@ def _park_telescope_interactive() -> None:
 def _change_tracking_mode_interactive() -> None:
     """Interactive tracking mode selection."""
     try:
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         session: PromptSession[str] = PromptSession()
@@ -334,7 +334,7 @@ def _change_tracking_mode_interactive() -> None:
             session.prompt("Press Enter to continue...")
             return
 
-        from ...api.types import TrackingMode
+        from celestron_nexstar.api.core.types import TrackingMode
 
         console.print("\n[bold]Tracking Mode[/bold]\n")
         console.print("Available modes:")
@@ -378,7 +378,7 @@ def _show_settings_dialog() -> None:
         console.print("─" * 40 + "\n")
 
         # Location settings
-        from ...api.observer import get_observer_location
+        from celestron_nexstar.api.location.observer import get_observer_location
 
         location = get_observer_location()
         console.print("[bold]Location:[/bold]")
@@ -394,7 +394,7 @@ def _show_settings_dialog() -> None:
         console.print("")
 
         # Telescope connection status
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         console.print("[bold]Telescope:[/bold]")
@@ -476,7 +476,7 @@ def _show_location_confirm_dialog(location_name: str, lat: float, lon: float) ->
 def _update_location_interactive() -> None:
     """Interactive location update with geocoding using btop-style dialogs."""
     try:
-        from ...api.observer import geocode_location, set_observer_location
+        from celestron_nexstar.api.location.observer import geocode_location, set_observer_location
 
         # Step 1: Get location input
         query = _show_location_input_dialog()
@@ -646,7 +646,7 @@ class TUIApplication:
 
     def run(self) -> None:
         """Run the TUI application."""
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         while True:
             result = self.app.run()

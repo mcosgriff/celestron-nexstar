@@ -106,12 +106,12 @@ def get_dataset_info() -> FormattedText:
     try:
         import asyncio
 
-        from ...api.database import get_database
+        from celestron_nexstar.api.database.database import get_database
 
         db = get_database()
         stats = asyncio.run(db.get_stats())
 
-        from .state import get_state
+        from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         is_focused = state.focused_pane == "dataset"
@@ -156,7 +156,7 @@ def get_dataset_info() -> FormattedText:
 
         # Get optical configuration
         try:
-            from ...api.optics import get_current_configuration
+            from celestron_nexstar.api.observation.optics import get_current_configuration
 
             config = get_current_configuration()
             lines.append(("", "Telescope:\n"))
@@ -182,8 +182,8 @@ def get_dataset_info() -> FormattedText:
             lines.append(("", "\n"))
 
             # Limiting magnitude
-            from ...api.enums import SkyBrightness
-            from ...api.optics import calculate_limiting_magnitude
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude
 
             limiting_mag = calculate_limiting_magnitude(
                 config.telescope.effective_aperture_mm,
@@ -203,7 +203,7 @@ def get_dataset_info() -> FormattedText:
         lines.append(("", "\n"))
 
         try:
-            from ..utils.state import get_telescope
+            from celestron_nexstar.cli.utils.state import get_telescope
 
             telescope = get_telescope()
             if telescope and telescope.protocol and telescope.protocol.is_open():
@@ -270,7 +270,7 @@ def get_dataset_info() -> FormattedText:
         lines.append(("", "\n"))
 
         try:
-            from .state import get_state
+            from celestron_nexstar.cli.tui.state import get_state
 
             state = get_state()
             if state.session_start_time is None:
@@ -312,7 +312,7 @@ def get_conditions_info() -> FormattedText:
     Returns:
         Formatted text showing weather, sky conditions, and time information
     """
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     is_focused = state.focused_pane == "conditions"
@@ -326,8 +326,8 @@ def get_conditions_info() -> FormattedText:
 
     # Location
     try:
-        from ...api.observer import get_observer_location
-        from ..utils.state import get_telescope
+        from celestron_nexstar.api.location.observer import get_observer_location
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         # Check if telescope has location
         telescope = get_telescope()
@@ -379,7 +379,7 @@ def get_conditions_info() -> FormattedText:
     # Time information
     from datetime import UTC
 
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     if state.time_display_mode == "utc":
@@ -402,8 +402,8 @@ def get_conditions_info() -> FormattedText:
     moon_observer_lat = None
     moon_observer_lon = None
     try:
-        from ...api.observer import get_observer_location
-        from ..utils.state import get_telescope
+        from celestron_nexstar.api.location.observer import get_observer_location
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         # Try telescope GPS first
         telescope = get_telescope()
@@ -428,7 +428,7 @@ def get_conditions_info() -> FormattedText:
     # Moon information
     if moon_observer_lat is not None and moon_observer_lon is not None:
         try:
-            from ...api.solar_system import get_moon_info
+            from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 
             moon_info = get_moon_info(moon_observer_lat, moon_observer_lon, now)
             if moon_info:
@@ -454,7 +454,7 @@ def get_conditions_info() -> FormattedText:
     # Sun information
     if moon_observer_lat is not None and moon_observer_lon is not None:
         try:
-            from ...api.solar_system import get_sun_info
+            from celestron_nexstar.api.astronomy.solar_system import get_sun_info
 
             sun_info = get_sun_info(moon_observer_lat, moon_observer_lon, now)
             if sun_info:
@@ -496,13 +496,13 @@ def get_conditions_info() -> FormattedText:
     try:
         import asyncio
 
-        from ...api.observer import get_observer_location
-        from ...api.weather import assess_observing_conditions, fetch_weather
+        from celestron_nexstar.api.location.observer import get_observer_location
+        from celestron_nexstar.api.location.weather import assess_observing_conditions, fetch_weather
 
         # Get location for weather
         weather_location = None
         try:
-            from ..utils.state import get_telescope
+            from celestron_nexstar.cli.utils.state import get_telescope
 
             telescope = get_telescope()
             if telescope and telescope.protocol and telescope.protocol.is_open():
@@ -514,7 +514,7 @@ def get_conditions_info() -> FormattedText:
                         and telescope_location.longitude != 0.0
                     ):
                         # Create ObserverLocation from telescope location
-                        from ...api.observer import ObserverLocation
+                        from celestron_nexstar.api.location.observer import ObserverLocation
 
                         weather_location = ObserverLocation(
                             latitude=telescope_location.latitude,
@@ -584,7 +584,7 @@ def get_conditions_info() -> FormattedText:
     # Get seeing score from observation planner
     seeing_score: float | None = None
     try:
-        from ...api.observation_planner import ObservationPlanner
+        from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
         planner = ObservationPlanner()
         conditions = planner.get_tonight_conditions()
@@ -626,8 +626,8 @@ def get_conditions_info() -> FormattedText:
 
     # Additional info
     try:
-        from ...api.enums import SkyBrightness
-        from ...api.optics import calculate_limiting_magnitude, get_current_configuration
+        from celestron_nexstar.api.core.enums import SkyBrightness
+        from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude, get_current_configuration
 
         config = get_current_configuration()
         if config:
@@ -651,12 +651,12 @@ def get_conditions_info() -> FormattedText:
     # Light pollution information
     lines.append(("", "  Light Pollution: "))
     try:
-        from ...api.light_pollution import BortleClass, get_light_pollution_data
+        from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
 
         # Get location for light pollution (same logic as weather)
         lp_location = None
         try:
-            from ..utils.state import get_telescope
+            from celestron_nexstar.cli.utils.state import get_telescope
 
             telescope = get_telescope()
             if telescope and telescope.protocol and telescope.protocol.is_open():
@@ -682,7 +682,7 @@ def get_conditions_info() -> FormattedText:
             try:
 
                 async def _get_light_data() -> Any:
-                    from ...api.models import get_db_session
+                    from celestron_nexstar.api.database.models import get_db_session
 
                     async with get_db_session() as db_session:
                         return await get_light_pollution_data(db_session, lp_location[0], lp_location[1])
@@ -740,7 +740,7 @@ def get_visible_objects_info() -> FormattedText:
     Returns:
         Formatted text showing currently visible celestial objects
     """
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     is_focused = state.focused_pane == "visible"
@@ -753,10 +753,10 @@ def get_visible_objects_info() -> FormattedText:
     lines.append(("", "─" * 40 + "\n"))
 
     try:
-        from ...api.database import get_database
-        from ...api.observer import get_observer_location
-        from ...api.optics import get_current_configuration
-        from ...api.visibility import filter_visible_objects
+        from celestron_nexstar.api.database.database import get_database
+        from celestron_nexstar.api.location.observer import get_observer_location
+        from celestron_nexstar.api.observation.optics import get_current_configuration
+        from celestron_nexstar.api.observation.visibility import filter_visible_objects
 
         # Get configuration
         config = get_current_configuration()
@@ -766,7 +766,7 @@ def get_visible_objects_info() -> FormattedText:
         observer_lon = None
 
         try:
-            from ..utils.state import get_telescope
+            from celestron_nexstar.cli.utils.state import get_telescope
 
             telescope = get_telescope()
             if telescope and telescope.protocol and telescope.protocol.is_open():
@@ -798,8 +798,8 @@ def get_visible_objects_info() -> FormattedText:
 
         # Get objects from database
         db = get_database()
-        from ...api.enums import SkyBrightness
-        from ...api.optics import calculate_limiting_magnitude
+        from celestron_nexstar.api.core.enums import SkyBrightness
+        from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude
 
         if config:
             max_mag = calculate_limiting_magnitude(
@@ -857,8 +857,8 @@ def get_visible_objects_info() -> FormattedText:
             ]
 
         # Apply sorting
-        from ...api.catalogs import CelestialObject
-        from ...api.visibility import VisibilityInfo
+        from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+        from celestron_nexstar.api.observation.visibility import VisibilityInfo
 
         def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple[float | str, ...]:
             obj, vis_info = item
@@ -901,7 +901,7 @@ def get_visible_objects_info() -> FormattedText:
         if state.show_detail and state.focused_pane == "visible":
             selected = state.get_selected_object()
             if selected:
-                from .detail import get_object_detail_text
+                from celestron_nexstar.cli.tui.detail import get_object_detail_text
 
                 detail_text = get_object_detail_text(selected[0], selected[1])
                 # Add detail lines to output
@@ -980,7 +980,7 @@ def get_header_info() -> FormattedText:
 
     # Connection status
     try:
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         if telescope and telescope.protocol and telescope.protocol.is_open():
@@ -993,7 +993,7 @@ def get_header_info() -> FormattedText:
     # Time
     from datetime import UTC
 
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     if state.time_display_mode == "utc":
@@ -1017,14 +1017,14 @@ def get_status_info() -> FormattedText:
     Returns:
         Formatted text for status bar showing position, tracking info, and help
     """
-    from .state import get_state
+    from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
     lines: list[tuple[str, str]] = []
 
     # Telescope position if connected
     try:
-        from ..utils.state import get_telescope
+        from celestron_nexstar.cli.utils.state import get_telescope
 
         telescope = get_telescope()
         if telescope and telescope.protocol and telescope.protocol.is_open():

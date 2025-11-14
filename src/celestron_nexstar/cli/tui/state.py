@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from ...api.catalogs import CelestialObject
-    from ...api.visibility import VisibilityInfo
+    from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+    from celestron_nexstar.api.observation.visibility import VisibilityInfo
 
 
 @dataclass

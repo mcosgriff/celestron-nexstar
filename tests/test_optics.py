@@ -7,8 +7,8 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from celestron_nexstar.api.enums import SkyBrightness
-from celestron_nexstar.api.optics import (
+from celestron_nexstar.api.core.enums import SkyBrightness
+from celestron_nexstar.api.observation.optics import (
     COMMON_EYEPIECES,
     TELESCOPE_SPECS,
     EyepieceSpecs,
@@ -377,7 +377,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         """Clean up after each test."""
         clear_current_configuration()
 
-    @patch("celestron_nexstar.api.optics.get_config_path")
+    @patch("celestron_nexstar.api.observation.optics.get_config_path")
     def test_save_configuration(self, mock_get_config_path):
         """Test saving optical configuration to file."""
         mock_path = MagicMock()
@@ -389,7 +389,7 @@ class TestConfigurationPersistence(unittest.TestCase):
 
         mock_path.open.assert_called_once_with("w")
 
-    @patch("celestron_nexstar.api.optics.get_config_path")
+    @patch("celestron_nexstar.api.observation.optics.get_config_path")
     def test_load_configuration_file_not_exists(self, mock_get_config_path):
         """Test loading configuration when file doesn't exist."""
         mock_path = MagicMock()
@@ -400,7 +400,7 @@ class TestConfigurationPersistence(unittest.TestCase):
 
         self.assertIsNone(config)
 
-    @patch("celestron_nexstar.api.optics.get_config_path")
+    @patch("celestron_nexstar.api.observation.optics.get_config_path")
     def test_load_configuration_success(self, mock_get_config_path):
         """Test successfully loading configuration from file."""
         mock_path = MagicMock()
@@ -425,7 +425,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.assertEqual(config.telescope.model, TelescopeModel.NEXSTAR_6SE)
         self.assertEqual(config.eyepiece.focal_length_mm, 25)
 
-    @patch("celestron_nexstar.api.optics.get_config_path")
+    @patch("celestron_nexstar.api.observation.optics.get_config_path")
     def test_load_configuration_corrupted_file(self, mock_get_config_path):
         """Test loading configuration with corrupted file."""
         mock_path = MagicMock()
@@ -438,7 +438,7 @@ class TestConfigurationPersistence(unittest.TestCase):
 
         self.assertIsNone(config)
 
-    @patch("celestron_nexstar.api.optics.load_configuration")
+    @patch("celestron_nexstar.api.observation.optics.load_configuration")
     def test_get_current_configuration_from_file(self, mock_load):
         """Test getting current configuration loads from file."""
         mock_load.return_value = self.config
@@ -448,7 +448,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.assertEqual(config, self.config)
         mock_load.assert_called_once()
 
-    @patch("celestron_nexstar.api.optics.load_configuration")
+    @patch("celestron_nexstar.api.observation.optics.load_configuration")
     def test_get_current_configuration_default(self, mock_load):
         """Test getting current configuration returns default if no saved config."""
         mock_load.return_value = None
@@ -460,7 +460,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         self.assertEqual(config.telescope.model, TelescopeModel.NEXSTAR_6SE)
         self.assertEqual(config.eyepiece.focal_length_mm, 25)
 
-    @patch("celestron_nexstar.api.optics.load_configuration")
+    @patch("celestron_nexstar.api.observation.optics.load_configuration")
     def test_get_current_configuration_cached(self, mock_load):
         """Test that configuration is cached."""
         mock_load.return_value = self.config
@@ -474,7 +474,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         mock_load.assert_called_once()
         self.assertEqual(config1, config2)
 
-    @patch("celestron_nexstar.api.optics.save_configuration")
+    @patch("celestron_nexstar.api.observation.optics.save_configuration")
     def test_set_current_configuration_with_save(self, mock_save):
         """Test setting current configuration with save=True."""
         set_current_configuration(self.config, save=True)
@@ -485,7 +485,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         current = get_current_configuration()
         self.assertEqual(current, self.config)
 
-    @patch("celestron_nexstar.api.optics.save_configuration")
+    @patch("celestron_nexstar.api.observation.optics.save_configuration")
     def test_set_current_configuration_without_save(self, mock_save):
         """Test setting current configuration with save=False."""
         set_current_configuration(self.config, save=False)
@@ -496,7 +496,7 @@ class TestConfigurationPersistence(unittest.TestCase):
         current = get_current_configuration()
         self.assertEqual(current, self.config)
 
-    @patch("celestron_nexstar.api.optics.load_configuration")
+    @patch("celestron_nexstar.api.observation.optics.load_configuration")
     def test_clear_current_configuration(self, mock_load):
         """Test clearing cached configuration."""
         mock_load.return_value = self.config
