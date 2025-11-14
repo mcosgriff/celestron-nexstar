@@ -155,8 +155,30 @@ async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> 
         if existing:
             continue
 
+        # Filter out fields that don't exist in the model
+        # MeteorShowerModel doesn't have peak_end_month or peak_end_day
+        model_fields = {
+            "name",
+            "code",
+            "start_month",
+            "start_day",
+            "end_month",
+            "end_day",
+            "peak_month",
+            "peak_day",
+            "radiant_ra_hours",
+            "radiant_dec_degrees",
+            "radiant_constellation",
+            "zhr_peak",
+            "velocity_km_s",
+            "parent_comet",
+            "best_time",
+            "notes",
+        }
+        filtered_item = {k: v for k, v in item.items() if k in model_fields}
+
         # Create new meteor shower
-        shower = MeteorShowerModel(**item)
+        shower = MeteorShowerModel(**filtered_item)
         db_session.add(shower)
         added += 1
 
@@ -199,8 +221,27 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
         if existing:
             continue
 
+        # Filter out fields that don't exist in the model
+        # ConstellationModel doesn't have magnitude or hemisphere (these are calculated)
+        model_fields = {
+            "name",
+            "abbreviation",
+            "common_name",
+            "ra_hours",
+            "dec_degrees",
+            "ra_min_hours",
+            "ra_max_hours",
+            "dec_min_degrees",
+            "dec_max_degrees",
+            "area_sq_deg",
+            "brightest_star",
+            "mythology",
+            "season",
+        }
+        filtered_item = {k: v for k, v in item.items() if k in model_fields}
+
         # Create new constellation
-        constellation = ConstellationModel(**item)
+        constellation = ConstellationModel(**filtered_item)
         db_session.add(constellation)
         added += 1
 

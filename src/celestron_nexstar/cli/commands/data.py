@@ -1890,10 +1890,17 @@ def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) ->
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     if response.status == 200:
                         text = await response.text()
-                        return _parse_mpc_comet_data(text, max_magnitude)
+                        parsed = _parse_mpc_comet_data(text, max_magnitude)
+                        if parsed:
+                            console.print(f"[green]✓[/green] Fetched {len(parsed)} comets from MPC")
+                        return parsed
+                    else:
+                        console.print(f"[yellow]⚠[/yellow] MPC returned status {response.status}")
+            except aiohttp.ClientError as e:
+                console.print(f"[yellow]⚠[/yellow] Network error fetching from MPC: {e}")
             except Exception as e:
-                console.print(f"[yellow]⚠[/yellow] Could not fetch from MPC: {e}")
-                console.print("[dim]Falling back to alternative sources...[/dim]")
+                console.print(f"[yellow]⚠[/yellow] Error fetching from MPC: {e}")
+                console.print(f"[dim]Error type: {type(e).__name__}[/dim]")
 
         return []
 
@@ -1956,40 +1963,45 @@ def _parse_mpc_comet_data(text: str, max_magnitude: float) -> list[dict[str, Any
             continue
 
         try:
-            # MPC format: Designation, Epoch, q, e, i, w, Node, T, H, G
-            # Example: "   12P/Pons-Brooks   2024 04 21.1234  0.780  0.955  74.2  198.9  255.9  2024 04 21.1234  5.0  4.0"
+            # MPC format: Designation code, Epoch (Y M D), q, e, i, w, Node, T (YYYYMMDD), H, G, Full name, Reference
+            # Example: "CJ95O010  1997 03 30.4369  0.910384  0.994930  130.3983  281.9480   89.6379  20251113  -2.0  4.0  C/1995 O1 (Hale-Bopp)  MPEC 2022-S20"
             parts = line.split()
-            if len(parts) < 10:
+            if len(parts) < 12:
                 continue
 
-            # Extract designation (first field, may contain spaces)
-            designation = parts[0]
-            if len(parts) > 10:
-                # Designation might be multiple words
-                designation = " ".join(parts[: len(parts) - 9])
-
-            # Parse orbital elements
-            # Epoch, q (perihelion distance), e (eccentricity), i (inclination),
-            # w (argument of perihelion), Node (longitude of ascending node),
-            # T (time of perihelion), H (absolute magnitude), G (magnitude slope)
-            q = float(parts[-6])  # Perihelion distance in AU
-            e = float(parts[-5])  # Eccentricity
+            # Parse orbital elements (fixed positions)
+            # Parts: [0]=designation_code, [1]=epoch_year, [2]=epoch_month, [3]=epoch_day,
+            #        [4]=q, [5]=e, [6]=i, [7]=w, [8]=Node, [9]=T (YYYYMMDD), [10]=H, [11]=G,
+            #        [12+]=full_name, [last]=reference
+            q = float(parts[4])  # Perihelion distance in AU
+            e = float(parts[5])  # Eccentricity
             # i, w, Node skipped for now
-            t_year = int(parts[-3])
-            t_month = int(parts[-2])
-            t_day = float(parts[-1])
+            t_yyyymmdd = parts[9]  # Time of perihelion as YYYYMMDD
+            h_magnitude = float(parts[10])  # Absolute magnitude H
+            # G (magnitude slope) is in parts[11], but we don't use it
+
+            # Parse perihelion date from YYYYMMDD format
+            if len(t_yyyymmdd) == 8:
+                t_year = int(t_yyyymmdd[:4])
+                t_month = int(t_yyyymmdd[4:6])
+                t_day = int(t_yyyymmdd[6:8])
+            else:
+                # Fallback: try to parse from epoch if T format is unexpected
+                t_year = int(parts[1])
+                t_month = int(parts[2])
+                t_day = int(float(parts[3]))
 
             # Calculate perihelion date
-            perihelion_date = datetime(t_year, t_month, int(t_day), tzinfo=UTC)
+            perihelion_date = datetime(t_year, t_month, t_day, tzinfo=UTC)
 
-            # Estimate peak magnitude from absolute magnitude H
-            # This is a rough estimate - actual magnitude depends on distance from Earth
-            h_magnitude = 5.0  # Default if not provided
-            if len(parts) >= 12:
-                from contextlib import suppress
-
-                with suppress(ValueError, IndexError):
-                    h_magnitude = float(parts[-2])
+            # Extract full designation name (everything between G and the last field)
+            if len(parts) > 12:
+                # Full name is from parts[12] to parts[-2] (last is reference)
+                full_name_parts = parts[12:-1] if len(parts) > 13 else parts[12:]
+                designation = " ".join(full_name_parts)
+            else:
+                # Fallback to designation code
+                designation = parts[0]
 
             # Rough magnitude estimate (comets are brightest near perihelion)
             peak_magnitude = h_magnitude + 5.0  # Rough estimate
@@ -2006,7 +2018,7 @@ def _parse_mpc_comet_data(text: str, max_magnitude: float) -> list[dict[str, Any
                 a = q / (1 - e)
                 period_years = (a**1.5) ** 0.5  # Kepler's third law
 
-            # Get name from designation
+            # Use designation as name
             name = designation
 
             comet = {
@@ -2053,46 +2065,65 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
         # VSX API endpoint
         # Note: VSX may have rate limits, so we'll query well-known bright stars
         # For a full catalog, we'd need to use VSX's search API or download the full catalog
+        # VSX uses abbreviated constellation names (e.g., "R Boo" not "R Bootis")
         well_known_names = [
-            "Algol",
-            "Mira",
-            "Delta Cephei",
-            "Beta Lyrae",
-            "Rigel",
-            "Betelgeuse",
-            "R Leonis",
-            "R Hydrae",
-            "Chi Cygni",
-            "R Cassiopeiae",
-            "R Carinae",
-            "R Doradus",
-            "R Centauri",
-            "R Bootis",
-            "R Virginis",
-            "R Ursae Majoris",
-            "R Canis Majoris",
-            "R Geminorum",
-            "R Aurigae",
-            "R Andromedae",
+            "Algol",  # bet Per
+            "Mira",  # omi Cet
+            "del Cep",  # Delta Cephei
+            "bet Lyr",  # Beta Lyrae
+            "R Leo",  # R Leonis
+            "R Hya",  # R Hydrae
+            "chi Cyg",  # Chi Cygni
+            "R Cas",  # R Cassiopeiae
+            "R Car",  # R Carinae
+            "R Dor",  # R Doradus
+            "R Cen",  # R Centauri
+            "R Boo",  # R Bootis
+            "R Vir",  # R Virginis
+            "R UMa",  # R Ursae Majoris
+            "R CMa",  # R Canis Majoris
+            "R Gem",  # R Geminorum
+            "R Aur",  # R Aurigae
+            "R And",  # R Andromedae
         ]
+
+        from urllib.parse import quote
 
         async with aiohttp.ClientSession() as session:
             fetched_stars = []
             for name in well_known_names:
                 try:
-                    url = f"https://www.aavso.org/vsx/index.php?view=api.object&format=json&ident={name}"
+                    # URL-encode the star name to handle spaces and special characters
+                    encoded_name = quote(name)
+                    # Use vsx.aavso.org directly (www.aavso.org redirects)
+                    url = f"https://vsx.aavso.org/index.php?view=api.object&format=json&ident={encoded_name}"
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                         if response.status == 200:
-                            data = await response.json()
-                            star = _parse_vsx_data(data, max_magnitude)
-                            if star:
-                                fetched_stars.append(star)
+                            try:
+                                data = await response.json()
+                                star = _parse_vsx_data(data, max_magnitude)
+                                if star:
+                                    fetched_stars.append(star)
+                                    console.print(f"[dim]✓ Fetched {name}[/dim]")
+                                else:
+                                    console.print(
+                                        f"[dim]✗ {name}: Parsed but filtered out (magnitude or missing data)[/dim]"
+                                    )
+                            except Exception as parse_error:
+                                # Check if response is HTML (error page) instead of JSON
+                                text = await response.text()
+                                if text.strip().startswith("<"):
+                                    console.print(f"[dim]✗ {name}: API returned HTML (not found or error)[/dim]")
+                                else:
+                                    console.print(f"[dim]✗ {name}: Parse error: {parse_error}[/dim]")
+                        else:
+                            console.print(f"[dim]✗ {name}: HTTP {response.status}[/dim]")
                         # Small delay to avoid rate limiting
                         import asyncio
 
                         await asyncio.sleep(0.5)
                 except Exception as e:
-                    console.print(f"[dim]Error fetching {name}: {e}[/dim]")
+                    console.print(f"[dim]✗ {name}: Error: {e}[/dim]")
                     continue
 
             return fetched_stars
@@ -2157,17 +2188,38 @@ def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
     VSX API returns JSON with star information.
     Format: https://www.aavso.org/vsx/index.php?view=api.doc
     """
+    import re
+
     try:
-        # VSX API can return single object or list
+        # VSX API returns data wrapped in "VSXObject" key
+        # Format: {"VSXObject": {"Name": "...", ...}} or {"VSXObject": []} if not found
         star_data: dict[str, Any] | None = None
-        if isinstance(data, list) and len(data) > 0:
+        if isinstance(data, dict):
+            # Check if wrapped in VSXObject
+            if "VSXObject" in data:
+                vsx_obj = data["VSXObject"]
+                # Handle empty array (star not found)
+                if isinstance(vsx_obj, list):
+                    if len(vsx_obj) == 0:
+                        return None  # Star not found
+                    # If it's a list with items, take the first one
+                    vsx_obj = vsx_obj[0]
+                # Now vsx_obj should be a dict
+                if isinstance(vsx_obj, dict) and "Name" in vsx_obj:
+                    star_data = vsx_obj
+            # Or it might be a dict with Name directly
+            elif "Name" in data:
+                star_data = data
+        elif isinstance(data, list) and len(data) > 0:
             # If it's a list, take the first element
             first_item = data[0]
             if isinstance(first_item, dict):
-                star_data = first_item
-        elif isinstance(data, dict):
-            # If it's a dict, use it directly
-            star_data = data
+                if "VSXObject" in first_item:
+                    vsx_obj = first_item["VSXObject"]
+                    if isinstance(vsx_obj, dict) and "Name" in vsx_obj:
+                        star_data = vsx_obj
+                elif "Name" in first_item:
+                    star_data = first_item
 
         if star_data is None or "Name" not in star_data:
             return None
@@ -2187,6 +2239,7 @@ def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
         dec_degrees = float(dec_deg)
 
         # Extract magnitude range
+        # VSX returns magnitudes as strings like "2.09 V" or "3.30 V"
         max_mag = star_data.get("MaxMag", star_data.get("Max", None))
         min_mag = star_data.get("MinMag", star_data.get("Min", None))
 
@@ -2198,8 +2251,22 @@ def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
         if max_mag is None or min_mag is None:
             return None
 
-        max_mag_float = float(max_mag)
-        min_mag_float = float(min_mag)
+        # Parse magnitude strings (e.g., "2.09 V" -> 2.09)
+        def parse_magnitude(mag: Any) -> float | None:
+            if mag is None:
+                return None
+            mag_str = str(mag).strip()
+            # Extract numeric value (handle formats like "2.09 V" or "3.30")
+            match = re.match(r"([+-]?\d+\.?\d*)", mag_str)
+            if match:
+                return float(match.group(1))
+            return None
+
+        max_mag_float = parse_magnitude(max_mag)
+        min_mag_float = parse_magnitude(min_mag)
+
+        if max_mag_float is None or min_mag_float is None:
+            return None
 
         # Check magnitude limit
         if max_mag_float > max_magnitude:
