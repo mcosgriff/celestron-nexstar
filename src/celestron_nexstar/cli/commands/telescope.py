@@ -502,7 +502,9 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 @app.command("objects", rich_help_panel="Object Recommendations")
 def show_objects(
     target_type: str | None = typer.Option(
-        None, "--type", help="Filter by type (all, planets, deep_sky, messier, etc.)"
+        None,
+        "--type",
+        help="Filter by type: categories (planets, deep_sky, messier, etc.) or object types (galaxy, cluster, nebula, planet, star, etc.)",
     ),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
@@ -546,6 +548,11 @@ def _show_objects_content(
         conditions = planner.get_tonight_conditions()
 
         # Interactive selection if target_type not provided
+        from ...api.enums import CelestialObjectType
+
+        # Type can be None, list of ObservingTarget, or a single CelestialObjectType
+        target_types: list[ObservingTarget] | CelestialObjectType | None = None
+
         if target_type is None:
             target_type = _select_object_type_interactive()
             if target_type is None:
@@ -553,18 +560,37 @@ def _show_objects_content(
             elif target_type == "all":
                 target_types = None  # Show all types
             else:
-                target_types = [ObservingTarget(target_type)]
-        else:
-            # Parse target types
-            if target_type.lower() == "all":
-                target_types = None  # Show all types
-            else:
+                # Try as ObservingTarget first (categories)
                 try:
                     target_types = [ObservingTarget(target_type)]
                 except ValueError:
-                    output_console.print(f"[red]Invalid target type: {target_type}[/red]")
-                    output_console.print(f"Valid types: all, {', '.join([t.value for t in ObservingTarget])}")
-                    raise typer.Exit(code=1) from None
+                    # Try as CelestialObjectType (specific object types)
+                    try:
+                        obj_type = CelestialObjectType(target_type)
+                        target_types = obj_type  # Pass directly as CelestialObjectType
+                    except ValueError:
+                        output_console.print(f"[red]Invalid target type: {target_type}[/red]")
+                        raise typer.Exit(code=1) from None
+        else:
+            # Parse target types - support both ObservingTarget categories and CelestialObjectType values
+            if target_type.lower() == "all":
+                target_types = None  # Show all types
+            else:
+                # Try as ObservingTarget first (categories)
+                try:
+                    target_types = [ObservingTarget(target_type.lower())]
+                except ValueError:
+                    # Try as CelestialObjectType (specific object types)
+                    try:
+                        obj_type = CelestialObjectType(target_type.lower())
+                        # Pass the object type directly to the planner
+                        # We'll handle this in get_recommended_objects
+                        target_types = obj_type  # Special marker for direct object type
+                    except ValueError:
+                        output_console.print(f"[red]Invalid target type: {target_type}[/red]")
+                        output_console.print(f"Valid categories: all, {', '.join([t.value for t in ObservingTarget])}")
+                        output_console.print(f"Valid object types: {', '.join([t.value for t in CelestialObjectType])}")
+                        raise typer.Exit(code=1) from None
 
         objects = planner.get_recommended_objects(
             conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing
@@ -616,9 +642,12 @@ def _show_objects_content(
                 else:
                     moon_sep_text = f"[green]{obj_rec.moon_separation_deg:.0f}°[/green]"  # Good separation
 
+            # Use common name if available, otherwise use catalog name
+            display_name = obj.common_name or obj.name
+
             table.add_row(
                 priority_stars,
-                obj.name,
+                display_name,
                 obj.object_type.value,
                 f"{obj_rec.apparent_magnitude:.1f}" if obj_rec.apparent_magnitude else "-",
                 f"{obj_rec.altitude:.0f}°",
@@ -1083,7 +1112,27 @@ def _select_object_type_interactive() -> str | None:
         display_name = "All Types"
         description = "Show all object types (no filtering)"
 
-    object_types: list[ObservingTarget | AllOption] = [AllOption(), *list(ObservingTarget)]
+    from ...api.enums import CelestialObjectType
+
+    # Add separator-like entry for object types
+    class Separator:
+        """Visual separator in menu."""
+
+        value = "__separator__"
+        display_name = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        description = "Specific Object Types"
+
+    # Combine categories and specific object types
+    object_types: list[ObservingTarget | CelestialObjectType | AllOption | Separator] = [AllOption()]
+
+    # Add categories first
+    object_types.extend(list(ObservingTarget))
+
+    # Add separator
+    object_types.append(Separator())
+
+    # Add specific object types
+    object_types.extend(list(CelestialObjectType))
 
     # Object type descriptions
     descriptions = {
@@ -1095,10 +1144,21 @@ def _select_object_type_interactive() -> str | None:
         ObservingTarget.MESSIER: "Messier catalog objects",
         ObservingTarget.CALDWELL: "Caldwell catalog objects",
         ObservingTarget.NGC_IC: "NGC and IC catalog objects",
+        CelestialObjectType.STAR: "Individual stars",
+        CelestialObjectType.PLANET: "Planets (same as 'planets' category)",
+        CelestialObjectType.GALAXY: "Galaxies only",
+        CelestialObjectType.NEBULA: "Nebulae only",
+        CelestialObjectType.CLUSTER: "Star clusters only",
+        CelestialObjectType.DOUBLE_STAR: "Double stars (same as 'double_stars' category)",
+        CelestialObjectType.ASTERISM: "Asterisms (star patterns)",
+        CelestialObjectType.CONSTELLATION: "Constellations",
+        CelestialObjectType.MOON: "Moons (same as 'moon' category)",
     }
 
-    def display_object_type(item: ObservingTarget | AllOption) -> tuple[str, ...]:
+    def display_object_type(item: ObservingTarget | CelestialObjectType | AllOption | Separator) -> tuple[str, ...]:
         if isinstance(item, AllOption):
+            return (item.display_name, item.description)
+        if isinstance(item, Separator):
             return (item.display_name, item.description)
         display_name = item.value.replace("_", " ").title()
         description = descriptions.get(item, "Object type")
@@ -1116,5 +1176,8 @@ def _select_object_type_interactive() -> str | None:
 
     if isinstance(selected, AllOption):
         return "all"
+
+    if isinstance(selected, Separator):
+        return None  # Separator selected, shouldn't happen but handle it
 
     return selected.value

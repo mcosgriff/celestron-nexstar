@@ -15,7 +15,7 @@ from enum import StrEnum
 
 from .catalogs import CelestialObject
 from .database import get_database
-from .enums import MoonPhase, SkyBrightness
+from .enums import CelestialObjectType, MoonPhase, SkyBrightness
 from .light_pollution import LightPollutionData, get_light_pollution_data
 from .observer import ObserverLocation, get_observer_location
 from .optics import calculate_limiting_magnitude, get_current_configuration
@@ -403,7 +403,7 @@ class ObservationPlanner:
     def get_recommended_objects(
         self,
         conditions: ObservingConditions | None = None,
-        target_types: list[ObservingTarget] | None = None,
+        target_types: list[ObservingTarget] | CelestialObjectType | None = None,
         max_results: int = 20,
         best_for_seeing: bool = False,
     ) -> list[RecommendedObject]:
@@ -450,9 +450,30 @@ class ObservationPlanner:
 
         # Filter by target types if specified
         if target_types:
+            from .enums import CelestialObjectType
+
             filtered_objects = []
+            seen_coordinates = set()  # Track seen coordinates to avoid duplicates
+
+            # Check if target_types is a direct CelestialObjectType (not a list)
+            is_direct_object_type = isinstance(target_types, CelestialObjectType)
+
             for obj in all_objects:
-                if (
+                # Create a unique key for deduplication based on coordinates
+                # Objects at the same coordinates (within 0.01 hours RA, 0.1 degrees Dec) are considered duplicates
+                # This handles cases like M31 = NGC 224 = Andromeda Galaxy
+                coord_key = (round(obj.ra_hours, 2), round(obj.dec_degrees, 1))
+
+                if coord_key in seen_coordinates:
+                    continue  # Skip duplicate (same object, different catalog entry)
+
+                # Handle direct object type filtering (e.g., "galaxy", "star", "planet")
+                if is_direct_object_type:
+                    if obj.object_type == target_types:
+                        filtered_objects.append(obj)
+                        seen_coordinates.add(coord_key)
+                # Handle ObservingTarget category filtering
+                elif isinstance(target_types, list) and (
                     (ObservingTarget.PLANETS in target_types and obj.object_type.value == "planet")
                     or (ObservingTarget.MESSIER in target_types and obj.catalog == "messier")
                     or (ObservingTarget.CALDWELL in target_types and obj.catalog == "caldwell")
@@ -464,6 +485,7 @@ class ObservationPlanner:
                     or (ObservingTarget.DOUBLE_STARS in target_types and obj.object_type.value == "double_star")
                 ):
                     filtered_objects.append(obj)
+                    seen_coordinates.add(coord_key)
             all_objects = filtered_objects
 
         # Filter by visibility
@@ -528,8 +550,17 @@ class ObservationPlanner:
                     )
                 ]
 
-        # Sort by priority and observability score
-        recommendations.sort(key=lambda r: (r.priority, -r.observability_score))
+        # Sort by priority, then by magnitude (brighter first), then by observability score
+        # Lower magnitude = brighter = better, so we sort ascending by magnitude
+        recommendations.sort(
+            key=lambda r: (
+                r.priority,
+                r.apparent_magnitude
+                if r.apparent_magnitude is not None
+                else 999.0,  # Put objects without magnitude last
+                -r.observability_score,
+            )
+        )
 
         return recommendations[:max_results]
 
@@ -688,6 +719,13 @@ class ObservationPlanner:
         # Priority 2: Bright objects in dark skies
         if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
             return 2
+
+        # Priority 2-3: Bright stars (navigation stars, bright named stars)
+        if obj.object_type.value == "star":
+            if obj.magnitude and obj.magnitude < 2.0:  # Very bright stars (1st magnitude and brighter)
+                return 2
+            elif (obj.magnitude and obj.magnitude < 4.0) or obj.common_name:  # Bright stars (2nd-3rd magnitude)
+                return 3
 
         # Priority 3: Objects well positioned (high altitude)
         if vis_info.altitude_deg and vis_info.altitude_deg > 60:

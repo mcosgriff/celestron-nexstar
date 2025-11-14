@@ -288,9 +288,9 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
     """
     Fetch SQM value from available sources (async).
 
-    Tries database first, then APIs.
+    Tries database first, then APIs only if database doesn't have data.
     """
-    # Try database first (offline, fast)
+    # Try database first (offline, fast, preferred)
     try:
         from .database import get_database
         from .light_pollution_db import get_sqm_from_database
@@ -301,36 +301,41 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
             logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
             return sqm
         else:
-            logger.debug(f"No SQM data in database for {lat},{lon}")
+            logger.debug(f"No SQM data in database for {lat},{lon}, will try API as fallback")
     except Exception as e:
-        logger.warning(f"Database lookup failed: {e}")
+        logger.debug(f"Database lookup failed: {e}, will try API as fallback")
         import traceback
 
         logger.debug(traceback.format_exc())
 
-    # Try primary API
+    # Only try APIs if database doesn't have data
+    # Note: API calls may fail due to network issues or API changes
+    logger.debug("Attempting to fetch from external API (database lookup returned no data)")
     sqm = await _fetch_from_lightpollutionmap_api(lat, lon)
     if sqm is not None:
+        logger.info(f"Fetched SQM {sqm:.2f} from API for {lat},{lon}")
         return sqm
 
-    # Try fallback API
+    # Try fallback API (currently not implemented)
     sqm = await _fetch_from_darksky_api(lat, lon)
     if sqm is not None:
+        logger.info(f"Fetched SQM {sqm:.2f} from fallback API for {lat},{lon}")
         return sqm
 
+    logger.debug("No SQM data available from database or APIs")
     return None
 
 
 def _estimate_sqm_from_location(lat: float, lon: float) -> float:
     """
-    Estimate SQM value without API data (fallback).
+    Estimate SQM value without database or API data (fallback).
 
     Uses simple heuristic based on latitude and rough estimates.
-    This is a last resort when APIs are unavailable.
+    This is a last resort when database and APIs are unavailable.
     """
     # Very rough estimation: assume suburban (Bortle 5) as default
     # In a real implementation, you might use population density data
-    logger.warning("Using estimated SQM value (API unavailable)")
+    logger.warning("Using estimated SQM value (database and API unavailable)")
     return 20.0
 
 
@@ -379,7 +384,18 @@ async def get_light_pollution_data(
         sqm = _estimate_sqm_from_location(lat, lon)
         source = "estimated"
     else:
-        source = "lightpollutionmap.info"
+        # Determine source based on where we got the data
+        # Check if it came from database by trying a quick lookup
+        try:
+            from .database import get_database
+            from .light_pollution_db import get_sqm_from_database
+
+            db = get_database()
+            db_sqm = get_sqm_from_database(lat, lon, db)
+            source = "database" if db_sqm is not None and abs(db_sqm - sqm) < 0.01 else "lightpollutionmap.info"
+        except Exception:
+            # If we can't determine, assume API
+            source = "lightpollutionmap.info"
 
     # Save to cache
     cache_data = _load_cache() or {"data": {}, "timestamp": datetime.now(UTC).isoformat()}

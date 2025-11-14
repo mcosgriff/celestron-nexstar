@@ -23,6 +23,7 @@ from celestron_nexstar.api.catalogs import (
     search_objects,
 )
 from celestron_nexstar.api.database import get_database
+from celestron_nexstar.api.visibility import assess_visibility
 
 from ...cli.utils.export import FileConsole
 from ..utils.database import check_database_setup
@@ -440,7 +441,18 @@ def info(
         if obj is None:
             raise typer.Exit(code=1) from None
 
+        # Assess visibility
+        visibility_info = assess_visibility(obj)
+
         if json_output:
+            visibility_data = {
+                "is_visible": visibility_info.is_visible,
+                "altitude_deg": visibility_info.altitude_deg,
+                "azimuth_deg": visibility_info.azimuth_deg,
+                "limiting_magnitude": visibility_info.limiting_magnitude,
+                "observability_score": visibility_info.observability_score,
+                "reasons": list(visibility_info.reasons),
+            }
             print_json(
                 {
                     "name": obj.name,
@@ -453,6 +465,7 @@ def info(
                     "type": obj.object_type,
                     "catalog": obj.catalog,
                     "description": obj.description,
+                    "visibility": visibility_data,
                 }
             )
         else:
@@ -477,6 +490,47 @@ def info(
             if obj.magnitude:
                 info_text.append(f"  Magnitude: {obj.magnitude:.1f}\n", style="white")
             info_text.append(f"  Catalog:  {obj.catalog}\n", style="white")
+
+            # Visibility information
+            info_text.append("\n")
+            info_text.append("Visibility:\n", style="bold yellow")
+            if visibility_info.is_visible:
+                info_text.append("  Status: ", style="white")
+                info_text.append("✓ Visible\n", style="bold green")
+            else:
+                info_text.append("  Status: ", style="white")
+                info_text.append("✗ Not Visible\n", style="bold red")
+
+            if visibility_info.altitude_deg is not None:
+                info_text.append(f"  Altitude: {visibility_info.altitude_deg:.1f}°\n", style="white")
+            if visibility_info.azimuth_deg is not None:
+                # Convert azimuth to cardinal direction
+                az = visibility_info.azimuth_deg
+                if az < 22.5 or az >= 337.5:
+                    direction = "N"
+                elif az < 67.5:
+                    direction = "NE"
+                elif az < 112.5:
+                    direction = "E"
+                elif az < 157.5:
+                    direction = "SE"
+                elif az < 202.5:
+                    direction = "S"
+                elif az < 247.5:
+                    direction = "SW"
+                elif az < 292.5:
+                    direction = "W"
+                else:
+                    direction = "NW"
+                info_text.append(f"  Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})\n", style="white")
+            info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.1f}\n", style="white")
+            info_text.append(f"  Observability Score: {visibility_info.observability_score:.0%}\n", style="white")
+
+            # Reasons
+            if visibility_info.reasons:
+                info_text.append("\n  Details:\n", style="dim")
+                for reason in visibility_info.reasons:
+                    info_text.append(f"    • {reason}\n", style="dim")
 
             # Description
             if obj.description:
