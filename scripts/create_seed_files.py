@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Import models and data
 from celestron_nexstar.api.constellations import Constellation, FAMOUS_ASTERISMS
-from celestron_nexstar.api.meteor_showers import METEOR_SHOWERS
+from celestron_nexstar.api.meteor_showers import _METEOR_SHOWERS_FALLBACK
 from celestron_nexstar.api.space_events import SPACE_EVENTS_2025
 from celestron_nexstar.api.database_seeder import get_seed_data_path, load_seed_json
 
@@ -103,6 +103,8 @@ def create_meteor_showers_json():
             "end_day": s.activity_end_day,
             "peak_month": s.peak_month,
             "peak_day": s.peak_day,
+            "peak_end_month": s.peak_end_month,
+            "peak_end_day": s.peak_end_day,
             "radiant_ra_hours": s.radiant_ra_hours,
             "radiant_dec_degrees": s.radiant_dec_degrees,
             "radiant_constellation": None,

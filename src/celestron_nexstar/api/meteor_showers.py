@@ -52,8 +52,10 @@ class MeteorShower:
 
 
 # Major annual meteor showers
+# NOTE: This is only used for seed file generation. Runtime code loads from JSON seed data.
+# See get_all_meteor_showers() which loads from seed data.
 # Data from IMO (International Meteor Organization) and reliable sources
-METEOR_SHOWERS = [
+_METEOR_SHOWERS_FALLBACK = [
     MeteorShower(
         name="Quadrantids",
         activity_start_month=12,
@@ -279,8 +281,43 @@ METEOR_SHOWERS = [
 
 
 def get_all_meteor_showers() -> list[MeteorShower]:
-    """Get list of all major meteor showers."""
-    return METEOR_SHOWERS
+    """
+    Get list of all major meteor showers.
+
+    Loads data from seed JSON file. Falls back to hardcoded data if JSON is unavailable.
+    """
+    from .database_seeder import load_seed_json
+
+    try:
+        data = load_seed_json("meteor_showers.json")
+        showers = []
+        for item in data:
+            # Convert JSON data to MeteorShower dataclass
+            # JSON uses start_month/start_day instead of activity_start_month/activity_start_day
+            # JSON uses notes instead of description
+            # JSON doesn't have peak_end_month/peak_end_day, default to peak_month/peak_day
+            shower = MeteorShower(
+                name=item["name"],
+                activity_start_month=item["start_month"],
+                activity_start_day=item["start_day"],
+                activity_end_month=item["end_month"],
+                activity_end_day=item["end_day"],
+                peak_month=item["peak_month"],
+                peak_day=item["peak_day"],
+                peak_end_month=item.get("peak_end_month", item["peak_month"]),
+                peak_end_day=item.get("peak_end_day", item["peak_day"]),
+                zhr_peak=item["zhr_peak"],
+                velocity_km_s=int(item["velocity_km_s"]),
+                radiant_ra_hours=item["radiant_ra_hours"],
+                radiant_dec_degrees=item["radiant_dec_degrees"],
+                parent_comet=item.get("parent_comet"),
+                description=item.get("notes", ""),
+            )
+            showers.append(shower)
+        return showers
+    except Exception as e:
+        logger.warning(f"Failed to load meteor showers from seed data: {e}. Using fallback data.")
+        return _METEOR_SHOWERS_FALLBACK
 
 
 def _is_date_in_range(
@@ -335,7 +372,7 @@ def get_active_showers(date: datetime | None = None) -> list[MeteorShower]:
     day = date.day
 
     active = []
-    for shower in METEOR_SHOWERS:
+    for shower in get_all_meteor_showers():
         if _is_date_in_range(
             month,
             day,
@@ -386,7 +423,7 @@ def get_peak_showers(
         end_day = end_day - 28
 
     peak = []
-    for shower in METEOR_SHOWERS:
+    for shower in get_all_meteor_showers():
         # Check if shower peak overlaps with our date range
         if _is_date_in_range(
             shower.peak_month,
