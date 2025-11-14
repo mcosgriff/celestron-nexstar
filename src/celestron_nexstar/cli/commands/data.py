@@ -596,21 +596,60 @@ def seed_database(
             # Create a table to display status
             from rich.table import Table
 
+            from ...api.database_seeder import get_seed_data_path, load_seed_json
+
+            # Get expected counts from seed files
+            seed_dir = get_seed_data_path()
+            expected_counts: dict[str, int] = {}
+            seed_file_map = {
+                "constellations": "constellations.json",
+                "asterisms": "asterisms.json",
+                "meteor_showers": "meteor_showers.json",
+                "dark_sky_sites": "dark_sky_sites.json",
+                "space_events": "space_events.json",
+            }
+
+            for data_type, filename in seed_file_map.items():
+                try:
+                    json_path = seed_dir / filename
+                    if json_path.exists():
+                        data = load_seed_json(filename)
+                        expected_counts[data_type] = len(data)
+                except Exception:
+                    pass
+
             table = Table(show_header=True, header_style="bold", show_lines=False)
             table.add_column("Data Type", style="cyan", width=25)
+            table.add_column("Expected", justify="right", width=10, style="dim")
             table.add_column("Count", justify="right", width=10)
             table.add_column("Status", width=15)
 
-            for data_type, count in status_data.items():
-                status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+            total_records = 0
+            total_expected = 0
+            for data_type, count in sorted(status_data.items()):
+                expected = expected_counts.get(data_type, 0)
+                total_records += count
+                total_expected += expected
+
+                if expected > 0:
+                    if count == expected:
+                        status_str = "[green]Complete[/green]"
+                    elif count > 0:
+                        status_str = f"[yellow]Partial ({count}/{expected})[/yellow]"
+                    else:
+                        status_str = "[yellow]Not Seeded[/yellow]"
+                else:
+                    status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
 
                 display_name = data_type.replace("_", " ").title()
-                table.add_row(display_name, str(count), status_str)
+                expected_str = f"{expected:,}" if expected > 0 else "-"
+                table.add_row(display_name, expected_str, str(count), status_str)
 
             console.print(table)
 
-            total_records = sum(status_data.values())
-            console.print(f"\n[bold]Total seed records:[/bold] {total_records}")
+            expected_total_str = f"{total_expected:,}" if total_expected > 0 else "-"
+            console.print(f"\n[bold]Expected seed records:[/bold] {expected_total_str}")
+            console.print(f"[bold]Total seed records:[/bold] {total_records}")
             console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
         except Exception as e:
             console.print(f"\n[red]✗[/red] Error checking seed status: {e}\n")
@@ -841,7 +880,7 @@ def stats() -> None:
 
     # Seed data statistics
     try:
-        from ...api.database_seeder import get_seed_status
+        from ...api.database_seeder import get_seed_data_path, get_seed_status, load_seed_json
         from ...api.models import get_db_session
 
         async def _get_seed_status() -> dict[str, int]:
@@ -850,21 +889,58 @@ def stats() -> None:
 
         seed_status = asyncio.run(_get_seed_status())
 
+        # Get expected counts from seed files
+        seed_dir = get_seed_data_path()
+        expected_counts: dict[str, int] = {}
+        seed_file_map = {
+            "constellations": "constellations.json",
+            "asterisms": "asterisms.json",
+            "meteor_showers": "meteor_showers.json",
+            "dark_sky_sites": "dark_sky_sites.json",
+            "space_events": "space_events.json",
+        }
+
+        for data_type, filename in seed_file_map.items():
+            try:
+                json_path = seed_dir / filename
+                if json_path.exists():
+                    data = load_seed_json(filename)
+                    expected_counts[data_type] = len(data)
+            except Exception:
+                pass
+
         seed_table = Table(title="\nSeed Data (Static Reference Data)")
         seed_table.add_column("Data Type", style="cyan")
+        seed_table.add_column("Expected", justify="right", style="dim")
         seed_table.add_column("Count", justify="right", style="green")
         seed_table.add_column("Status", width=15)
 
         total_seed_records = 0
-        for data_type, count in sorted(seed_status.items()):
+        total_expected = 0
+        for data_type in sorted(seed_status.keys()):
+            count = seed_status[data_type]
+            expected = expected_counts.get(data_type, 0)
             total_seed_records += count
-            status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
-            display_name = data_type.replace("_", " ").title()
-            seed_table.add_row(display_name, f"{count:,}", status_str)
+            total_expected += expected
 
-        if total_seed_records > 0:
-            seed_table.add_row("", "", "")
-            seed_table.add_row("[bold]Total[/bold]", f"[bold]{total_seed_records:,}[/bold]", "")
+            if expected > 0:
+                if count == expected:
+                    status_str = "[green]Complete[/green]"
+                elif count > 0:
+                    status_str = f"[yellow]Partial ({count}/{expected})[/yellow]"
+                else:
+                    status_str = "[yellow]Not Seeded[/yellow]"
+            else:
+                status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+
+            display_name = data_type.replace("_", " ").title()
+            expected_str = f"{expected:,}" if expected > 0 else "-"
+            seed_table.add_row(display_name, expected_str, f"{count:,}", status_str)
+
+        if total_seed_records > 0 or total_expected > 0:
+            seed_table.add_row("", "", "", "")
+            expected_total_str = f"{total_expected:,}" if total_expected > 0 else "-"
+            seed_table.add_row("[bold]Total[/bold]", expected_total_str, f"[bold]{total_seed_records:,}[/bold]", "")
 
         console.print(seed_table)
     except Exception:
