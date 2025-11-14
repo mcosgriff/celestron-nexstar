@@ -151,9 +151,18 @@ def neighbors(geohash: str) -> list[str]:
             # Clamp to valid ranges
             neighbor_lat = max(-90.0, min(90.0, neighbor_lat))
             neighbor_lon = max(-180.0, min(180.0, neighbor_lon))
-            neighbors_list.append(encode(neighbor_lat, neighbor_lon, len(geohash)))
+            neighbor_hash = encode(neighbor_lat, neighbor_lon, len(geohash))
+            neighbors_list.append(neighbor_hash)
 
-    return neighbors_list
+    # Remove duplicates and the center point (which can appear after clamping)
+    unique_neighbors = []
+    seen = {geohash}  # Exclude center point
+    for neighbor in neighbors_list:
+        if neighbor not in seen:
+            unique_neighbors.append(neighbor)
+            seen.add(neighbor)
+
+    return unique_neighbors
 
 
 def get_precision_for_radius(radius_km: float) -> int:
