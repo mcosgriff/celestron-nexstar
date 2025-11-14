@@ -374,7 +374,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
     # Helper function to check database
     async def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
         """Check database for cached forecasts. Returns (forecasts, now)."""
-        from sqlalchemy import and_, inspect, select
+        from sqlalchemy import and_, select, text
 
         from .database import get_database
         from .models import Base, WeatherForecastModel
@@ -383,16 +383,24 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
         # Ensure weather_forecast table exists (create if migration hasn't run yet)
         try:
-            inspector = inspect(db._engine.sync_engine)
-            if "weather_forecast" not in inspector.get_table_names():
-                logger.debug("weather_forecast table not found, creating it...")
+
+            async def _check_and_create_table() -> None:
                 async with db._engine.begin() as conn:
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                    # Check if table exists by trying to query it
+                    # If it doesn't exist, create it
+                    try:
+                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
+                    except Exception:
+                        # Table doesn't exist, create it
+                        logger.debug("weather_forecast table not found, creating it...")
+                        await conn.run_sync(
+                            lambda sync_conn: Base.metadata.create_all(
+                                sync_conn,
+                                tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                            )
                         )
-                    )
+
+            await _check_and_create_table()
         except Exception as e:
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
@@ -695,7 +703,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     # Helper function to check database
     async def _check_database_cache() -> WeatherForecastModel | None:
         """Check database for cached weather. Returns cached forecast or None."""
-        from sqlalchemy import and_, inspect, select
+        from sqlalchemy import and_, select, text
 
         from .database import get_database
         from .models import Base, WeatherForecastModel
@@ -704,16 +712,24 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
         # Ensure weather_forecast table exists
         try:
-            inspector = inspect(db._engine.sync_engine)
-            if "weather_forecast" not in inspector.get_table_names():
-                logger.debug("weather_forecast table not found, creating it...")
+
+            async def _check_and_create_table() -> None:
                 async with db._engine.begin() as conn:
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                    # Check if table exists by trying to query it
+                    # If it doesn't exist, create it
+                    try:
+                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
+                    except Exception:
+                        # Table doesn't exist, create it
+                        logger.debug("weather_forecast table not found, creating it...")
+                        await conn.run_sync(
+                            lambda sync_conn: Base.metadata.create_all(
+                                sync_conn,
+                                tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                            )
                         )
-                    )
+
+            await _check_and_create_table()
         except Exception as e:
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
