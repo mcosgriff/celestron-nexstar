@@ -36,6 +36,7 @@ dependencies = [
     "geopy>=2.4.0",
     "prompt-toolkit>=3.0.0",
     "sqlalchemy>=2.0.0",
+    "aiosqlite>=0.20.0",
     "alembic>=1.13.0",
     "sqlalchemyseed>=0.4.0",
     "python-dotenv>=1.2.1",

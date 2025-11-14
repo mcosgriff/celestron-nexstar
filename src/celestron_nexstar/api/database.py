@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import deal
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Row
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from .catalogs import CelestialObject
 from .enums import CelestialObjectType
@@ -151,21 +152,18 @@ class CatalogDatabase:
 
         self.db_path = Path(db_path)
 
-        # Use built-in sqlite3 (no longer need pysqlite3 since SpatiaLite was removed)
-        import sqlite3
-
-        dbapi = sqlite3
-
-        self._engine = create_engine(
-            f"sqlite:///{self.db_path}",
-            module=dbapi,
-            poolclass=None,  # No connection pooling for SQLite
-            connect_args={
-                "check_same_thread": False,  # Allow multi-threaded access
-            },
+        # Use aiosqlite for async SQLite support
+        # SQLite URL format for async: sqlite+aiosqlite:///
+        self._engine = create_async_engine(
+            f"sqlite+aiosqlite:///{self.db_path}",
             echo=False,  # Set to True for SQL debugging
+            future=True,
         )
-        self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._AsyncSession = async_sessionmaker(
+            bind=self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
         self._configure_optimizations()
 
     def _get_default_db_path(self) -> Path:
@@ -179,7 +177,7 @@ class CatalogDatabase:
         """Configure SQLite optimizations via engine events."""
         from sqlalchemy import event
 
-        @event.listens_for(self._engine, "connect")
+        @event.listens_for(self._engine.sync_engine, "connect")
         def set_sqlite_pragmas(dbapi_conn: Any, connection_record: Any) -> None:
             """Set SQLite pragmas for performance."""
             cursor = dbapi_conn.cursor()
@@ -190,14 +188,31 @@ class CatalogDatabase:
             cursor.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
             cursor.close()
 
-    def _get_session(self) -> Session:
-        """Get a new database session."""
-        return self._Session()
+    async def _get_session(self) -> AsyncSession:
+        """Get a new async database session."""
+        return self._AsyncSession()
+
+    def _get_session_sync(self) -> Session:
+        """
+        Get a synchronous session (for backwards compatibility during migration).
+
+        Note: This creates a sync engine temporarily. Use _get_session() for new code.
+        """
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        sync_engine = create_engine(
+            f"sqlite:///{self.db_path}",
+            connect_args={"check_same_thread": False},
+            echo=False,
+        )
+        SyncSession = sessionmaker(bind=sync_engine, expire_on_commit=False)
+        return SyncSession()
 
     @deal.post(lambda result: result is None, message="Close must complete")
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close database connection."""
-        self._engine.dispose()
+        await self._engine.dispose()
 
     def __enter__(self) -> CatalogDatabase:
         """Context manager entry."""
@@ -208,7 +223,7 @@ class CatalogDatabase:
         self.close()
 
     @deal.post(lambda result: result is None, message="Schema initialization must complete")
-    def init_schema(self) -> None:
+    async def init_schema(self) -> None:
         """
         Initialize database schema.
 
@@ -217,13 +232,14 @@ class CatalogDatabase:
         """
         from .models import Base
 
-        # Create all tables
-        Base.metadata.create_all(self._engine)
+        # Create all tables (async)
+        async with self._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
         # Create FTS5 table and triggers (not handled by SQLAlchemy)
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # Create FTS5 virtual table
-            session.execute(
+            await session.execute(
                 text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS objects_fts USING fts5(
                     name,
@@ -236,7 +252,7 @@ class CatalogDatabase:
             )
 
             # Create triggers
-            session.execute(
+            await session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
                     INSERT INTO objects_fts(rowid, name, common_name, description)
@@ -245,7 +261,7 @@ class CatalogDatabase:
             """)
             )
 
-            session.execute(
+            await session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
                     DELETE FROM objects_fts WHERE rowid = old.id;
@@ -253,7 +269,7 @@ class CatalogDatabase:
             """)
             )
 
-            session.execute(
+            await session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
                     UPDATE objects_fts SET
@@ -265,31 +281,32 @@ class CatalogDatabase:
             """)
             )
 
-            session.commit()
+            await session.commit()
 
         logger.info("Database schema initialized")
 
     @deal.post(lambda result: result is None, message="FTS table ensure must complete")
-    def ensure_fts_table(self) -> None:
+    async def ensure_fts_table(self) -> None:
         """
         Ensure the FTS5 table exists. Creates it if missing.
 
         This is useful when the database was created without migrations
         or if the FTS table was accidentally dropped.
         """
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # Check if FTS table exists
-            result = session.execute(
+            result = await session.execute(
                 text("""
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name='objects_fts'
                 """)
-            ).fetchone()
+            )
+            row = result.fetchone()
 
-            if result is None:
+            if row is None:
                 logger.info("Creating missing objects_fts table")
                 # Create FTS5 virtual table
-                session.execute(
+                await session.execute(
                     text("""
                     CREATE VIRTUAL TABLE objects_fts USING fts5(
                         name,
@@ -302,7 +319,7 @@ class CatalogDatabase:
                 )
 
                 # Create triggers
-                session.execute(
+                await session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
                         INSERT INTO objects_fts(rowid, name, common_name, description)
@@ -311,7 +328,7 @@ class CatalogDatabase:
                 """)
                 )
 
-                session.execute(
+                await session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
                         DELETE FROM objects_fts WHERE rowid = old.id;
@@ -319,7 +336,7 @@ class CatalogDatabase:
                 """)
                 )
 
-                session.execute(
+                await session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
                         UPDATE objects_fts SET
@@ -332,18 +349,18 @@ class CatalogDatabase:
                 )
 
                 # Populate FTS table with existing objects
-                session.execute(
+                await session.execute(
                     text("""
                     INSERT INTO objects_fts(rowid, name, common_name, description)
                     SELECT id, name, common_name, description FROM objects
                 """)
                 )
 
-                session.commit()
+                await session.commit()
                 logger.info("FTS table created and populated")
 
     @deal.post(lambda result: result is None, message="FTS repopulation must complete")
-    def repopulate_fts_table(self) -> None:
+    async def repopulate_fts_table(self) -> None:
         """
         Repopulate the FTS table with all existing objects.
 
@@ -353,38 +370,39 @@ class CatalogDatabase:
         Note: For external content tables (content=objects), we need to use
         INSERT OR REPLACE to properly sync the FTS table.
         """
-        self.ensure_fts_table()  # Make sure table exists
+        await self.ensure_fts_table()  # Make sure table exists
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # For external content FTS tables, we need to rebuild the index
             # Delete all existing FTS data first
             try:
-                session.execute(text("DELETE FROM objects_fts"))
-                session.commit()
+                await session.execute(text("DELETE FROM objects_fts"))
+                await session.commit()
             except Exception:
                 pass  # Table might be empty or not exist
 
             # Repopulate from objects table
             # For external content tables, use INSERT OR REPLACE
-            session.execute(
+            await session.execute(
                 text("""
                     INSERT OR REPLACE INTO objects_fts(rowid, name, common_name, description)
                     SELECT id, name, common_name, description FROM objects
                     WHERE name IS NOT NULL
                 """)
             )
-            session.commit()
+            await session.commit()
 
             # Verify the repopulation
             # FTS5 table requires raw SQL (virtual table)
-            fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
+            fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
+            fts_count = fts_result.scalar() or 0
             # Use SQLAlchemy for objects count
             from sqlalchemy import func, select
 
-            objects_count = (
-                session.scalar(select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.name.isnot(None)))
-                or 0
+            objects_result = await session.scalar(
+                select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.name.isnot(None))
             )
+            objects_count = objects_result or 0
 
             logger.info(f"FTS table repopulated: {fts_count} entries (expected {objects_count})")
 
@@ -408,7 +426,7 @@ class CatalogDatabase:
         message="Dec must be -90 to +90 degrees",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result > 0, message="Insert must return positive ID")
-    def insert_object(
+    async def insert_object(
         self,
         name: str,
         catalog: str,
@@ -471,10 +489,10 @@ class CatalogDatabase:
             parent_planet=parent_planet,
         )
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             session.add(model)
-            session.commit()
-            session.refresh(model)
+            await session.commit()
+            await session.refresh(model)
             return model.id
 
     @deal.pre(lambda self, object_id: object_id > 0, message="Object ID must be positive")  # type: ignore[misc,arg-type]
@@ -482,10 +500,10 @@ class CatalogDatabase:
         lambda result: result is None or isinstance(result, CelestialObject),
         message="Must return CelestialObject or None",
     )
-    def get_by_id(self, object_id: int) -> CelestialObject | None:
+    async def get_by_id(self, object_id: int) -> CelestialObject | None:
         """Get object by ID."""
-        with self._get_session() as session:
-            model = session.get(CelestialObjectModel, object_id)
+        async with self._AsyncSession() as session:
+            model = await session.get(CelestialObjectModel, object_id)
             if model is None:
                 return None
             return self._model_to_object(model)
@@ -495,7 +513,7 @@ class CatalogDatabase:
         lambda result: result is None or isinstance(result, CelestialObject),
         message="Must return CelestialObject or None",
     )
-    def get_by_name(self, name: str) -> CelestialObject | None:
+    async def get_by_name(self, name: str) -> CelestialObject | None:
         """
         Get object by exact name match (checks both name and common_name fields).
 
@@ -508,21 +526,27 @@ class CatalogDatabase:
         if not name:
             return None
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
             # Check name field first (most common case)
-            model = session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(name)).first()
+            stmt = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(name)).limit(1)
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
             if model:
                 return self._model_to_object(model)
 
             # If not found in name, check common_name field (exact match only)
-            model = (
-                session.query(CelestialObjectModel)
-                .filter(
+            stmt = (
+                select(CelestialObjectModel)
+                .where(
                     CelestialObjectModel.common_name.isnot(None),
                     CelestialObjectModel.common_name.ilike(name),
                 )
-                .first()
+                .limit(1)
             )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
             if model:
                 return self._model_to_object(model)
 
@@ -530,7 +554,7 @@ class CatalogDatabase:
 
     @deal.pre(lambda self, hr_number: hr_number > 0, message="HR number must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is None or isinstance(result, str), message="Must return string or None")
-    def get_common_name_by_hr(self, hr_number: int) -> str | None:
+    async def get_common_name_by_hr(self, hr_number: int) -> str | None:
         """
         Get common name for a given HR number from star_name_mappings table.
 
@@ -540,10 +564,14 @@ class CatalogDatabase:
         Returns:
             Common name if found, None otherwise
         """
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
             from .models import StarNameMappingModel
 
-            mapping = session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
+            stmt = select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number).limit(1)
+            result = await session.execute(stmt)
+            mapping = result.scalar_one_or_none()
             if mapping and mapping.common_name and mapping.common_name.strip():
                 return mapping.common_name.strip()
             return None
@@ -551,7 +579,7 @@ class CatalogDatabase:
     @deal.pre(lambda self, query, limit: query and len(query.strip()) > 0, message="Query must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, query, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
+    async def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
         Fuzzy search using FTS5.
 
@@ -568,9 +596,9 @@ class CatalogDatabase:
             return []
 
         # Ensure FTS table exists
-        self.ensure_fts_table()
+        await self.ensure_fts_table()
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # FTS5 search requires raw SQL
             # FTS5 query syntax: simple word queries work directly
             # For multi-word queries, FTS5 uses AND by default
@@ -581,7 +609,7 @@ class CatalogDatabase:
             # If query contains these, we need to escape or quote them
             # For simple word searches, just use the word directly
             try:
-                result = session.execute(
+                result = await session.execute(
                     text("""
                         SELECT objects.id FROM objects
                         JOIN objects_fts ON objects.id = objects_fts.rowid
@@ -593,10 +621,11 @@ class CatalogDatabase:
                 )
 
                 # Get IDs and fetch models
-                object_ids = [row[0] for row in result]
+                rows = result.fetchall()
+                object_ids = [row[0] for row in rows]
                 objects = []
                 for obj_id in object_ids:
-                    model = session.get(CelestialObjectModel, obj_id)
+                    model = await session.get(CelestialObjectModel, obj_id)
                     if model:
                         objects.append(self._model_to_object(model))
 
@@ -609,16 +638,19 @@ class CatalogDatabase:
     @deal.pre(lambda self, catalog, limit: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
+    async def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
-        with self._get_session() as session:
-            models = (
-                session.query(CelestialObjectModel)
-                .filter(CelestialObjectModel.catalog == catalog)
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            stmt = (
+                select(CelestialObjectModel)
+                .where(CelestialObjectModel.catalog == catalog)
                 .order_by(CelestialObjectModel.catalog_number, CelestialObjectModel.name)
                 .limit(limit)
-                .all()
             )
+            result = await session.execute(stmt)
+            models = result.scalars().all()
             return [self._model_to_object(model) for model in models]
 
     @deal.pre(
@@ -626,7 +658,7 @@ class CatalogDatabase:
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, catalog_number: catalog_number > 0, message="Catalog number must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
-    def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
+    async def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
         """
         Check if an object exists with the given catalog and catalog number.
 
@@ -637,23 +669,23 @@ class CatalogDatabase:
         Returns:
             True if object exists, False otherwise
         """
-        with self._get_session() as session:
-            count = (
-                session.query(CelestialObjectModel)
-                .filter(
+        async with self._AsyncSession() as session:
+            from sqlalchemy import func, select
+
+            count = await session.scalar(
+                select(func.count(CelestialObjectModel.id)).where(
                     CelestialObjectModel.catalog == catalog,
                     CelestialObjectModel.catalog_number == catalog_number,
                 )
-                .count()
             )
-            return count > 0
+            return (count or 0) > 0
 
     @deal.pre(
         lambda self, *args, **kwargs: kwargs.get("limit", 1000) > 0,
         message="Limit must be positive",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    def filter_objects(
+    async def filter_objects(
         self,
         catalog: str | None = None,
         object_type: CelestialObjectType | str | None = None,
@@ -678,51 +710,56 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
-        with self._get_session() as session:
-            query = session.query(CelestialObjectModel)
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            stmt = select(CelestialObjectModel)
 
             # Build filters
             if catalog:
-                query = query.filter(CelestialObjectModel.catalog == catalog)
+                stmt = stmt.where(CelestialObjectModel.catalog == catalog)
 
             if object_type:
                 if isinstance(object_type, CelestialObjectType):
                     object_type = object_type.value
-                query = query.filter(CelestialObjectModel.object_type == object_type)
+                stmt = stmt.where(CelestialObjectModel.object_type == object_type)
 
             if max_magnitude is not None:
-                query = query.filter(CelestialObjectModel.magnitude <= max_magnitude)
+                stmt = stmt.where(CelestialObjectModel.magnitude <= max_magnitude)
 
             if min_magnitude is not None:
-                query = query.filter(CelestialObjectModel.magnitude >= min_magnitude)
+                stmt = stmt.where(CelestialObjectModel.magnitude >= min_magnitude)
 
             if constellation:
-                query = query.filter(CelestialObjectModel.constellation.ilike(constellation))
+                stmt = stmt.where(CelestialObjectModel.constellation.ilike(constellation))
 
             if is_dynamic is not None:
-                query = query.filter(CelestialObjectModel.is_dynamic == is_dynamic)
+                stmt = stmt.where(CelestialObjectModel.is_dynamic == is_dynamic)
 
             # Order and limit
-            models = (
-                query.order_by(CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc())
-                .limit(limit)
-                .all()
-            )
+            stmt = stmt.order_by(
+                CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc()
+            ).limit(limit)
+
+            result = await session.execute(stmt)
+            models = result.scalars().all()
 
             return [self._model_to_object(model) for model in models]
 
     @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
-    def get_all_catalogs(self) -> list[str]:
+    async def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
-        with self._get_session() as session:
-            catalogs = (
-                session.query(CelestialObjectModel.catalog).distinct().order_by(CelestialObjectModel.catalog).all()
-            )
-            return [catalog[0] for catalog in catalogs]
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            stmt = select(CelestialObjectModel.catalog).distinct().order_by(CelestialObjectModel.catalog)
+            result = await session.execute(stmt)
+            catalogs = result.scalars().all()
+            return list(catalogs)
 
     @deal.pre(lambda self, prefix, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
-    def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
+    async def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
         """
         Get object names for command-line autocompletion.
 
@@ -738,7 +775,7 @@ class CatalogDatabase:
         """
         from sqlalchemy import func, select
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # Build case-insensitive filter using LIKE for better compatibility
             prefix_lower = str(prefix).lower()
 
@@ -754,7 +791,8 @@ class CatalogDatabase:
                 .order_by(func.lower(CelestialObjectModel.name))
                 .limit(limit)
             )
-            name_results = session.execute(name_query).fetchall()
+            name_result = await session.execute(name_query)
+            name_results = name_result.fetchall()
             for row in name_results:
                 if row[0]:
                     names_set.add(row[0])
@@ -771,7 +809,8 @@ class CatalogDatabase:
                 .limit(limit)
             )
             # Fix type incompatibility: Row[tuple[str | None]], be explicit with Optional[str]
-            common_name_results: Sequence[Row[tuple[str | None]]] = session.execute(common_name_query).fetchall()
+            common_name_result = await session.execute(common_name_query)
+            common_name_results: Sequence[Row[tuple[str | None]]] = common_name_result.fetchall()
             for common_name_row in common_name_results:
                 # Use cast to help mypy understand the type (common_name can be None)
                 val = cast(str | None, common_name_row[0])
@@ -781,7 +820,7 @@ class CatalogDatabase:
 
     @deal.pre(lambda self, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
-    def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
+    async def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
         """
         Get all object names for command-line autocompletion.
 
@@ -793,55 +832,57 @@ class CatalogDatabase:
         Returns:
             List of unique names (case-insensitive)
         """
-        return self.get_names_for_completion(prefix="", limit=limit)
+        return await self.get_names_for_completion(prefix="", limit=limit)
 
     @deal.post(lambda result: result is not None, message="Stats must be returned")
     @deal.post(lambda result: hasattr(result, "total_objects"), message="Stats must have total_objects")
-    def get_stats(self) -> DatabaseStats:
+    async def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
         from sqlalchemy import func, select
 
-        with self._get_session() as session:
+        async with self._AsyncSession() as session:
             # Total count
-            total = session.execute(select(func.count(CelestialObjectModel.id))).scalar_one() or 0
+            total_result = await session.execute(select(func.count(CelestialObjectModel.id)))
+            total = total_result.scalar_one() or 0
 
             # By catalog
-            catalog_rows = session.execute(
+            catalog_result = await session.execute(
                 select(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id)).group_by(
                     CelestialObjectModel.catalog
                 )
-            ).all()
+            )
+            catalog_rows = catalog_result.all()
             by_catalog = {row[0]: row[1] for row in catalog_rows if row[0] and row[1] > 0}
 
             # By type
-            type_rows = session.execute(
+            type_result = await session.execute(
                 select(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id)).group_by(
                     CelestialObjectModel.object_type
                 )
-            ).all()
+            )
+            type_rows = type_result.all()
             by_type = {row[0]: row[1] for row in type_rows}
 
             # Magnitude range
-            mag_row = session.execute(
+            mag_result = await session.execute(
                 select(func.min(CelestialObjectModel.magnitude), func.max(CelestialObjectModel.magnitude)).where(
                     CelestialObjectModel.magnitude.isnot(None)
                 )
-            ).first()
+            )
+            mag_row = mag_result.first()
             mag_range = (mag_row[0], mag_row[1]) if mag_row and mag_row[0] is not None else (None, None)
 
             # Dynamic objects
-            dynamic = (
-                session.execute(
-                    select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.is_dynamic.is_(True))
-                ).scalar_one()
-                or 0
+            dynamic_result = await session.execute(
+                select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.is_dynamic.is_(True))
             )
+            dynamic = dynamic_result.scalar_one() or 0
 
             # Version and last updated from metadata table
-            version_model = session.get(MetadataModel, "version")
+            version_model = await session.get(MetadataModel, "version")
             version = version_model.value if version_model else "unknown"
 
-            updated_model = session.get(MetadataModel, "last_updated")
+            updated_model = await session.get(MetadataModel, "last_updated")
             last_updated = (
                 datetime.fromisoformat(updated_model.value) if updated_model and updated_model.value else None
             )
@@ -923,7 +964,7 @@ def get_database() -> CatalogDatabase:
 
 
 @deal.post(lambda result: result is not None, message="Database must be initialized")
-def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
+async def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     """
     Initialize a new database with schema.
 
@@ -934,7 +975,7 @@ def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
         Initialized database
     """
     db = CatalogDatabase(db_path)
-    db.init_schema()
+    await db.init_schema()
     return db
 
 
@@ -943,7 +984,7 @@ def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     message="Must return tuple of (pages_freed, pages_used)",
 )
 @deal.post(lambda result: result[0] >= 0 and result[1] >= 0, message="Page counts must be non-negative")
-def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
+async def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     """
     Reclaim unused space in the database by running VACUUM.
 
@@ -968,18 +1009,18 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     # Run VACUUM
     # Note: VACUUM rebuilds the entire database file, so we need to ensure
     # all connections are closed for the file size to update properly
-    with db._get_session() as session:
-        session.execute(text("VACUUM"))
-        session.commit()
+    async with db._AsyncSession() as session:
+        await session.execute(text("VACUUM"))
+        await session.commit()
 
     # Close the engine to ensure all connections are released and file is written
     # This is important because VACUUM creates a new database file
-    db._engine.dispose()
+    await db._engine.dispose()
 
     # Small delay to ensure filesystem updates (some filesystems cache stat info)
-    import time
+    import asyncio
 
-    time.sleep(0.1)
+    await asyncio.sleep(0.1)
 
     # Get file size after vacuum
     # Note: Some filesystems may cache file size, so the actual size on disk
@@ -1438,7 +1479,7 @@ def rebuild_database(
 
 
 @deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
-def get_ephemeris_files() -> dict[str, dict[str, Any]]:
+async def get_ephemeris_files() -> dict[str, dict[str, Any]]:
     """
     Get all ephemeris files from the database.
 
@@ -1446,11 +1487,15 @@ def get_ephemeris_files() -> dict[str, dict[str, Any]]:
         Dictionary mapping file_key to EphemerisFileInfo-like dict
     """
     db = get_database()
-    with db._get_session() as session:
-        files = session.query(EphemerisFileModel).all()
-        result: dict[str, dict[str, Any]] = {}
+    async with db._AsyncSession() as session:
+        from sqlalchemy import select
+
+        stmt = select(EphemerisFileModel)
+        result = await session.execute(stmt)
+        files = result.scalars().all()
+        file_dict: dict[str, dict[str, Any]] = {}
         for file_model in files:
-            result[file_model.file_key] = {
+            file_dict[file_model.file_key] = {
                 "filename": file_model.filename,
                 "display_name": file_model.display_name,
                 "description": file_model.description,
@@ -1461,7 +1506,7 @@ def get_ephemeris_files() -> dict[str, dict[str, Any]]:
                 "use_case": file_model.use_case,
                 "url": file_model.url,
             }
-        return result
+        return file_dict
 
 
 @deal.post(lambda result: isinstance(result, list), message="Must return list")

@@ -7,13 +7,14 @@ and automatic migration management with Alembic.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -669,28 +670,27 @@ class TLEModel(Base):
         return f"<TLE(norad_id={self.norad_id}, name='{self.satellite_name}', group='{self.satellite_group}')>"
 
 
-@contextmanager
-def get_db_session() -> Iterator[Session]:
+@asynccontextmanager
+async def get_db_session() -> AsyncIterator[AsyncSession]:
     """
-    Get a database session as a context manager.
+    Get an async database session as a context manager.
 
-    Yields a SQLAlchemy Session that is automatically closed when exiting the context.
-    Use this for database operations that need a session.
+    Yields an AsyncSession that is automatically closed when exiting the context.
+    Use this for async database operations that need a session.
 
     Example:
-        with get_db_session() as db:
+        async with get_db_session() as db:
             # Use db session here
-            pass
+            result = await db.execute(select(...))
+            await db.commit()
     """
     from .database import get_database
 
     db = get_database()
-    session = db._get_session()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+    async with db._AsyncSession() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
