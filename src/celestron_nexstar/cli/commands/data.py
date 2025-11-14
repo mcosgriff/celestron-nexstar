@@ -602,6 +602,7 @@ def seed_database(
             seed_dir = get_seed_data_path()
             expected_counts: dict[str, int] = {}
             seed_file_map = {
+                "star_name_mappings": "star_name_mappings.json",
                 "constellations": "constellations.json",
                 "asterisms": "asterisms.json",
                 "meteor_showers": "meteor_showers.json",
@@ -893,6 +894,7 @@ def stats() -> None:
         seed_dir = get_seed_data_path()
         expected_counts: dict[str, int] = {}
         seed_file_map = {
+            "star_name_mappings": "star_name_mappings.json",
             "constellations": "constellations.json",
             "asterisms": "asterisms.json",
             "meteor_showers": "meteor_showers.json",
