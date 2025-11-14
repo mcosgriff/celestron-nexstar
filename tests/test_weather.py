@@ -639,9 +639,12 @@ class TestFetchWeather(unittest.TestCase):
         )
         mock_response.status = 200
 
-        # Mock session
+        # Mock session with proper async context manager support
         mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_get_context)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
