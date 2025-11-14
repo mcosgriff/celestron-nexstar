@@ -306,7 +306,7 @@ def get_available_catalogs() -> list[str]:
     message="Search query must be non-empty",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-def search_objects(
+async def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
 ) -> list[tuple[CelestialObject, str]]:
     """
@@ -339,19 +339,20 @@ def search_objects(
 
     try:
         db = get_database()
-        with db._get_session() as session:
+        async with db._AsyncSession() as session:
             from .models import CelestialObjectModel
 
             # First, try exact match (case-insensitive) - all filtering in database
             # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
             # It handles type coercion automatically and avoids Python-side evaluation
-            exact_query = select(CelestialObjectModel).filter(
+            exact_query = select(CelestialObjectModel).where(
                 (CelestialObjectModel.name.ilike(query)) | (CelestialObjectModel.common_name.ilike(query))
             )
             if catalog_name:
-                exact_query = exact_query.filter(CelestialObjectModel.catalog == catalog_name)
+                exact_query = exact_query.where(CelestialObjectModel.catalog == catalog_name)
 
-            exact_models = session.execute(exact_query).scalars().all()
+            result = await session.execute(exact_query)
+            exact_models = result.scalars().all()
             if exact_models:
                 # Return all exact matches (there may be multiple objects with same common name)
                 exact_results = []
@@ -364,11 +365,12 @@ def search_objects(
 
             # Search for substring matches in name (score: 0) - all filtering in database
             # Use ilike() for case-insensitive substring matching
-            name_query = select(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(f"%{query}%"))
+            name_query = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(f"%{query}%"))
             if catalog_name:
-                name_query = name_query.filter(CelestialObjectModel.catalog == catalog_name)
+                name_query = name_query.where(CelestialObjectModel.catalog == catalog_name)
 
-            name_models = session.execute(name_query).scalars().all()
+            result = await session.execute(name_query)
+            name_models = result.scalars().all()
             for model in name_models:
                 obj = db._model_to_object(model)
                 if update_positions:
@@ -385,14 +387,15 @@ def search_objects(
 
             # Search for substring matches in common_name (score: 1) - all filtering in database
             # Use ilike() for case-insensitive substring matching
-            common_query = select(CelestialObjectModel).filter(
+            common_query = select(CelestialObjectModel).where(
                 CelestialObjectModel.common_name.isnot(None),
                 CelestialObjectModel.common_name.ilike(f"%{query}%"),
             )
             if catalog_name:
-                common_query = common_query.filter(CelestialObjectModel.catalog == catalog_name)
+                common_query = common_query.where(CelestialObjectModel.catalog == catalog_name)
 
-            common_models = session.execute(common_query).scalars().all()
+            result = await session.execute(common_query)
+            common_models = result.scalars().all()
             seen_names = {
                 str(obj.name).lower()
                 for _, obj, _ in all_results
@@ -416,7 +419,7 @@ def search_objects(
                 return [exact_match]
 
             # Ensure FTS table exists before using it
-            db.ensure_fts_table()
+            await db.ensure_fts_table()
 
             # Use FTS5 for full-text search in description (score: 2)
             fts_query = text("""
@@ -434,10 +437,11 @@ def search_objects(
                 """)
                 params["catalog"] = catalog_name
 
-            fts_result = session.execute(fts_query, params).fetchall()
-            fts_ids = [row[0] for row in fts_result]
+            fts_result = await session.execute(fts_query, params)
+            fts_rows = fts_result.fetchall()
+            fts_ids = [row[0] for row in fts_rows]
             for obj_id in fts_ids:
-                fts_model: CelestialObjectModel | None = session.get(CelestialObjectModel, obj_id)
+                fts_model: CelestialObjectModel | None = await session.get(CelestialObjectModel, obj_id)
                 if fts_model is not None:
                     obj = db._model_to_object(fts_model)
                     if obj and obj.name is not None:
@@ -485,7 +489,7 @@ def search_objects(
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
+async def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
     Get objects by name (name field only, no common_name).
 
@@ -513,7 +517,7 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
     try:
         db = get_database()
         # First, try exact match in database (highest priority) - name field only
-        db_obj = db.get_by_name(name)
+        db_obj = await db.get_by_name(name)
         if db_obj:
             all_matches.append(db_obj)
             seen_names.add(str(db_obj.name).lower())
@@ -522,7 +526,7 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
 
         # If no exact match, try FTS5 search (searches name, common_name, description)
         # But we'll filter to only return matches where name contains the query
-        db_results = db.search(name, limit=20)
+        db_results = await db.search(name, limit=20)
         for obj in db_results:
             if obj and obj.name is not None:
                 obj_name_lower = str(obj.name).lower()

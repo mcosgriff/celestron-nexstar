@@ -454,7 +454,15 @@ def populate_meteor_shower_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
+    import asyncio
+
     from .database_seeder import seed_meteor_showers
+    from .models import get_db_session
 
     logger.info("Populating meteor shower database...")
-    seed_meteor_showers(db_session, force=True)
+
+    async def _seed() -> None:
+        async with get_db_session() as async_session:
+            await seed_meteor_showers(async_session, force=True)
+
+    asyncio.run(_seed())

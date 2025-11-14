@@ -846,7 +846,9 @@ def _show_best_night_content(output_console: Console | FileConsole, object_name:
     """Generate and display best night content."""
     try:
         # Find the object
-        matches = get_object_by_name(object_name)
+        import asyncio
+
+        matches = asyncio.run(get_object_by_name(object_name))
         if not matches:
             output_console.print(f"[red]No objects found matching '{object_name}'[/red]")
             raise typer.Exit(code=1) from None

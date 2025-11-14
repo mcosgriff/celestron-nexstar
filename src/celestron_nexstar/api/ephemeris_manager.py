@@ -8,7 +8,6 @@ ephemeris file handling.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import ssl
@@ -384,10 +383,12 @@ async def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
 def _get_ephemeris_files() -> dict[str, EphemerisFileInfo]:
     """Get ephemeris files from database, with fallback to hardcoded data."""
     try:
+        import asyncio
+
         from .database import get_ephemeris_files
 
         # Try to get from database first
-        db_files = get_ephemeris_files()
+        db_files = asyncio.run(get_ephemeris_files())
         if db_files:
             logger.info(f"Loaded {len(db_files)} ephemeris files from database")
             # Convert dict to EphemerisFileInfo objects

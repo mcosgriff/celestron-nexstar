@@ -110,12 +110,15 @@ def show_starlink(
         raise typer.Exit(1)
 
     # Get database session for caching TLE data
-    from ...api.models import get_db_session
+    import asyncio
 
-    with get_db_session() as db_session:
-        passes = get_starlink_passes(
-            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=db_session
+    async def _get_passes() -> list[SatellitePass]:
+        # get_starlink_passes is sync and expects a sync Session, so pass None to let it create its own
+        return get_starlink_passes(
+            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
         )
+
+    passes = asyncio.run(_get_passes())
 
     # Filter to visible passes only unless --all flag is set
     visible_passes = [p for p in passes if p.is_visible] if not all_passes else passes
@@ -408,12 +411,15 @@ def show_stations(
         raise typer.Exit(1)
 
     # Get database session for caching TLE data
-    from ...api.models import get_db_session
+    import asyncio
 
-    with get_db_session() as db_session:
-        passes = get_stations_passes(
-            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=db_session
+    async def _get_passes() -> list[SatellitePass]:
+        # get_stations_passes is sync and expects a sync Session, so pass None to let it create its own
+        return get_stations_passes(
+            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
         )
+
+    passes = asyncio.run(_get_passes())
 
     # Filter to visible passes only unless --all flag is set
     visible_passes = [p for p in passes if p.is_visible] if not all_passes else passes
@@ -467,12 +473,15 @@ def show_visual(
         raise typer.Exit(1)
 
     # Get database session for caching TLE data
-    from ...api.models import get_db_session
+    import asyncio
 
-    with get_db_session() as db_session:
-        passes = get_visual_passes(
-            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=db_session
+    async def _get_passes() -> list[SatellitePass]:
+        # get_visual_passes is sync and expects a sync Session, so pass None to let it create its own
+        return get_visual_passes(
+            location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
         )
+
+    passes = asyncio.run(_get_passes())
 
     # Filter to visible passes only unless --all flag is set
     visible_passes = [p for p in passes if p.is_visible] if not all_passes else passes

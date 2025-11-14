@@ -436,7 +436,9 @@ class ObservationPlanner:
         # We'll get more than max_results to account for filtering
         initial_limit = min(5000, max_results * 50)  # Get up to 5k or 50x requested results
 
-        all_objects = db.filter_objects(max_magnitude=max_mag, limit=initial_limit)
+        import asyncio
+
+        all_objects = asyncio.run(db.filter_objects(max_magnitude=max_mag, limit=initial_limit))
 
         # Filter by target types if specified
         if target_types:

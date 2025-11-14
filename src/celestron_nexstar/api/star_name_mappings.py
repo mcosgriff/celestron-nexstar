@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 import aiohttp
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from .database_seeder import load_seed_json
@@ -193,8 +194,8 @@ async def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[
     return results
 
 
-def populate_star_name_mappings_database(
-    db_session: Session, hr_numbers: list[int] | None = None, force_refresh: bool = False
+async def populate_star_name_mappings_database(
+    db_session: AsyncSession, hr_numbers: list[int] | None = None, force_refresh: bool = False
 ) -> None:
     """
     Populate database with star name mappings.
@@ -204,7 +205,7 @@ def populate_star_name_mappings_database(
     This ensures star common names are always available even without internet connectivity.
 
     Args:
-        db_session: SQLAlchemy database session
+        db_session: SQLAlchemy async database session
         hr_numbers: Optional list of HR numbers to fetch from external sources. If None, fetches all available.
         force_refresh: If True, re-populate even if data exists
     """
@@ -213,21 +214,23 @@ def populate_star_name_mappings_database(
     logger.info("Populating star name mappings database...")
 
     # Seed from JSON file (primary source)
-    seed_star_name_mappings(db_session, force=force_refresh)
+    await seed_star_name_mappings(db_session, force=force_refresh)
 
     # Try to enhance with external sources (optional enhancement)
     try:
         logger.info("Attempting to fetch additional mappings from external sources...")
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        external_mappings = asyncio.run(fetch_star_name_mappings(hr_numbers))
+        # Fetch external mappings (already async)
+        external_mappings = await fetch_star_name_mappings(hr_numbers)
         if external_mappings:
             # Add any new mappings from external sources
+            from sqlalchemy import select
+
             added = 0
             for hr_number, (common_name, bayer_designation) in external_mappings.items():
                 # Check if already exists
-                existing = (
-                    db_session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
-                )
+                stmt = select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number)
+                result = await db_session.execute(stmt)
+                existing = result.scalar_one_or_none()
                 if not existing:
                     model = StarNameMappingModel(
                         hr_number=hr_number,
@@ -237,7 +240,7 @@ def populate_star_name_mappings_database(
                     db_session.add(model)
                     added += 1
             if added > 0:
-                db_session.commit()
+                await db_session.commit()
                 logger.info(f"Enhanced with {added} additional mappings from external sources")
             else:
                 logger.info("External sources returned no additional mappings")
@@ -290,5 +293,5 @@ def get_common_name_by_hr(db_session: Session, hr_number: int) -> str | None:
     """
     mapping = db_session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
     if mapping and mapping.common_name and mapping.common_name.strip():
-        return mapping.common_name.strip()
+        return str(mapping.common_name.strip())
     return None

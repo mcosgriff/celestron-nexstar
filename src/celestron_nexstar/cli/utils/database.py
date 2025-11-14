@@ -43,6 +43,11 @@ def check_database_setup() -> None:
         from sqlalchemy import inspect
 
         inspector = inspect(db._engine)
+        if inspector is None:
+            raise _show_setup_error(
+                "Database schema is missing.",
+                "The database file exists but the schema has not been created.",
+            )
         existing_tables = set(inspector.get_table_names())
 
         if "objects" not in existing_tables:
@@ -56,7 +61,7 @@ def check_database_setup() -> None:
 
         from ...api.models import CelestialObjectModel
 
-        with db._get_session() as session:
+        with db._get_session_sync() as session:
             result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
             if result == 0:
                 raise _show_setup_error(

@@ -370,10 +370,18 @@ def populate_space_events_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
+    import asyncio
+
     from .database_seeder import seed_space_events
+    from .models import get_db_session
 
     logger.info("Populating space events database...")
-    seed_space_events(db_session, force=True)
+
+    async def _seed() -> None:
+        async with get_db_session() as async_session:
+            await seed_space_events(async_session, force=True)
+
+    asyncio.run(_seed())
 
 
 def get_upcoming_events(
@@ -405,53 +413,89 @@ def get_upcoming_events(
 
     # Try to get from database first
     try:
+        import asyncio
+
+        from sqlalchemy import select
+
         from .models import SpaceEventModel, get_db_session
 
-        with get_db_session() as db:
-            query = db.query(SpaceEventModel).filter(
-                and_(
-                    SpaceEventModel.date >= start_date,
-                    SpaceEventModel.date <= end_date,
+        async def _get_events() -> list[SpaceEventModel]:
+            async with get_db_session() as db:
+                result = await db.execute(
+                    select(SpaceEventModel).filter(
+                        and_(
+                            SpaceEventModel.date >= start_date,
+                            SpaceEventModel.date <= end_date,
+                        )
+                    )
                 )
-            )
+                return list(result.scalars().all())
 
-            # Filter by event type if specified
-            if event_types:
-                type_values = [et.value for et in event_types]
-                query = query.filter(SpaceEventModel.event_type.in_(type_values))
+        # Filter by event type if specified
+        if event_types:
+            type_values = [et.value for et in event_types]
 
-            # Order by date
-            query = query.order_by(SpaceEventModel.date)
-
-            db_events = query.all()
-
-            # If we have events in the database, use them
-            if db_events:
-                filtered = []
-                for db_event in db_events:
-                    req = ViewingRequirement(
-                        min_latitude=db_event.min_latitude,
-                        max_latitude=db_event.max_latitude,
-                        min_longitude=db_event.min_longitude,
-                        max_longitude=db_event.max_longitude,
-                        dark_sky_required=db_event.dark_sky_required,
-                        min_bortle_class=db_event.min_bortle_class,
-                        equipment_needed=db_event.equipment_needed,
-                        notes=db_event.viewing_notes,
+            async def _get_filtered_events() -> list[SpaceEventModel]:
+                async with get_db_session() as db:
+                    result = await db.execute(
+                        select(SpaceEventModel)
+                        .filter(
+                            and_(
+                                SpaceEventModel.date >= start_date,
+                                SpaceEventModel.date <= end_date,
+                                SpaceEventModel.event_type.in_(type_values),
+                            )
+                        )
+                        .order_by(SpaceEventModel.date)
                     )
+                    return list(result.scalars().all())
 
-                    event = SpaceEvent(
-                        name=db_event.name,
-                        event_type=SpaceEventType(db_event.event_type),
-                        date=db_event.date,
-                        description=db_event.description,
-                        viewing_requirements=req,
-                        source=db_event.source,
-                        url=db_event.url,
+            db_events = asyncio.run(_get_filtered_events())
+        else:
+
+            async def _get_ordered_events() -> list[SpaceEventModel]:
+                async with get_db_session() as db:
+                    result = await db.execute(
+                        select(SpaceEventModel)
+                        .filter(
+                            and_(
+                                SpaceEventModel.date >= start_date,
+                                SpaceEventModel.date <= end_date,
+                            )
+                        )
+                        .order_by(SpaceEventModel.date)
                     )
-                    filtered.append(event)
+                    return list(result.scalars().all())
 
-                return filtered
+            db_events = asyncio.run(_get_ordered_events())
+
+        # If we have events in the database, use them
+        if db_events:
+            filtered = []
+            for db_event in db_events:
+                req = ViewingRequirement(
+                    min_latitude=db_event.min_latitude,
+                    max_latitude=db_event.max_latitude,
+                    min_longitude=db_event.min_longitude,
+                    max_longitude=db_event.max_longitude,
+                    dark_sky_required=db_event.dark_sky_required,
+                    min_bortle_class=db_event.min_bortle_class,
+                    equipment_needed=db_event.equipment_needed,
+                    notes=db_event.viewing_notes,
+                )
+
+                event = SpaceEvent(
+                    name=db_event.name,
+                    event_type=SpaceEventType(db_event.event_type),
+                    date=db_event.date,
+                    description=db_event.description,
+                    viewing_requirements=req,
+                    source=db_event.source,
+                    url=db_event.url,
+                )
+                filtered.append(event)
+
+            return filtered
     except Exception as e:
         logger.debug(f"Could not query space events from database: {e}, falling back to hardcoded lists")
 

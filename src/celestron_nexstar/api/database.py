@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 import shutil
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -192,11 +193,14 @@ class CatalogDatabase:
         """Get a new async database session."""
         return self._AsyncSession()
 
-    def _get_session_sync(self) -> Session:
+    @contextmanager
+    def _get_session_sync(self) -> Iterator[Session]:
         """
         Get a synchronous session (for backwards compatibility during migration).
 
         Note: This creates a sync engine temporarily. Use _get_session() for new code.
+
+        Returns a context manager that yields a Session.
         """
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
@@ -206,8 +210,17 @@ class CatalogDatabase:
             connect_args={"check_same_thread": False},
             echo=False,
         )
-        SyncSession = sessionmaker(bind=sync_engine, expire_on_commit=False)
-        return SyncSession()
+        session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
+
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     @deal.post(lambda result: result is None, message="Close must complete")
     async def close(self) -> None:
@@ -220,7 +233,14 @@ class CatalogDatabase:
 
     def __exit__(self, exc_type: type, exc_val: Exception, exc_tb: Any) -> None:
         """Context manager exit."""
-        self.close()
+        # Note: close() is async, but __exit__ is sync
+        # This is a limitation - proper cleanup would require async context manager
+        # For now, we'll just log a warning if called
+        import warnings
+
+        warnings.warn(
+            "CatalogDatabase.close() is async but called from sync context manager", RuntimeWarning, stacklevel=2
+        )
 
     @deal.post(lambda result: result is None, message="Schema initialization must complete")
     async def init_schema(self) -> None:
@@ -425,7 +445,7 @@ class CatalogDatabase:
         lambda self, name, catalog, ra_hours, dec_degrees, *args, **kwargs: -90 <= dec_degrees <= 90,
         message="Dec must be -90 to +90 degrees",
     )  # type: ignore[misc,arg-type]
-    @deal.post(lambda result: result > 0, message="Insert must return positive ID")
+    @deal.post(lambda result: result > 0, message="Insert must return positive ID")  # type: ignore[misc,arg-type,operator]
     async def insert_object(
         self,
         name: str,
@@ -466,7 +486,7 @@ class CatalogDatabase:
             ID of inserted object
         """
         # Ensure FTS table exists before inserting (triggers depend on it)
-        self.ensure_fts_table()
+        await self.ensure_fts_table()
 
         # Convert object_type to string if needed
         if isinstance(object_type, CelestialObjectType):
@@ -983,7 +1003,7 @@ async def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     lambda result: isinstance(result, tuple) and len(result) == 2,
     message="Must return tuple of (pages_freed, pages_used)",
 )
-@deal.post(lambda result: result[0] >= 0 and result[1] >= 0, message="Page counts must be non-negative")
+@deal.post(lambda result: result[0] >= 0 and result[1] >= 0, message="Page counts must be non-negative")  # type: ignore[misc,arg-type,index,operator]
 async def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     """
     Reclaim unused space in the database by running VACUUM.
@@ -1112,7 +1132,10 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
         raise FileNotFoundError(f"Backup file not found: {backup_path}")
 
     # Close any existing connections
-    db._engine.dispose()
+    # Run async dispose in sync context
+    import asyncio
+
+    asyncio.run(db._engine.dispose())
 
     # Copy backup to database location
     shutil.copy2(backup_path, db.db_path)
@@ -1125,9 +1148,9 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
     message="Magnitude limit must be positive",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
-@deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")
+@deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")  # type: ignore[misc,arg-type,operator]
 @deal.raises(RuntimeError)
-def rebuild_database(
+async def rebuild_database(
     backup_dir: Path | None = None,
     sources: list[str] | None = None,
     mag_limit: float = 15.0,
@@ -1185,7 +1208,7 @@ def rebuild_database(
         # Step 2: Drop existing database
         if db.db_path.exists():
             # Close all connections
-            db._engine.dispose()
+            await db._engine.dispose()
             # Remove database file
             db.db_path.unlink()
             logger.info("Database dropped")
@@ -1203,22 +1226,23 @@ def rebuild_database(
         db = get_database()
 
         # Ensure FTS table exists (migrations should create it, but ensure it's there)
-        db.ensure_fts_table()
+        await db.ensure_fts_table()
 
         # Step 4: Populate star name mappings BEFORE importing catalogs that need them
         # This ensures Yale BSC import can look up common names
         logger.info("Populating star name mappings...")
+        from .database_seeder import seed_star_name_mappings
         from .models import get_db_session
-        from .star_name_mappings import populate_star_name_mappings_database
 
-        with get_db_session() as session:
+        async with get_db_session() as session:
             # Force refresh to ensure we have the latest mappings
-            populate_star_name_mappings_database(session, force_refresh=True)
+            await seed_star_name_mappings(session, force=True)
             from sqlalchemy import func, select
 
             from .models import StarNameMappingModel
 
-            star_mapping_count = session.scalar(select(func.count(StarNameMappingModel.hr_number))) or 0
+            star_mapping_result = await session.scalar(select(func.count(StarNameMappingModel.hr_number)))
+            star_mapping_count = star_mapping_result or 0
             logger.info(f"Added {star_mapping_count} star name mappings")
             if star_mapping_count == 0:
                 logger.error("WARNING: No star name mappings were added! Yale BSC imports will not have common names.")
@@ -1241,7 +1265,7 @@ def rebuild_database(
             logger.info(f"Importing {source_id}...")
             # Get count before import
             try:
-                db_stats_before = db.get_stats()
+                db_stats_before = await db.get_stats()
                 objects_before_import = db_stats_before.total_objects
             except Exception as e:
                 logger.warning(f"Failed to get stats before import: {e}")
@@ -1256,7 +1280,7 @@ def rebuild_database(
                 if success:
                     # Get count after import
                     try:
-                        db_stats_after = db.get_stats()
+                        db_stats_after = await db.get_stats()
                         imported = db_stats_after.total_objects - objects_before_import
                         imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
                         objects_before_import = db_stats_after.total_objects
@@ -1280,24 +1304,20 @@ def rebuild_database(
         # Repopulate FTS table after all imports to ensure all objects are searchable
         logger.info("Repopulating FTS search index...")
         try:
-            db.repopulate_fts_table()
+            await db.repopulate_fts_table()
         except Exception as e:
             logger.warning(f"Failed to repopulate FTS table: {e}")
             # Continue - search will fall back to direct queries
 
         # Step 6: Initialize other static data
-        from .constellations import populate_constellation_database
-        from .meteor_showers import populate_meteor_shower_database
-        from .space_events import populate_space_events_database
-        from .vacation_planning import populate_dark_sky_sites_database
+        from .database_seeder import seed_all
 
         logger.info("Initializing static reference data...")
         static_data: dict[str, int] = {}
 
-        with get_db_session() as session:
-            # Populate meteor showers
-            logger.info("Populating meteor showers...")
-            populate_meteor_shower_database(session)
+        async with get_db_session() as session:
+            # Use seed_all which handles all static data seeding
+            await seed_all(session, force=False)
             from sqlalchemy import func, select
 
             from .models import (
@@ -1308,30 +1328,26 @@ def rebuild_database(
                 SpaceEventModel,
             )
 
-            meteor_count = session.scalar(select(func.count(MeteorShowerModel.id))) or 0
+            meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
+            meteor_count = meteor_result or 0
             static_data["meteor_showers"] = meteor_count
             logger.info(f"Added {meteor_count} meteor showers")
 
-            # Populate constellations
-            logger.info("Populating constellations and asterisms...")
-            populate_constellation_database(session)
-            constellation_count = session.scalar(select(func.count(ConstellationModel.id))) or 0
-            asterism_count = session.scalar(select(func.count(AsterismModel.id))) or 0
+            constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
+            constellation_count = constellation_result or 0
+            asterism_result = await session.scalar(select(func.count(AsterismModel.id)))
+            asterism_count = asterism_result or 0
             static_data["constellations"] = constellation_count
             static_data["asterisms"] = asterism_count
             logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
 
-            # Populate dark sky sites
-            logger.info("Populating dark sky sites...")
-            populate_dark_sky_sites_database(session)
-            dark_sky_count = session.scalar(select(func.count(DarkSkySiteModel.id))) or 0
+            dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
+            dark_sky_count = dark_sky_result or 0
             static_data["dark_sky_sites"] = dark_sky_count
             logger.info(f"Added {dark_sky_count} dark sky sites")
 
-            # Populate space events
-            logger.info("Populating space events...")
-            populate_space_events_database(session)
-            space_events_count = session.scalar(select(func.count(SpaceEventModel.id))) or 0
+            space_events_result = await session.scalar(select(func.count(SpaceEventModel.id)))
+            space_events_count = space_events_result or 0
             static_data["space_events"] = space_events_count
             logger.info(f"Added {space_events_count} space events")
 
@@ -1590,8 +1606,13 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
 
     # Check if we need to sync (check last sync time in metadata)
     if not force:
-        with db._get_session() as session:
-            last_sync = session.query(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync").first()
+        async with db._AsyncSession() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(
+                select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync")
+            )
+            last_sync = result.scalar_one_or_none()
             if last_sync:
                 last_sync_time = datetime.fromisoformat(last_sync.value)
                 hours_since_sync = (datetime.now() - last_sync_time).total_seconds() / 3600
@@ -1632,13 +1653,16 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
             )
 
         # Upsert to database
-        with db._get_session() as session:
+        async with db._AsyncSession() as session:
+            from sqlalchemy import select
+
             synced_count = 0
             for file_model in files_to_sync:
                 # Check if exists
-                existing = (
-                    session.query(EphemerisFileModel).filter(EphemerisFileModel.file_key == file_model.file_key).first()
+                result = await session.execute(
+                    select(EphemerisFileModel).filter(EphemerisFileModel.file_key == file_model.file_key)
                 )
+                existing = result.scalar_one_or_none()
                 if existing:
                     # Update existing
                     for key, value in file_model.__dict__.items():
@@ -1651,9 +1675,10 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
                 synced_count += 1
 
             # Update sync timestamp
-            sync_metadata = (
-                session.query(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync").first()
+            sync_result = await session.execute(
+                select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync")
             )
+            sync_metadata = sync_result.scalar_one_or_none()
             if sync_metadata:
                 sync_metadata.value = datetime.now(UTC).isoformat()
                 sync_metadata.updated_at = datetime.now(UTC)
@@ -1665,7 +1690,7 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
                     )
                 )
 
-            session.commit()
+            await session.commit()
             logger.info(f"Synced {synced_count} ephemeris files to database")
             return synced_count
 

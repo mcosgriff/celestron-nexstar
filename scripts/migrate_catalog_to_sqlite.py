@@ -151,20 +151,24 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
             constellation = None  # TODO: Add constellation lookup
 
             # Insert into database
-            object_id = db.insert_object(
-                name=name,
-                catalog=catalog_name,
-                ra_hours=ra_hours,
-                dec_degrees=dec_degrees,
-                object_type=object_type,
-                magnitude=magnitude,
-                common_name=common_name,
-                catalog_number=catalog_number,
-                description=description,
-                constellation=constellation,
-                is_dynamic=is_dynamic,
-                ephemeris_name=name if is_dynamic else None,
-                parent_planet=parent_planet,
+            import asyncio
+
+            object_id = asyncio.run(
+                db.insert_object(
+                    name=name,
+                    catalog=catalog_name,
+                    ra_hours=ra_hours,
+                    dec_degrees=dec_degrees,
+                    object_type=object_type,
+                    magnitude=magnitude,
+                    common_name=common_name,
+                    catalog_number=catalog_number,
+                    description=description,
+                    constellation=constellation,
+                    is_dynamic=is_dynamic,
+                    ephemeris_name=name if is_dynamic else None,
+                    parent_planet=parent_planet,
+                )
             )
 
             if verbose:
@@ -172,14 +176,15 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
 
             total_objects += 1
 
-    # Commit all changes
-    db.commit()
+    # Database commits are handled per-session, no explicit commit needed
 
     # Show statistics
     print("\n✓ Migration complete!")
     print(f"  Total objects: {total_objects}")
 
-    stats = db.get_stats()
+    import asyncio
+
+    stats = asyncio.run(db.get_stats())
     print("\nDatabase statistics:")
     print(f"  Total objects: {stats.total_objects}")
     print(f"  Dynamic objects: {stats.dynamic_objects}")
@@ -195,13 +200,13 @@ def migrate_yaml_to_db(yaml_path: Path, db_path: Path, verbose: bool = False) ->
     print("\n✓ Testing FTS5 search...")
     test_queries = ["andromeda", "orion", "jupiter"]
     for query in test_queries:
-        results = db.search(query, limit=5)
+        results = asyncio.run(db.search(query, limit=5))
         print(f"  '{query}': {len(results)} results")
         if results and verbose:
             for obj in results[:3]:
                 print(f"    - {obj.name} ({obj.common_name or 'no common name'})")
 
-    db.close()
+    asyncio.run(db.close())
 
     # Show database file size
     size_mb = db_path.stat().st_size / (1024 * 1024)

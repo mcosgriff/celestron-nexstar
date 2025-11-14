@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # Import models and data
 from celestron_nexstar.api.constellations import PROMINENT_CONSTELLATIONS, FAMOUS_ASTERISMS
 from celestron_nexstar.api.meteor_showers import METEOR_SHOWERS
-from celestron_nexstar.api.vacation_planning import KNOWN_DARK_SITES
 from celestron_nexstar.api.space_events import SPACE_EVENTS_2025
 
 
@@ -92,19 +91,27 @@ def create_meteor_showers_json():
 
 
 def create_dark_sky_sites_json():
-    """Create dark_sky_sites.json from KNOWN_DARK_SITES."""
-    sites = []
-    for site in KNOWN_DARK_SITES:
-        sites.append({
-            "name": site.name,
-            "latitude": site.latitude,
-            "longitude": site.longitude,
-            "geohash": None,  # Will be calculated if needed
-            "bortle_class": site.bortle_class.value if hasattr(site.bortle_class, "value") else int(site.bortle_class),
-            "sqm_value": site.sqm_value,
-            "description": site.description,
-            "notes": site.notes,
-        })
+    """Update dark_sky_sites.json with geohashes if missing."""
+    from celestron_nexstar.api.database_seeder import get_seed_data_path
+    from celestron_nexstar.api.geohash_utils import encode
+
+    # Load existing JSON file (source of truth)
+    seed_dir = get_seed_data_path()
+    json_path = seed_dir / "dark_sky_sites.json"
+
+    if not json_path.exists():
+        print(f"Warning: {json_path} does not exist. Cannot update geohashes.")
+        return []
+
+    with open(json_path, encoding="utf-8") as f:
+        sites = json.load(f)
+
+    # Update geohashes if missing
+    for site in sites:
+        if not site.get("geohash"):
+            # Calculate geohash for spatial indexing (precision 9 for ~5m accuracy)
+            site["geohash"] = encode(site["latitude"], site["longitude"], precision=9)
+
     return sites
 
 

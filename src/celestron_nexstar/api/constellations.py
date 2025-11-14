@@ -600,8 +600,16 @@ def populate_constellation_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
+    import asyncio
+
     from .database_seeder import seed_asterisms, seed_constellations
+    from .models import get_db_session
 
     logger.info("Populating constellation database...")
-    seed_constellations(db_session, force=True)
-    seed_asterisms(db_session, force=True)
+
+    async def _seed() -> None:
+        async with get_db_session() as async_session:
+            await seed_constellations(async_session, force=True)
+            await seed_asterisms(async_session, force=True)
+
+    asyncio.run(_seed())

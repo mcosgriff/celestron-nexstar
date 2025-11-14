@@ -24,10 +24,12 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
         Formatted text for inline display
     """
     # Try to get additional details from database
+    import asyncio
+
     from ...api.database import get_database
 
     db = get_database()
-    db_obj = db.get_by_name(obj.name)
+    db_obj = asyncio.run(db.get_by_name(obj.name))
 
     # Use database object if available (has more fields), otherwise use catalog object
     display_obj = db_obj if db_obj else obj
@@ -74,7 +76,7 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
     if db_obj:
         from ...api.models import CelestialObjectModel
 
-        with db._get_session() as session:
+        with db._get_session_sync() as session:
             model = (
                 session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(display_obj.name)).first()
             )
@@ -137,10 +139,12 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     console = Console()
 
     # Try to get additional details from database
+    import asyncio
+
     from ...api.database import get_database
 
     db = get_database()
-    db_obj = db.get_by_name(obj.name)
+    db_obj = asyncio.run(db.get_by_name(obj.name))
 
     # Use database object if available (has more fields), otherwise use catalog object
     display_obj = db_obj if db_obj else obj
@@ -176,7 +180,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     if db_obj:
         from ...api.models import CelestialObjectModel
 
-        with db._get_session() as session:
+        with db._get_session_sync() as session:
             model = (
                 session.query(CelestialObjectModel).filter(CelestialObjectModel.name.ilike(display_obj.name)).first()
             )

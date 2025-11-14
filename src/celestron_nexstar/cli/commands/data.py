@@ -10,6 +10,7 @@ from typing import Any
 import typer
 from click import Context
 from rich.console import Console
+from sqlalchemy import Row
 from typer.core import TyperGroup
 
 from ..data_import import import_data_source, list_data_sources
@@ -112,49 +113,55 @@ def update_star_names() -> None:
     db = get_database()
 
     try:
-        with db._get_session() as session:
-            # Get all Yale BSC objects without common_name
-            objects_to_update = (
-                session.query(CelestialObjectModel)
-                .filter(
+
+        async def _update_star_names() -> None:
+            from sqlalchemy import select
+
+            async with db._AsyncSession() as session:
+                # Get all Yale BSC objects without common_name
+                stmt = select(CelestialObjectModel).where(
                     CelestialObjectModel.catalog == "yale_bsc",
                     (CelestialObjectModel.common_name.is_(None)) | (CelestialObjectModel.common_name == ""),
                 )
-                .all()
-            )
+                result = await session.execute(stmt)
+                objects_to_update = result.scalars().all()
 
-            console.print(f"[dim]Found {len(objects_to_update)} Yale BSC objects without common names[/dim]")
+                console.print(f"[dim]Found {len(objects_to_update)} Yale BSC objects without common names[/dim]")
 
-            updated = 0
-            for obj in objects_to_update:
-                # Extract HR number from name (format: "HR 1708")
-                if not obj.name or not obj.name.startswith("HR "):
-                    continue
+                updated = 0
+                for obj in objects_to_update:
+                    # Extract HR number from name (format: "HR 1708")
+                    if not obj.name or not obj.name.startswith("HR "):
+                        continue
 
-                try:
-                    hr_number = int(obj.name.replace("HR ", "").strip())
-                except ValueError:
-                    continue
+                    try:
+                        hr_number = int(obj.name.replace("HR ", "").strip())
+                    except ValueError:
+                        continue
 
-                # Look up common name
-                mapping = (
-                    session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
-                )
+                    # Look up common name
+                    mapping_stmt = (
+                        select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number).limit(1)
+                    )
+                    mapping_result = await session.execute(mapping_stmt)
+                    mapping = mapping_result.scalar_one_or_none()
 
-                if mapping and mapping.common_name and mapping.common_name.strip():
-                    obj.common_name = mapping.common_name.strip()
-                    updated += 1
+                    if mapping and mapping.common_name and mapping.common_name.strip():
+                        obj.common_name = mapping.common_name.strip()
+                        updated += 1
 
-            if updated > 0:
-                session.commit()
-                console.print(f"[green]✓[/green] Updated {updated} objects with common names")
+                if updated > 0:
+                    await session.commit()
+                    console.print(f"[green]✓[/green] Updated {updated} objects with common names")
 
-                # Repopulate FTS table to include the new common names
-                console.print("[dim]Updating search index...[/dim]")
-                db.repopulate_fts_table()
-                console.print("[green]✓[/green] Search index updated")
-            else:
-                console.print("[yellow]⚠[/yellow] No objects needed updating")
+                    # Repopulate FTS table to include the new common names
+                    console.print("[dim]Updating search index...[/dim]")
+                    await db.repopulate_fts_table()
+                    console.print("[green]✓[/green] Search index updated")
+                else:
+                    console.print("[yellow]⚠[/yellow] No objects needed updating")
+
+        asyncio.run(_update_star_names())
 
         console.print("\n[bold green]✓ Star names updated![/bold green]\n")
     except Exception as e:
@@ -181,19 +188,27 @@ def rebuild_fts() -> None:
     console.print("[cyan]Rebuilding FTS5 search index...[/cyan]\n")
 
     try:
+        import asyncio
+
         db = get_database()
-        db.repopulate_fts_table()
+        asyncio.run(db.repopulate_fts_table())
 
         # Get count of indexed objects
         from sqlalchemy import func, select, text
 
         from ...api.models import CelestialObjectModel
 
-        with db._get_session() as session:
-            # FTS5 table requires raw SQL (virtual table)
-            fts_count = session.execute(text("SELECT COUNT(*) FROM objects_fts")).scalar() or 0
-            # Use SQLAlchemy for objects count
-            objects_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+        async def _get_counts() -> tuple[int, int]:
+            async with db._AsyncSession() as session:
+                # FTS5 table requires raw SQL (virtual table)
+                fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
+                fts_count = fts_result.scalar() or 0
+                # Use SQLAlchemy for objects count
+                objects_result = await session.scalar(select(func.count(CelestialObjectModel.id)))
+                objects_count = objects_result or 0
+                return fts_count, objects_count
+
+        fts_count, objects_count = asyncio.run(_get_counts())
 
         console.print("[green]✓[/green] FTS index rebuilt successfully")
         console.print(f"[dim]  Indexed {fts_count:,} objects out of {objects_count:,} total[/dim]\n")
@@ -302,7 +317,6 @@ def setup(
     from sqlalchemy import inspect
 
     from ...api.database import get_database, rebuild_database
-    from ...api.models import get_db_session
     from ..data_import import DATA_SOURCES
 
     console.print("\n[bold cyan]Setting up database...[/bold cyan]\n")
@@ -314,41 +328,47 @@ def setup(
     if db.db_path.exists():
         try:
             inspector = inspect(db._engine)
-            existing_tables = set(inspector.get_table_names())
-            if "objects" not in existing_tables:
+            if inspector is None:
                 console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
                 should_rebuild = True
             else:
-                # Check if we have catalog data
-                from sqlalchemy import func, select
+                existing_tables = set(inspector.get_table_names())
+                if "objects" not in existing_tables:
+                    console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
+                    should_rebuild = True
+                else:
+                    # Check if we have catalog data
+                    from sqlalchemy import func, select
 
-                from ...api.models import CelestialObjectModel
+                    from ...api.models import CelestialObjectModel
 
-                with db._get_session() as session:
-                    object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
-                    if object_count > 0:
-                        console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
-                        console.print("[dim]To import all available data, the database needs to be rebuilt.[/dim]\n")
+                    with db._get_session_sync() as session:
+                        object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+                        if object_count > 0:
+                            console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
+                            console.print(
+                                "[dim]To import all available data, the database needs to be rebuilt.[/dim]\n"
+                            )
 
-                        if not force:
-                            try:
-                                response = typer.prompt(
-                                    "Do you want to delete the existing database and rebuild with all data? (yes/no)",
-                                    default="no",
-                                )
-                                if response.lower() not in ("yes", "y"):
-                                    console.print(
-                                        "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
+                            if not force:
+                                try:
+                                    response = typer.prompt(
+                                        "Do you want to delete the existing database and rebuild with all data? (yes/no)",
+                                        default="no",
                                     )
+                                    if response.lower() not in ("yes", "y"):
+                                        console.print(
+                                            "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
+                                        )
+                                        raise typer.Exit(code=0) from None
+                                except typer.Abort:
+                                    console.print("\n[dim]Operation cancelled.[/dim]\n")
                                     raise typer.Exit(code=0) from None
-                            except typer.Abort:
-                                console.print("\n[dim]Operation cancelled.[/dim]\n")
-                                raise typer.Exit(code=0) from None
 
-                        should_rebuild = True
-                    else:
-                        console.print("[yellow]⚠[/yellow] Database exists but is empty")
-                        should_rebuild = True
+                            should_rebuild = True
+                        else:
+                            console.print("[yellow]⚠[/yellow] Database exists but is empty")
+                            should_rebuild = True
         except Exception as e:
             console.print(f"[yellow]⚠[/yellow] Error checking database: {e}")
             console.print("[dim]Will rebuild database[/dim]")
@@ -376,12 +396,14 @@ def setup(
             console.print("[dim]  • Dark sky sites[/dim]")
             console.print("[dim]  • Space events[/dim]")
 
-            result: dict[str, Any] = rebuild_database(
-                backup_dir=None,  # Don't backup during setup
-                sources=list(DATA_SOURCES.keys()),  # Import all sources
-                mag_limit=mag_limit,
-                skip_backup=True,  # Skip backup during setup
-                dry_run=False,
+            result: dict[str, Any] = asyncio.run(
+                rebuild_database(
+                    backup_dir=None,  # Don't backup during setup
+                    sources=list(DATA_SOURCES.keys()),  # Import all sources
+                    mag_limit=mag_limit,
+                    skip_backup=True,  # Skip backup during setup
+                    dry_run=False,
+                )
             )
 
             console.print("\n[green]✓[/green] Database rebuilt successfully\n")
@@ -473,35 +495,36 @@ def setup(
             StarNameMappingModel,
         )
 
-        with db._get_session() as session:
-            meteor_count = session.scalar(select(func.count(MeteorShowerModel.id))) or 0
-            constellation_count = session.scalar(select(func.count(ConstellationModel.id))) or 0
-            dark_sky_count = session.scalar(select(func.count(DarkSkySiteModel.id))) or 0
-            star_mapping_count = session.scalar(select(func.count(StarNameMappingModel.hr_number))) or 0
+        async def _check_and_seed_static_data() -> None:
+            async with db._AsyncSession() as session:
+                meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
+                meteor_count = meteor_result or 0
+                constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
+                constellation_count = constellation_result or 0
+                dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
+                dark_sky_count = dark_sky_result or 0
+                star_mapping_result = await session.scalar(select(func.count(StarNameMappingModel.hr_number)))
+                star_mapping_count = star_mapping_result or 0
 
-            if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
-                console.print("[dim]Seeding static reference data...[/dim]")
-                from ...api.database_seeder import seed_all
+                if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
+                    console.print("[dim]Seeding static reference data...[/dim]")
+                    from ...api.database_seeder import seed_all
 
-                seed_all(session, force=False)
-                console.print("[green]✓[/green] Static reference data seeded")
-            else:
-                console.print("[green]✓[/green] Static reference data already exists")
+                    await seed_all(session, force=False)
+                    console.print("[green]✓[/green] Static reference data seeded")
+                else:
+                    console.print("[green]✓[/green] Static reference data already exists")
+
+        # Run async function - asyncio is imported at module level
+        asyncio.run(_check_and_seed_static_data())
     except Exception as e:
         console.print(f"[yellow]⚠[/yellow] Error checking static data: {e}")
         # Try to populate anyway
         try:
-            with get_db_session() as session:
-                from ...api.constellations import populate_constellation_database
-                from ...api.meteor_showers import populate_meteor_shower_database
-                from ...api.space_events import populate_space_events_database
-                from ...api.vacation_planning import populate_dark_sky_sites_database
-
-                populate_meteor_shower_database(session)
-                populate_constellation_database(session)
-                populate_dark_sky_sites_database(session)
-                populate_space_events_database(session)
-                console.print("[green]✓[/green] Static reference data populated")
+            # Note: These populate functions may expect sync sessions
+            # This fallback is skipped as it requires sync sessions which are no longer available
+            # The main seeding path above should handle this
+            console.print("[yellow]⚠[/yellow] Fallback population skipped (requires sync sessions)")
         except Exception as e2:
             console.print(f"[yellow]⚠[/yellow] Failed to populate static data (non-critical): {e2}")
 
@@ -509,10 +532,9 @@ def setup(
     if not skip_ephemeris:
         console.print("\n[cyan]Syncing ephemeris file metadata...[/cyan]")
         try:
-            import asyncio
-
             from ...api.database import sync_ephemeris_files_from_naif
 
+            # asyncio is imported at module level
             count = asyncio.run(sync_ephemeris_files_from_naif(force=False))
             console.print(f"[green]✓[/green] Synced {count} ephemeris files")
         except Exception as e:
@@ -524,7 +546,7 @@ def setup(
 
     # Show stats
     try:
-        stats = db.get_stats()
+        stats = asyncio.run(db.get_stats())
         console.print(f"[dim]Total objects: {stats.total_objects:,}[/dim]")
         console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
     except Exception:
@@ -555,35 +577,40 @@ def seed_database(
         nexstar data seed --force
         nexstar data seed --status
     """
-    from ...api.database_seeder import get_seed_status, seed_all
     from ...api.models import get_db_session
 
     # If status flag is set, show status and exit
     if status:
         console.print("\n[bold cyan]Seed Data Status[/bold cyan]\n")
         try:
-            with get_db_session() as db_session:
-                status_data = get_seed_status(db_session)
 
-                # Create a table to display status
-                from rich.table import Table
+            async def _get_status() -> dict[str, int]:
+                from ...api.database_seeder import get_seed_status
 
-                table = Table(show_header=True, header_style="bold", show_lines=False)
-                table.add_column("Data Type", style="cyan", width=25)
-                table.add_column("Count", justify="right", width=10)
-                table.add_column("Status", width=15)
+                async with get_db_session() as db_session:
+                    return await get_seed_status(db_session)
 
-                for data_type, count in status_data.items():
-                    status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+            status_data = asyncio.run(_get_status())
 
-                    display_name = data_type.replace("_", " ").title()
-                    table.add_row(display_name, str(count), status_str)
+            # Create a table to display status
+            from rich.table import Table
 
-                console.print(table)
+            table = Table(show_header=True, header_style="bold", show_lines=False)
+            table.add_column("Data Type", style="cyan", width=25)
+            table.add_column("Count", justify="right", width=10)
+            table.add_column("Status", width=15)
 
-                total_records = sum(status_data.values())
-                console.print(f"\n[bold]Total seed records:[/bold] {total_records}")
-                console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
+            for data_type, count in status_data.items():
+                status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+
+                display_name = data_type.replace("_", " ").title()
+                table.add_row(display_name, str(count), status_str)
+
+            console.print(table)
+
+            total_records = sum(status_data.values())
+            console.print(f"\n[bold]Total seed records:[/bold] {total_records}")
+            console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
         except Exception as e:
             console.print(f"\n[red]✗[/red] Error checking seed status: {e}\n")
             import traceback
@@ -595,27 +622,31 @@ def seed_database(
     console.print("\n[bold cyan]Seeding database with static reference data[/bold cyan]\n")
 
     try:
-        with get_db_session() as db_session:
-            results = seed_all(db_session, force=force)
 
-            # Display results
-            total_added = sum(results.values())
-            if total_added > 0:
-                console.print("\n[bold green]✓ Seeding complete![/bold green]")
-                console.print("\n[bold]Summary:[/bold]")
-                for data_type, count in results.items():
-                    if count > 0:
-                        console.print(
-                            f"  [green]✓[/green] {data_type.replace('_', ' ').title()}: {count} record(s) added"
-                        )
-                    else:
-                        console.print(
-                            f"  [dim]•[/dim] {data_type.replace('_', ' ').title()}: already seeded (no new records)"
-                        )
-                console.print(f"\n[dim]Total records added: {total_added}[/dim]\n")
-            else:
-                console.print("\n[bold]✓ All data already seeded[/bold]")
-                console.print("[dim]No new records were added. Use --force to re-seed all data.[/dim]\n")
+        async def _seed_all() -> dict[str, int]:
+            from ...api.database_seeder import seed_all
+
+            async with get_db_session() as db_session:
+                return await seed_all(db_session, force=force)
+
+        results = asyncio.run(_seed_all())
+
+        # Display results
+        total_added = sum(results.values())
+        if total_added > 0:
+            console.print("\n[bold green]✓ Seeding complete![/bold green]")
+            console.print("\n[bold]Summary:[/bold]")
+            for data_type, count in results.items():
+                if count > 0:
+                    console.print(f"  [green]✓[/green] {data_type.replace('_', ' ').title()}: {count} record(s) added")
+                else:
+                    console.print(
+                        f"  [dim]•[/dim] {data_type.replace('_', ' ').title()}: already seeded (no new records)"
+                    )
+            console.print(f"\n[dim]Total records added: {total_added}[/dim]\n")
+        else:
+            console.print("\n[bold]✓ All data already seeded[/bold]")
+            console.print("[dim]No new records were added. Use --force to re-seed all data.[/dim]\n")
 
     except FileNotFoundError as e:
         console.print(f"\n[red]✗[/red] Seed data file not found: {e}\n")
@@ -642,41 +673,19 @@ def init_static() -> None:
 
     This should be run once after database setup to enable offline functionality.
     """
-    from ...api.constellations import populate_constellation_database
-    from ...api.meteor_showers import populate_meteor_shower_database
-    from ...api.models import get_db_session
-    from ...api.space_events import populate_space_events_database
-    from ...api.star_name_mappings import populate_star_name_mappings_database
-    from ...api.vacation_planning import populate_dark_sky_sites_database
-
     console.print("\n[bold cyan]Initializing static reference data[/bold cyan]\n")
 
     try:
-        with get_db_session() as db:
-            # Populate meteor showers
-            console.print("[dim]Populating meteor showers...[/dim]")
-            populate_meteor_shower_database(db)
-            console.print("[green]✓[/green] Meteor showers populated")
+        # Use database_seeder directly, which is async
+        from ...api.database_seeder import seed_all
+        from ...api.models import get_db_session
 
-            # Populate constellations
-            console.print("[dim]Populating constellations and asterisms...[/dim]")
-            populate_constellation_database(db)
-            console.print("[green]✓[/green] Constellations populated")
+        async def _init_static_data() -> None:
+            async with get_db_session() as db_session:
+                # Use seed_all which handles all static data seeding
+                await seed_all(db_session, force=False)
 
-            # Populate dark sky sites
-            console.print("[dim]Populating dark sky sites...[/dim]")
-            populate_dark_sky_sites_database(db)
-            console.print("[green]✓[/green] Dark sky sites populated")
-
-            # Populate space events
-            console.print("[dim]Populating space events calendar...[/dim]")
-            populate_space_events_database(db)
-            console.print("[green]✓[/green] Space events populated")
-
-            # Populate star name mappings
-            console.print("[dim]Populating star name mappings...[/dim]")
-            populate_star_name_mappings_database(db)
-            console.print("[green]✓[/green] Star name mappings populated")
+        asyncio.run(_init_static_data())
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")
@@ -706,7 +715,7 @@ def stats() -> None:
     from ...api.database import get_database
 
     db = get_database()
-    db_stats = db.get_stats()
+    db_stats = asyncio.run(db.get_stats())
 
     # Overall stats
     console.print("\n[bold cyan]Database Statistics[/bold cyan]")
@@ -739,76 +748,92 @@ def stats() -> None:
 
     # Light pollution statistics
     try:
-        with db._get_session() as session:
-            # Check if table exists
-            table_exists = session.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
-            ).fetchone()
 
-            if table_exists:
+        async def _get_lp_stats() -> tuple[
+            bool, int | None, tuple[float | None, float | None] | None, list[Row[tuple[str | None, int]]] | None
+        ]:
+            async with db._AsyncSession() as session:
+                # Check if table exists
+                table_check = await session.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
+                )
+                table_exists = table_check.fetchone() is not None
+
+                if not table_exists:
+                    return False, None, None, None
+
                 # Get total count using SQLAlchemy
                 from sqlalchemy import func, select
 
                 from ...api.models import LightPollutionGridModel
 
-                total_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
+                total_count_result = await session.scalar(select(func.count(LightPollutionGridModel.id)))
+                total_count = total_count_result or 0
 
-                if total_count > 0:
-                    # Get SQM range using SQLAlchemy
-                    from sqlalchemy import func
+                if total_count == 0:
+                    return True, 0, None, None
 
-                    sqm_range = session.execute(
-                        select(
-                            func.min(LightPollutionGridModel.sqm_value),
-                            func.max(LightPollutionGridModel.sqm_value),
-                        )
-                    ).fetchone()
-                    if sqm_range is not None:
-                        sqm_min = sqm_range[0] if sqm_range[0] is not None else None
-                        sqm_max = sqm_range[1] if sqm_range[1] is not None else None
-                    else:
-                        sqm_min = None
-                        sqm_max = None
-
-                    # Get coverage by region using SQLAlchemy
-                    region_counts = (
-                        session.execute(
-                            select(
-                                LightPollutionGridModel.region,
-                                func.count(LightPollutionGridModel.id),
-                            )
-                            .where(LightPollutionGridModel.region.isnot(None))
-                            .group_by(LightPollutionGridModel.region)
-                            .order_by(LightPollutionGridModel.region)
-                        )
-                    ).fetchall()
-
-                    lp_table = Table(title="\nLight Pollution Data")
-                    lp_table.add_column("Metric", style="cyan")
-                    lp_table.add_column("Value", justify="right", style="green")
-
-                    lp_table.add_row("Total grid points", f"{total_count:,}")
-                    if sqm_min is not None and sqm_max is not None:
-                        lp_table.add_row("SQM range", f"{sqm_min:.2f} to {sqm_max:.2f}")
-                    lp_table.add_row("Spatial indexing", "[green]Geohash[/green]")
-
-                    console.print(lp_table)
-
-                    # Regions table if we have region data
-                    if region_counts:
-                        region_table = Table(title="Coverage by Region")
-                        region_table.add_column("Region", style="cyan")
-                        region_table.add_column("Grid Points", justify="right", style="green")
-
-                        for region, count in region_counts:
-                            region_name = region if region else "Unknown"
-                            region_table.add_row(region_name, f"{count:,}")
-
-                        console.print(region_table)
+                # Get SQM range using SQLAlchemy
+                sqm_result = await session.execute(
+                    select(
+                        func.min(LightPollutionGridModel.sqm_value),
+                        func.max(LightPollutionGridModel.sqm_value),
+                    )
+                )
+                sqm_range = sqm_result.fetchone()
+                if sqm_range is not None:
+                    sqm_min = sqm_range[0] if sqm_range[0] is not None else None
+                    sqm_max = sqm_range[1] if sqm_range[1] is not None else None
                 else:
-                    console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
+                    sqm_min = None
+                    sqm_max = None
+
+                # Get coverage by region using SQLAlchemy
+                region_result = await session.execute(
+                    select(
+                        LightPollutionGridModel.region,
+                        func.count(LightPollutionGridModel.id),
+                    )
+                    .where(LightPollutionGridModel.region.isnot(None))
+                    .group_by(LightPollutionGridModel.region)
+                    .order_by(LightPollutionGridModel.region)
+                )
+                region_counts = region_result.fetchall()
+
+                return True, total_count, (sqm_min, sqm_max), list(region_counts)
+
+        table_exists, total_count, sqm_range, region_counts = asyncio.run(_get_lp_stats())
+
+        if table_exists and total_count is not None:
+            if total_count > 0:
+                sqm_min, sqm_max = sqm_range if sqm_range else (None, None)
+
+                lp_table = Table(title="\nLight Pollution Data")
+                lp_table.add_column("Metric", style="cyan")
+                lp_table.add_column("Value", justify="right", style="green")
+
+                lp_table.add_row("Total grid points", f"{total_count:,}")
+                if sqm_min is not None and sqm_max is not None:
+                    lp_table.add_row("SQM range", f"{sqm_min:.2f} to {sqm_max:.2f}")
+                lp_table.add_row("Spatial indexing", "[green]Geohash[/green]")
+
+                console.print(lp_table)
+
+                # Regions table if we have region data
+                if region_counts:
+                    region_table = Table(title="Coverage by Region")
+                    region_table.add_column("Region", style="cyan")
+                    region_table.add_column("Grid Points", justify="right", style="green")
+
+                    for region, count in region_counts:
+                        region_name = region if region else "Unknown"
+                        region_table.add_row(region_name, f"{count:,}")
+
+                    console.print(region_table)
             else:
-                console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
+                console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
+        else:
+            console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
     except Exception:
         # Silently skip if there's an error (table might not exist)
         pass
@@ -818,104 +843,147 @@ def stats() -> None:
         from ...api.database_seeder import get_seed_status
         from ...api.models import get_db_session
 
-        with get_db_session() as db_session:
-            seed_status = get_seed_status(db_session)
+        async def _get_seed_status() -> dict[str, int]:
+            async with get_db_session() as db_session:
+                return await get_seed_status(db_session)
 
-            seed_table = Table(title="\nSeed Data (Static Reference Data)")
-            seed_table.add_column("Data Type", style="cyan")
-            seed_table.add_column("Count", justify="right", style="green")
-            seed_table.add_column("Status", width=15)
+        seed_status = asyncio.run(_get_seed_status())
 
-            total_seed_records = 0
-            for data_type, count in sorted(seed_status.items()):
-                total_seed_records += count
-                status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
-                display_name = data_type.replace("_", " ").title()
-                seed_table.add_row(display_name, f"{count:,}", status_str)
+        seed_table = Table(title="\nSeed Data (Static Reference Data)")
+        seed_table.add_column("Data Type", style="cyan")
+        seed_table.add_column("Count", justify="right", style="green")
+        seed_table.add_column("Status", width=15)
 
-            if total_seed_records > 0:
-                seed_table.add_row("", "", "")
-                seed_table.add_row("[bold]Total[/bold]", f"[bold]{total_seed_records:,}[/bold]", "")
+        total_seed_records = 0
+        for data_type, count in sorted(seed_status.items()):
+            total_seed_records += count
+            status_str = "[green]Seeded[/green]" if count > 0 else "[yellow]Not Seeded[/yellow]"
+            display_name = data_type.replace("_", " ").title()
+            seed_table.add_row(display_name, f"{count:,}", status_str)
 
-            console.print(seed_table)
+        if total_seed_records > 0:
+            seed_table.add_row("", "", "")
+            seed_table.add_row("[bold]Total[/bold]", f"[bold]{total_seed_records:,}[/bold]", "")
+
+        console.print(seed_table)
     except Exception:
         # Silently skip if there's an error (tables might not exist)
         pass
 
     # TLE data statistics
     try:
+        from datetime import datetime
+
         from sqlalchemy import func, select
 
         from ...api.models import TLEModel, get_db_session
 
-        with get_db_session() as db_session:
-            # Check if table exists
-            table_exists = db_session.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'")
-            ).fetchone()
+        async def _get_tle_stats() -> tuple[
+            bool,
+            int | None,
+            list[Row[tuple[str | None, int]]] | None,
+            int | None,
+            datetime | None,
+            tuple[datetime | None, datetime | None] | None,
+        ]:
+            async with get_db_session() as db_session:
+                # Check if table exists
+                table_check = await db_session.execute(
+                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'")
+                )
+                table_exists = table_check.fetchone() is not None
 
-            if table_exists:
-                total_tle_count = db_session.scalar(select(func.count(TLEModel.norad_id))) or 0
+                if not table_exists:
+                    return False, None, None, None, None, None
 
-                if total_tle_count > 0:
-                    # Get counts by group
-                    group_counts = (
-                        db_session.execute(
-                            select(
-                                TLEModel.satellite_group,
-                                func.count(TLEModel.norad_id),
-                            )
-                            .where(TLEModel.satellite_group.isnot(None))
-                            .group_by(TLEModel.satellite_group)
-                            .order_by(TLEModel.satellite_group)
-                        )
-                    ).fetchall()
+                total_tle_result = await db_session.scalar(select(func.count(TLEModel.norad_id)))
+                total_tle_count = total_tle_result or 0
 
-                    # Get unique satellite count
-                    unique_satellites = db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id)))) or 0
+                if total_tle_count == 0:
+                    return True, 0, None, None, None, None
 
-                    # Get last fetched time
-                    last_fetched = db_session.scalar(
-                        select(func.max(TLEModel.fetched_at)).where(TLEModel.fetched_at.isnot(None))
+                # Get counts by group
+                group_result = await db_session.execute(
+                    select(
+                        TLEModel.satellite_group,
+                        func.count(TLEModel.norad_id),
                     )
+                    .where(TLEModel.satellite_group.isnot(None))
+                    .group_by(TLEModel.satellite_group)
+                    .order_by(TLEModel.satellite_group)
+                )
+                group_counts = group_result.fetchall()
 
-                    # Get oldest TLE epoch (to show data freshness)
-                    oldest_epoch = db_session.scalar(select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
-                    newest_epoch = db_session.scalar(select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
+                # Get unique satellite count
+                unique_result = await db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id))))
+                unique_satellites = unique_result or 0
 
-                    tle_table = Table(title="\nTLE Data (Satellite Orbital Elements)")
-                    tle_table.add_column("Metric", style="cyan")
-                    tle_table.add_column("Value", justify="right", style="green")
+                # Get last fetched time
+                last_fetched_result = await db_session.scalar(
+                    select(func.max(TLEModel.fetched_at)).where(TLEModel.fetched_at.isnot(None))
+                )
+                last_fetched = last_fetched_result
 
-                    tle_table.add_row("Total TLE records", f"{total_tle_count:,}")
-                    tle_table.add_row("Unique satellites", f"{unique_satellites:,}")
+                # Get oldest TLE epoch (to show data freshness)
+                oldest_result = await db_session.scalar(
+                    select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None))
+                )
+                oldest_epoch = oldest_result
+                newest_result = await db_session.scalar(
+                    select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None))
+                )
+                newest_epoch = newest_result
 
-                    if last_fetched:
-                        last_fetched_str = last_fetched.strftime("%Y-%m-%d %H:%M:%S")
-                        tle_table.add_row("Last fetched", last_fetched_str)
+                return (
+                    True,
+                    total_tle_count,
+                    list(group_counts),
+                    unique_satellites,
+                    last_fetched,
+                    (oldest_epoch, newest_epoch),
+                )
 
-                    if oldest_epoch and newest_epoch:
-                        oldest_str = oldest_epoch.strftime("%Y-%m-%d")
-                        newest_str = newest_epoch.strftime("%Y-%m-%d")
-                        tle_table.add_row("TLE epoch range", f"{oldest_str} to {newest_str}")
+        table_exists, total_tle_count, group_counts, unique_satellites, last_fetched, epoch_range = asyncio.run(
+            _get_tle_stats()
+        )
 
-                    console.print(tle_table)
+        if table_exists and total_tle_count is not None:
+            if total_tle_count > 0:
+                oldest_epoch, newest_epoch = epoch_range if epoch_range else (None, None)
 
-                    # Groups table if we have group data
-                    if group_counts:
-                        group_table = Table(title="TLE Data by Satellite Group")
-                        group_table.add_column("Group", style="cyan")
-                        group_table.add_column("Satellites", justify="right", style="green")
+                tle_table = Table(title="\nTLE Data (Satellite Orbital Elements)")
+                tle_table.add_column("Metric", style="cyan")
+                tle_table.add_column("Value", justify="right", style="green")
 
-                        for group_name, count in group_counts:
-                            display_name = group_name.title() if group_name else "Unknown"
-                            group_table.add_row(display_name, f"{count:,}")
+                tle_table.add_row("Total TLE records", f"{total_tle_count:,}")
+                tle_table.add_row("Unique satellites", f"{unique_satellites:,}")
 
-                        console.print(group_table)
-                else:
-                    console.print("\n[dim]TLE data: [yellow]No data imported[/yellow][/dim]")
+                if last_fetched:
+                    last_fetched_str = last_fetched.strftime("%Y-%m-%d %H:%M:%S")
+                    tle_table.add_row("Last fetched", last_fetched_str)
+
+                if oldest_epoch and newest_epoch:
+                    oldest_str = oldest_epoch.strftime("%Y-%m-%d")
+                    newest_str = newest_epoch.strftime("%Y-%m-%d")
+                    tle_table.add_row("TLE epoch range", f"{oldest_str} to {newest_str}")
+
+                console.print(tle_table)
+
+                # Groups table if we have group data
+                if group_counts:
+                    group_table = Table(title="TLE Data by Satellite Group")
+                    group_table.add_column("Group", style="cyan")
+                    group_table.add_column("Satellites", justify="right", style="green")
+
+                    for group_name, count in group_counts:
+                        display_name = group_name.title() if group_name else "Unknown"
+                        group_table.add_row(display_name, f"{count:,}")
+
+                    console.print(group_table)
             else:
-                console.print("\n[dim]TLE data: [yellow]Table not created[/yellow][/dim]")
+                console.print("\n[dim]TLE data: [yellow]No data imported[/yellow][/dim]")
+        else:
+            console.print("\n[dim]TLE data: [yellow]Table not created[/yellow][/dim]")
     except Exception:
         # Silently skip if there's an error (table might not exist)
         pass
@@ -955,7 +1023,9 @@ def vacuum() -> None:
     console.print(f"[dim]Size before: {size_before / (1024 * 1024):.2f} MB[/dim]\n")
 
     try:
-        size_before_bytes, size_after_bytes = vacuum_database(db)
+        import asyncio
+
+        size_before_bytes, size_after_bytes = asyncio.run(vacuum_database(db))
         size_reclaimed = size_before_bytes - size_after_bytes
 
         console.print("[bold green]✓ VACUUM complete![/bold green]\n")
@@ -1014,7 +1084,7 @@ def clear_light_pollution(
 
     # Check if table exists and get row count
     try:
-        with db._get_session() as session:
+        with db._get_session_sync() as session:
             from sqlalchemy import text
 
             result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
@@ -1057,7 +1127,9 @@ def clear_light_pollution(
             from ...api.database import vacuum_database
 
             console.print("[dim]Running VACUUM to reclaim disk space...[/dim]")
-            size_before, size_after = vacuum_database(db)
+            import asyncio
+
+            size_before, size_after = asyncio.run(vacuum_database(db))
             size_reclaimed = size_before - size_after
 
             console.print("[bold green]✓[/bold green] Database optimized")
@@ -1325,13 +1397,15 @@ def rebuild(
         ) as progress:
             task = progress.add_task("Rebuilding database...", total=None)
 
-            # Run rebuild
-            result: dict[str, Any] = rebuild_database(
-                backup_dir=backup_path,
-                sources=source_list,
-                mag_limit=mag_limit,
-                skip_backup=skip_backup,
-                dry_run=dry_run,
+            # Run rebuild - rebuild_database is now async
+            result: dict[str, Any] = asyncio.run(
+                rebuild_database(
+                    backup_dir=backup_path,
+                    sources=source_list,
+                    mag_limit=mag_limit,
+                    skip_backup=skip_backup,
+                    dry_run=dry_run,
+                )
             )
 
             progress.update(task, completed=True)
@@ -1387,7 +1461,7 @@ def rebuild(
             console.print(static_table)
 
         # Final database stats
-        db_stats = db.get_stats()
+        db_stats = asyncio.run(db.get_stats())
         console.print(f"\n[bold]Database now contains {db_stats.total_objects:,} objects[/bold]")
         console.print("\n[dim]Database rebuild complete![/dim]\n")
 
@@ -1449,7 +1523,11 @@ def run_migrations(
 
     try:
         # Get current revision from database
-        with db._engine.connect() as connection:
+        # Alembic needs a sync engine, so create one
+        from sqlalchemy import create_engine
+
+        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
+        with sync_engine.connect() as connection:
             context = MigrationContext.configure(connection)
             current_rev = context.get_current_revision()
 
@@ -1514,7 +1592,7 @@ def run_migrations(
                 # walk_revisions returns revisions in order from start to end
                 if head_rev is not None and current_rev is not None and head_rev != "heads":
                     upgrade_path = list(script.walk_revisions(current_rev, head_rev))
-                    [rev.revision for rev in upgrade_path if rev.revision != current_rev]
+                    migrations_to_apply = [str(rev.revision) for rev in upgrade_path if rev.revision != current_rev]
                 elif head_rev == "heads":
                     # Multiple heads - can't easily determine path, will let Alembic handle it
                     migrations_to_apply = "multiple branches (will be merged)"
@@ -1539,9 +1617,9 @@ def run_migrations(
         if dry_run:
             console.print("[bold yellow][DRY RUN] Would apply migrations:[/bold yellow]")
             if isinstance(migrations_to_apply, list):
-                for rev in migrations_to_apply:
-                    console.print(f"  - {rev}")
-            else:
+                for rev_str in migrations_to_apply:
+                    console.print(f"  - {rev_str}")
+            else:  # str
                 console.print(f"  - {migrations_to_apply}")
             console.print("\n[dim]Run without --dry-run to apply migrations.[/dim]\n")
             return
@@ -1550,7 +1628,9 @@ def run_migrations(
         console.print("[cyan]Applying migrations...[/cyan]\n")
         try:
             # Dispose of existing connections to ensure Alembic uses fresh connections
-            db._engine.dispose()
+            import asyncio
+
+            asyncio.run(db._engine.dispose())
 
             # Use upgrade to head - this will apply ALL pending migrations in sequence
             # Alembic will automatically apply all migrations from current state to head
@@ -1559,8 +1639,11 @@ def run_migrations(
 
             # Verify the new revision after applying migrations
             # Get a fresh connection to ensure we see the updated state
-            db._engine.dispose()  # Close existing connections
-            with db._engine.connect() as connection:
+            asyncio.run(db._engine.dispose())  # Close existing connections
+            from sqlalchemy import create_engine
+
+            sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
+            with sync_engine.connect() as connection:
                 context = MigrationContext.configure(connection)
                 new_rev = context.get_current_revision()
                 try:

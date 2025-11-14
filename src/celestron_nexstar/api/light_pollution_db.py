@@ -119,7 +119,7 @@ def clear_light_pollution_data(db: CatalogDatabase) -> int:
 
     from .models import LightPollutionGridModel
 
-    with db._get_session() as session:
+    with db._get_session_sync() as session:
         # First, get count of rows to be deleted
         row_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
 
@@ -556,7 +556,7 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
     """Insert batch of light pollution data with geohash indexing."""
     from .models import LightPollutionGridModel
 
-    with db._get_session() as session:
+    with db._get_session_sync() as session:
         # Use SQLAlchemy ORM for inserts
         for lat, lon, sqm, region in batch_data:
             # Calculate geohash for indexing (use precision 9 for ~5m accuracy)
@@ -612,7 +612,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
         from .models import LightPollutionGridModel
 
-        with db._get_session() as session:
+        with db._get_session_sync() as session:
             inspector = inspect(session.bind)
             if inspector is not None and "light_pollution_grid" not in inspector.get_table_names():
                 logger.debug("light_pollution_grid table does not exist")
@@ -638,7 +638,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     from .models import LightPollutionGridModel
 
     result: list[Any]
-    with db._get_session() as session:
+    with db._get_session_sync() as session:
         # Query using geohash prefix matching with SQLAlchemy ORM
         # This is much faster than bounding box queries for large datasets
         # Build OR conditions for geohash LIKE patterns

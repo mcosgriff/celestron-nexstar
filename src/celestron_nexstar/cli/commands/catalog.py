@@ -4,6 +4,7 @@ Catalog Commands
 Commands for searching and managing celestial object catalogs.
 """
 
+import asyncio
 from pathlib import Path
 
 import typer
@@ -75,7 +76,7 @@ def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
         db = get_database()
         # Database query is already case-insensitive, so pass incomplete as-is
         # The get_names_for_completion method handles case-insensitive matching
-        return db.get_names_for_completion(prefix=incomplete, limit=50)
+        return asyncio.run(db.get_names_for_completion(prefix=incomplete, limit=50))
     except Exception:
         # If database is not available, return empty list
         return []
@@ -102,7 +103,7 @@ def search(
 
         # Search for objects
         catalog_name = None if catalog == "all" else catalog
-        results = search_objects(query, catalog_name)
+        results = asyncio.run(search_objects(query, catalog_name))
 
         if not results:
             print_info(f"No objects found matching '{query}'")
@@ -268,7 +269,7 @@ def list_catalog(
         # Validate catalog name if not "all"
         if catalog != "all":
             db = get_database()
-            available_catalogs = db.get_all_catalogs()
+            available_catalogs = asyncio.run(db.get_all_catalogs())
             if catalog not in available_catalogs:
                 print_error(
                     f"Invalid catalog: '{catalog}'. Available catalogs: {', '.join(sorted(available_catalogs))}, 'all'"
@@ -281,7 +282,7 @@ def list_catalog(
         else:
             # Try to get from database first, fallback to YAML if not in database
             db = get_database()
-            db_objects = db.get_by_catalog(catalog, limit=10000)  # Large limit to get all objects
+            db_objects = asyncio.run(db.get_by_catalog(catalog, limit=10000))  # Large limit to get all objects
             objects = db_objects or get_catalog(catalog)
 
         # Filter by type if specified
@@ -427,7 +428,7 @@ def info(
         check_database_setup()
 
         # Get matching objects (fuzzy search)
-        matches = get_object_by_name(object_name)
+        matches = asyncio.run(get_object_by_name(object_name))
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
@@ -528,7 +529,7 @@ def goto(
         check_database_setup()
 
         # Look up objects (fuzzy search)
-        matches = get_object_by_name(object_name)
+        matches = asyncio.run(get_object_by_name(object_name))
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
@@ -570,7 +571,7 @@ def catalogs() -> None:
         check_database_setup()
 
         db = get_database()
-        stats = db.get_stats()
+        stats = asyncio.run(db.get_stats())
 
         table = Table(title="Available Catalogs", show_header=True, header_style="bold magenta")
         table.add_column("Catalog", style="cyan")
@@ -613,8 +614,8 @@ def catalogs() -> None:
 def _select_catalog_interactive() -> str | None:
     """Interactively select a catalog."""
     db = get_database()
-    stats = db.get_stats()
-    available_catalogs = ["all", *db.get_all_catalogs()]
+    stats = asyncio.run(db.get_stats())
+    available_catalogs = ["all", *asyncio.run(db.get_all_catalogs())]
 
     # Catalog descriptions
     descriptions = {

@@ -104,10 +104,12 @@ def get_dataset_info() -> FormattedText:
         Formatted text showing database statistics and catalog information
     """
     try:
+        import asyncio
+
         from ...api.database import get_database
 
         db = get_database()
-        stats = db.get_stats()
+        stats = asyncio.run(db.get_stats())
 
         from .state import get_state
 
@@ -801,7 +803,9 @@ def get_visible_objects_info() -> FormattedText:
         else:
             max_mag = 15.0
 
-        all_objects = db.filter_objects(max_magnitude=max_mag, limit=1000)
+        import asyncio
+
+        all_objects = asyncio.run(db.filter_objects(max_magnitude=max_mag, limit=1000))
 
         # Filter visible objects (returns list of (object, visibility_info) tuples)
         visible = filter_visible_objects(

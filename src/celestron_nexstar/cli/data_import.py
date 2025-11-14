@@ -67,7 +67,9 @@ def _create_messier_entry(
     messier_name = f"M{messier_number}"
 
     # Check if Messier entry already exists
-    existing_messier = db.get_by_name(messier_name)
+    import asyncio
+
+    existing_messier = asyncio.run(db.get_by_name(messier_name))
     if existing_messier:
         if verbose:
             console.print(f"[dim]Skipping duplicate Messier: {messier_name}[/dim]")
@@ -86,18 +88,20 @@ def _create_messier_entry(
             messier_description_parts.append(f"Also known as: {common_names}")
         messier_description = "; ".join(messier_description_parts)
 
-        db.insert_object(
-            name=messier_name,
-            catalog="messier",
-            ra_hours=ra_hours,
-            dec_degrees=dec_degrees,
-            object_type=obj_type,
-            magnitude=magnitude,
-            common_name=messier_common_name,
-            catalog_number=messier_number,
-            size_arcmin=size_arcmin,
-            description=messier_description,
-            constellation=constellation,
+        asyncio.run(
+            db.insert_object(
+                name=messier_name,
+                catalog="messier",
+                ra_hours=ra_hours,
+                dec_degrees=dec_degrees,
+                object_type=obj_type,
+                magnitude=magnitude,
+                common_name=messier_common_name,
+                catalog_number=messier_number,
+                size_arcmin=size_arcmin,
+                description=messier_description,
+                constellation=constellation,
+            )
         )
 
         if verbose:
@@ -242,7 +246,9 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
 
                 # Check for duplicates before inserting
                 # First check by name (most common case)
-                existing = db.get_by_name(name)
+                import asyncio
+
+                existing = asyncio.run(db.get_by_name(name))
                 if existing:
                     skipped += 1
                     if verbose:
@@ -268,7 +274,9 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
                     continue
 
                 # Also check by catalog + catalog_number if available (more efficient query)
-                if catalog_number is not None and db.exists_by_catalog_number(catalog, catalog_number):
+                import asyncio
+
+                if catalog_number is not None and asyncio.run(db.exists_by_catalog_number(catalog, catalog_number)):
                     skipped += 1
                     if verbose:
                         console.print(f"[dim]Skipping duplicate: {catalog} {catalog_number}[/dim]")
@@ -294,18 +302,22 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
 
                 # Insert NGC/IC object into database
                 try:
-                    db.insert_object(
-                        name=name,
-                        catalog=catalog,
-                        ra_hours=ra_hours,
-                        dec_degrees=dec_degrees,
-                        object_type=obj_type,
-                        magnitude=magnitude,
-                        common_name=common_name,
-                        catalog_number=catalog_number,
-                        size_arcmin=size_arcmin,
-                        description=description,
-                        constellation=constellation,
+                    import asyncio
+
+                    asyncio.run(
+                        db.insert_object(
+                            name=name,
+                            catalog=catalog,
+                            ra_hours=ra_hours,
+                            dec_degrees=dec_degrees,
+                            object_type=obj_type,
+                            magnitude=magnitude,
+                            common_name=common_name,
+                            catalog_number=catalog_number,
+                            size_arcmin=size_arcmin,
+                            description=description,
+                            constellation=constellation,
+                        )
                     )
 
                     imported += 1
@@ -335,8 +347,7 @@ def import_openngc(csv_path: Path, mag_limit: float = 15.0, verbose: bool = Fals
 
                 progress.advance(task)
 
-    # Commit all changes
-    db.commit()
+    # Database commits are handled per-session, no explicit commit needed
 
     return imported, skipped
 
@@ -462,7 +473,9 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
                 star_name = f"HR {hr_number}"
 
                 # Look up common name from database star_name_mappings table
-                common_name = db.get_common_name_by_hr(hr_number)
+                import asyncio
+
+                common_name = asyncio.run(db.get_common_name_by_hr(hr_number))
                 if verbose and hr_number in [1708, 424, 2491]:  # Log for well-known stars
                     console.print(f"[dim]HR {hr_number}: common_name={common_name}[/dim]")
 
@@ -478,7 +491,9 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
                 obj_type = CelestialObjectType.STAR
 
                 # Check for duplicates
-                existing = db.get_by_name(star_name)
+                import asyncio
+
+                existing = asyncio.run(db.get_by_name(star_name))
                 if existing:
                     skipped += 1
                     if verbose:
@@ -487,7 +502,7 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
                     continue
 
                 # Check by HR number if available
-                if hr_number and db.exists_by_catalog_number("yale_bsc", hr_number):
+                if hr_number and asyncio.run(db.exists_by_catalog_number("yale_bsc", hr_number)):
                     skipped += 1
                     if verbose:
                         console.print(f"[dim]Skipping duplicate HR {hr_number}[/dim]")
@@ -496,17 +511,19 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
 
                 # Insert into database
                 try:
-                    db.insert_object(
-                        name=star_name,
-                        catalog="yale_bsc",
-                        ra_hours=ra_hours,
-                        dec_degrees=dec_degrees,
-                        object_type=obj_type,
-                        magnitude=vmag,
-                        common_name=common_name,
-                        catalog_number=hr_number,
-                        description=description,
-                        constellation=None,  # Not available in this format
+                    asyncio.run(
+                        db.insert_object(
+                            name=star_name,
+                            catalog="yale_bsc",
+                            ra_hours=ra_hours,
+                            dec_degrees=dec_degrees,
+                            object_type=obj_type,
+                            magnitude=vmag,
+                            common_name=common_name,
+                            catalog_number=hr_number,
+                            description=description,
+                            constellation=None,  # Not available in this format
+                        )
                     )
 
                     imported += 1
@@ -523,8 +540,7 @@ def import_yale_bsc(json_path: Path, mag_limit: float = 6.5, verbose: bool = Fal
 
             progress.advance(task)
 
-    # Commit all changes
-    db.commit()
+    # Database commits are handled per-session, no explicit commit needed
 
     return imported, skipped
 
@@ -646,7 +662,9 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 catalog_number = parse_catalog_number(name, catalog_name)
 
                 # Check for duplicates before inserting
-                existing = db.get_by_name(name)
+                import asyncio
+
+                existing = asyncio.run(db.get_by_name(name))
                 if existing:
                     skipped += 1
                     console.print(f"[dim]Skipping duplicate: {name} (already exists)[/dim]")
@@ -654,7 +672,9 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     continue
 
                 # Also check by catalog + catalog_number if available
-                if catalog_number is not None and db.exists_by_catalog_number(catalog_name, catalog_number):
+                if catalog_number is not None and asyncio.run(
+                    db.exists_by_catalog_number(catalog_name, catalog_number)
+                ):
                     skipped += 1
                     console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number} (already exists)[/dim]")
                     progress.advance(task)
@@ -665,20 +685,22 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
                 # Insert into database
                 try:
-                    db.insert_object(
-                        name=name,
-                        catalog=catalog_name,
-                        ra_hours=ra_hours,
-                        dec_degrees=dec_degrees,
-                        object_type=object_type,
-                        magnitude=magnitude,
-                        common_name=common_name,
-                        catalog_number=catalog_number,
-                        description=description,
-                        constellation=constellation,  # Read from YAML if present
-                        is_dynamic=is_dynamic,
-                        ephemeris_name=name if is_dynamic else None,
-                        parent_planet=parent_planet,
+                    asyncio.run(
+                        db.insert_object(
+                            name=name,
+                            catalog=catalog_name,
+                            ra_hours=ra_hours,
+                            dec_degrees=dec_degrees,
+                            object_type=object_type,
+                            magnitude=magnitude,
+                            common_name=common_name,
+                            catalog_number=catalog_number,
+                            description=description,
+                            constellation=constellation,  # Read from YAML if present
+                            is_dynamic=is_dynamic,
+                            ephemeris_name=name if is_dynamic else None,
+                            parent_planet=parent_planet,
+                        )
                     )
 
                     imported += 1
@@ -694,8 +716,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
                 progress.advance(task)
 
-    # Commit all changes
-    db.commit()
+    # Database commits are handled per-session, no explicit commit needed
 
     return imported, skipped
 
@@ -768,8 +789,10 @@ DATA_SOURCES: dict[str, DataSource] = {
 
 def list_data_sources() -> None:
     """Display available data sources."""
+    import asyncio
+
     db = get_database()
-    stats = db.get_stats()
+    stats = asyncio.run(db.get_stats())
 
     table = Table(title="Available Data Sources")
     table.add_column("Name", style="cyan")
@@ -851,7 +874,9 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
 
             # Show updated stats
             db = get_database()
-            stats = db.get_stats()
+            import asyncio
+
+            stats = asyncio.run(db.get_stats())
             console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
             return True
@@ -893,7 +918,9 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
 
         # Show updated stats
         db = get_database()
-        stats = db.get_stats()
+        import asyncio
+
+        stats = asyncio.run(db.get_stats())
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True

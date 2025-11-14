@@ -23,9 +23,7 @@ from ...api.compass import azimuth_to_compass_8point, format_object_path
 from ...api.constellations import get_prominent_constellations, get_visible_asterisms, get_visible_constellations
 from ...api.database import get_database
 from ...api.enums import CelestialObjectType
-from ...api.iss_tracking import get_iss_passes_cached
 from ...api.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
-from ...api.models import get_db_session
 from ...api.observer import get_observer_location
 from ...api.sun_moon import calculate_sun_times
 from ...api.utils import ra_dec_to_alt_az
@@ -127,10 +125,14 @@ def _get_visible_stars(
 
     # Query stars directly from database (not from YAML)
     # Stars must be imported first via: nexstar data import yale_bsc
-    stars = db.filter_objects(
-        object_type=CelestialObjectType.STAR,
-        max_magnitude=max_magnitude,
-        limit=500,  # Get more than we need to filter by altitude
+    import asyncio
+
+    stars = asyncio.run(
+        db.filter_objects(
+            object_type=CelestialObjectType.STAR,
+            max_magnitude=max_magnitude,
+            limit=500,  # Get more than we need to filter by altitude
+        )
     )
 
     visible = []
@@ -251,10 +253,15 @@ def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]ISS Visible Passes[/bold green]")
         output_console.print("[dim]Bright satellite passes visible without equipment[/dim]\n")
 
-        with get_db_session() as db:
-            iss_passes = asyncio.run(
-                get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=db)
-            )
+        from ...api.iss_tracking import ISSPass
+
+        async def _get_passes() -> list[ISSPass]:
+            from ...api.iss_tracking import get_iss_passes_cached
+
+            # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
+            return await get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=None)
+
+        iss_passes = asyncio.run(_get_passes())
 
         if iss_passes:
             table_iss = Table()

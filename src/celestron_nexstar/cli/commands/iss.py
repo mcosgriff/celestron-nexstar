@@ -16,7 +16,6 @@ from typer.core import TyperGroup
 
 from ...api.compass import azimuth_to_compass_8point
 from ...api.iss_tracking import ISSPass, get_iss_passes_cached
-from ...api.models import get_db_session
 from ...api.observer import ObserverLocation, get_observer_location
 from ...cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -92,17 +91,20 @@ def show_passes(
 
     now = datetime.now(UTC)
 
-    with get_db_session() as db:
-        iss_passes = asyncio.run(
-            get_iss_passes_cached(
-                location.latitude,
-                location.longitude,
-                start_time=now,
-                days=days,
-                min_altitude_deg=min_altitude,
-                db_session=db,
-            )
+    from ...api.iss_tracking import ISSPass
+
+    async def _get_passes() -> list[ISSPass]:
+        # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
+        return await get_iss_passes_cached(
+            location.latitude,
+            location.longitude,
+            start_time=now,
+            days=days,
+            min_altitude_deg=min_altitude,
+            db_session=None,
         )
+
+    iss_passes = asyncio.run(_get_passes())
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("passes")

@@ -371,10 +371,10 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
     hours = min(hours, 168)
     forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
 
-    # Helper function to check database (runs in thread pool)
-    def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
+    # Helper function to check database
+    async def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
         """Check database for cached forecasts. Returns (forecasts, now)."""
-        from sqlalchemy import and_, inspect
+        from sqlalchemy import and_, inspect, select
 
         from .database import get_database
         from .models import Base, WeatherForecastModel
@@ -383,10 +383,16 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
         # Ensure weather_forecast table exists (create if migration hasn't run yet)
         try:
-            inspector = inspect(db._engine)
+            inspector = inspect(db._engine.sync_engine)
             if "weather_forecast" not in inspector.get_table_names():
                 logger.debug("weather_forecast table not found, creating it...")
-                Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+                async with db._engine.begin() as conn:
+                    await conn.run_sync(
+                        lambda sync_conn: Base.metadata.create_all(
+                            sync_conn,
+                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                        )
+                    )
         except Exception as e:
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
@@ -394,12 +400,12 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
         existing_forecasts = []
 
         try:
-            with db._get_session() as session:
+            async with db._AsyncSession() as session:
                 # Query for forecasts for this location (we'll filter stale ones after)
                 # Get a wider range to check staleness intelligently
-                all_forecasts = (
-                    session.query(WeatherForecastModel)
-                    .filter(
+                stmt = (
+                    select(WeatherForecastModel)
+                    .where(
                         and_(
                             WeatherForecastModel.latitude == location.latitude,
                             WeatherForecastModel.longitude == location.longitude,
@@ -408,8 +414,9 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                         )
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp)
-                    .all()
                 )
+                result = await session.execute(stmt)
+                all_forecasts = result.scalars().all()
 
                 # Filter out stale forecasts using intelligent staleness check
                 existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
@@ -418,9 +425,9 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
         return existing_forecasts, now
 
-    # Check database for cached data (run in thread pool to avoid blocking)
+    # Check database for cached data
     try:
-        existing_forecasts, now = await asyncio.to_thread(_check_database_cache)
+        existing_forecasts, now = await _check_database_cache()
 
         # If we have enough non-stale forecasts covering the requested hours, return them
         if existing_forecasts and len(existing_forecasts) >= hours:
@@ -489,6 +496,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             "temperature_unit": "fahrenheit",
         }
 
+        # Type ignore needed: aiohttp expects specific param types but we have object values
         async with (
             aiohttp.ClientSession() as session,
             session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
@@ -575,10 +583,10 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                 )
             )
 
-        # Store forecasts in database (replace stale data) - run in thread pool
-        def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
-            """Store forecasts in database. Runs in thread pool."""
-            from sqlalchemy import and_
+        # Store forecasts in database (replace stale data)
+        async def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
+            """Store forecasts in database."""
+            from sqlalchemy import and_, select
 
             from .database import get_database
             from .geohash_utils import encode
@@ -586,40 +594,40 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
             db = get_database()
             try:
-                with db._get_session() as session:
+                async with db._AsyncSession() as session:
                     # Delete stale forecasts for this location using intelligent staleness check
                     now_db = datetime.now(UTC)
                     # Get all forecasts for this location to check staleness
-                    all_location_forecasts = (
-                        session.query(WeatherForecastModel)
-                        .filter(
-                            and_(
-                                WeatherForecastModel.latitude == location.latitude,
-                                WeatherForecastModel.longitude == location.longitude,
-                            )
+                    stmt = select(WeatherForecastModel).where(
+                        and_(
+                            WeatherForecastModel.latitude == location.latitude,
+                            WeatherForecastModel.longitude == location.longitude,
                         )
-                        .all()
                     )
+                    result = await session.execute(stmt)
+                    all_location_forecasts = result.scalars().all()
 
                     # Delete forecasts that are stale
                     for forecast in all_location_forecasts:
                         if _is_forecast_stale(forecast, now_db):
-                            session.delete(forecast)
+                            await session.delete(forecast)
 
                     # Insert new forecasts
                     for forecast_item in forecasts_to_store:
                         # Check if forecast already exists for this timestamp
-                        existing = (
-                            session.query(WeatherForecastModel)
-                            .filter(
+                        stmt = (
+                            select(WeatherForecastModel)
+                            .where(
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
                                     WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
                                 )
                             )
-                            .first()
+                            .limit(1)
                         )
+                        result = await session.execute(stmt)
+                        existing = result.scalar_one_or_none()
 
                         # Calculate geohash for this location (precision 9 for ~5m accuracy)
                         location_geohash = encode(location.latitude, location.longitude, precision=9)
@@ -651,13 +659,13 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                             )
                             session.add(db_forecast)
 
-                    session.commit()
+                    await session.commit()
                     logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
             except Exception as e:
                 logger.warning(f"Error storing weather forecasts in database: {e}")
 
         if forecasts:
-            await asyncio.to_thread(_store_forecasts_in_db, forecasts)
+            await _store_forecasts_in_db(forecasts)
 
     except Exception as e:
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
@@ -684,10 +692,10 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     current_hour_start = now.replace(minute=0, second=0, microsecond=0)
     current_hour_end = current_hour_start + timedelta(hours=1)
 
-    # Helper function to check database (runs in thread pool)
-    def _check_database_cache() -> WeatherForecastModel | None:
+    # Helper function to check database
+    async def _check_database_cache() -> WeatherForecastModel | None:
         """Check database for cached weather. Returns cached forecast or None."""
-        from sqlalchemy import and_, inspect
+        from sqlalchemy import and_, inspect, select
 
         from .database import get_database
         from .models import Base, WeatherForecastModel
@@ -696,19 +704,25 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
         # Ensure weather_forecast table exists
         try:
-            inspector = inspect(db._engine)
+            inspector = inspect(db._engine.sync_engine)
             if "weather_forecast" not in inspector.get_table_names():
                 logger.debug("weather_forecast table not found, creating it...")
-                Base.metadata.create_all(db._engine, tables=[WeatherForecastModel.__table__])  # type: ignore[list-item]
+                async with db._engine.begin() as conn:
+                    await conn.run_sync(
+                        lambda sync_conn: Base.metadata.create_all(
+                            sync_conn,
+                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                        )
+                    )
         except Exception as e:
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         try:
-            with db._get_session() as session:
+            async with db._AsyncSession() as session:
                 # Look for forecasts for the current hour
-                candidates = (
-                    session.query(WeatherForecastModel)
-                    .filter(
+                stmt = (
+                    select(WeatherForecastModel)
+                    .where(
                         and_(
                             WeatherForecastModel.latitude == location.latitude,
                             WeatherForecastModel.longitude == location.longitude,
@@ -717,8 +731,9 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                         )
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp.desc())
-                    .all()
                 )
+                result = await session.execute(stmt)
+                candidates = result.scalars().all()
 
                 # Find the first non-stale forecast
                 for candidate in candidates:
@@ -729,9 +744,9 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
         return None
 
-    # Check database for current weather (within the current hour) - run in thread pool
+    # Check database for current weather (within the current hour)
     try:
-        existing = await asyncio.to_thread(_check_database_cache)
+        existing = await _check_database_cache()
 
         if existing:
             # Convert database model to WeatherData
@@ -776,6 +791,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             "forecast_days": 1,
         }
 
+        # Type ignore needed: aiohttp expects specific param types but we have object values
         async with (
             aiohttp.ClientSession() as session,
             session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
@@ -852,12 +868,12 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             last_updated="now",
         )
 
-        # Store in database for future use - run in thread pool
+        # Store in database for future use
         if not weather_data.error:
 
-            def _store_weather_in_db(weather_to_store: WeatherData) -> None:
-                """Store weather in database. Runs in thread pool."""
-                from sqlalchemy import and_
+            async def _store_weather_in_db(weather_to_store: WeatherData) -> None:
+                """Store weather in database."""
+                from sqlalchemy import and_, select
 
                 from .database import get_database
                 from .geohash_utils import encode
@@ -870,11 +886,11 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     current_hour_start_db = now_db.replace(minute=0, second=0, microsecond=0)
                     current_hour_end_db = current_hour_start_db + timedelta(hours=1)
 
-                    with db._get_session() as session:
+                    async with db._AsyncSession() as session:
                         # Check if forecast already exists for this hour
-                        existing = (
-                            session.query(WeatherForecastModel)
-                            .filter(
+                        stmt = (
+                            select(WeatherForecastModel)
+                            .where(
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
@@ -882,8 +898,10 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                                     WeatherForecastModel.forecast_timestamp < current_hour_end_db,
                                 )
                             )
-                            .first()
+                            .limit(1)
                         )
+                        result = await session.execute(stmt)
+                        existing = result.scalar_one_or_none()
 
                         # Calculate seeing score
                         seeing_score = calculate_seeing_conditions(weather_to_store)
@@ -915,12 +933,12 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                             )
                             session.add(db_forecast)
 
-                        session.commit()
+                        await session.commit()
                         logger.debug("Stored current weather in database")
                 except Exception as e:
                     logger.warning(f"Error storing current weather in database: {e}")
 
-            await asyncio.to_thread(_store_weather_in_db, weather_data)
+            await _store_weather_in_db(weather_data)
 
         return weather_data
 
