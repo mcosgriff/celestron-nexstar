@@ -100,7 +100,7 @@ def _get_current_season(dt: datetime) -> str:
         return "Winter"
 
 
-def _get_visible_stars(
+async def _get_visible_stars(
     lat: float,
     lon: float,
     observation_time: datetime,
@@ -130,14 +130,10 @@ def _get_visible_stars(
 
     # Query stars directly from database (not from YAML)
     # Stars must be imported first via: nexstar data import yale_bsc
-    import asyncio
-
-    stars = asyncio.run(
-        db.filter_objects(
-            object_type=CelestialObjectType.STAR,
-            max_magnitude=max_magnitude,
-            limit=500,  # Get more than we need to filter by altitude
-        )
+    stars = await db.filter_objects(
+        object_type=CelestialObjectType.STAR,
+        max_magnitude=max_magnitude,
+        limit=500,  # Get more than we need to filter by altitude
     )
 
     visible = []
@@ -266,7 +262,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
             # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
             return await get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=None)
 
-        iss_passes = asyncio.run(_get_passes())
+        iss_passes = await _get_passes()
 
         if iss_passes:
             table_iss = Table()
@@ -412,7 +408,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
 
         # Also include constellations that have visible stars, even if center is low
         # Get visible stars first to find their constellations
-        visible_stars_for_const = _get_visible_stars(
+        visible_stars_for_const = await _get_visible_stars(
             lat, lon, midnight, min_altitude_deg=30.0, max_magnitude=6.0, limit=100
         )
 
@@ -533,7 +529,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]Bright Stars (Tonight)[/bold green]")
         output_console.print("[dim]Naked-eye visible stars (magnitude ≤ 6.0)[/dim]\n")
 
-        visible_stars = _get_visible_stars(lat, lon, midnight, min_altitude_deg=30.0, max_magnitude=6.0, limit=15)
+        visible_stars = await _get_visible_stars(lat, lon, midnight, min_altitude_deg=30.0, max_magnitude=6.0, limit=15)
 
         if visible_stars:
             table_stars = Table()
