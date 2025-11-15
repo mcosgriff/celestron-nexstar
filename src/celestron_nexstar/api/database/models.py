@@ -85,6 +85,9 @@ class CelestialObjectModel(Base):
     __table_args__ = (
         Index("idx_catalog_number", "catalog", "catalog_number"),
         Index("idx_type_magnitude", "object_type", "magnitude"),
+        Index("idx_parent_planet_type", "parent_planet", "object_type"),  # For moon queries
+        Index("idx_position", "ra_hours", "dec_degrees"),  # For position-based queries
+        Index("idx_ephemeris_name", "ephemeris_name"),  # For dynamic object lookups
     )
 
     def __repr__(self) -> str:
@@ -164,6 +167,11 @@ class ObservationModel(Base):
 
     # Relationships
     celestial_object: Mapped[CelestialObjectModel] = relationship("CelestialObjectModel", back_populates="observations")
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_object_observed", "object_id", "observed_at"),  # For querying observations by object and date
+    )
 
     def __repr__(self) -> str:
         """String representation of observation."""
@@ -534,8 +542,11 @@ class MeteorShowerModel(Base):
     best_time: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "After midnight", "Pre-dawn", etc.
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Composite index for finding active showers by date
-    __table_args__ = (Index("idx_peak_date", "peak_month", "peak_day"),)
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_peak_date", "peak_month", "peak_day"),
+        Index("idx_radiant_constellation", "radiant_constellation"),  # For filtering by constellation
+    )
 
     def to_meteor_shower(self) -> MeteorShower:
         """
@@ -657,8 +668,11 @@ class SpaceEventModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
-    # Composite index for date queries
-    __table_args__ = (Index("idx_event_date_type", "date", "event_type"),)
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_event_date_type", "date", "event_type"),
+        Index("idx_event_source", "source"),  # For filtering by source
+    )
 
     def __repr__(self) -> str:
         """String representation of the event."""
@@ -735,7 +749,7 @@ class StarNameMappingModel(Base):
     common_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
     # Optional: Bayer designation (e.g., "Alpha Aurigae")
-    bayer_designation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bayer_designation: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
