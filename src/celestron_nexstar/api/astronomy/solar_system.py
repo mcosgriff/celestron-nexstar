@@ -212,7 +212,6 @@ def get_moon_info(
         # Calculate moonrise/moonset
         moonrise_time = None
         moonset_time = None
-        is_moon_above = moon_alt > 0
 
         def _refine_horizon_crossing(start_dt: datetime, end_dt: datetime, rising: bool) -> datetime:
             """Refine horizon crossing time using binary search between two datetimes."""
@@ -242,32 +241,7 @@ def get_moon_info(
             return best_time
 
         try:
-            # First, look backwards to find today's moonrise (if moon is currently above horizon)
-            if is_moon_above:
-                # Look back up to 24 hours to find when moon rose today
-                for hours_back in range(1, 25):
-                    check_dt = dt - timedelta(hours=hours_back)
-                    t_check = ts.from_datetime(check_dt)
-                    astrometric_check = observer.at(t_check).observe(moon)
-                    alt_check, _az_check, _ = astrometric_check.apparent().altaz()
-                    moon_alt_check = alt_check.degrees
-
-                    # Check next hour (forward in time) for comparison
-                    next_dt = check_dt + timedelta(hours=1)
-                    t_next = ts.from_datetime(next_dt)
-                    astrometric_next = observer.at(t_next).observe(moon)
-                    alt_next, _az_next, _ = astrometric_next.apparent().altaz()
-                    moon_alt_next = alt_next.degrees
-
-                    # Moonrise: was below, now above (looking backwards)
-                    if moon_alt_check <= 0 and moon_alt_next > 0:
-                        # Refine the crossing time for better accuracy
-                        moonrise_time = _refine_horizon_crossing(check_dt, next_dt, rising=True)
-                        # Ensure UTC timezone
-                        if moonrise_time.tzinfo is None:
-                            moonrise_time = moonrise_time.replace(tzinfo=UTC)
-                        break
-
+            # Always look forward to find NEXT moonrise and NEXT moonset
             # Sample next 48 hours at 1-hour intervals to find moonset and next moonrise
             for hours_ahead in range(1, 49):
                 check_dt = dt + timedelta(hours=hours_ahead)
@@ -283,23 +257,31 @@ def get_moon_info(
                 alt_prev, _az_prev, _ = astrometric_prev.apparent().altaz()
                 moon_alt_prev = alt_prev.degrees
 
-                # Moonset: was above, now below
+                # Moonset: was above, now below (find next moonset)
                 if moon_alt_prev > 0 and moon_alt_check <= 0 and moonset_time is None:
                     # Refine the crossing time for better accuracy
                     moonset_time = _refine_horizon_crossing(prev_dt, check_dt, rising=False)
                     # Ensure UTC timezone
                     if moonset_time.tzinfo is None:
                         moonset_time = moonset_time.replace(tzinfo=UTC)
+                    # Only accept if it's in the future
+                    if moonset_time <= dt:
+                        moonset_time = None
+                        continue
                     if moonrise_time is not None:
                         break
 
-                # Moonrise: was below, now above (if we haven't found today's moonrise yet)
-                if moonrise_time is None and moon_alt_prev <= 0 and moon_alt_check > 0:
+                # Moonrise: was below, now above (find next moonrise)
+                if moon_alt_prev <= 0 and moon_alt_check > 0 and moonrise_time is None:
                     # Refine the crossing time for better accuracy
                     moonrise_time = _refine_horizon_crossing(prev_dt, check_dt, rising=True)
                     # Ensure UTC timezone
                     if moonrise_time.tzinfo is None:
                         moonrise_time = moonrise_time.replace(tzinfo=UTC)
+                    # Only accept if it's in the future
+                    if moonrise_time <= dt:
+                        moonrise_time = None
+                        continue
                     if moonset_time is not None:
                         break
         except Exception:

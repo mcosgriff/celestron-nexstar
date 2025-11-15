@@ -56,9 +56,7 @@ class ObservingTarget(StrEnum):
     DEEP_SKY = "deep_sky"
     DOUBLE_STARS = "double_stars"
     VARIABLE_STARS = "variable_stars"
-    MESSIER = "messier"
-    CALDWELL = "caldwell"
-    NGC_IC = "ngc_ic"
+    MESSIER = "messier"  # Popular curated catalog (still useful as separate category)
 
 
 @dataclass(frozen=True)
@@ -135,6 +133,7 @@ class RecommendedObject:
     # Conditions
     apparent_magnitude: float
     observability_score: float  # 0.0-1.0
+    visibility_probability: float  # 0.0-1.0, probability of actually seeing it given current conditions
 
     # Recommendations
     priority: int  # 1 (highest) to 5 (lowest)
@@ -470,14 +469,20 @@ class ObservationPlanner:
                 # Handle direct object type filtering (e.g., "galaxy", "star", "planet")
                 if is_direct_object_type:
                     if obj.object_type == target_types:
+                        # Additional validation: exclude DSO catalog objects when filtering for stars
+                        # This fixes cases where DSOs were incorrectly imported as type "star"
+                        if target_types == CelestialObjectType.STAR and obj.catalog in (
+                            "celestial_dsos",
+                            "celestial_messier",
+                            "celestial_local_group",
+                        ):
+                            continue  # Skip DSO catalog objects when filtering for stars
                         filtered_objects.append(obj)
                         seen_coordinates.add(coord_key)
                 # Handle ObservingTarget category filtering
                 elif isinstance(target_types, list) and (
                     (ObservingTarget.PLANETS in target_types and obj.object_type.value == "planet")
                     or (ObservingTarget.MESSIER in target_types and obj.catalog == "messier")
-                    or (ObservingTarget.CALDWELL in target_types and obj.catalog == "caldwell")
-                    or (ObservingTarget.NGC_IC in target_types and obj.catalog in ("ngc", "ic"))
                     or (
                         ObservingTarget.DEEP_SKY in target_types
                         and obj.object_type.value in ("galaxy", "nebula", "cluster")
@@ -550,19 +555,128 @@ class ObservationPlanner:
                     )
                 ]
 
-        # Sort by priority, then by magnitude (brighter first), then by observability score
+        # Sort by priority, then by visibility probability (when conditions are poor),
+        # then by magnitude (brighter first), then by observability score
         # Lower magnitude = brighter = better, so we sort ascending by magnitude
-        recommendations.sort(
-            key=lambda r: (
-                r.priority,
-                r.apparent_magnitude
-                if r.apparent_magnitude is not None
-                else 999.0,  # Put objects without magnitude last
-                -r.observability_score,
+        # When conditions are poor (quality < 0.5), prioritize visibility probability
+        if conditions.observing_quality_score < 0.5:
+            # Poor conditions: prioritize objects you're most likely to actually see
+            recommendations.sort(
+                key=lambda r: (
+                    r.priority,
+                    -r.visibility_probability,  # Higher probability first
+                    r.apparent_magnitude
+                    if r.apparent_magnitude is not None
+                    else 999.0,  # Put objects without magnitude last
+                    -r.observability_score,
+                )
             )
-        )
+        else:
+            # Good conditions: standard sorting
+            recommendations.sort(
+                key=lambda r: (
+                    r.priority,
+                    r.apparent_magnitude
+                    if r.apparent_magnitude is not None
+                    else 999.0,  # Put objects without magnitude last
+                    -r.observability_score,
+                )
+            )
 
         return recommendations[:max_results]
+
+    def _calculate_visibility_probability(
+        self,
+        obj: CelestialObject,
+        conditions: ObservingConditions,
+        vis_info: VisibilityInfo,
+    ) -> float:
+        """
+        Calculate the probability (0.0-1.0) of actually seeing an object given current conditions.
+
+        This factors in:
+        - Seeing conditions (0-100)
+        - Cloud cover
+        - Overall quality score
+        - Object type sensitivity to conditions
+        - Object brightness relative to limiting magnitude
+        """
+        # Start with observability score (altitude, magnitude, etc.)
+        prob = vis_info.observability_score
+
+        # Factor 1: Seeing conditions (0-100)
+        # Poor seeing (<50) significantly reduces probability, especially for faint objects
+        seeing = conditions.seeing_score
+        seeing_factor = 1.0
+
+        if seeing < 20:
+            # Very poor seeing (0-20): Only bright objects visible
+            if obj.magnitude and obj.magnitude > 4.0:
+                seeing_factor = 0.1  # Very faint objects almost impossible
+            elif obj.magnitude and obj.magnitude > 2.0:
+                seeing_factor = 0.3  # Moderate objects very difficult
+            else:
+                seeing_factor = 0.6  # Bright objects still somewhat visible
+        elif seeing < 50:
+            # Poor seeing (20-50): Bright objects OK, faint objects difficult
+            if obj.magnitude and obj.magnitude > 6.0:
+                seeing_factor = 0.3
+            elif obj.magnitude and obj.magnitude > 4.0:
+                seeing_factor = 0.6
+            else:
+                seeing_factor = 0.8
+        elif seeing < 70:
+            # Fair seeing (50-70): Most objects visible
+            seeing_factor = 0.85 + 0.15 * (seeing - 50) / 20
+        else:
+            # Good to excellent seeing (70-100)
+            seeing_factor = 1.0
+
+        # Factor 2: Cloud cover
+        cloud_factor = 1.0
+        if conditions.weather.cloud_cover_percent is not None:
+            cloud_cover = conditions.weather.cloud_cover_percent
+            if cloud_cover > 80:
+                cloud_factor = 0.1  # Heavy clouds, almost impossible
+            elif cloud_cover > 60:
+                cloud_factor = 0.3  # Mostly cloudy, very difficult
+            elif cloud_cover > 40:
+                cloud_factor = 0.6  # Partly cloudy, challenging
+            elif cloud_cover > 20:
+                cloud_factor = 0.8  # Some clouds, mostly OK
+            else:
+                cloud_factor = 1.0  # Clear skies
+
+        # Factor 3: Overall quality score (already factors weather, light pollution, moon)
+        # Convert from 0.0-1.0 scale to probability impact
+        quality_factor = 0.3 + 0.7 * conditions.observing_quality_score  # Minimum 30% even in poor conditions
+
+        # Factor 4: Object type sensitivity
+        # Some objects are more sensitive to conditions than others
+        type_factor = 1.0
+        if obj.object_type.value == "planet":
+            # Planets are bright and less affected by seeing (though detail is)
+            type_factor = 0.9  # Still visible even in poor conditions
+        elif obj.object_type.value == "star":
+            # Stars are point sources, less affected by seeing than extended objects
+            type_factor = 0.95 if obj.magnitude and obj.magnitude < 3.0 else 0.85
+        elif obj.object_type.value in ("galaxy", "nebula"):
+            # Extended objects very sensitive to seeing and transparency
+            if seeing < 50:
+                type_factor = 0.3  # Very difficult in poor seeing
+            elif seeing < 70:
+                type_factor = 0.6
+            else:
+                type_factor = 1.0
+        elif obj.object_type.value == "cluster":
+            # Clusters are somewhat sensitive
+            type_factor = 0.7 if seeing < 50 else 0.9
+
+        # Combine all factors
+        final_prob = prob * seeing_factor * cloud_factor * quality_factor * type_factor
+
+        # Clamp to 0.0-1.0
+        return max(0.0, min(1.0, final_prob))
 
     def _calculate_quality_score(
         self,
@@ -667,6 +781,9 @@ class ObservationPlanner:
         # Calculate moon separation (using cached moon position)
         moon_separation = self._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
 
+        # Calculate visibility probability based on current conditions
+        visibility_prob = self._calculate_visibility_probability(obj, conditions, vis_info)
+
         return RecommendedObject(
             obj=obj,
             altitude=vis_info.altitude_deg or 0.0,
@@ -675,6 +792,7 @@ class ObservationPlanner:
             visible_duration_hours=8.0,  # Simplified
             apparent_magnitude=obj.magnitude or 0.0,
             observability_score=vis_info.observability_score,
+            visibility_probability=visibility_prob,
             priority=priority,
             reason=f"Well positioned at {vis_info.altitude_deg:.0f}° altitude" if vis_info.altitude_deg else "Visible",
             viewing_tips=tips,

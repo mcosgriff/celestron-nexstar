@@ -425,7 +425,9 @@ def import_celestial_data_geojson(
                     continue
 
                 # Determine object type
-                obj_type = CelestialObjectType.STAR  # Default
+                # Default depends on catalog: DSO catalogs default to NEBULA, star catalogs default to STAR
+                default_type = CelestialObjectType.NEBULA if "dso" in catalog.lower() else CelestialObjectType.STAR
+                obj_type = default_type
                 type_str = (
                     properties.get("type")
                     or properties.get("Type")
