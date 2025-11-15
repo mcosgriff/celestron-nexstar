@@ -17,6 +17,15 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.events.sky_at_a_glance import (
+    DEFAULT_RSS_FEEDS,
+    SkyAtAGlanceArticle,
+    fetch_all_rss_feeds,
+    fetch_and_store_rss_feed,
+    get_article_by_title,
+    get_articles_this_month,
+    get_articles_this_week,
+)
 from celestron_nexstar.api.events.space_events import (
     SpaceEvent,
     SpaceEventType,
@@ -24,6 +33,8 @@ from celestron_nexstar.api.events.space_events import (
     get_upcoming_events,
     is_event_visible_from_location,
 )
+from celestron_nexstar.api.events.vacation_planning import find_dark_sites_near
+from celestron_nexstar.api.location.light_pollution import BortleClass
 from celestron_nexstar.api.location.observer import ObserverLocation, geocode_location, get_observer_location
 from celestron_nexstar.cli.utils.export import FileConsole, create_file_console, export_to_text
 from celestron_nexstar.cli.utils.selection import select_from_list
@@ -365,6 +376,346 @@ def _show_viewing_recommendation_content(
 
     if event.url:
         output_console.print(f"[dim]Source: {event.url}[/dim]\n")
+
+
+@app.command("fetch-rss-feeds")
+def fetch_rss_feeds(
+    source: str | None = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Specific feed source to fetch (e.g., 'sky-telescope', 'astronomy', 'earthsky'). If not specified, fetches all feeds.",
+    ),
+    url: str | None = typer.Option(
+        None,
+        "--url",
+        "-u",
+        help="Custom RSS feed URL (overrides --source if provided)",
+    ),
+    source_name: str | None = typer.Option(
+        None,
+        "--source-name",
+        help="Name for custom feed source (required when using --url)",
+    ),
+) -> None:
+    """
+    Fetch and update astronomy RSS feed articles from multiple sources.
+
+    Available sources:
+    - sky-telescope: Sky & Telescope 'Sky at a Glance'
+    - astronomy: Astronomy Magazine
+    - earthsky: EarthSky
+    - space-com: Space.com
+    - nasa: NASA News
+    - in-the-sky: In-The-Sky.org
+
+    Examples:
+        nexstar events fetch-rss-feeds                    # Fetch all feeds
+        nexstar events fetch-rss-feeds --source astronomy # Fetch only Astronomy Magazine
+        nexstar events fetch-rss-feeds --url <url> --source-name "Custom Feed"
+    """
+    from celestron_nexstar.api.database.models import get_db_session
+
+    try:
+        # Custom URL provided
+        if url:
+            if not source_name:
+                console.print("[red]Error: --source-name is required when using --url[/red]")
+                raise typer.Exit(1)
+            # Store in local variable for type narrowing
+            feed_source_name: str = source_name
+            console.print(f"[cyan]Fetching custom RSS feed: {feed_source_name}...[/cyan]\n")
+
+            async def _fetch_custom() -> int:
+                async with get_db_session() as db_session:
+                    return await fetch_and_store_rss_feed(url, feed_source_name, db_session)
+
+            new_count = asyncio.run(_fetch_custom())
+            console.print(f"[green]✓[/green] Successfully fetched RSS feed from {feed_source_name}")
+            console.print(f"[green]✓[/green] Added {new_count} new article(s) to database\n")
+            return
+
+        # Specific source provided
+        if source:
+            if source not in DEFAULT_RSS_FEEDS:
+                console.print(f"[red]Error: Unknown source '{source}'[/red]")
+                console.print(f"[dim]Available sources: {', '.join(DEFAULT_RSS_FEEDS.keys())}[/dim]")
+                raise typer.Exit(1)
+
+            feed_source = DEFAULT_RSS_FEEDS[source]
+            console.print(f"[cyan]Fetching RSS feed: {feed_source.name}...[/cyan]\n")
+
+            async def _fetch_single() -> int:
+                async with get_db_session() as db_session:
+                    return await fetch_and_store_rss_feed(feed_source.url, feed_source.name, db_session)
+
+            new_count = asyncio.run(_fetch_single())
+            console.print(f"[green]✓[/green] Successfully fetched RSS feed from {feed_source.name}")
+            console.print(f"[green]✓[/green] Added {new_count} new article(s) to database\n")
+            return
+
+        # Fetch all feeds
+        console.print("[cyan]Fetching all RSS feeds...[/cyan]\n")
+
+        async def _fetch_all() -> dict[str, int]:
+            async with get_db_session() as db_session:
+                return await fetch_all_rss_feeds(DEFAULT_RSS_FEEDS, db_session)
+
+        results = asyncio.run(_fetch_all())
+
+        # Display results
+        console.print("[bold]Fetch Results:[/bold]\n")
+        total_new = 0
+        for source_name, count in results.items():
+            if count >= 0:
+                console.print(f"  [green]✓[/green] {source_name}: {count} new article(s)")
+                total_new += count
+            else:
+                console.print(f"  [red]✗[/red] {source_name}: Failed to fetch")
+
+        console.print(f"\n[green]✓[/green] Total: {total_new} new article(s) added across all feeds\n")
+
+    except Exception as e:
+        console.print(f"[red]Error fetching RSS feeds: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@app.command("sky-at-a-glance")
+def show_sky_at_a_glance(
+    period: str = typer.Argument("week", help="Time period: 'week' (last 7 days) or 'month' (last 30 days)"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Show Sky & Telescope 'Sky at a Glance' articles for this week or month."""
+    from celestron_nexstar.api.database.models import get_db_session
+
+    if period.lower() not in ["week", "month"]:
+        console.print(f"[red]Error: Period must be 'week' or 'month', got '{period}'[/red]")
+        raise typer.Exit(1)
+
+    try:
+
+        async def _get_articles() -> list[SkyAtAGlanceArticle]:
+            async with get_db_session() as db_session:
+                if period.lower() == "week":
+                    return await get_articles_this_week(db_session)
+                else:
+                    return await get_articles_this_month(db_session)
+
+        articles = asyncio.run(_get_articles())
+
+        if export:
+            export_path_obj = (
+                Path(export_path) if export_path else _generate_export_filename("sky-at-a-glance", None, period)
+            )
+            file_console = create_file_console()
+            _show_sky_at_a_glance_content(file_console, articles, period)
+            content = file_console.file.getvalue()
+            file_console.file.close()
+
+            export_to_text(content, export_path_obj)
+            console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+            return
+
+        _show_sky_at_a_glance_content(console, articles, period)
+
+    except Exception as e:
+        console.print(f"[red]Error fetching articles: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@app.command("sky-viewing")
+def show_sky_viewing_recommendations(
+    article_title: str = typer.Argument(..., help="Title or partial title of the article (partial match OK)"),
+    location: str | None = typer.Option(
+        None, "--location", "-l", help="Location to check (default: your saved location)"
+    ),
+    max_distance: float = typer.Option(
+        500.0, "--max-distance", help="Maximum distance to search for better locations (miles)"
+    ),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """
+    Find the best viewing location for events mentioned in a Sky at a Glance article.
+
+    Analyzes the article content and suggests viewing locations based on your current location.
+    """
+    from celestron_nexstar.api.database.models import get_db_session
+
+    # Get article
+    try:
+
+        async def _get_article() -> SkyAtAGlanceArticle | None:
+            async with get_db_session() as db_session:
+                return await get_article_by_title(article_title, db_session)
+
+        article = asyncio.run(_get_article())
+
+        if article is None:
+            console.print(f"[red]Error: No article found matching '{article_title}'[/red]")
+            console.print(
+                "[dim]Use 'nexstar events sky-at-a-glance week' or 'nexstar events sky-at-a-glance month' to see available articles[/dim]"
+            )
+            raise typer.Exit(1)
+
+    except Exception as e:
+        console.print(f"[red]Error fetching article: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    # Get location
+    if location:
+        try:
+            observer_location = asyncio.run(geocode_location(location))
+        except Exception as e:
+            console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
+            raise typer.Exit(1) from e
+    else:
+        try:
+            observer_location = get_observer_location()
+        except Exception as e:
+            console.print(f"[red]Error: Could not get your location: {e}[/red]")
+            console.print("[dim]Set your location with 'nexstar location set' or use --location[/dim]")
+            raise typer.Exit(1) from e
+
+    # Analyze article for viewing recommendations
+    # For now, we'll provide general recommendations based on dark sky requirements
+    # In the future, this could be enhanced with NLP to extract specific event details
+
+    if export:
+        location_name = (
+            observer_location.name or f"{observer_location.latitude:.1f}N-{observer_location.longitude:.1f}E"
+        )
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("sky-viewing", location_name)
+        file_console = create_file_console()
+        _show_sky_viewing_recommendation_content(file_console, article, observer_location, max_distance)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_sky_viewing_recommendation_content(console, article, observer_location, max_distance)
+
+
+def _show_sky_at_a_glance_content(
+    output_console: Console | FileConsole,
+    articles: list[SkyAtAGlanceArticle],
+    period: str,
+) -> None:
+    """Display Sky at a Glance articles."""
+    period_name = "This Week" if period.lower() == "week" else "This Month"
+
+    output_console.print(f"\n[bold cyan]Sky & Telescope - Sky at a Glance ({period_name})[/bold cyan]\n")
+
+    if not articles:
+        output_console.print(f"[dim]No articles found for {period_name.lower()}[/dim]")
+        output_console.print("[dim]Try running 'nexstar events fetch-sky-at-a-glance' to update the feed[/dim]\n")
+        return
+
+    for article in articles:
+        output_console.print(f"[bold]{article.title}[/bold]")
+        output_console.print(f"[dim]Published: {article.published_date.strftime('%Y-%m-%d')}[/dim]")
+        if article.author:
+            output_console.print(f"[dim]Author: {article.author}[/dim]")
+
+        # Clean HTML from description for display
+        import re
+        from html import unescape
+
+        description = unescape(article.description)
+        description = re.sub(r"<[^>]+>", "", description)  # Remove HTML tags
+        description = description.strip()
+
+        # Show first 200 characters
+        if len(description) > 200:
+            description = description[:200] + "..."
+
+        output_console.print(f"{description}\n")
+        output_console.print(f"[dim]Link: {article.link}[/dim]\n")
+        output_console.print("─" * 80 + "\n")
+
+    output_console.print(
+        "\n[dim]💡 Tip: Use 'nexstar events sky-viewing <article-title>' to find best viewing location[/dim]\n"
+    )
+
+
+def _show_sky_viewing_recommendation_content(
+    output_console: Console | FileConsole,
+    article: SkyAtAGlanceArticle,
+    location: ObserverLocation,
+    max_distance: float,
+) -> None:
+    """Display viewing recommendations for a Sky at a Glance article."""
+    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+
+    location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
+
+    output_console.print(f"\n[bold cyan]Viewing Recommendations for: {article.title}[/bold cyan]\n")
+    output_console.print(f"[bold]Published:[/bold] {article.published_date.strftime('%Y-%m-%d')}\n")
+    output_console.print(f"[bold]Your Location:[/bold] {location_name}\n")
+
+    # Get current sky conditions
+    async def _get_light_data() -> Any:
+        from celestron_nexstar.api.database.models import get_db_session
+
+        async with get_db_session() as db_session:
+            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
+
+    light_data = asyncio.run(_get_light_data())
+    output_console.print("[bold]Your Current Sky Conditions:[/bold]")
+    output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
+    output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²\n")
+
+    # Find nearby dark sky sites
+    max_distance_km = max_distance * 1.60934
+    dark_sites = find_dark_sites_near(
+        location,
+        max_distance_km=max_distance_km,
+        min_bortle=BortleClass.CLASS_4,
+    )
+
+    if dark_sites:
+        output_console.print(f"[bold]Nearby Dark Sky Sites (within {max_distance:.0f} miles):[/bold]")
+        for i, site in enumerate(dark_sites[:5], 1):  # Show top 5
+            distance_miles = site.distance_km / 1.60934
+            output_console.print(
+                f"  {i}. [cyan]{site.name}[/cyan] - {distance_miles:.1f} miles away "
+                f"(Bortle Class {site.bortle_class.value})"
+            )
+        output_console.print()
+
+    # Show article description
+    import re
+    from html import unescape
+
+    description = unescape(article.description)
+    description = re.sub(r"<[^>]+>", "", description)  # Remove HTML tags
+    description = description.strip()
+
+    output_console.print("[bold]Article Summary:[/bold]")
+    output_console.print(f"  {description[:300]}{'...' if len(description) > 300 else ''}\n")
+
+    # General recommendations
+    current_bortle = light_data.bortle_class.value
+    if current_bortle <= 4:
+        output_console.print("[green]✓ Your current location has good sky conditions for most observations[/green]\n")
+    elif dark_sites:
+        closest = dark_sites[0]
+        distance_miles = closest.distance_km / 1.60934
+        output_console.print(f"[yellow]⚠ Your current location has Bortle Class {current_bortle}.[/yellow]")
+        output_console.print(
+            f"[yellow]Consider traveling to {closest.name} ({distance_miles:.1f} miles away) "
+            f"for better viewing conditions (Bortle Class {closest.bortle_class.value})[/yellow]\n"
+        )
+    else:
+        output_console.print(f"[yellow]⚠ Your current location has Bortle Class {current_bortle}.[/yellow]")
+        output_console.print(
+            f"[yellow]Try to find a darker location within {max_distance:.0f} miles for better viewing.[/yellow]\n"
+        )
+
+    output_console.print(f"[bold]Full Article:[/bold] {article.link}\n")
 
 
 if __name__ == "__main__":

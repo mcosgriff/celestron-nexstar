@@ -52,6 +52,7 @@ dependencies = [
     "retry-requests>=2.0.0",
     "numpy>=2.3.4",
     "pandas>=2.3.3",
+    "feedparser>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -247,6 +248,8 @@ module = [
     "timezonefinder.*",
     "requests_cache",
     "requests_cache.*",
+    "feedparser",
+    "feedparser.*",
     "dotenv",
     "dotenv.*",
     "sphinx",

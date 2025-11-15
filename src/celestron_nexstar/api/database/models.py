@@ -995,6 +995,62 @@ class BortleCharacteristicsModel(Base):
         return f"<BortleCharacteristics(bortle_class={self.bortle_class}, sqm_range=({self.sqm_min}, {self.sqm_max}))>"
 
 
+class SkyAtAGlanceModel(Base):
+    """
+    SQLAlchemy model for Sky & Telescope "Sky at a Glance" RSS feed articles.
+
+    Stores weekly astronomy news and night sky events from Sky & Telescope.
+    """
+
+    __tablename__ = "sky_at_a_glance"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Article identification
+    title: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    link: Mapped[str] = mapped_column(String(1000), nullable=False, unique=True, index=True)
+    guid: Mapped[str | None] = mapped_column(String(500), nullable=True, unique=True, index=True)
+
+    # Content
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)  # Full content if available
+
+    # Publication date
+    published_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Author
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Categories/tags
+    categories: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array as string
+
+    # Source information
+    source: Mapped[str] = mapped_column(String(100), nullable=False, default="Sky & Telescope")
+    feed_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_published_date", "published_date"),
+        Index("idx_source_fetched", "source", "fetched_at"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the article."""
+        return f"<SkyAtAGlance(id={self.id}, title='{self.title[:50]}...', published={self.published_date})>"
+
+
 @asynccontextmanager
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     """
