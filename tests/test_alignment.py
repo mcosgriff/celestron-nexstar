@@ -12,13 +12,20 @@ from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.observation.visibility import VisibilityInfo
 from celestron_nexstar.api.telescope.alignment import (
+    AlignmentConditions,
     SkyAlignGroup,
     SkyAlignObject,
+    TwoStarAlignPair,
     _calculate_conditions_score,
     _calculate_separation_score,
+    _calculate_two_star_conditions_score,
+    _calculate_two_star_separation_score,
     _check_collinear,
+    find_skyalign_object_by_name,
+    get_alignment_conditions,
     get_bright_objects_for_skyalign,
     suggest_skyalign_objects,
+    suggest_two_star_align_objects,
 )
 
 
@@ -269,6 +276,265 @@ class TestSuggestSkyalignObjects(unittest.TestCase):
 
         self.assertIsInstance(result, list)
         # Should have groups if objects are well-separated
+
+
+class TestAlignmentConditions(unittest.TestCase):
+    """Test suite for AlignmentConditions dataclass"""
+
+    def test_creation(self):
+        """Test creating AlignmentConditions"""
+        conditions = AlignmentConditions(
+            cloud_cover_percent=10.0,
+            moon_ra_hours=12.0,
+            moon_dec_degrees=45.0,
+            moon_illumination=0.5,
+            seeing_score=80.0,
+        )
+        self.assertEqual(conditions.cloud_cover_percent, 10.0)
+        self.assertEqual(conditions.moon_ra_hours, 12.0)
+        self.assertEqual(conditions.moon_dec_degrees, 45.0)
+        self.assertEqual(conditions.moon_illumination, 0.5)
+        self.assertEqual(conditions.seeing_score, 80.0)
+
+    def test_creation_with_none_values(self):
+        """Test creating AlignmentConditions with None values"""
+        conditions = AlignmentConditions()
+        self.assertIsNone(conditions.cloud_cover_percent)
+        self.assertIsNone(conditions.moon_ra_hours)
+        self.assertIsNone(conditions.moon_dec_degrees)
+        self.assertIsNone(conditions.moon_illumination)
+        self.assertIsNone(conditions.seeing_score)
+
+
+class TestTwoStarAlignPair(unittest.TestCase):
+    """Test suite for TwoStarAlignPair dataclass"""
+
+    def test_creation(self):
+        """Test creating a TwoStarAlignPair"""
+        obj1 = CelestialObject(
+            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        obj2 = CelestialObject(
+            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis = VisibilityInfo(
+            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
+        align_obj2 = SkyAlignObject(obj=obj2, visibility=vis, display_name="Star2")
+
+        pair = TwoStarAlignPair(
+            star1=align_obj1,
+            star2=align_obj2,
+            separation_deg=30.0,
+            avg_observability_score=0.8,
+            separation_score=0.7,
+            conditions_score=0.9,
+        )
+        self.assertEqual(pair.star1, align_obj1)
+        self.assertEqual(pair.star2, align_obj2)
+        self.assertEqual(pair.separation_deg, 30.0)
+        self.assertEqual(pair.avg_observability_score, 0.8)
+        self.assertEqual(pair.separation_score, 0.7)
+        self.assertEqual(pair.conditions_score, 0.9)
+
+
+class TestCalculateTwoStarSeparationScore(unittest.TestCase):
+    """Test suite for _calculate_two_star_separation_score function"""
+
+    def test_calculate_two_star_separation_score(self):
+        """Test two-star separation score calculation"""
+        obj1 = CelestialObject(
+            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        obj2 = CelestialObject(
+            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
+        align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
+
+        separation, sep_score = _calculate_two_star_separation_score(align_obj1, align_obj2)
+
+        self.assertIsInstance(separation, float)
+        self.assertGreater(separation, 0)
+        self.assertIsInstance(sep_score, float)
+        self.assertGreaterEqual(sep_score, 0.0)
+        self.assertLessEqual(sep_score, 1.0)
+
+
+class TestCalculateTwoStarConditionsScore(unittest.TestCase):
+    """Test suite for _calculate_two_star_conditions_score function"""
+
+    def test_calculate_two_star_conditions_score_no_conditions(self):
+        """Test two-star conditions score with no condition data"""
+        obj1 = CelestialObject(
+            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis = VisibilityInfo(
+            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
+        align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
+
+        score = _calculate_two_star_conditions_score(align_obj1, align_obj2)
+        self.assertEqual(score, 1.0)  # Default score when no conditions provided
+
+    def test_calculate_two_star_conditions_score_cloudy(self):
+        """Test two-star conditions score with cloud cover"""
+        obj1 = CelestialObject(
+            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis = VisibilityInfo(
+            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
+        align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
+
+        score = _calculate_two_star_conditions_score(align_obj1, align_obj2, cloud_cover_percent=90.0)
+        self.assertLess(score, 1.0)  # Should be reduced by cloud cover
+        self.assertGreaterEqual(score, 0.0)
+
+
+class TestGetAlignmentConditions(unittest.TestCase):
+    """Test suite for get_alignment_conditions function"""
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_observer_location")
+    @patch("celestron_nexstar.api.telescope.alignment.get_moon_info")
+    @patch("celestron_nexstar.api.observation.observation_planner.ObservationPlanner")
+    def test_get_alignment_conditions_success(self, mock_planner_class, mock_get_moon, mock_get_location):
+        """Test getting alignment conditions successfully"""
+        from celestron_nexstar.api.location.observer import ObserverLocation
+
+        mock_location = ObserverLocation(latitude=40.0, longitude=-100.0)
+        mock_get_location.return_value = mock_location
+
+        # Mock ObservationPlanner
+        mock_planner = MagicMock()
+        mock_conditions = MagicMock()
+        mock_conditions.weather.cloud_cover_percent = 10.0
+        mock_conditions.seeing_score = 80.0
+        mock_planner.get_tonight_conditions.return_value = mock_conditions
+        mock_planner_class.return_value = mock_planner
+
+        # Mock moon info
+        mock_moon = MagicMock()
+        mock_moon.ra_hours = 12.0
+        mock_moon.dec_degrees = 45.0
+        mock_moon.illumination = 0.5
+        mock_get_moon.return_value = mock_moon
+
+        result = get_alignment_conditions(observer_lat=40.0, observer_lon=-100.0)
+
+        self.assertIsInstance(result, AlignmentConditions)
+        self.assertEqual(result.cloud_cover_percent, 10.0)
+        self.assertEqual(result.seeing_score, 80.0)
+        self.assertEqual(result.moon_ra_hours, 12.0)
+        self.assertEqual(result.moon_dec_degrees, 45.0)
+        self.assertEqual(result.moon_illumination, 0.5)
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_observer_location")
+    def test_get_alignment_conditions_default_location(self, mock_get_location):
+        """Test getting alignment conditions with default location"""
+        from celestron_nexstar.api.location.observer import ObserverLocation
+
+        mock_location = ObserverLocation(latitude=40.0, longitude=-100.0)
+        mock_get_location.return_value = mock_location
+
+        with patch("celestron_nexstar.api.observation.observation_planner.ObservationPlanner") as mock_planner_class:
+            mock_planner = MagicMock()
+            mock_conditions = MagicMock()
+            mock_conditions.weather.cloud_cover_percent = None
+            mock_conditions.seeing_score = None
+            mock_planner.get_tonight_conditions.return_value = mock_conditions
+            mock_planner_class.return_value = mock_planner
+
+            with patch("celestron_nexstar.api.telescope.alignment.get_moon_info", return_value=None):
+                result = get_alignment_conditions()
+
+                self.assertIsInstance(result, AlignmentConditions)
+
+
+class TestFindSkyalignObjectByName(unittest.TestCase):
+    """Test suite for find_skyalign_object_by_name function"""
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_bright_objects_for_skyalign")
+    def test_find_skyalign_object_by_name_found(self, mock_get_bright):
+        """Test finding a SkyAlign object by name"""
+        obj = CelestialObject(
+            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis = VisibilityInfo(
+            object_name="Vega", is_visible=True, magnitude=0.03, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+        )
+        align_obj = SkyAlignObject(obj=obj, visibility=vis, display_name="Vega")
+        mock_get_bright.return_value = [align_obj]
+
+        result = find_skyalign_object_by_name("Vega", observer_lat=40.0, observer_lon=-100.0)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.display_name, "Vega")
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_bright_objects_for_skyalign")
+    def test_find_skyalign_object_by_name_not_found(self, mock_get_bright):
+        """Test finding a SkyAlign object that doesn't exist"""
+        obj = CelestialObject(
+            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis = VisibilityInfo(
+            object_name="Vega", is_visible=True, magnitude=0.03, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+        )
+        align_obj = SkyAlignObject(obj=obj, visibility=vis, display_name="Vega")
+        mock_get_bright.return_value = [align_obj]
+
+        result = find_skyalign_object_by_name("Nonexistent", observer_lat=40.0, observer_lon=-100.0)
+
+        self.assertIsNone(result)
+
+
+class TestSuggestTwoStarAlignObjects(unittest.TestCase):
+    """Test suite for suggest_two_star_align_objects function"""
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_bright_objects_for_skyalign")
+    def test_suggest_two_star_align_objects_not_enough(self, mock_get_bright):
+        """Test when not enough objects available"""
+        mock_get_bright.return_value = []  # No objects
+
+        result = suggest_two_star_align_objects(observer_lat=40.0, observer_lon=-100.0)
+
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 0)
+
+    @patch("celestron_nexstar.api.telescope.alignment.get_bright_objects_for_skyalign")
+    def test_suggest_two_star_align_objects_success(self, mock_get_bright):
+        """Test successful suggestion of two-star align objects"""
+        # Create mock objects
+        obj1 = CelestialObject(
+            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        obj2 = CelestialObject(
+            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+        )
+        align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
+        align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
+
+        mock_get_bright.return_value = [align_obj1, align_obj2]
+
+        result = suggest_two_star_align_objects(observer_lat=40.0, observer_lon=-100.0, max_pairs=5)
+
+        self.assertIsInstance(result, list)
+        # Should have pairs if objects are well-separated
 
 
 if __name__ == "__main__":

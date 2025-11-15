@@ -596,5 +596,205 @@ class TestGetLocationFromSystem(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class TestLoadLocationEdgeCases(unittest.TestCase):
+    """Test suite for edge cases in load_location function"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.temp_config_file = Path(self.temp_dir) / "observer_location.json"
+
+    def tearDown(self):
+        """Clean up test fixtures"""
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    def test_load_location_with_type_error(self, mock_get_path):
+        """Test loading with TypeError (invalid data type)"""
+        mock_get_path.return_value = self.temp_config_file
+        # Write invalid data that causes TypeError
+        self.temp_config_file.write_text('{"latitude": "not a number", "longitude": -100.0}')
+
+        location = load_location()
+        self.assertEqual(location, DEFAULT_LOCATION)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    def test_load_location_with_zero_elevation(self, mock_get_path):
+        """Test loading with zero elevation"""
+        mock_get_path.return_value = self.temp_config_file
+        data = {"latitude": 40.0, "longitude": -100.0, "elevation": 0.0}
+        with self.temp_config_file.open("w") as f:
+            json.dump(data, f)
+
+        location = load_location()
+        self.assertEqual(location.elevation, 0.0)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    def test_load_location_with_high_elevation(self, mock_get_path):
+        """Test loading with high elevation"""
+        mock_get_path.return_value = self.temp_config_file
+        data = {"latitude": 40.0, "longitude": -100.0, "elevation": 8848.0}  # Mount Everest
+        with self.temp_config_file.open("w") as f:
+            json.dump(data, f)
+
+        location = load_location()
+        self.assertEqual(location.elevation, 8848.0)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    def test_load_location_without_name(self, mock_get_path):
+        """Test loading location without name field"""
+        mock_get_path.return_value = self.temp_config_file
+        data = {"latitude": 40.0, "longitude": -100.0}  # No name
+        with self.temp_config_file.open("w") as f:
+            json.dump(data, f)
+
+        location = load_location()
+        self.assertIsNone(location.name)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    def test_load_location_with_empty_name(self, mock_get_path):
+        """Test loading location with empty name"""
+        mock_get_path.return_value = self.temp_config_file
+        data = {"latitude": 40.0, "longitude": -100.0, "name": ""}
+        with self.temp_config_file.open("w") as f:
+            json.dump(data, f)
+
+        location = load_location()
+        self.assertEqual(location.name, "")
+
+
+class TestGeocodeLocationEdgeCases(unittest.TestCase):
+    """Test suite for edge cases in geocode_location function"""
+
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_with_empty_response(self, mock_session_class):
+        """Test geocoding with empty response"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[])
+
+        mock_response_context = AsyncMock()
+        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_response_context)
+        mock_session_class.return_value = mock_session
+
+        with self.assertRaises(LocationNotFoundError):
+            asyncio.run(geocode_location("Test Location"))
+
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_with_missing_coordinates(self, mock_session_class):
+        """Test geocoding with response missing lat/lon"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[{"display_name": "Test"}])  # Missing lat/lon
+
+        mock_response_context = AsyncMock()
+        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_response_context)
+        mock_session_class.return_value = mock_session
+
+        with self.assertRaises(GeocodingError):
+            asyncio.run(geocode_location("Test Location"))
+
+    @patch("aiohttp.ClientSession")
+    def test_geocode_location_with_invalid_coordinates(self, mock_session_class):
+        """Test geocoding with invalid coordinate values"""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[{"lat": "invalid", "lon": "invalid", "display_name": "Test"}])
+
+        mock_response_context = AsyncMock()
+        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_response_context)
+        mock_session_class.return_value = mock_session
+
+        with self.assertRaises(GeocodingError):
+            asyncio.run(geocode_location("Test Location"))
+
+
+class TestGetObserverLocationEdgeCases(unittest.TestCase):
+    """Test suite for edge cases in get_observer_location function"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        clear_observer_location()
+
+    def tearDown(self):
+        """Clean up test fixtures"""
+        clear_observer_location()
+
+    @patch("celestron_nexstar.api.location.observer.load_location")
+    def test_get_observer_location_ask_for_auto_detect(self, mock_load):
+        """Test get_observer_location with ask_for_auto_detect=True"""
+        location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test")
+        mock_load.return_value = location
+
+        result = get_observer_location(ask_for_auto_detect=True)
+
+        self.assertEqual(result, location)
+        mock_load.assert_called_once_with(ask_for_auto_detect=True)
+
+
+class TestSetObserverLocationEdgeCases(unittest.TestCase):
+    """Test suite for edge cases in set_observer_location function"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        clear_observer_location()
+
+    def tearDown(self):
+        """Clean up test fixtures"""
+        clear_observer_location()
+
+    @patch("celestron_nexstar.api.location.observer.save_location")
+    def test_set_observer_location_without_save(self, mock_save):
+        """Test setting location without saving"""
+        location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test")
+
+        set_observer_location(location, save=False)
+
+        self.assertEqual(get_observer_location(), location)
+        mock_save.assert_not_called()
+
+    def test_set_observer_location_extreme_coordinates(self):
+        """Test setting location with extreme but valid coordinates"""
+        # North pole
+        location_north = ObserverLocation(latitude=90.0, longitude=0.0, name="North Pole")
+        set_observer_location(location_north, save=False)
+        self.assertEqual(get_observer_location().latitude, 90.0)
+
+        # South pole
+        location_south = ObserverLocation(latitude=-90.0, longitude=0.0, name="South Pole")
+        set_observer_location(location_south, save=False)
+        self.assertEqual(get_observer_location().latitude, -90.0)
+
+        # International Date Line
+        location_idl = ObserverLocation(latitude=0.0, longitude=180.0, name="IDL")
+        set_observer_location(location_idl, save=False)
+        self.assertEqual(get_observer_location().longitude, 180.0)
+
+        # Prime Meridian
+        location_pm = ObserverLocation(latitude=0.0, longitude=0.0, name="Prime Meridian")
+        set_observer_location(location_pm, save=False)
+        self.assertEqual(get_observer_location().longitude, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

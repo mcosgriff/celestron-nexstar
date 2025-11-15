@@ -169,7 +169,9 @@ def filter_and_sort_objects(
     sorted_objects = sort_objects(filtered, sort_by=sort_by, reverse=sort_reverse)
 
     # Apply limit
-    if limit is not None and limit > 0:
+    if limit is not None:
+        if limit <= 0:
+            return []
         return sorted_objects[:limit]
 
     return sorted_objects
