@@ -444,6 +444,18 @@ def info(
         # Assess visibility
         visibility_info = assess_visibility(obj)
 
+        # Get observing conditions and calculate visibility probability (like telescope tonight)
+        visibility_probability = None
+        try:
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+            visibility_probability = planner._calculate_visibility_probability(obj, conditions, visibility_info)
+        except Exception:
+            # If we can't get conditions, just use observability_score
+            visibility_probability = visibility_info.observability_score
+
         if json_output:
             visibility_data = {
                 "is_visible": visibility_info.is_visible,
@@ -453,6 +465,10 @@ def info(
                 "observability_score": visibility_info.observability_score,
                 "reasons": list(visibility_info.reasons),
             }
+
+            # Add visibility probability if available
+            if visibility_probability is not None:
+                visibility_data["visibility_probability"] = visibility_probability
 
             # Get moons if this is a planet
             from celestron_nexstar.api.core.enums import CelestialObjectType
@@ -542,6 +558,19 @@ def info(
                 info_text.append(f"  Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})\n", style="white")
             info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.2f}\n", style="white")
             info_text.append(f"  Observability Score: {visibility_info.observability_score:.0%}\n", style="white")
+
+            # Add visibility probability (Chance) if available
+            if visibility_probability is not None:
+                if visibility_probability >= 0.8:
+                    prob_style = "bold green"
+                elif visibility_probability >= 0.5:
+                    prob_style = "yellow"
+                elif visibility_probability >= 0.3:
+                    prob_style = "red"
+                else:
+                    prob_style = "dim red"
+                info_text.append("  Chance of Seeing: ", style="white")
+                info_text.append(f"{visibility_probability:.0%}\n", style=prob_style)
 
             # Reasons
             if visibility_info.reasons:
