@@ -829,51 +829,20 @@ def get_visible_objects_info() -> FormattedText:
             state.set_visible_objects([])
             return FormattedText(lines)
 
-        # Apply search filter if active
-        if state.search_query:
-            search_lower = state.search_query.lower()
-            visible = [
-                (obj, vis_info)
-                for obj, vis_info in visible
-                if search_lower in obj.name.lower() or (obj.common_name and search_lower in obj.common_name.lower())
-            ]
+        # Apply filtering and sorting using API functions
+        from celestron_nexstar.api.observation.filtering import filter_and_sort_objects
 
-        # Apply type filter if active
-        if state.filter_type:
-            visible = [(obj, vis_info) for obj, vis_info in visible if obj.object_type.value == state.filter_type]
-
-        # Apply magnitude filter if active
-        if state.filter_mag_min is not None:
-            visible = [
-                (obj, vis_info)
-                for obj, vis_info in visible
-                if obj.magnitude is not None and obj.magnitude >= state.filter_mag_min
-            ]
-        if state.filter_mag_max is not None:
-            visible = [
-                (obj, vis_info)
-                for obj, vis_info in visible
-                if obj.magnitude is not None and obj.magnitude <= state.filter_mag_max
-            ]
-
-        # Apply sorting
-        from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-        from celestron_nexstar.api.observation.visibility import VisibilityInfo
-
-        def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple[float | str, ...]:
-            obj, vis_info = item
-            if state.sort_by == "altitude":
-                return (vis_info.altitude_deg or -999,)
-            elif state.sort_by == "magnitude":
-                mag = obj.magnitude if obj.magnitude is not None else 999
-                return (mag,)
-            elif state.sort_by == "name":
-                return (obj.name.lower(),)
-            elif state.sort_by == "type":
-                return (obj.object_type.value, obj.name.lower())
-            return (0,)
-
-        visible_sorted = sorted(visible, key=sort_key, reverse=state.sort_reverse)
+        visible_sorted = filter_and_sort_objects(
+            visible,
+            search_query=state.search_query,
+            object_type=state.filter_type,
+            magnitude_min=state.filter_mag_min,
+            magnitude_max=state.filter_mag_max,
+            constellation=state.filter_constellation,
+            sort_by=state.sort_by,
+            sort_reverse=state.sort_reverse,
+            limit=50,
+        )
 
         # Store in state
         state.set_visible_objects(visible_sorted[:50])

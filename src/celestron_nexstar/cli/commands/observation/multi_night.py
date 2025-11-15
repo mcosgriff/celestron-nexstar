@@ -20,11 +20,17 @@ from rich.table import Table
 from timezonefinder import TimezoneFinder
 from typer.core import TyperGroup
 
-from celestron_nexstar.api.astronomy.solar_system import get_moon_info, get_sun_info
+from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import calculate_lst, ra_dec_to_alt_az
 from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
+from celestron_nexstar.api.observation.colors import (
+    get_darkness_color,
+    get_humidity_color,
+    get_temperature_color,
+    get_wind_color,
+)
 from celestron_nexstar.api.observation.observation_planner import ObservationPlanner, ObservingConditions
 from celestron_nexstar.api.observation.scoring import (
     calculate_moon_separation_score,
@@ -197,142 +203,11 @@ def _get_seeing_color(seeing: float | None) -> tuple[str, str]:
         return ("#808080", "Bad 1/5")
 
 
-def _get_darkness_color(mag: float | None) -> tuple[str, str]:
-    """Get color for darkness/limiting magnitude - 15-level gradient matching Clear Sky Chart."""
-    if mag is None:
-        return ("white", "Day")
-    elif mag >= 6.5:
-        return ("#000000", "6.5")
-    elif mag >= 6.0:
-        return ("#000010", "6.0")
-    elif mag >= 5.5:
-        return ("#000020", "5.5")
-    elif mag >= 5.0:
-        return ("#000040", "5.0")
-    elif mag >= 4.5:
-        return ("#000060", "4.5")
-    elif mag >= 4.0:
-        return ("#000080", "4.0")
-    elif mag >= 3.5:
-        return ("#0000A0", "3.5")
-    elif mag >= 3.0:
-        return ("#0000C0", "3.0")
-    elif mag >= 2.0:
-        return ("#0080C0", "2.0")
-    elif mag >= 1.0:
-        return ("#00C0C0", "1.0")
-    elif mag >= 0.0:
-        return ("#40E0E0", "0")
-    elif mag >= -1.0:
-        return ("#80E0E0", "-1")
-    elif mag >= -2.0:
-        return ("#C0E0C0", "-2")
-    elif mag >= -3.0:
-        return ("#FFFF80", "-3")
-    elif mag >= -4.0:
-        return ("#FFFFC0", "-4")
-    else:
-        return ("white", "Day")
-
-
-def _get_wind_color(wind: float | None) -> tuple[str, str]:
-    """Get color for wind speed - 6-level gradient matching Clear Sky Chart colors."""
-    if wind is None:
-        return ("dim", "-")
-    elif wind > 45:
-        return ("white", ">45 mph")
-    elif wind >= 29:
-        return ("#E0E0E0", "29-45 mph")
-    elif wind >= 17:
-        return ("#80C0E0", "17-28 mph")
-    elif wind >= 12:
-        return ("#4080C0", "12-16 mph")
-    elif wind >= 6:
-        return ("#2060A0", "6-11 mph")
-    else:
-        return ("#004080", "0-5 mph")
-
-
-def _get_humidity_color(humidity: float | None) -> tuple[str, str]:
-    """Get color for humidity - 16-level gradient matching Clear Sky Chart colors."""
-    if humidity is None:
-        return ("dim", "-")
-    elif humidity >= 95:
-        return ("#800000", "95-100%")
-    elif humidity >= 90:
-        return ("#A00000", "90-95%")
-    elif humidity >= 85:
-        return ("#FF0000", "85-90%")
-    elif humidity >= 80:
-        return ("#FF4400", "80-85%")
-    elif humidity >= 75:
-        return ("#FF8800", "75-80%")
-    elif humidity >= 70:
-        return ("#FFFF00", "70-75%")
-    elif humidity >= 65:
-        return ("#80FF00", "65-70%")
-    elif humidity >= 60:
-        return ("#00FF00", "60-65%")
-    elif humidity >= 55:
-        return ("#00FF80", "55-60%")
-    elif humidity >= 50:
-        return ("#00FFFF", "50-55%")
-    elif humidity >= 45:
-        return ("#00AAFF", "45-50%")
-    elif humidity >= 40:
-        return ("#0080FF", "40-45%")
-    elif humidity >= 35:
-        return ("#0066FF", "35-40%")
-    elif humidity >= 30:
-        return ("#0044FF", "30-35%")
-    elif humidity >= 25:
-        return ("#0022FF", "25-30%")
-    else:
-        return ("#0000FF", "<25%")
-
-
-def _get_temp_color(temp: float | None) -> tuple[str, str]:
-    """Get color for temperature - 19-level gradient matching Clear Sky Chart colors."""
-    if temp is None:
-        return ("dim", "-")
-    elif temp > 113:
-        return ("#808080", ">113°F")
-    elif temp >= 104:
-        return ("#800000", "104-113°F")
-    elif temp >= 95:
-        return ("#A00000", "95-104°F")
-    elif temp >= 86:
-        return ("#FF0000", "86-95°F")
-    elif temp >= 77:
-        return ("#FF4400", "77-86°F")
-    elif temp >= 68:
-        return ("#FF8800", "68-77°F")
-    elif temp >= 59:
-        return ("#FFAA00", "59-68°F")
-    elif temp >= 50:
-        return ("#FFFF00", "50-59°F")
-    elif temp >= 41:
-        return ("#80FF00", "41-50°F")
-    elif temp >= 32:
-        return ("#00FF80", "32-41°F")
-    elif temp >= 23:
-        return ("white", "23-32°F")
-    elif temp >= 14:
-        return ("#00FFAA", "14-23°F")
-    elif temp >= 5:
-        return ("#00FFFF", "5-14°F")
-    elif temp >= -3:
-        return ("#0080FF", "-3-5°F")
-    elif temp >= -12:
-        return ("#0066FF", "-12--3°F")
-    elif temp >= -21:
-        return ("#0044FF", "-21--12°F")
-    elif temp >= -30:
-        return ("#0022FF", "-30--21°F")
-    elif temp >= -40:
-        return ("#0000FF", "-40--31°F")
-    else:
-        return ("#FF00FF", "< -40°F")
+# Color mapping functions aliased for backward compatibility
+_get_darkness_color = get_darkness_color
+_get_humidity_color = get_humidity_color
+_get_temp_color = get_temperature_color
+_get_wind_color = get_wind_color
 
 
 def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
@@ -1201,83 +1076,24 @@ def show_clear_sky_chart(
 
         lp_data = asyncio.run(_get_light_data())
 
-        # Calculate transparency and darkness for each hour
+        # Calculate transparency and darkness for each hour using API functions
+        from celestron_nexstar.api.observation.clear_sky import calculate_chart_data_point
+
         chart_data = []
 
         for forecast in hourly_forecast:
-            forecast_ts = forecast.timestamp
-            if forecast_ts.tzinfo is None:
-                forecast_ts = forecast_ts.replace(tzinfo=UTC)
-            elif forecast_ts.tzinfo != UTC:
-                forecast_ts = forecast_ts.astimezone(UTC)
-
-            # Calculate transparency from humidity/dew point
-            transparency = "average"  # Default
-            if forecast.cloud_cover_percent is not None and forecast.cloud_cover_percent > 30:
-                transparency = "too_cloudy"
-            elif forecast.humidity_percent is not None:
-                # Lower humidity = better transparency
-                if forecast.humidity_percent < 30:
-                    transparency = "transparent"
-                elif forecast.humidity_percent < 50:
-                    transparency = "above_average"
-                elif forecast.humidity_percent < 70:
-                    transparency = "average"
-                elif forecast.humidity_percent < 85:
-                    transparency = "below_average"
-                else:
-                    transparency = "poor"
-
-            # Calculate darkness (limiting magnitude at zenith)
-            # Based on sun altitude, moon phase, and moon altitude
-            sun_info = get_sun_info(lat, lon, forecast_ts)
-            moon_info = get_moon_info(lat, lon, forecast_ts)
-
-            darkness_mag = None
-            base_mag = lp_data.naked_eye_limiting_magnitude
-            if sun_info:
-                sun_alt = sun_info.altitude_deg
-                if sun_alt < -18:  # Astronomical twilight
-                    # Dark sky - calculate limiting magnitude
-                    if moon_info:
-                        # Moon brightens the sky
-                        moon_illum = moon_info.illumination
-                        moon_alt = moon_info.altitude_deg
-                        if moon_alt > 0:
-                            # Moon is up - reduce limiting magnitude
-                            # Full moon reduces by ~3-4 mag, new moon has no effect
-                            moon_reduction = moon_illum * 3.5 * (moon_alt / 90.0)  # Scale by altitude
-                            darkness_mag = base_mag - moon_reduction
-                        else:
-                            darkness_mag = base_mag
-                    else:
-                        darkness_mag = base_mag
-                elif sun_alt < -12:  # Astronomical twilight
-                    darkness_mag = base_mag - 0.5 if moon_info is None else base_mag - 1.0
-                elif sun_alt < -6:  # Nautical twilight
-                    darkness_mag = 3.0
-                elif sun_alt < 0:  # Civil twilight
-                    darkness_mag = 2.0
-                else:  # Daytime
-                    darkness_mag = 0.0
-
-            # Determine if seeing is "too cloudy to forecast" (>80% cloud cover)
-            seeing_value: float | None = forecast.seeing_score
-            if forecast.cloud_cover_percent is not None and forecast.cloud_cover_percent > 80:
-                seeing_value = None  # Mark as too cloudy
-
-            chart_data.append(
-                {
-                    "timestamp": forecast_ts,
-                    "cloud_cover": forecast.cloud_cover_percent or 100.0,
-                    "transparency": transparency,
-                    "seeing": seeing_value,
-                    "darkness": darkness_mag,
-                    "wind": forecast.wind_speed_mph,
-                    "humidity": forecast.humidity_percent,
-                    "temperature": forecast.temperature_f,
-                }
+            data_point = calculate_chart_data_point(
+                forecast_timestamp=forecast.timestamp,
+                cloud_cover_percent=forecast.cloud_cover_percent,
+                humidity_percent=forecast.humidity_percent,
+                wind_speed_mph=forecast.wind_speed_mph,
+                temperature_f=forecast.temperature_f,
+                seeing_score=forecast.seeing_score,
+                observer_lat=lat,
+                observer_lon=lon,
+                light_pollution_data=lp_data,
             )
+            chart_data.append(data_point)
 
         if not chart_data:
             console.print("[yellow]No forecast data available.[/yellow]")

@@ -97,20 +97,13 @@ class TUIState:
         if not self.visible_objects:
             return
 
-        def sort_key(item: tuple[CelestialObject, VisibilityInfo]) -> tuple[float | int | str, ...]:
-            obj, vis_info = item
-            if self.sort_by == "altitude":
-                return (vis_info.altitude_deg or -999,)
-            elif self.sort_by == "magnitude":
-                mag = obj.magnitude if obj.magnitude is not None else 999
-                return (mag,)
-            elif self.sort_by == "name":
-                return (obj.name.lower(),)
-            elif self.sort_by == "type":
-                return (obj.object_type.value, obj.name.lower())
-            return (0,)
+        from celestron_nexstar.api.observation.filtering import sort_objects
 
-        self.visible_objects.sort(key=sort_key, reverse=self.sort_reverse)
+        self.visible_objects = sort_objects(
+            self.visible_objects,
+            sort_by=self.sort_by,
+            reverse=self.sort_reverse,
+        )
         # Reset selection to stay on same object if possible
         if self.selected_index >= len(self.visible_objects):
             self.selected_index = max(0, len(self.visible_objects) - 1)

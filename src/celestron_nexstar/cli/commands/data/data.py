@@ -11,7 +11,6 @@ from typing import Any
 import typer
 from click import Context
 from rich.console import Console
-from sqlalchemy import Row
 from typer.core import TyperGroup
 
 from celestron_nexstar.api.core.exceptions import (
@@ -864,7 +863,6 @@ def stats() -> None:
     - Light pollution data statistics
     """
     from rich.table import Table
-    from sqlalchemy import text
 
     from celestron_nexstar.api.database.database import get_database
 
@@ -902,84 +900,30 @@ def stats() -> None:
 
     # Light pollution statistics
     try:
+        from celestron_nexstar.api.database.statistics import get_light_pollution_stats
 
-        async def _get_lp_stats() -> tuple[
-            bool, int | None, tuple[float | None, float | None] | None, list[Row[tuple[str | None, int]]] | None
-        ]:
-            async with db._AsyncSession() as session:
-                # Check if table exists
-                table_check = await session.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
-                )
-                table_exists = table_check.fetchone() is not None
+        lp_stats = asyncio.run(get_light_pollution_stats())
 
-                if not table_exists:
-                    return False, None, None, None
-
-                # Get total count using SQLAlchemy
-                from sqlalchemy import func, select
-
-                from celestron_nexstar.api.database.models import LightPollutionGridModel
-
-                total_count_result = await session.scalar(select(func.count(LightPollutionGridModel.id)))
-                total_count = total_count_result or 0
-
-                if total_count == 0:
-                    return True, 0, None, None
-
-                # Get SQM range using SQLAlchemy
-                sqm_result = await session.execute(
-                    select(
-                        func.min(LightPollutionGridModel.sqm_value),
-                        func.max(LightPollutionGridModel.sqm_value),
-                    )
-                )
-                sqm_range = sqm_result.fetchone()
-                if sqm_range is not None:
-                    sqm_min = sqm_range[0] if sqm_range[0] is not None else None
-                    sqm_max = sqm_range[1] if sqm_range[1] is not None else None
-                else:
-                    sqm_min = None
-                    sqm_max = None
-
-                # Get coverage by region using SQLAlchemy
-                region_result = await session.execute(
-                    select(
-                        LightPollutionGridModel.region,
-                        func.count(LightPollutionGridModel.id),
-                    )
-                    .where(LightPollutionGridModel.region.isnot(None))
-                    .group_by(LightPollutionGridModel.region)
-                    .order_by(LightPollutionGridModel.region)
-                )
-                region_counts = region_result.fetchall()
-
-                return True, total_count, (sqm_min, sqm_max), list(region_counts)
-
-        table_exists, total_count, sqm_range, region_counts = asyncio.run(_get_lp_stats())
-
-        if table_exists and total_count is not None:
-            if total_count > 0:
-                sqm_min, sqm_max = sqm_range if sqm_range else (None, None)
-
+        if lp_stats.table_exists and lp_stats.total_count is not None:
+            if lp_stats.total_count > 0:
                 lp_table = Table(title="\nLight Pollution Data")
                 lp_table.add_column("Metric", style="cyan")
                 lp_table.add_column("Value", justify="right", style="green")
 
-                lp_table.add_row("Total grid points", f"{total_count:,}")
-                if sqm_min is not None and sqm_max is not None:
-                    lp_table.add_row("SQM range", f"{sqm_min:.2f} to {sqm_max:.2f}")
+                lp_table.add_row("Total grid points", f"{lp_stats.total_count:,}")
+                if lp_stats.sqm_min is not None and lp_stats.sqm_max is not None:
+                    lp_table.add_row("SQM range", f"{lp_stats.sqm_min:.2f} to {lp_stats.sqm_max:.2f}")
                 lp_table.add_row("Spatial indexing", "[green]Geohash[/green]")
 
                 console.print(lp_table)
 
                 # Regions table if we have region data
-                if region_counts:
+                if lp_stats.region_counts:
                     region_table = Table(title="Coverage by Region")
                     region_table.add_column("Region", style="cyan")
                     region_table.add_column("Grid Points", justify="right", style="green")
 
-                    for region, count in region_counts:
+                    for region, count in lp_stats.region_counts:
                         region_name = region if region else "Unknown"
                         region_table.add_row(region_name, f"{count:,}")
 
@@ -1070,110 +1014,38 @@ def stats() -> None:
 
     # TLE data statistics
     try:
-        from datetime import datetime
+        from celestron_nexstar.api.database.statistics import get_tle_stats
 
-        from sqlalchemy import func, select
+        tle_stats = asyncio.run(get_tle_stats())
 
-        from celestron_nexstar.api.database.models import TLEModel, get_db_session
-
-        async def _get_tle_stats() -> tuple[
-            bool,
-            int | None,
-            list[Row[tuple[str | None, int]]] | None,
-            int | None,
-            datetime | None,
-            tuple[datetime | None, datetime | None] | None,
-        ]:
-            async with get_db_session() as db_session:
-                # Check if table exists
-                table_check = await db_session.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'")
-                )
-                table_exists = table_check.fetchone() is not None
-
-                if not table_exists:
-                    return False, None, None, None, None, None
-
-                total_tle_result = await db_session.scalar(select(func.count(TLEModel.norad_id)))
-                total_tle_count = total_tle_result or 0
-
-                if total_tle_count == 0:
-                    return True, 0, None, None, None, None
-
-                # Get counts by group
-                group_result = await db_session.execute(
-                    select(
-                        TLEModel.satellite_group,
-                        func.count(TLEModel.norad_id),
-                    )
-                    .where(TLEModel.satellite_group.isnot(None))
-                    .group_by(TLEModel.satellite_group)
-                    .order_by(TLEModel.satellite_group)
-                )
-                group_counts = group_result.fetchall()
-
-                # Get unique satellite count
-                unique_result = await db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id))))
-                unique_satellites = unique_result or 0
-
-                # Get last fetched time
-                last_fetched_result = await db_session.scalar(
-                    select(func.max(TLEModel.fetched_at)).where(TLEModel.fetched_at.isnot(None))
-                )
-                last_fetched = last_fetched_result
-
-                # Get oldest TLE epoch (to show data freshness)
-                oldest_result = await db_session.scalar(
-                    select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None))
-                )
-                oldest_epoch = oldest_result
-                newest_result = await db_session.scalar(
-                    select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None))
-                )
-                newest_epoch = newest_result
-
-                return (
-                    True,
-                    total_tle_count,
-                    list(group_counts),
-                    unique_satellites,
-                    last_fetched,
-                    (oldest_epoch, newest_epoch),
-                )
-
-        table_exists, total_tle_count, group_counts, unique_satellites, last_fetched, epoch_range = asyncio.run(
-            _get_tle_stats()
-        )
-
-        if table_exists and total_tle_count is not None:
-            if total_tle_count > 0:
-                oldest_epoch, newest_epoch = epoch_range if epoch_range else (None, None)
-
+        if tle_stats.table_exists and tle_stats.total_count is not None:
+            if tle_stats.total_count > 0:
                 tle_table = Table(title="\nTLE Data (Satellite Orbital Elements)")
                 tle_table.add_column("Metric", style="cyan")
                 tle_table.add_column("Value", justify="right", style="green")
 
-                tle_table.add_row("Total TLE records", f"{total_tle_count:,}")
-                tle_table.add_row("Unique satellites", f"{unique_satellites:,}")
+                tle_table.add_row("Total TLE records", f"{tle_stats.total_count:,}")
+                if tle_stats.unique_satellites is not None:
+                    tle_table.add_row("Unique satellites", f"{tle_stats.unique_satellites:,}")
 
-                if last_fetched:
-                    last_fetched_str = last_fetched.strftime("%Y-%m-%d %H:%M:%S")
+                if tle_stats.last_fetched:
+                    last_fetched_str = tle_stats.last_fetched.strftime("%Y-%m-%d %H:%M:%S")
                     tle_table.add_row("Last fetched", last_fetched_str)
 
-                if oldest_epoch and newest_epoch:
-                    oldest_str = oldest_epoch.strftime("%Y-%m-%d")
-                    newest_str = newest_epoch.strftime("%Y-%m-%d")
+                if tle_stats.oldest_epoch and tle_stats.newest_epoch:
+                    oldest_str = tle_stats.oldest_epoch.strftime("%Y-%m-%d")
+                    newest_str = tle_stats.newest_epoch.strftime("%Y-%m-%d")
                     tle_table.add_row("TLE epoch range", f"{oldest_str} to {newest_str}")
 
                 console.print(tle_table)
 
                 # Groups table if we have group data
-                if group_counts:
+                if tle_stats.group_counts:
                     group_table = Table(title="TLE Data by Satellite Group")
                     group_table.add_column("Group", style="cyan")
                     group_table.add_column("Satellites", justify="right", style="green")
 
-                    for group_name, count in group_counts:
+                    for group_name, count in tle_stats.group_counts:
                         display_name = group_name.title() if group_name else "Unknown"
                         group_table.add_row(display_name, f"{count:,}")
 
