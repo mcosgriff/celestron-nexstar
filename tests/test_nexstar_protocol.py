@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import serial
-from celestron_nexstar.api.telescope.telescope.protocol import NexStarProtocol
+from celestron_nexstar.api.telescope.protocol import NexStarProtocol
 from returns.result import Failure
 
 from celestron_nexstar.api.core.exceptions import (
@@ -42,8 +42,8 @@ class TestNexStarProtocol(unittest.TestCase):
         self.assertEqual(protocol.timeout, 3.0)
         self.assertIsNone(protocol.serial_conn)
 
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.serial.Serial")
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.time.sleep")
+    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
+    @patch("celestron_nexstar.api.telescope.protocol.time.sleep")
     def test_open_success(self, mock_sleep, mock_serial):
         """Test successful serial port opening"""
         mock_conn = MagicMock()
@@ -62,7 +62,7 @@ class TestNexStarProtocol(unittest.TestCase):
         )
         mock_sleep.assert_called_once_with(0.5)
 
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.serial.Serial")
+    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
     def test_open_failure(self, mock_serial):
         """Test serial port opening failure"""
         mock_serial.side_effect = serial.SerialException("Port not found")
@@ -72,7 +72,7 @@ class TestNexStarProtocol(unittest.TestCase):
 
         self.assertIn("Port not found", str(context.exception))
 
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.serial.Serial")
+    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
     def test_close(self, mock_serial):
         """Test closing serial connection"""
         mock_conn = MagicMock()
@@ -108,7 +108,7 @@ class TestNexStarProtocol(unittest.TestCase):
         with self.assertRaises(NotConnectedError):
             self.protocol.send_command("V")
 
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.time.time")
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
     def test_send_command_success(self, mock_time):
         """Test successful command send and receive"""
         mock_conn = MagicMock()
@@ -127,7 +127,7 @@ class TestNexStarProtocol(unittest.TestCase):
         mock_conn.reset_output_buffer.assert_called()
         mock_conn.write.assert_called_once_with(b"V#")
 
-    @patch("celestron_nexstar.api.telescope.telescope.protocol.time.time")
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
     def test_send_command_timeout(self, mock_time):
         """Test command timeout"""
         mock_conn = MagicMock()

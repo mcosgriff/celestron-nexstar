@@ -4,15 +4,16 @@ Unit tests for variable_stars.py
 Tests variable star event calculations and data structures.
 """
 
+import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.astronomy.variable_stars import (
-    KNOWN_VARIABLE_STARS,
     VariableStar,
     VariableStarEvent,
     _calculate_next_event,
+    get_known_variable_stars,
     get_variable_star_events,
 )
 from celestron_nexstar.api.location.observer import ObserverLocation
@@ -79,27 +80,97 @@ class TestVariableStarEvent(unittest.TestCase):
 
 
 class TestKnownVariableStars(unittest.TestCase):
-    """Test suite for KNOWN_VARIABLE_STARS constant"""
+    """Test suite for get_known_variable_stars function"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        # Create mock variable stars
+        self.mock_stars = [
+            VariableStar(
+                name="Algol",
+                designation="β Per",
+                variable_type="eclipsing_binary",
+                period_days=2.867,
+                magnitude_min=2.1,
+                magnitude_max=3.4,
+                ra_hours=3.136,
+                dec_degrees=40.956,
+                notes="Demon star",
+            ),
+            VariableStar(
+                name="Mira",
+                designation="ο Cet",
+                variable_type="mira",
+                period_days=332.0,
+                magnitude_min=2.0,
+                magnitude_max=10.1,
+                ra_hours=2.322,
+                dec_degrees=-2.977,
+                notes="The Wonderful",
+            ),
+        ]
 
     def test_known_stars_not_empty(self):
-        """Test that KNOWN_VARIABLE_STARS is not empty"""
-        self.assertGreater(len(KNOWN_VARIABLE_STARS), 0)
+        """Test that get_known_variable_stars returns non-empty list"""
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=2)
+        mock_result = MagicMock()
+        mock_model1 = MagicMock()
+        mock_model1.to_variable_star.return_value = self.mock_stars[0]
+        mock_model2 = MagicMock()
+        mock_model2.to_variable_star.return_value = self.mock_stars[1]
+        mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        stars = asyncio.run(get_known_variable_stars(mock_session))
+        self.assertGreater(len(stars), 0)
 
     def test_known_stars_are_variable_stars(self):
         """Test that all known stars are VariableStar instances"""
-        for star in KNOWN_VARIABLE_STARS:
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=2)
+        mock_result = MagicMock()
+        mock_model1 = MagicMock()
+        mock_model1.to_variable_star.return_value = self.mock_stars[0]
+        mock_model2 = MagicMock()
+        mock_model2.to_variable_star.return_value = self.mock_stars[1]
+        mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        stars = asyncio.run(get_known_variable_stars(mock_session))
+        for star in stars:
             self.assertIsInstance(star, VariableStar)
 
     def test_algol_in_known_stars(self):
         """Test that Algol is in the known stars list"""
-        algol = next((s for s in KNOWN_VARIABLE_STARS if s.name == "Algol"), None)
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = self.mock_stars[0]  # Algol
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        stars = asyncio.run(get_known_variable_stars(mock_session))
+        algol = next((s for s in stars if s.name == "Algol"), None)
         self.assertIsNotNone(algol)
         self.assertEqual(algol.variable_type, "eclipsing_binary")
         self.assertAlmostEqual(algol.period_days, 2.867, places=2)
 
     def test_all_stars_have_required_fields(self):
         """Test that all known stars have all required fields"""
-        for star in KNOWN_VARIABLE_STARS:
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(return_value=2)
+        mock_result = MagicMock()
+        mock_model1 = MagicMock()
+        mock_model1.to_variable_star.return_value = self.mock_stars[0]
+        mock_model2 = MagicMock()
+        mock_model2.to_variable_star.return_value = self.mock_stars[1]
+        mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        stars = asyncio.run(get_known_variable_stars(mock_session))
+        for star in stars:
             self.assertIsInstance(star.name, str)
             self.assertIsInstance(star.designation, str)
             self.assertIsInstance(star.variable_type, str)
@@ -193,7 +264,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location)
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
 
         self.assertIsInstance(events, list)
         # Should have events for all known stars
@@ -206,7 +297,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location, event_type="minimum")
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location, event_type="minimum"))
 
         self.assertIsInstance(events, list)
         # All events should be minimum type
@@ -220,7 +331,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location, months_ahead=1)
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location, months_ahead=1))
 
         self.assertIsInstance(events, list)
         # All events should be within 1 month
@@ -235,7 +366,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location)
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
 
         # Should be sorted by date
         if len(events) > 1:
@@ -249,7 +400,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location)
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
 
         self.assertGreater(len(events), 0)
         for event in events:
@@ -267,7 +438,27 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.now.return_value = mock_now
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
-        events = get_variable_star_events(self.test_location)
+        # Mock database session
+        mock_session = AsyncMock()
+        mock_star = VariableStar(
+            name="Test Star",
+            designation="α Test",
+            variable_type="cepheid",
+            period_days=5.0,
+            magnitude_min=3.0,
+            magnitude_max=4.0,
+            ra_hours=12.0,
+            dec_degrees=45.0,
+            notes="Test",
+        )
+        mock_session.scalar = AsyncMock(return_value=1)
+        mock_result = MagicMock()
+        mock_model = MagicMock()
+        mock_model.to_variable_star.return_value = mock_star
+        mock_result.scalars.return_value.all.return_value = [mock_model]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
 
         for event in events:
             if event.event_type == "minimum":

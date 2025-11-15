@@ -110,14 +110,9 @@ async def _fetch_from_yale_bsc() -> dict[int, tuple[str | None, str | None]]:
         # Check if Yale BSC JSON is already downloaded
         cache_path = Path("/tmp") / "yale_bsc.json"
         if not cache_path.exists():
-            # Try to download it
-            from celestron_nexstar.cli.data_import import download_yale_bsc
-
-            try:
-                download_yale_bsc(cache_path)
-            except Exception as e:
-                logger.debug(f"Could not download Yale BSC: {e}")
-                return results
+            # File doesn't exist, skip processing
+            logger.debug("Yale BSC JSON not found, skipping")
+            return results
 
         # Parse the JSON
         with open(cache_path, encoding="utf-8") as f:

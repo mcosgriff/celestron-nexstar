@@ -176,10 +176,7 @@ class TestFindDarkSitesNear(unittest.TestCase):
         mock_get_session.return_value = mock_session_context
 
         with patch("celestron_nexstar.api.events.vacation_planning.asyncio.run") as mock_run:
-            # Mock the async _get_sites function to return the mock sites
-            async def _get_sites():
-                return [mock_db_site]
-
+            # Mock asyncio.run to return the mock sites directly
             mock_run.return_value = [mock_db_site]
 
             result = find_dark_sites_near(self.test_location, max_distance_km=200.0)

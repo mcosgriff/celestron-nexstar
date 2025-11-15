@@ -928,14 +928,11 @@ class TestFetchWeatherBatch(unittest.TestCase):
             ObserverLocation(latitude=35.0, longitude=-110.0, name="Location 2"),
         ]
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_success(self, mock_fetch: MagicMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
+    def test_fetch_weather_batch_success(self, mock_fetch: AsyncMock) -> None:
         """Test successful batch weather fetch"""
-        # Mock successful responses - use AsyncMock to return coroutines
-        async def mock_weather(loc: ObserverLocation) -> WeatherData:
-            return WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
-        # Use AsyncMock so it returns a coroutine
-        mock_fetch.return_value = AsyncMock(return_value=WeatherData(temperature_c=70.0, cloud_cover_percent=10.0))()
+        # Mock successful responses - fetch_weather is async, so mock_fetch should be AsyncMock
+        mock_fetch.return_value = WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
 
         # Actually, ObserverLocation is not hashable, so this test will fail
         # Skip this test for now - the code has a bug where it tries to use ObserverLocation as dict key
@@ -951,21 +948,15 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_with_errors(self, mock_fetch: MagicMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
+    def test_fetch_weather_batch_with_errors(self, mock_fetch: AsyncMock) -> None:
         """Test batch weather fetch with some errors"""
         # Mock one success and one error
-        call_count = [0]
-        async def mock_weather(loc: ObserverLocation) -> WeatherData:
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
-            else:
-                raise Exception("API error")
-        # Create mock locations for testing
-        loc1 = ObserverLocation(latitude=40.0, longitude=-100.0, name="Location 1")
-        loc2 = ObserverLocation(latitude=35.0, longitude=-110.0, name="Location 2")
-        mock_fetch.return_value = AsyncMock(side_effect=[mock_weather(loc1), mock_weather(loc2)])()
+        # Use side_effect to return different values for each call
+        mock_fetch.side_effect = [
+            WeatherData(temperature_c=70.0, cloud_cover_percent=10.0),
+            Exception("API error"),
+        ]
 
         # ObserverLocation is not hashable, so this test will fail
         try:
@@ -977,13 +968,12 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather")
-    def test_fetch_weather_batch_unexpected_result(self, mock_fetch: MagicMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
+    def test_fetch_weather_batch_unexpected_result(self, mock_fetch: AsyncMock) -> None:
         """Test batch weather fetch with unexpected result type"""
         # Mock unexpected result type
-        async def mock_weather(loc: ObserverLocation) -> str:
-            return "unexpected"  # Not WeatherData or Exception
-        mock_fetch.return_value = AsyncMock(return_value="unexpected")()
+        # Set mock_fetch to return an unexpected value
+        mock_fetch.return_value = "unexpected"
 
         # ObserverLocation is not hashable, so this test will fail
         try:

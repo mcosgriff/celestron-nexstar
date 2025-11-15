@@ -94,6 +94,10 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+filterwarnings = [
+    "ignore::RuntimeWarning:unittest.mock",
+    "ignore:coroutine.*was never awaited:RuntimeWarning",
+]
 addopts = [
     "-ra",
     "--strict-markers",
@@ -291,6 +295,11 @@ module = [
     "celestron_nexstar.cli.commands.data.*",
 ]
 warn_unused_ignores = false  # Type ignore needed for alembic.command import and deal contracts
+
+# Suppress unused ignore warnings for urllib3 import (may not have type stubs in all environments)
+[[tool.mypy.overrides]]
+module = "celestron_nexstar.api.events.space_weather"
+warn_unused_ignores = false  # Type ignore needed for urllib3.util.retry import
 
 # Suppress deal contract type errors (known limitation with deal.mypy plugin)
 # Deal contracts use lambdas that mypy cannot properly infer types for

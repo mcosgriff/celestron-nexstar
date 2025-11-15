@@ -30,7 +30,7 @@ __all__ = [
 ]
 
 
-@dataclass
+@dataclass(frozen=True)
 class ObserverLocation:
     """Observer's geographic location."""
 

@@ -130,8 +130,8 @@ async def fetch_and_store_rss_feed(
             "Accept-Language": "en-US,en;q=0.9",
         }
         async with (
-            aiohttp.ClientSession() as session,
-            session.get(feed_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response,
+            aiohttp.ClientSession() as http_session,
+            http_session.get(feed_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response,
         ):
             if response.status != 200:
                 raise RuntimeError(f"Failed to fetch RSS feed: HTTP {response.status}")
@@ -163,12 +163,12 @@ async def fetch_and_store_rss_feed(
                     description = entry.summary
 
                 # Get content if available
-                content = None
+                article_content: str | None = None
                 if "content" in entry and entry.content:
                     # content is a list of dicts with 'value' keys
                     content_parts = [c.get("value", "") for c in entry.content if isinstance(c, dict)]
                     if content_parts:
-                        content = "\n\n".join(content_parts)
+                        article_content = "\n\n".join(content_parts)
 
                 # Parse published date
                 published_date = datetime.now(UTC)
@@ -231,7 +231,7 @@ async def fetch_and_store_rss_feed(
                     # Update existing article
                     existing.title = title
                     existing.description = description
-                    existing.content = content
+                    existing.content = article_content
                     existing.published_date = published_date
                     existing.author = author
                     existing.categories = json.dumps(categories) if categories else None
@@ -245,7 +245,7 @@ async def fetch_and_store_rss_feed(
                         link=link,
                         guid=guid,
                         description=description,
-                        content=content,
+                        content=article_content,
                         published_date=published_date,
                         author=author,
                         categories=json.dumps(categories) if categories else None,

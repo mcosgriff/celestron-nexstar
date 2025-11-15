@@ -6,7 +6,7 @@ Tests coordinate conversion utilities.
 
 import unittest
 
-from celestron_nexstar.api.catalogs.catalogs.converters import CoordinateConverter
+from celestron_nexstar.api.catalogs.converters import CoordinateConverter
 
 
 class TestCoordinateConverter(unittest.TestCase):
