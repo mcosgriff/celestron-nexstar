@@ -995,14 +995,14 @@ class BortleCharacteristicsModel(Base):
         return f"<BortleCharacteristics(bortle_class={self.bortle_class}, sqm_range=({self.sqm_min}, {self.sqm_max}))>"
 
 
-class SkyAtAGlanceModel(Base):
+class RSSFeedModel(Base):
     """
-    SQLAlchemy model for Sky & Telescope "Sky at a Glance" RSS feed articles.
+    SQLAlchemy model for RSS feed articles from multiple astronomy sources.
 
-    Stores weekly astronomy news and night sky events from Sky & Telescope.
+    Stores astronomy news and night sky events from various RSS feed sources.
     """
 
-    __tablename__ = "sky_at_a_glance"
+    __tablename__ = "rss_feeds"
 
     # Primary key
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -1048,7 +1048,7 @@ class SkyAtAGlanceModel(Base):
 
     def __repr__(self) -> str:
         """String representation of the article."""
-        return f"<SkyAtAGlance(id={self.id}, title='{self.title[:50]}...', published={self.published_date})>"
+        return f"<RSSFeed(id={self.id}, title='{self.title[:50]}...', published={self.published_date})>"
 
 
 @asynccontextmanager

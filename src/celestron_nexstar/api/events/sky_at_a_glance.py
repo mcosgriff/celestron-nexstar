@@ -16,7 +16,7 @@ import feedparser
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from celestron_nexstar.api.database.models import SkyAtAGlanceModel
+from celestron_nexstar.api.database.models import RSSFeedModel
 
 
 logger = logging.getLogger(__name__)
@@ -219,10 +219,10 @@ async def fetch_and_store_rss_feed(
                 # Check if article already exists (by link or guid)
                 from sqlalchemy import or_
 
-                conditions = [SkyAtAGlanceModel.link == link]
+                conditions = [RSSFeedModel.link == link]
                 if guid:
-                    conditions.append(SkyAtAGlanceModel.guid == guid)
-                stmt = select(SkyAtAGlanceModel).where(or_(*conditions))
+                    conditions.append(RSSFeedModel.guid == guid)
+                stmt = select(RSSFeedModel).where(or_(*conditions))
 
                 result = await db_session.execute(stmt)
                 existing = result.scalar_one_or_none()
@@ -240,7 +240,7 @@ async def fetch_and_store_rss_feed(
                     logger.debug(f"Updated existing article: {title}")
                 else:
                     # Create new article
-                    article = SkyAtAGlanceModel(
+                    article = RSSFeedModel(
                         title=title,
                         link=link,
                         guid=guid,
@@ -327,9 +327,7 @@ async def get_articles_this_week(db_session: AsyncSession | None = None) -> list
     week_ago = now - timedelta(days=7)
 
     stmt = (
-        select(SkyAtAGlanceModel)
-        .where(SkyAtAGlanceModel.published_date >= week_ago)
-        .order_by(SkyAtAGlanceModel.published_date.desc())
+        select(RSSFeedModel).where(RSSFeedModel.published_date >= week_ago).order_by(RSSFeedModel.published_date.desc())
     )
 
     result = await db_session.execute(stmt)
@@ -375,9 +373,9 @@ async def get_articles_this_month(db_session: AsyncSession | None = None) -> lis
     month_ago = now - timedelta(days=30)
 
     stmt = (
-        select(SkyAtAGlanceModel)
-        .where(SkyAtAGlanceModel.published_date >= month_ago)
-        .order_by(SkyAtAGlanceModel.published_date.desc())
+        select(RSSFeedModel)
+        .where(RSSFeedModel.published_date >= month_ago)
+        .order_by(RSSFeedModel.published_date.desc())
     )
 
     result = await db_session.execute(stmt)
@@ -422,7 +420,7 @@ async def get_article_by_title(title_query: str, db_session: AsyncSession | None
 
     title_lower = title_query.lower()
 
-    stmt = select(SkyAtAGlanceModel).where(SkyAtAGlanceModel.title.ilike(f"%{title_lower}%")).limit(1)
+    stmt = select(RSSFeedModel).where(RSSFeedModel.title.ilike(f"%{title_lower}%")).limit(1)
 
     result = await db_session.execute(stmt)
     model = result.scalar_one_or_none()

@@ -14,6 +14,7 @@ from typing import Any
 import typer
 from click import Context
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from typer.core import TyperGroup
 
@@ -402,7 +403,7 @@ def fetch_rss_feeds(
     Fetch and update astronomy RSS feed articles from multiple sources.
 
     Available sources:
-    - sky-telescope: Sky & Telescope 'Sky at a Glance'
+    - sky-telescope: Sky & Telescope
     - astronomy: Astronomy Magazine
     - earthsky: EarthSky
     - space-com: Space.com
@@ -480,16 +481,62 @@ def fetch_rss_feeds(
         raise typer.Exit(1) from e
 
 
-@app.command("sky-at-a-glance")
-def show_sky_at_a_glance(
-    period: str = typer.Argument("week", help="Time period: 'week' (last 7 days) or 'month' (last 30 days)"),
+@app.command("rss-sources")
+def list_rss_sources() -> None:
+    """List all available RSS feed sources."""
+    from rich.table import Table
+
+    console.print("\n[bold cyan]Available RSS Feed Sources[/bold cyan]\n")
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Source Key", style="cyan")
+    table.add_column("Source Name", style="bold yellow")
+    table.add_column("Description", style="dim")
+
+    for source_key, source in sorted(DEFAULT_RSS_FEEDS.items()):
+        table.add_row(source_key, source.name, source.description)
+
+    console.print(table)
+    console.print("\n[dim]💡 Use 'nexstar events fetch-rss-feeds --source <key>' to fetch from a specific source[/dim]")
+    console.print("[dim]💡 Use 'nexstar events fetch-rss-feeds' to fetch from all sources[/dim]")
+    console.print(
+        "[dim]💡 Use 'nexstar events articles week --source \"<Source Name>\"' to view articles from a specific source[/dim]\n"
+    )
+
+
+@app.command("articles")
+def show_articles(
+    period: str = typer.Argument(
+        "week", help="Time period: 'week' (last 7 days) or 'month' (last 30 days). Ignored if --days is provided."
+    ),
+    source: str | None = typer.Option(
+        None, "--source", "-s", help="Filter by source (e.g., 'Sky & Telescope', 'NASA News')"
+    ),
+    days: int | None = typer.Option(
+        None, "--days", "-d", help="Number of days back to search (overrides period argument)"
+    ),
     export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
 ) -> None:
-    """Show Sky & Telescope 'Sky at a Glance' articles for this week or month."""
+    """Show astronomy articles from RSS feeds for this week, month, or custom number of days."""
+    from datetime import UTC, timedelta
+
     from celestron_nexstar.api.database.models import get_db_session
 
-    if period.lower() not in ["week", "month"]:
+    # Determine number of days
+    if days is not None:
+        if days <= 0:
+            console.print(f"[red]Error: Days must be positive, got {days}[/red]")
+            raise typer.Exit(1)
+        days_back = days
+        period_display = f"last {days} day(s)"
+    elif period.lower() == "week":
+        days_back = 7
+        period_display = "This Week"
+    elif period.lower() == "month":
+        days_back = 30
+        period_display = "This Month"
+    else:
         console.print(f"[red]Error: Period must be 'week' or 'month', got '{period}'[/red]")
         raise typer.Exit(1)
 
@@ -497,19 +544,60 @@ def show_sky_at_a_glance(
 
         async def _get_articles() -> list[SkyAtAGlanceArticle]:
             async with get_db_session() as db_session:
-                if period.lower() == "week":
+                if days is not None:
+                    # Use custom days
+                    now = datetime.now(UTC)
+                    days_ago = now - timedelta(days=days_back)
+                    import json
+
+                    from sqlalchemy import select
+
+                    from celestron_nexstar.api.database.models import RSSFeedModel
+
+                    stmt = (
+                        select(RSSFeedModel)
+                        .where(RSSFeedModel.published_date >= days_ago)
+                        .order_by(RSSFeedModel.published_date.desc())
+                    )
+
+                    result = await db_session.execute(stmt)
+                    models = result.scalars().all()
+
+                    articles = []
+                    for model in models:
+                        categories = json.loads(model.categories) if model.categories else None
+                        article = SkyAtAGlanceArticle(
+                            title=model.title,
+                            link=model.link,
+                            guid=model.guid,
+                            description=model.description,
+                            content=model.content,
+                            published_date=model.published_date,
+                            author=model.author,
+                            categories=categories,
+                            source=model.source,
+                            feed_url=model.feed_url,
+                        )
+                        articles.append(article)
+                    return articles
+                elif period.lower() == "week":
                     return await get_articles_this_week(db_session)
                 else:
                     return await get_articles_this_month(db_session)
 
         articles = asyncio.run(_get_articles())
 
+        # Filter by source if specified
+        if source:
+            articles = [a for a in articles if source.lower() in a.source.lower()]
+
         if export:
+            export_suffix = f"{days_back}days" if days is not None else period
             export_path_obj = (
-                Path(export_path) if export_path else _generate_export_filename("sky-at-a-glance", None, period)
+                Path(export_path) if export_path else _generate_export_filename("articles", None, export_suffix)
             )
             file_console = create_file_console()
-            _show_sky_at_a_glance_content(file_console, articles, period)
+            _show_articles_content(file_console, articles, period_display, source)
             content = file_console.file.getvalue()
             file_console.file.close()
 
@@ -517,15 +605,15 @@ def show_sky_at_a_glance(
             console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
             return
 
-        _show_sky_at_a_glance_content(console, articles, period)
+        _show_articles_content(console, articles, period_display, source)
 
     except Exception as e:
         console.print(f"[red]Error fetching articles: {e}[/red]")
         raise typer.Exit(1) from e
 
 
-@app.command("sky-viewing")
-def show_sky_viewing_recommendations(
+@app.command("article-viewing")
+def show_article_viewing_recommendations(
     article_title: str = typer.Argument(..., help="Title or partial title of the article (partial match OK)"),
     location: str | None = typer.Option(
         None, "--location", "-l", help="Location to check (default: your saved location)"
@@ -537,7 +625,7 @@ def show_sky_viewing_recommendations(
     export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
 ) -> None:
     """
-    Find the best viewing location for events mentioned in a Sky at a Glance article.
+    Find the best viewing location for events mentioned in an astronomy article.
 
     Analyzes the article content and suggests viewing locations based on your current location.
     """
@@ -555,7 +643,7 @@ def show_sky_viewing_recommendations(
         if article is None:
             console.print(f"[red]Error: No article found matching '{article_title}'[/red]")
             console.print(
-                "[dim]Use 'nexstar events sky-at-a-glance week' or 'nexstar events sky-at-a-glance month' to see available articles[/dim]"
+                "[dim]Use 'nexstar events articles week' or 'nexstar events articles month' to see available articles[/dim]"
             )
             raise typer.Exit(1)
 
@@ -586,9 +674,11 @@ def show_sky_viewing_recommendations(
         location_name = (
             observer_location.name or f"{observer_location.latitude:.1f}N-{observer_location.longitude:.1f}E"
         )
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("sky-viewing", location_name)
+        export_path_obj = (
+            Path(export_path) if export_path else _generate_export_filename("article-viewing", location_name)
+        )
         file_console = create_file_console()
-        _show_sky_viewing_recommendation_content(file_console, article, observer_location, max_distance)
+        _show_article_viewing_recommendation_content(file_console, article, observer_location, max_distance)
         content = file_console.file.getvalue()
         file_console.file.close()
 
@@ -596,58 +686,83 @@ def show_sky_viewing_recommendations(
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
-    _show_sky_viewing_recommendation_content(console, article, observer_location, max_distance)
+    _show_article_viewing_recommendation_content(console, article, observer_location, max_distance)
 
 
-def _show_sky_at_a_glance_content(
+def _show_articles_content(
     output_console: Console | FileConsole,
     articles: list[SkyAtAGlanceArticle],
-    period: str,
+    period_display: str,
+    source_filter: str | None = None,
 ) -> None:
-    """Display Sky at a Glance articles."""
-    period_name = "This Week" if period.lower() == "week" else "This Month"
-
-    output_console.print(f"\n[bold cyan]Sky & Telescope - Sky at a Glance ({period_name})[/bold cyan]\n")
+    """Display astronomy articles from RSS feeds."""
+    title = f"Astronomy Articles ({period_display})"
+    if source_filter:
+        title += f" - {source_filter}"
+    output_console.print(f"\n[bold cyan]{title}[/bold cyan]\n")
 
     if not articles:
-        output_console.print(f"[dim]No articles found for {period_name.lower()}[/dim]")
-        output_console.print("[dim]Try running 'nexstar events fetch-sky-at-a-glance' to update the feed[/dim]\n")
+        output_console.print(f"[dim]No articles found for {period_display.lower()}[/dim]")
+        output_console.print("[dim]Try running 'nexstar events fetch-rss-feeds' to update the feeds[/dim]\n")
         return
 
+    # Group articles by source
+    articles_by_source: dict[str, list[SkyAtAGlanceArticle]] = {}
     for article in articles:
-        output_console.print(f"[bold]{article.title}[/bold]")
-        output_console.print(f"[dim]Published: {article.published_date.strftime('%Y-%m-%d')}[/dim]")
-        if article.author:
-            output_console.print(f"[dim]Author: {article.author}[/dim]")
+        if article.source not in articles_by_source:
+            articles_by_source[article.source] = []
+        articles_by_source[article.source].append(article)
 
-        # Clean HTML from description for display
-        import re
-        from html import unescape
+    # Clean HTML from description for display
+    import re
+    from html import unescape
 
-        description = unescape(article.description)
-        description = re.sub(r"<[^>]+>", "", description)  # Remove HTML tags
-        description = description.strip()
+    for source, source_articles in sorted(articles_by_source.items()):
+        # Build content for this source's articles
+        source_content = []
+        for article in source_articles:
+            article_lines = []
+            article_lines.append(f"[bold]{article.title}[/bold]")
+            article_lines.append(f"[dim]Published: {article.published_date.strftime('%Y-%m-%d')}[/dim]")
+            if article.author:
+                article_lines.append(f"[dim]Author: {article.author}[/dim]")
 
-        # Show first 200 characters
-        if len(description) > 200:
-            description = description[:200] + "..."
+            description = unescape(article.description)
+            description = re.sub(r"<[^>]+>", "", description)  # Remove HTML tags
+            description = description.strip()
 
-        output_console.print(f"{description}\n")
-        output_console.print(f"[dim]Link: {article.link}[/dim]\n")
-        output_console.print("─" * 80 + "\n")
+            # Show first 200 characters
+            if len(description) > 200:
+                description = description[:200] + "..."
+
+            article_lines.append(f"{description}")
+            article_lines.append(f"[dim]Link: {article.link}[/dim]")
+
+            source_content.append("\n".join(article_lines))
+            source_content.append("")  # Empty line between articles
+
+        # Remove trailing empty line
+        if source_content and source_content[-1] == "":
+            source_content.pop()
+
+        # Create panel with source name as title
+        panel_content = "\n".join(source_content)
+        panel_title = f"{source} ({len(source_articles)} article(s))"
+        output_console.print(Panel(panel_content, title=panel_title, border_style="yellow"))
+        output_console.print()  # Empty line between panels
 
     output_console.print(
-        "\n[dim]💡 Tip: Use 'nexstar events sky-viewing <article-title>' to find best viewing location[/dim]\n"
+        "\n[dim]💡 Tip: Use 'nexstar events article-viewing <article-title>' to find best viewing location[/dim]\n"
     )
 
 
-def _show_sky_viewing_recommendation_content(
+def _show_article_viewing_recommendation_content(
     output_console: Console | FileConsole,
     article: SkyAtAGlanceArticle,
     location: ObserverLocation,
     max_distance: float,
 ) -> None:
-    """Display viewing recommendations for a Sky at a Glance article."""
+    """Display viewing recommendations for an astronomy article."""
     from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
