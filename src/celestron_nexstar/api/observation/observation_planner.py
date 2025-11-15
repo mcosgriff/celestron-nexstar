@@ -22,6 +22,7 @@ from celestron_nexstar.api.astronomy.solar_system import (
 )
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase, SkyBrightness
+from celestron_nexstar.api.core.exceptions import LocationNotSetError
 from celestron_nexstar.api.core.utils import angular_separation, calculate_lst, ra_dec_to_alt_az
 from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.location.light_pollution import LightPollutionData, get_light_pollution_data
@@ -173,7 +174,7 @@ class ObservationPlanner:
         if lat is None or lon is None:
             location = get_observer_location()
             if location is None:
-                raise ValueError("No location set. Use 'nexstar location set' command.")
+                raise LocationNotSetError("No location set. Use 'nexstar location set' command.")
             lat, lon = location.latitude, location.longitude
             location_name = location.name
         else:

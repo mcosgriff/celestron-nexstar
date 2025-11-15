@@ -9,6 +9,7 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.astronomy.meteor_showers import (
     MeteorShower,
     _is_date_in_range,
@@ -139,7 +140,7 @@ class TestGetAllMeteorShowers(unittest.TestCase):
         """Test error when database is empty"""
         self.mock_session.scalar = AsyncMock(return_value=0)
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(get_all_meteor_showers(self.mock_session))
 
         self.assertIn("No meteor showers found", str(context.exception))

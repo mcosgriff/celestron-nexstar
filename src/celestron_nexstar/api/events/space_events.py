@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from celestron_nexstar.api.core.exceptions import DatabaseError
+
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -191,7 +193,7 @@ def get_upcoming_events(
 
         # If we have events in the database, use them
         if not db_events:
-            raise RuntimeError(
+            raise DatabaseError(
                 "No space events found in database. Please seed the database by running: nexstar data seed"
             )
 
@@ -229,7 +231,7 @@ def get_upcoming_events(
         return filtered
     except Exception as e:
         logger.error(f"Could not query space events from database: {e}")
-        raise RuntimeError(
+        raise DatabaseError(
             "No space events found in database. Please seed the database by running: nexstar data seed"
         ) from e
 

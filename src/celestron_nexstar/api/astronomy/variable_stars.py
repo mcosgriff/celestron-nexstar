@@ -74,11 +74,12 @@ async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableSta
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import VariableStarModel
 
     count = await db_session.scalar(select(func.count(VariableStarModel.id)))
     if count == 0:
-        raise RuntimeError(
+        raise DatabaseError(
             "No variable stars found in database. Please seed the database by running: nexstar data seed"
         )
 

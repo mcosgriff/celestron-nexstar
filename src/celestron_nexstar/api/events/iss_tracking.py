@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from skyfield.api import wgs84
 from skyfield.sgp4lib import EarthSatellite
 
+from celestron_nexstar.api.core.exceptions import TLEFetchError
 from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
 from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
@@ -142,7 +143,7 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
         Tuple of (line1, line2, fetch_time)
 
     Raises:
-        RuntimeError: If fetch fails
+        TLEFetchError: If fetch fails
     """
     import aiohttp
 
@@ -155,7 +156,7 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
         ):
             if response.status != 200:
                 msg = f"Failed to fetch ISS TLE: HTTP {response.status}"
-                raise RuntimeError(msg) from None
+                raise TLEFetchError(msg) from None
 
             data = await response.text()
             lines = data.strip().split("\n")
@@ -174,13 +175,13 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
                 return (line1, line2, fetch_time)
             else:
                 msg = "Invalid TLE format from CelesTrak"
-                raise RuntimeError(msg) from None
+                raise TLEFetchError(msg) from None
 
     except Exception as e:
-        if isinstance(e, RuntimeError):
+        if isinstance(e, TLEFetchError):
             raise
         msg = f"Failed to fetch ISS TLE: {e}"
-        raise RuntimeError(msg) from e
+        raise TLEFetchError(msg) from e
 
 
 async def _get_iss_satellite() -> EarthSatellite:
@@ -191,7 +192,7 @@ async def _get_iss_satellite() -> EarthSatellite:
         Skyfield EarthSatellite object for ISS
 
     Raises:
-        RuntimeError: If TLE cannot be obtained
+        TLEFetchError: If TLE cannot be obtained
     """
     # Try cache first
     cached_tle = _get_cached_tle()
@@ -234,7 +235,8 @@ async def get_iss_passes(
         List of ISS passes sorted by rise time
 
     Raises:
-        RuntimeError: If satellite data cannot be obtained
+        TLEFetchError: If satellite data cannot be obtained
+        ISSCalculationError: If pass calculations fail
     """
     if start_time is None:
         start_time = datetime.now(UTC)

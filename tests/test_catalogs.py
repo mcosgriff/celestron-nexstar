@@ -28,6 +28,7 @@ from celestron_nexstar.api.catalogs.catalogs import (  # noqa: E402
     get_object_by_name,
 )
 from celestron_nexstar.api.core.enums import CelestialObjectType  # noqa: E402
+from celestron_nexstar.api.core.exceptions import CatalogNotFoundError  # noqa: E402
 from celestron_nexstar.api.database.database import CatalogDatabase  # noqa: E402
 
 
@@ -535,7 +536,7 @@ class TestCatalogLoading(unittest.TestCase):
         mock_open.return_value.__enter__.return_value = MagicMock()
         mock_yaml_load.return_value = {"other_catalog": []}
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(CatalogNotFoundError):
             get_catalog("nonexistent")
 
     @patch("pathlib.Path.open", create=True)

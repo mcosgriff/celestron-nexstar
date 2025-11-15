@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase, SkyBrightness
+from celestron_nexstar.api.core.exceptions import LocationNotSetError
 from celestron_nexstar.api.location.light_pollution import BortleClass, LightPollutionData
 from celestron_nexstar.api.location.weather import WeatherData
 from celestron_nexstar.api.observation.observation_planner import (
@@ -130,7 +131,7 @@ class TestObservationPlanner(unittest.TestCase):
         """Test error when no location is set"""
         mock_get_location.return_value = None
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(LocationNotSetError) as context:
             self.planner.get_tonight_conditions()
 
         self.assertIn("No location set", str(context.exception))

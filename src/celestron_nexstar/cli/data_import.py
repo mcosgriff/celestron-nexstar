@@ -22,6 +22,7 @@ from rich.table import Table
 from celestron_nexstar.api.catalogs.converters import CoordinateConverter
 from celestron_nexstar.api.catalogs.importers import parse_catalog_number
 from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.core.exceptions import InvalidCatalogFormatError
 from celestron_nexstar.api.database.database import get_database
 
 
@@ -358,7 +359,7 @@ def import_celestial_data_geojson(
 
     if geojson_data.get("type") != "FeatureCollection":
         console.print("[red]✗[/red] Invalid GeoJSON: expected FeatureCollection")
-        raise ValueError("Invalid GeoJSON format")
+        raise InvalidCatalogFormatError("Invalid GeoJSON format")
 
     features = geojson_data.get("features", [])
     total_features = len(features)
@@ -643,7 +644,7 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
 
     if geojson_data.get("type") != "FeatureCollection":
         console.print("[red]✗[/red] Invalid GeoJSON: expected FeatureCollection")
-        raise ValueError("Invalid GeoJSON format")
+        raise InvalidCatalogFormatError("Invalid GeoJSON format")
 
     features = geojson_data.get("features", [])
     total_features = len(features)
@@ -936,7 +937,7 @@ def import_celestial_constellations(
 
     if geojson_data.get("type") != "FeatureCollection":
         console.print("[red]✗[/red] Invalid GeoJSON: expected FeatureCollection")
-        raise ValueError("Invalid GeoJSON format")
+        raise InvalidCatalogFormatError("Invalid GeoJSON format")
 
     features = geojson_data.get("features", [])
     total_features = len(features)
@@ -1205,7 +1206,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
 
     if geojson_data.get("type") != "FeatureCollection":
         console.print("[red]✗[/red] Invalid GeoJSON: expected FeatureCollection")
-        raise ValueError("Invalid GeoJSON format")
+        raise InvalidCatalogFormatError("Invalid GeoJSON format")
 
     features = geojson_data.get("features", [])
     total_features = len(features)

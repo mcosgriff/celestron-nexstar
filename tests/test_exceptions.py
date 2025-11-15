@@ -9,7 +9,7 @@ import unittest
 from celestron_nexstar.api.core.exceptions import (
     CommandError,
     InvalidCoordinateError,
-    NexStarError,
+    NexstarError,
     NotConnectedError,
     TelescopeConnectionError,
     TelescopeTimeoutError,
@@ -21,17 +21,17 @@ class TestNexStarError(unittest.TestCase):
 
     def test_nexstar_error_is_exception(self):
         """Test that NexStarError is an Exception"""
-        self.assertTrue(issubclass(NexStarError, Exception))
+        self.assertTrue(issubclass(NexstarError, Exception))
 
     def test_nexstar_error_instantiation(self):
         """Test creating a NexStarError instance"""
-        error = NexStarError("Test error message")
+        error = NexstarError("Test error message")
         self.assertEqual(str(error), "Test error message")
         self.assertIsInstance(error, Exception)
 
     def test_nexstar_error_with_no_message(self):
         """Test creating a NexStarError with no message"""
-        error = NexStarError()
+        error = NexstarError()
         self.assertEqual(str(error), "")
 
 
@@ -40,13 +40,13 @@ class TestTelescopeConnectionError(unittest.TestCase):
 
     def test_inherits_from_nexstar_error(self):
         """Test that TelescopeConnectionError inherits from NexStarError"""
-        self.assertTrue(issubclass(TelescopeConnectionError, NexStarError))
+        self.assertTrue(issubclass(TelescopeConnectionError, NexstarError))
 
     def test_instantiation(self):
         """Test creating a TelescopeConnectionError instance"""
         error = TelescopeConnectionError("Connection failed")
         self.assertEqual(str(error), "Connection failed")
-        self.assertIsInstance(error, NexStarError)
+        self.assertIsInstance(error, NexstarError)
         self.assertIsInstance(error, Exception)
 
     def test_with_detailed_message(self):
@@ -60,13 +60,13 @@ class TestTelescopeTimeoutError(unittest.TestCase):
 
     def test_inherits_from_nexstar_error(self):
         """Test that TelescopeTimeoutError inherits from NexStarError"""
-        self.assertTrue(issubclass(TelescopeTimeoutError, NexStarError))
+        self.assertTrue(issubclass(TelescopeTimeoutError, NexstarError))
 
     def test_instantiation(self):
         """Test creating a TelescopeTimeoutError instance"""
         error = TelescopeTimeoutError("Command timed out")
         self.assertEqual(str(error), "Command timed out")
-        self.assertIsInstance(error, NexStarError)
+        self.assertIsInstance(error, NexstarError)
         self.assertIsInstance(error, Exception)
 
     def test_with_timeout_duration(self):
@@ -80,13 +80,13 @@ class TestInvalidCoordinateError(unittest.TestCase):
 
     def test_inherits_from_nexstar_error(self):
         """Test that InvalidCoordinateError inherits from NexStarError"""
-        self.assertTrue(issubclass(InvalidCoordinateError, NexStarError))
+        self.assertTrue(issubclass(InvalidCoordinateError, NexstarError))
 
     def test_instantiation(self):
         """Test creating an InvalidCoordinateError instance"""
         error = InvalidCoordinateError("RA out of range")
         self.assertEqual(str(error), "RA out of range")
-        self.assertIsInstance(error, NexStarError)
+        self.assertIsInstance(error, NexstarError)
         self.assertIsInstance(error, Exception)
 
     def test_with_coordinate_details(self):
@@ -100,13 +100,13 @@ class TestCommandError(unittest.TestCase):
 
     def test_inherits_from_nexstar_error(self):
         """Test that CommandError inherits from NexStarError"""
-        self.assertTrue(issubclass(CommandError, NexStarError))
+        self.assertTrue(issubclass(CommandError, NexstarError))
 
     def test_instantiation(self):
         """Test creating a CommandError instance"""
         error = CommandError("Invalid command response")
         self.assertEqual(str(error), "Invalid command response")
-        self.assertIsInstance(error, NexStarError)
+        self.assertIsInstance(error, NexstarError)
         self.assertIsInstance(error, Exception)
 
     def test_with_command_details(self):
@@ -120,13 +120,13 @@ class TestNotConnectedError(unittest.TestCase):
 
     def test_inherits_from_nexstar_error(self):
         """Test that NotConnectedError inherits from NexStarError"""
-        self.assertTrue(issubclass(NotConnectedError, NexStarError))
+        self.assertTrue(issubclass(NotConnectedError, NexstarError))
 
     def test_instantiation(self):
         """Test creating a NotConnectedError instance"""
         error = NotConnectedError("Telescope not connected")
         self.assertEqual(str(error), "Telescope not connected")
-        self.assertIsInstance(error, NexStarError)
+        self.assertIsInstance(error, NexstarError)
         self.assertIsInstance(error, Exception)
 
     def test_default_message(self):
@@ -150,7 +150,7 @@ class TestExceptionHierarchy(unittest.TestCase):
 
         for exc_class in exceptions:
             with self.subTest(exc_class=exc_class):
-                self.assertTrue(issubclass(exc_class, NexStarError))
+                self.assertTrue(issubclass(exc_class, NexstarError))
                 self.assertTrue(issubclass(exc_class, Exception))
 
     def test_exception_catching(self):
@@ -167,7 +167,7 @@ class TestExceptionHierarchy(unittest.TestCase):
             with self.subTest(exc=exc):
                 try:
                     raise exc
-                except NexStarError:
+                except NexstarError:
                     # Should catch all subclasses
                     pass
                 except Exception:

@@ -9,6 +9,7 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.astronomy.constellations import (
     Asterism,
     Constellation,
@@ -124,7 +125,7 @@ class TestGetProminentConstellations(unittest.TestCase):
         """Test error when database is empty"""
         self.mock_session.scalar = AsyncMock(return_value=0)
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(get_prominent_constellations(self.mock_session))
 
         self.assertIn("No constellations found", str(context.exception))
@@ -172,7 +173,7 @@ class TestGetFamousAsterisms(unittest.TestCase):
         """Test error when database is empty"""
         self.mock_session.scalar = AsyncMock(return_value=0)
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(get_famous_asterisms(self.mock_session))
 
         self.assertIn("No asterisms found", str(context.exception))

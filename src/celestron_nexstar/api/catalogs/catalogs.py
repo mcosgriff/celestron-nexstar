@@ -19,6 +19,7 @@ import yaml
 from cachetools import TTLCache, cached
 
 from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 
 
@@ -112,7 +113,7 @@ def _get_catalogs_path() -> Path:
         if data_path.exists():
             return data_path
 
-    raise FileNotFoundError(f"Could not find catalogs.yaml at {data_path}")
+    raise CatalogNotFoundError(f"Could not find catalogs.yaml at {data_path}")
 
 
 @cached(_catalog_cache)
@@ -134,7 +135,7 @@ def _load_catalog_from_yaml(catalog_name: str) -> list[CelestialObject]:
         data: dict[str, Any] = yaml.safe_load(f) or {}
 
     if catalog_name not in data:
-        raise ValueError(f"Catalog '{catalog_name}' not found in {catalogs_path}")
+        raise CatalogNotFoundError(f"Catalog '{catalog_name}' not found in {catalogs_path}")
 
     objects: list[CelestialObject] = []
     for obj_data in data[catalog_name]:
@@ -260,7 +261,7 @@ ALL_CATALOGS = _AllCatalogsProxy()
 # type: ignore[misc,arg-type]
 @deal.pre(lambda catalog_name: catalog_name and len(catalog_name) > 0, message="Catalog name required")
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-@deal.raises(ValueError)
+@deal.raises(CatalogNotFoundError)
 def get_catalog(catalog_name: str) -> list[CelestialObject]:
     """
     Get objects from a specific catalog.
@@ -270,6 +271,9 @@ def get_catalog(catalog_name: str) -> list[CelestialObject]:
 
     Returns:
         List of CelestialObject instances from the catalog
+
+    Raises:
+        CatalogNotFoundError: If catalog is not found
     """
     # cachetools.cached doesn't preserve return types, so mypy sees Any
     return _load_catalog_from_yaml(catalog_name)  # type: ignore[no-any-return]

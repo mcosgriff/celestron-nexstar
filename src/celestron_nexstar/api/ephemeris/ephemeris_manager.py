@@ -19,6 +19,12 @@ from typing import Literal
 
 import aiohttp
 
+from celestron_nexstar.api.core.exceptions import (
+    EphemerisDownloadError,
+    EphemerisFileNotFoundError,
+    UnknownEphemerisObjectError,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +104,7 @@ async def _fetch_summaries(url: str) -> str:
             session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
         ):
             if response.status != 200:
-                raise RuntimeError(f"HTTP {response.status}")
+                raise EphemerisDownloadError(f"HTTP {response.status}")
             text = await response.text()
             return str(text)
     except Exception as e:
@@ -704,7 +710,7 @@ def download_file(file_key: str, force: bool = False) -> Path:
         Exception: If download fails
     """
     if file_key not in EPHEMERIS_FILES:
-        raise ValueError(f"Unknown ephemeris file: {file_key}")
+        raise EphemerisFileNotFoundError(f"Unknown ephemeris file: {file_key}")
 
     info = EPHEMERIS_FILES[file_key]
     ephemeris_dir = get_ephemeris_directory()
@@ -742,7 +748,7 @@ def download_set(
         List of paths to downloaded files
     """
     if set_name not in EPHEMERIS_SETS:
-        raise ValueError(f"Unknown ephemeris set: {set_name}")
+        raise UnknownEphemerisObjectError(f"Unknown ephemeris set: {set_name}")
 
     file_keys = EPHEMERIS_SETS[set_name]
     downloaded = []
@@ -824,7 +830,7 @@ def get_set_info(set_name: str) -> dict[str, str | int | float | list[EphemerisF
         Dictionary with set information
     """
     if set_name not in EPHEMERIS_SETS:
-        raise ValueError(f"Unknown ephemeris set: {set_name}")
+        raise UnknownEphemerisObjectError(f"Unknown ephemeris set: {set_name}")
 
     file_keys = EPHEMERIS_SETS[set_name]
     files = [EPHEMERIS_FILES[key] for key in file_keys]
