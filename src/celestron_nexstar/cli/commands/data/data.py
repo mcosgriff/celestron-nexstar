@@ -662,6 +662,8 @@ def seed_database(
                 "comets": "comets.json",
                 "eclipses": "eclipses.json",
                 "bortle_characteristics": "bortle_characteristics.json",
+                "planets": "sol_planets.json",
+                "moons": "sol_moons.json",
             }
 
             for data_type, filename in seed_file_map.items():
@@ -1010,6 +1012,8 @@ def stats() -> None:
             "comets": "comets.json",
             "eclipses": "eclipses.json",
             "bortle_characteristics": "bortle_characteristics.json",
+            "planets": "sol_planets.json",
+            "moons": "sol_moons.json",
         }
 
         for data_type, filename in seed_file_map.items():
@@ -1719,7 +1723,20 @@ def run_migrations(
         sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
         with sync_engine.connect() as connection:
             context = MigrationContext.configure(connection)
-            current_rev = context.get_current_revision()
+            try:
+                current_rev = context.get_current_revision()
+            except Exception:
+                # Multiple heads in database - use get_current_heads() instead
+                current_heads = context.get_current_heads()
+                if len(current_heads) == 1:
+                    current_rev = current_heads[0]
+                elif len(current_heads) > 1:
+                    # Multiple heads in database - we'll need to handle this
+                    console.print(f"[yellow]⚠[/yellow] Database has multiple heads: {', '.join(current_heads)}")
+                    console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
+                    current_rev = current_heads  # Keep as list for now
+                else:
+                    current_rev = None
 
         # Get head revision(s) from script directory
         script = ScriptDirectory.from_config(alembic_cfg)
@@ -1765,14 +1782,25 @@ def run_migrations(
 
         # Check if there are pending migrations
         migrations_to_apply: list[str] | str = "unknown"
-        if current_rev is None:
+        current_rev_single: str | None = (
+            (current_rev[0] if current_rev else None) if isinstance(current_rev, list) else current_rev
+        )
+
+        if current_rev_single is None:
             console.print("[yellow]⚠[/yellow] Database has no migration history")
             console.print("[dim]This is normal for a new database. Will apply all migrations.[/dim]\n")
             pending = True
             migrations_to_apply = "all migrations"
-        elif head_rev is not None and head_rev != "heads" and current_rev == head_rev:
+        elif isinstance(current_rev, list):
+            # Multiple heads in database - always need to upgrade
+            pending = True
+            migrations_to_apply = "multiple branches (will be merged)"
+            console.print("[yellow]⚠[/yellow] Database has multiple heads")
+            console.print(f"[dim]Current heads: {', '.join(current_rev)}[/dim]")
+            console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
+        elif head_rev is not None and head_rev != "heads" and current_rev_single == head_rev:
             console.print("[green]✓[/green] Database is up to date")
-            console.print(f"[dim]Current revision: {current_rev}[/dim]\n")
+            console.print(f"[dim]Current revision: {current_rev_single}[/dim]\n")
             pending = False
         else:
             # Get the list of revisions that need to be applied
@@ -1780,15 +1808,17 @@ def run_migrations(
             try:
                 # Get the upgrade path from current to head
                 # walk_revisions returns revisions in order from start to end
-                if head_rev is not None and current_rev is not None and head_rev != "heads":
-                    upgrade_path = list(script.walk_revisions(current_rev, head_rev))
-                    migrations_to_apply = [str(rev.revision) for rev in upgrade_path if rev.revision != current_rev]
+                if head_rev is not None and current_rev_single is not None and head_rev != "heads":
+                    upgrade_path = list(script.walk_revisions(current_rev_single, head_rev))
+                    migrations_to_apply = [
+                        str(rev.revision) for rev in upgrade_path if rev.revision != current_rev_single
+                    ]
                 elif head_rev == "heads":
                     # Multiple heads - can't easily determine path, will let Alembic handle it
                     migrations_to_apply = "multiple branches (will be merged)"
 
                     console.print("[yellow]⚠[/yellow] Database is not up to date")
-                    console.print(f"[dim]Current revision: {current_rev}[/dim]")
+                    console.print(f"[dim]Current revision: {current_rev_single}[/dim]")
                     console.print("[dim]Head revision: multiple branches[/dim]")
                     console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
                 else:
@@ -1840,7 +1870,12 @@ def run_migrations(
             sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
             with sync_engine.connect() as connection:
                 context = MigrationContext.configure(connection)
-                new_rev = context.get_current_revision()
+                try:
+                    new_rev = context.get_current_revision()
+                except Exception:
+                    # Multiple heads - use get_current_heads()
+                    new_heads = context.get_current_heads()
+                    new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
                 try:
                     head_rev_after = script.get_current_head()
                 except Exception:

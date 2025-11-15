@@ -6,6 +6,7 @@ Commands for searching and managing celestial object catalogs.
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import typer
 from click import Context
@@ -452,21 +453,38 @@ def info(
                 "observability_score": visibility_info.observability_score,
                 "reasons": list(visibility_info.reasons),
             }
-            print_json(
-                {
-                    "name": obj.name,
-                    "common_name": obj.common_name,
-                    "ra_hours": obj.ra_hours,
-                    "dec_degrees": obj.dec_degrees,
-                    "ra_formatted": format_ra(obj.ra_hours),
-                    "dec_formatted": format_dec(obj.dec_degrees),
-                    "magnitude": obj.magnitude,
-                    "type": obj.object_type,
-                    "catalog": obj.catalog,
-                    "description": obj.description,
-                    "visibility": visibility_data,
-                }
-            )
+
+            # Get moons if this is a planet
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            output_data: dict[str, Any] = {
+                "name": obj.name,
+                "common_name": obj.common_name,
+                "ra_hours": obj.ra_hours,
+                "dec_degrees": obj.dec_degrees,
+                "ra_formatted": format_ra(obj.ra_hours),
+                "dec_formatted": format_dec(obj.dec_degrees),
+                "magnitude": obj.magnitude,
+                "type": obj.object_type,
+                "catalog": obj.catalog,
+                "description": obj.description,
+                "visibility": visibility_data,
+            }
+
+            if obj.object_type == CelestialObjectType.PLANET.value:
+                db = get_database()
+                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                if moons:
+                    output_data["moons"] = [
+                        {
+                            "name": moon.name,
+                            "magnitude": moon.magnitude,
+                            "description": moon.description,
+                        }
+                        for moon in moons
+                    ]
+
+            print_json(output_data)
         else:
             # Create detailed info panel
             info_text = Text()
@@ -530,6 +548,19 @@ def info(
                 info_text.append("\n  Details:\n", style="dim")
                 for reason in visibility_info.reasons:
                     info_text.append(f"    • {reason}\n", style="dim")
+
+            # Moons (if this is a planet)
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            if obj.object_type == CelestialObjectType.PLANET.value:
+                db = get_database()
+                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                if moons:
+                    info_text.append("\n")
+                    info_text.append("Moons:\n", style="bold yellow")
+                    for moon in moons:
+                        mag_str = f" (mag {moon.magnitude:.2f})" if moon.magnitude else ""
+                        info_text.append(f"  • {moon.name}{mag_str}\n", style="white")
 
             # Description
             if obj.description:

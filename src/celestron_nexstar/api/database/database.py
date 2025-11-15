@@ -857,6 +857,33 @@ class CatalogDatabase:
 
             return [self._model_to_object(model) for model in models]
 
+    async def get_moons_by_parent_planet(self, planet_name: str) -> list[CelestialObject]:
+        """
+        Get all moons for a given parent planet.
+
+        Args:
+            planet_name: Name of the parent planet (e.g., "Mars", "Jupiter")
+
+        Returns:
+            List of moon objects
+        """
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            stmt = (
+                select(CelestialObjectModel)
+                .where(CelestialObjectModel.parent_planet == planet_name)
+                .where(CelestialObjectModel.object_type == CelestialObjectType.MOON.value)
+                .order_by(CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc())
+            )
+
+            result = await session.execute(stmt)
+            models = result.scalars().all()
+
+            return [self._model_to_object(model) for model in models]
+
     @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
     async def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
@@ -1382,7 +1409,9 @@ async def rebuild_database(
         console.print("[dim]  • Variable stars[/dim]")
         console.print("[dim]  • Comets[/dim]")
         console.print("[dim]  • Eclipses[/dim]")
-        console.print("[dim]  • Bortle characteristics[/dim]\n")
+        console.print("[dim]  • Bortle characteristics[/dim]")
+        console.print("[dim]  • Planets[/dim]")
+        console.print("[dim]  • Moons[/dim]\n")
 
         static_data: dict[str, int] = {}
 
@@ -1427,7 +1456,8 @@ async def rebuild_database(
         from celestron_nexstar.cli.data_import import DATA_SOURCES, import_data_source
 
         if sources is None:
-            sources = list(DATA_SOURCES.keys())
+            # Exclude "custom" from default sources - it's a separate action
+            sources = [s for s in DATA_SOURCES if s != "custom"]
 
         imported_counts: dict[str, tuple[int, int]] = {}
         objects_before_import = 0
