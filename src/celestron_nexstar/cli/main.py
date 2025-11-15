@@ -23,6 +23,7 @@ from celestron_nexstar.cli.commands.astronomy import (
     occultations,
     planets,
     satellites,
+    space_weather,
     variables,
     zodiacal,
 )
@@ -351,6 +352,12 @@ app.add_typer(
     aurora.app,
     name="aurora",
     help="Aurora borealis (Northern Lights) visibility",
+    rich_help_panel="Celestial Events",
+)
+app.add_typer(
+    space_weather.app,
+    name="space-weather",
+    help="Space weather conditions and alerts (NOAA SWPC)",
     rich_help_panel="Celestial Events",
 )
 app.add_typer(

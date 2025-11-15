@@ -1723,6 +1723,7 @@ def run_migrations(
         sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
         with sync_engine.connect() as connection:
             context = MigrationContext.configure(connection)
+            current_rev: str | None | list[str] = None
             try:
                 current_rev = context.get_current_revision()
             except Exception:
@@ -1734,7 +1735,7 @@ def run_migrations(
                     # Multiple heads in database - we'll need to handle this
                     console.print(f"[yellow]⚠[/yellow] Database has multiple heads: {', '.join(current_heads)}")
                     console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
-                    current_rev = current_heads  # Keep as list for now
+                    current_rev = list(current_heads)  # Keep as list for now
                 else:
                     current_rev = None
 

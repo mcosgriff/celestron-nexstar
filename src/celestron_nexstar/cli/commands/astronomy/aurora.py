@@ -153,6 +153,35 @@ def _show_aurora_content(
     # Kp Index
     table.add_row("Geomagnetic Activity (Kp)", _format_kp_index(forecast.kp_index))
 
+    # Add G-scale from space weather if available
+    try:
+        from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
+
+        swx = get_space_weather_conditions()
+        if swx.g_scale:
+            g_scale_display = f"G{swx.g_scale.level} ({swx.g_scale.display_name})"
+            if swx.g_scale.level >= 3:
+                g_scale_display = f"[bold red]{g_scale_display}[/bold red]"
+            elif swx.g_scale.level >= 1:
+                g_scale_display = f"[yellow]{g_scale_display}[/yellow]"
+            else:
+                g_scale_display = f"[green]{g_scale_display}[/green]"
+            table.add_row("NOAA G-Scale", g_scale_display)
+
+        # Add solar wind Bz if available (important for aurora)
+        if swx.solar_wind_bz is not None:
+            bz_display = f"{swx.solar_wind_bz:.1f} nT"
+            if swx.solar_wind_bz < -5:
+                bz_display = f"[green]{bz_display} (favorable for aurora)[/green]"
+            elif swx.solar_wind_bz < 0:
+                bz_display = f"[yellow]{bz_display}[/yellow]"
+            else:
+                bz_display = f"[white]{bz_display}[/white]"
+            table.add_row("Solar Wind Bz", bz_display)
+    except Exception:
+        # Space weather data unavailable, skip
+        pass
+
     # Visibility Probability (AgentCalc algorithm)
     prob_pct = forecast.visibility_probability * 100.0
     if prob_pct >= 70:
@@ -293,7 +322,10 @@ def _show_aurora_content(
     output_console.print(
         "\n[dim]💡 Tip: Aurora activity can change quickly. Check again in 30-60 minutes for updates.[/dim]"
     )
-    output_console.print("[dim]💡 Tip: Even if not visible now, geomagnetic storms can develop rapidly.[/dim]\n")
+    output_console.print("[dim]💡 Tip: Even if not visible now, geomagnetic storms can develop rapidly.[/dim]")
+    output_console.print(
+        "[dim]💡 Tip: Use 'nexstar space-weather status' for detailed space weather conditions.[/dim]\n"
+    )
 
 
 @app.command("when")

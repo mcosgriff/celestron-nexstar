@@ -488,6 +488,22 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
                 output_console.print(f"  ⚠ {warn}")
             output_console.print()
 
+        # Space Weather Alerts
+        if conditions.space_weather_alerts:
+            output_console.print("[bold cyan]Space Weather:[/bold cyan]")
+            for alert in conditions.space_weather_alerts:
+                if "aurora" in alert.lower():
+                    output_console.print(f"  🌌 {alert}")
+                elif "radio" in alert.lower() or "GPS" in alert:
+                    output_console.print(f"  📡 {alert}")
+                else:
+                    output_console.print(f"  ⚡ {alert}")
+            if conditions.aurora_opportunity:
+                output_console.print(
+                    "  [bold green]💡 Enhanced aurora opportunity - Consider checking 'nexstar aurora tonight'[/bold green]"
+                )
+            output_console.print()
+
     except ValueError as e:
         output_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from None

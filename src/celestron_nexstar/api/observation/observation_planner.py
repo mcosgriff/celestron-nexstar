@@ -117,6 +117,11 @@ class ObservingConditions:
     galactic_center_start: datetime | None = None  # When galactic center becomes visible
     galactic_center_end: datetime | None = None  # When galactic center becomes too low
 
+    # Space weather
+    space_weather_alerts: tuple[str, ...] = ()  # Space weather alerts/warnings
+    geomagnetic_storm_level: int | None = None  # G-scale level (0-5)
+    aurora_opportunity: bool = False  # Enhanced aurora opportunity (G3+)
+
 
 @dataclass(frozen=True)
 class RecommendedObject:
@@ -360,6 +365,37 @@ class ObservationPlanner:
         # Calculate galactic center visibility
         gc_start, gc_end = self._calculate_galactic_center_visibility(lat, lon, start_time, sunset_time, sunrise_time)
 
+        # Get space weather conditions
+        space_weather_alerts_list: list[str] = []
+        geomagnetic_storm_level: int | None = None
+        aurora_opportunity = False
+        try:
+            from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
+
+            swx = get_space_weather_conditions()
+            if swx.alerts:
+                space_weather_alerts_list.extend(swx.alerts)
+
+            if swx.g_scale:
+                geomagnetic_storm_level = swx.g_scale.level
+                if swx.g_scale.level >= 3:
+                    aurora_opportunity = True
+                    space_weather_alerts_list.append(
+                        f"G{swx.g_scale.level} geomagnetic storm - Enhanced aurora possible"
+                    )
+
+            if swx.r_scale and swx.r_scale.level >= 3:
+                space_weather_alerts_list.append(
+                    f"R{swx.r_scale.level} radio blackout - GPS/communications may be affected"
+                )
+
+            if swx.solar_wind_bz is not None and swx.solar_wind_bz < -5:
+                space_weather_alerts_list.append("Favorable solar wind conditions for aurora (negative Bz)")
+
+        except Exception:
+            # Space weather data unavailable, continue without it
+            pass
+
         return ObservingConditions(
             timestamp=start_time,
             latitude=lat,
@@ -397,6 +433,9 @@ class ObservationPlanner:
             astronomical_twilight_morning_end=astronomical_twilight[3],
             galactic_center_start=gc_start,
             galactic_center_end=gc_end,
+            space_weather_alerts=tuple(space_weather_alerts_list),
+            geomagnetic_storm_level=geomagnetic_storm_level,
+            aurora_opportunity=aurora_opportunity,
         )
 
     def get_recommended_objects(
