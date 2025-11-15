@@ -181,7 +181,7 @@ def search(
                 for obj, _ in type_results:
                     ra_str = f"{obj.ra_hours:.2f}h"
                     dec_str = f"{obj.dec_degrees:+.1f}°"
-                    mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                    mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                     desc = obj.common_name or obj.description or ""
 
                     table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
@@ -209,7 +209,7 @@ def search(
                     for obj, _ in type_results:
                         ra_str = f"{obj.ra_hours:.2f}h"
                         dec_str = f"{obj.dec_degrees:+.1f}°"
-                        mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                        mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                         desc = obj.common_name or obj.description or ""
 
                         table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
@@ -325,7 +325,7 @@ def list_catalog(
             for obj in objects_list:
                 ra_str = f"{obj.ra_hours:.2f}h"
                 dec_str = f"{obj.dec_degrees:+.1f}°"
-                mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+                mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                 desc = obj.common_name or obj.description or ""
 
                 if catalog_name == "moons":
@@ -487,7 +487,7 @@ def info(
             info_text.append("Properties:\n", style="bold yellow")
             info_text.append(f"  Type:     {obj.object_type}\n", style="white")
             if obj.magnitude:
-                info_text.append(f"  Magnitude: {obj.magnitude:.1f}\n", style="white")
+                info_text.append(f"  Magnitude: {obj.magnitude:.2f}\n", style="white")
             info_text.append(f"  Catalog:  {obj.catalog}\n", style="white")
 
             # Visibility information
@@ -522,7 +522,7 @@ def info(
                 else:
                     direction = "NW"
                 info_text.append(f"  Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})\n", style="white")
-            info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.1f}\n", style="white")
+            info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.2f}\n", style="white")
             info_text.append(f"  Observability Score: {visibility_info.observability_score:.0%}\n", style="white")
 
             # Reasons

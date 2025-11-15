@@ -138,7 +138,7 @@ def _show_events_content(
             event_str = event.event_type.capitalize()
 
         # Format magnitude
-        mag_str = f"{event.magnitude:.1f}"
+        mag_str = f"{event.magnitude:.2f}"
 
         # Format variable type
         type_str = event.star.variable_type.replace("_", " ").title()
@@ -158,7 +158,7 @@ def _show_events_content(
 
         output_console.print(f"\n  [bold]{event.star.name}[/bold] ({event.star.designation})")
         output_console.print(f"    {date_str}")
-        output_console.print(f"    Event: {event.event_type.capitalize()} - Magnitude {event.magnitude:.1f}")
+        output_console.print(f"    Event: {event.event_type.capitalize()} - Magnitude {event.magnitude:.2f}")
         output_console.print(
             f"    Type: {event.star.variable_type.replace('_', ' ').title()} (Period: {event.star.period_days:.2f} days)"
         )

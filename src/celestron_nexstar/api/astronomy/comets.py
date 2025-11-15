@@ -176,7 +176,7 @@ async def get_visible_comets(
                     # Best viewing time (simplified - would calculate transit)
                     best_time = check_date.replace(hour=2, minute=0)  # 2 AM local
 
-                    notes = f"Magnitude {magnitude:.1f}"
+                    notes = f"Magnitude {magnitude:.2f}"
                     if magnitude < 6.0:
                         notes += " - potentially visible to naked eye"
                     elif magnitude < 8.0:

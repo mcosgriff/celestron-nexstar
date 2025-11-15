@@ -130,7 +130,7 @@ def get_dataset_info() -> FormattedText:
         # Magnitude range
         if stats.magnitude_range[0] is not None and stats.magnitude_range[1] is not None:
             lines.append(("", "Magnitude Range:\n"))
-            lines.append(("cyan", f"  {stats.magnitude_range[0]:.1f} to {stats.magnitude_range[1]:.1f}\n"))
+            lines.append(("cyan", f"  {stats.magnitude_range[0]:.2f} to {stats.magnitude_range[1]:.2f}\n"))
             lines.append(("", "\n"))
 
         # Top catalogs
@@ -191,7 +191,7 @@ def get_dataset_info() -> FormattedText:
                 exit_pupil_mm=config.exit_pupil_mm,
             )
             lines.append(("", "Limiting Mag: "))
-            lines.append(("yellow", f"{limiting_mag:.1f}\n"))
+            lines.append(("yellow", f"{limiting_mag:.2f}\n"))
             lines.append(("", "\n"))
 
         except Exception as e:
@@ -636,7 +636,7 @@ def get_conditions_info() -> FormattedText:
                 sky_brightness=SkyBrightness.GOOD,
                 exit_pupil_mm=config.exit_pupil_mm,
             )
-            lines.append(("", f"  Limiting Mag: {limiting_mag:.1f}\n"))
+            lines.append(("", f"  Limiting Mag: {limiting_mag:.2f}\n"))
 
             # Calculate dark sky hours remaining (if sun is below horizon)
             if sun_info and not sun_info.is_daytime and sun_info.sunrise_time:
@@ -702,7 +702,7 @@ def get_conditions_info() -> FormattedText:
 
                 lines.append((bortle_color, f"Bortle {bortle.value}\n"))
                 lines.append(("", f"    SQM: {lp_data.sqm_value:.2f} mag/arcsec²\n"))
-                lines.append(("", f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.1f} mag\n"))
+                lines.append(("", f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.2f} mag\n"))
 
                 # Show visibility indicators
                 visibility_parts = []
@@ -951,7 +951,7 @@ def get_visible_objects_info() -> FormattedText:
 
             # Magnitude
             if visibility_info.magnitude is not None:
-                lines.append(("cyan", f"Mag:{visibility_info.magnitude:5.1f}"))
+                lines.append(("cyan", f"Mag:{visibility_info.magnitude:5.2f}"))
             else:
                 lines.append(("dim", "Mag: N/A"))
 

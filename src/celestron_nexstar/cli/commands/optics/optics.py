@@ -428,9 +428,9 @@ def show_limiting_magnitude(
             condition_display = f"{condition.value.title()} ({desc})"
             if condition == sky_enum:
                 condition_display = f"[bold]{condition_display}[/bold]"
-                mag_display = f"[bold green]{limiting_mag:.1f}[/bold green]"
+                mag_display = f"[bold green]{limiting_mag:.2f}[/bold green]"
             else:
-                mag_display = f"{limiting_mag:.1f}"
+                mag_display = f"{limiting_mag:.2f}"
 
             table.add_row(condition_display, bortle, mag_display)
 
@@ -443,7 +443,7 @@ def show_limiting_magnitude(
             exit_pupil_mm=config.exit_pupil_mm,
         )
 
-        print_info(f"With {sky_enum.value} sky conditions, you can see objects down to magnitude {selected_mag:.1f}")
+        print_info(f"With {sky_enum.value} sky conditions, you can see objects down to magnitude {selected_mag:.2f}")
         print_info(f"Current magnification: {config.magnification:.0f}x, Exit pupil: {config.exit_pupil_mm:.1f}mm")
 
     except Exception as e:
@@ -502,7 +502,7 @@ def _display_configuration(config: OpticalConfiguration) -> None:
         sky_brightness=SkyBrightness.GOOD,
         exit_pupil_mm=config.exit_pupil_mm,
     )
-    performance_table.add_row("Limiting Mag (good sky)", f"{good_sky_mag:.1f}")
+    performance_table.add_row("Limiting Mag (good sky)", f"{good_sky_mag:.2f}")
 
     console.print(performance_table)
 

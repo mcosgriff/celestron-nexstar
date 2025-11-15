@@ -314,7 +314,7 @@ def main() -> None:
 
         print("\nUpdated database statistics:")
         print(f"  Total objects: {stats.total_objects:,}")
-        print(f"  Magnitude range: {stats.magnitude_range[0]:.1f} to {stats.magnitude_range[1]:.1f}")
+        print(f"  Magnitude range: {stats.magnitude_range[0]:.2f} to {stats.magnitude_range[1]:.2f}")
         print("\nObjects by catalog:")
         for catalog, count in sorted(stats.objects_by_catalog.items()):
             print(f"  {catalog:20s}: {count:,}")

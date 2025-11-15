@@ -334,8 +334,8 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold]Sky Darkness:[/bold]")
         output_console.print(f"  Bortle Class: {lp.bortle_class.value} ({lp.description})")
         output_console.print(f"  SQM: {lp.sqm_value:.2f} mag/arcsec²")
-        output_console.print(f"  Naked Eye Limit: {lp.naked_eye_limiting_magnitude:.1f} mag")
-        output_console.print(f"  Telescope Limit: {conditions.limiting_magnitude:.1f} mag")
+        output_console.print(f"  Naked Eye Limit: {lp.naked_eye_limiting_magnitude:.2f} mag")
+        output_console.print(f"  Telescope Limit: {conditions.limiting_magnitude:.2f} mag")
         output_console.print()
 
         # Moon Events
@@ -649,7 +649,7 @@ def _show_objects_content(
                 priority_stars,
                 display_name,
                 obj.object_type.value,
-                f"{obj_rec.apparent_magnitude:.1f}" if obj_rec.apparent_magnitude else "-",
+                f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-",
                 f"{obj_rec.altitude:.0f}°",
                 time_str,
                 moon_sep_text,

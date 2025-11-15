@@ -190,7 +190,7 @@ def _show_viewing_info_content(
 
     table.add_row("Bortle Scale", bortle_str)
     table.add_row("SQM Value", f"{viewing_info.sqm_value:.2f} mag/arcsec²")
-    table.add_row("Naked Eye Limiting Mag", f"{viewing_info.naked_eye_limiting_magnitude:.1f}")
+    table.add_row("Naked Eye Limiting Mag", f"{viewing_info.naked_eye_limiting_magnitude:.2f}")
     table.add_row("Milky Way Visible", "[green]Yes[/green]" if viewing_info.milky_way_visible else "[red]No[/red]")
 
     output_console.print(table)
@@ -543,7 +543,7 @@ def _show_comprehensive_plan_content(
                 comet_name = comet_vis.comet.name
                 comet_mag = comet_vis.magnitude
                 output_console.print(f"  • {comet_name}")
-                output_console.print(f"    Magnitude: {comet_mag:.1f}")
+                output_console.print(f"    Magnitude: {comet_mag:.2f}")
                 if comet_vis.notes:
                     output_console.print(f"    [dim]{comet_vis.notes}[/dim]")
         else:

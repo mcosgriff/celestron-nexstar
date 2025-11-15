@@ -151,7 +151,7 @@ async def get_variable_star_events(
                         date=next_minimum,
                         magnitude=star.magnitude_min,
                         is_visible=True,  # Simplified
-                        notes=f"{star.name} at minimum brightness (magnitude {star.magnitude_min:.1f})",
+                        notes=f"{star.name} at minimum brightness (magnitude {star.magnitude_min:.2f})",
                     )
                 )
 
@@ -165,7 +165,7 @@ async def get_variable_star_events(
                         date=next_maximum,
                         magnitude=star.magnitude_max,
                         is_visible=True,  # Simplified
-                        notes=f"{star.name} at maximum brightness (magnitude {star.magnitude_max:.1f})",
+                        notes=f"{star.name} at maximum brightness (magnitude {star.magnitude_max:.2f})",
                     )
                 )
 

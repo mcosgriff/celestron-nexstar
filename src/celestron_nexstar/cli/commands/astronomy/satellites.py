@@ -221,13 +221,13 @@ def _show_bright_passes_content(
 
             # Format magnitude with color
             if pass_obj.magnitude < -1.0:
-                mag_str = f"[bold bright_green]{pass_obj.magnitude:.1f}[/bold bright_green]"
+                mag_str = f"[bold bright_green]{pass_obj.magnitude:.2f}[/bold bright_green]"
             elif pass_obj.magnitude < 1.0:
-                mag_str = f"[green]{pass_obj.magnitude:.1f}[/green]"
+                mag_str = f"[green]{pass_obj.magnitude:.2f}[/green]"
             elif pass_obj.magnitude < 3.0:
-                mag_str = f"[yellow]{pass_obj.magnitude:.1f}[/yellow]"
+                mag_str = f"[yellow]{pass_obj.magnitude:.2f}[/yellow]"
             else:
-                mag_str = f"[dim]{pass_obj.magnitude:.1f}[/dim]"
+                mag_str = f"[dim]{pass_obj.magnitude:.2f}[/dim]"
 
             # Format altitude
             alt_str = f"{pass_obj.max_altitude_deg:.0f}°"
@@ -344,15 +344,15 @@ def _show_starlink_passes_content(
 
             # Format magnitude with color
             if pass_obj.magnitude < -1.0:
-                mag_str = f"[bold bright_green]{pass_obj.magnitude:.1f}[/bold bright_green]"
+                mag_str = f"[bold bright_green]{pass_obj.magnitude:.2f}[/bold bright_green]"
             elif pass_obj.magnitude < 1.0:
-                mag_str = f"[green]{pass_obj.magnitude:.1f}[/green]"
+                mag_str = f"[green]{pass_obj.magnitude:.2f}[/green]"
             elif pass_obj.magnitude < 3.0:
-                mag_str = f"[yellow]{pass_obj.magnitude:.1f}[/yellow]"
+                mag_str = f"[yellow]{pass_obj.magnitude:.2f}[/yellow]"
             elif pass_obj.magnitude < 6.0:
-                mag_str = f"[dim]{pass_obj.magnitude:.1f}[/dim]"
+                mag_str = f"[dim]{pass_obj.magnitude:.2f}[/dim]"
             else:
-                mag_str = f"[dim red]{pass_obj.magnitude:.1f}[/dim red]"
+                mag_str = f"[dim red]{pass_obj.magnitude:.2f}[/dim red]"
 
             # Format altitude
             alt_str = f"{pass_obj.max_altitude_deg:.0f}°"

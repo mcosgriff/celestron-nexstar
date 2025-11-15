@@ -769,7 +769,7 @@ def stats() -> None:
 
     mag_min, mag_max = db_stats.magnitude_range
     if mag_min is not None and mag_max is not None:
-        console.print(f"Magnitude range: [cyan]{mag_min:.1f}[/cyan] to [cyan]{mag_max:.1f}[/cyan]")
+        console.print(f"Magnitude range: [cyan]{mag_min:.2f}[/cyan] to [cyan]{mag_max:.2f}[/cyan]")
 
     # Objects by catalog
     catalog_table = Table(title="\nObjects by Catalog")

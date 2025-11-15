@@ -96,7 +96,7 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
         lines.append(("cyan", f"{display_obj.magnitude:.2f}\n"))
     if visibility_info.limiting_magnitude:
         lines.append(("bold", "Limit: "))
-        lines.append(("yellow", f"{visibility_info.limiting_magnitude:.1f}\n"))
+        lines.append(("yellow", f"{visibility_info.limiting_magnitude:.2f}\n"))
 
     # Description (truncated for inline view)
     if display_obj.description:
@@ -195,7 +195,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     if display_obj.magnitude is not None:
         console.print(f"  Magnitude: {display_obj.magnitude:.2f}")
     if visibility_info.limiting_magnitude:
-        console.print(f"  Limiting Mag: {visibility_info.limiting_magnitude:.1f}")
+        console.print(f"  Limiting Mag: {visibility_info.limiting_magnitude:.2f}")
 
     if display_obj.description:
         console.print("\n[bold]Description:[/bold]")

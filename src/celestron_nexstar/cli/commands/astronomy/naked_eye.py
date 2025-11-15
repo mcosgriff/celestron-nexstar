@@ -469,7 +469,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 direction = azimuth_to_compass_8point(az)
 
                 # Key star with magnitude
-                key_star = f"{constellation.brightest_star} ({constellation.magnitude:.1f})"
+                key_star = f"{constellation.brightest_star} ({constellation.magnitude:.2f})"
 
                 # Add season note if out of season
                 description = constellation.description
@@ -510,7 +510,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 direction = azimuth_to_compass_8point(az)
 
                 # Key star with magnitude
-                key_star = f"{constellation.brightest_star} ({constellation.magnitude:.1f})"
+                key_star = f"{constellation.brightest_star} ({constellation.magnitude:.2f})"
 
                 # Check if constellation is out of season
                 season_note = ""
@@ -551,7 +551,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 star_name = star.common_name or star.name
 
                 # Magnitude
-                mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
+                mag_str = f"{star.magnitude:.2f}" if star.magnitude else "—"
 
                 # Constellation
                 constellation_name: str = star.constellation or "—"

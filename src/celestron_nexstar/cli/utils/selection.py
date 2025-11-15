@@ -49,7 +49,7 @@ def select_object(objects: list[CelestialObject], query: str) -> CelestialObject
     for i, obj in enumerate(objects, 1):
         ra_str = f"{obj.ra_hours:.2f}h"
         dec_str = f"{obj.dec_degrees:+.1f}°"
-        mag_str = f"{obj.magnitude:.1f}" if obj.magnitude else "N/A"
+        mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
         desc = obj.common_name or obj.description or ""
 
         table.add_row(str(i), obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])

@@ -281,9 +281,9 @@ def assess_visibility(
             mag_headroom = limiting_mag - apparent_mag
             if mag_headroom < 1.0:
                 observability_score *= 0.5 + 0.5 * mag_headroom
-                reasons.append(f"Near detection limit (mag {apparent_mag:.1f}, limit {limiting_mag:.1f})")
+                reasons.append(f"Near detection limit (mag {apparent_mag:.2f}, limit {limiting_mag:.2f})")
             else:
-                reasons.append(f"Magnitude {apparent_mag:.1f} well within limit")
+                reasons.append(f"Magnitude {apparent_mag:.2f} well within limit")
 
     # Check 3: For moons, check separation from parent planet
     if obj.object_type == "moon" and obj.name.lower() != "moon":  # Not Earth's Moon
@@ -519,9 +519,9 @@ def _filter_visible_objects_vectorized(
                 if alt < min_altitude_deg:
                     reasons.append(f"Low altitude (alt: {alt:.1f}°, optimal >{min_altitude_deg:.0f}°)")
                 if apparent_mags[idx] > limiting_mag - 1.0:
-                    reasons.append(f"Near detection limit (mag {apparent_mags[idx]:.1f}, limit {limiting_mag:.1f})")
+                    reasons.append(f"Near detection limit (mag {apparent_mags[idx]:.2f}, limit {limiting_mag:.2f})")
                 else:
-                    reasons.append(f"Magnitude {apparent_mags[idx]:.1f} well within limit")
+                    reasons.append(f"Magnitude {apparent_mags[idx]:.2f} well within limit")
 
                 visibility = VisibilityInfo(
                     object_name=obj.name,

@@ -171,13 +171,13 @@ def _show_comets_content(
 
         # Format magnitude with color
         if vis.magnitude < 3.0:
-            mag_str = f"[bold bright_green]{vis.magnitude:.1f}[/bold bright_green]"
+            mag_str = f"[bold bright_green]{vis.magnitude:.2f}[/bold bright_green]"
         elif vis.magnitude < 6.0:
-            mag_str = f"[green]{vis.magnitude:.1f}[/green]"
+            mag_str = f"[green]{vis.magnitude:.2f}[/green]"
         elif vis.magnitude < 8.0:
-            mag_str = f"[yellow]{vis.magnitude:.1f}[/yellow]"
+            mag_str = f"[yellow]{vis.magnitude:.2f}[/yellow]"
         else:
-            mag_str = f"[dim]{vis.magnitude:.1f}[/dim]"
+            mag_str = f"[dim]{vis.magnitude:.2f}[/dim]"
 
         # Format visibility
         visible_str = "[green]✓ Yes[/green]" if vis.is_visible else "[dim]✗ No[/dim]"
@@ -202,8 +202,8 @@ def _show_comets_content(
             peak_str = vis.comet.peak_date.strftime("%B %d, %Y UTC")
 
         output_console.print(f"\n  [bold]{vis.comet.name}[/bold] ({vis.comet.designation})")
-        output_console.print(f"    Peak: {peak_str} at magnitude {vis.comet.peak_magnitude:.1f}")
-        output_console.print(f"    {date_str}: Magnitude {vis.magnitude:.1f} at {vis.altitude:.0f}° altitude")
+        output_console.print(f"    Peak: {peak_str} at magnitude {vis.comet.peak_magnitude:.2f}")
+        output_console.print(f"    {date_str}: Magnitude {vis.magnitude:.2f} at {vis.altitude:.0f}° altitude")
         if vis.comet.is_periodic and vis.comet.period_years:
             output_console.print(f"    Periodic: {vis.comet.period_years:.0f}-year orbit")
         output_console.print(f"    {vis.comet.notes}")

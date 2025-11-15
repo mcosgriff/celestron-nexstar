@@ -266,7 +266,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
             f"[dim]Specifications: {optics.magnification}x magnification, {optics.aperture_mm}mm aperture, {optics.exit_pupil_mm:.1f}mm exit pupil[/dim]"
         )
         limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
-        output_console.print(f"[dim]Limiting Magnitude: ~{limiting_mag:.1f} (with good sky conditions)[/dim]")
+        output_console.print(f"[dim]Limiting Magnitude: ~{limiting_mag:.2f} (with good sky conditions)[/dim]")
         sunset_str = _format_local_time(sunset, lat, lon) if sunset else "—"
         sunrise_str = _format_local_time(sunrise, lat, lon) if sunrise else "—"
         output_console.print(f"[dim]Sunset: {sunset_str} | Sunrise: {sunrise_str}[/dim]\n")
@@ -544,7 +544,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[bold green]Bright Stars (Tonight)[/bold green]")
         # Calculate limiting magnitude for binoculars (using good sky conditions)
         limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
-        output_console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.1f})[/dim]\n")
+        output_console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.2f})[/dim]\n")
 
         # Use binocular limiting magnitude (typically 9-10 for 10x50)
         visible_stars = _get_visible_stars(
@@ -567,7 +567,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
                 star_name = star.common_name or star.name
 
                 # Magnitude
-                mag_str = f"{star.magnitude:.1f}" if star.magnitude else "—"
+                mag_str = f"{star.magnitude:.2f}" if star.magnitude else "—"
 
                 # Constellation
                 constellation_name: str = star.constellation or "—"

@@ -171,7 +171,7 @@ def skyalign_suggest(
             table.add_column("Observability", justify="right", style="yellow")
 
             for obj in [obj1, obj2, obj3]:
-                mag_str = f"{obj.obj.magnitude:.1f}" if obj.obj.magnitude is not None else "—"
+                mag_str = f"{obj.obj.magnitude:.2f}" if obj.obj.magnitude is not None else "—"
                 alt_str = f"{obj.visibility.altitude_deg:.1f}°" if obj.visibility.altitude_deg else "—"
                 az_str = f"{obj.visibility.azimuth_deg:.1f}°" if obj.visibility.azimuth_deg else "—"
                 obs_str = f"{obj.visibility.observability_score:.2f}"
