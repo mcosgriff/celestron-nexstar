@@ -85,8 +85,9 @@ planets:
     is_dynamic: true
     ephemeris_name: pluto
 
-  - name: Moon
-    common_name: Luna
+moons:
+  - name: Luna
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: -12.6
@@ -94,10 +95,8 @@ planets:
     parent_planet: Earth
     description: Earth's Moon, craters and maria visible
 
-# Jupiter's Galilean Moons (easily visible with 6SE)
-moons:
   - name: Io
-    common_name: Jupiter I
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 5.0
@@ -106,7 +105,7 @@ moons:
     description: Innermost Galilean moon of Jupiter
 
   - name: Europa
-    common_name: Jupiter II
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 5.3
@@ -115,7 +114,7 @@ moons:
     description: Second Galilean moon of Jupiter
 
   - name: Ganymede
-    common_name: Jupiter III
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 4.6
@@ -124,7 +123,7 @@ moons:
     description: Largest moon in solar system, third Galilean moon
 
   - name: Callisto
-    common_name: Jupiter IV
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 5.6
@@ -134,7 +133,7 @@ moons:
 
   # Saturn's brightest moons (visible with 6SE under good conditions)
   - name: Titan
-    common_name: Saturn VI
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 8.4
@@ -143,7 +142,7 @@ moons:
     description: Largest moon of Saturn, has thick atmosphere
 
   - name: Rhea
-    common_name: Saturn V
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 9.7
@@ -152,7 +151,7 @@ moons:
     description: Second-largest moon of Saturn
 
   - name: Iapetus
-    common_name: Saturn VIII
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 10.2
@@ -161,7 +160,7 @@ moons:
     description: Third-largest moon of Saturn, varies in brightness
 
   - name: Dione
-    common_name: Saturn IV
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 10.4
@@ -170,7 +169,7 @@ moons:
     description: Fourth-largest moon of Saturn
 
   - name: Tethys
-    common_name: Saturn III
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 10.3
@@ -179,7 +178,7 @@ moons:
     description: Fifth-largest moon of Saturn
 
   - name: Enceladus
-    common_name: Saturn II
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 11.7
@@ -189,7 +188,7 @@ moons:
 
   # Uranus moons (very challenging - need excellent conditions and dark sky)
   - name: Titania
-    common_name: Uranus III
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 13.7
@@ -198,7 +197,7 @@ moons:
     description: Largest moon of Uranus, challenging target
 
   - name: Oberon
-    common_name: Uranus IV
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 13.9
@@ -207,7 +206,7 @@ moons:
     description: Second-largest moon of Uranus
 
   - name: Ariel
-    common_name: Uranus I
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 14.2
@@ -216,7 +215,7 @@ moons:
     description: Third-largest moon of Uranus
 
   - name: Umbriel
-    common_name: Uranus II
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 14.5
@@ -225,7 +224,7 @@ moons:
     description: Fourth-largest moon of Uranus, darkest of the major Uranian moons
 
   - name: Miranda
-    common_name: Uranus V
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 15.8
@@ -235,7 +234,7 @@ moons:
 
   # Neptune moon (extremely challenging)
   - name: Triton
-    common_name: Neptune I
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 13.5
@@ -245,7 +244,7 @@ moons:
 
   # Mars moons (nearly impossible with amateur equipment due to Mars' glare)
   - name: Phobos
-    common_name: Mars I
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 11.8
@@ -254,7 +253,7 @@ moons:
     description: Inner moon of Mars, extremely challenging due to proximity to Mars
 
   - name: Deimos
-    common_name: Mars II
+    common_name: null
     ra_hours: 0.0
     dec_degrees: 0.0
     magnitude: 12.9
