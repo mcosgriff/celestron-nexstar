@@ -427,8 +427,19 @@ def setup(
     if should_rebuild:
         console.print("\n[cyan]Rebuilding database with all available data...[/cyan]\n")
 
+        # Filter sources to only include the most comprehensive catalogs
+        # (e.g., stars_14 includes all stars from stars_6 and stars_8, so skip the smaller ones)
+        default_sources = [
+            source_id
+            for source_id in DATA_SOURCES
+            if source_id not in ("celestial_stars_6", "celestial_stars_8", "celestial_dsos_6", "celestial_dsos_14")
+        ]
+
         # Show what sources will be imported
-        console.print(f"[dim]Will import from {len(DATA_SOURCES)} sources: {', '.join(DATA_SOURCES.keys())}[/dim]\n")
+        console.print(f"[dim]Will import from {len(default_sources)} sources: {', '.join(default_sources)}[/dim]\n")
+        console.print(
+            "[dim]Note: Using most comprehensive catalogs (stars_14 includes stars_6 and stars_8, etc.)[/dim]\n"
+        )
 
         try:
             # Use rebuild_database which handles everything
@@ -438,7 +449,7 @@ def setup(
             result: dict[str, Any] = asyncio.run(
                 rebuild_database(
                     backup_dir=None,  # Don't backup during setup
-                    sources=list(DATA_SOURCES.keys()),  # Import all sources
+                    sources=default_sources,  # Import only comprehensive sources
                     mag_limit=mag_limit,
                     skip_backup=True,  # Skip backup during setup
                     dry_run=False,

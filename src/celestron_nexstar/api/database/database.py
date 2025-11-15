@@ -1151,7 +1151,7 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
 
 
 @deal.pre(
-    lambda backup_dir, sources, mag_limit, skip_backup, dry_run: mag_limit > 0,
+    lambda backup_dir, sources, mag_limit, skip_backup, dry_run, force_download: mag_limit > 0,
     message="Magnitude limit must be positive",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
@@ -1279,24 +1279,61 @@ async def rebuild_database(
         # Ensure FTS table exists (migrations should create it, but ensure it's there)
         await db.ensure_fts_table()
 
-        # Step 4: Populate star name mappings BEFORE importing catalogs that need them
-        # This ensures Yale BSC import can look up common names
-        logger.info("Populating star name mappings...")
-        from celestron_nexstar.api.database.database_seeder import seed_star_name_mappings
+        # Step 4: Initialize static reference data (seed data)
+        # This must happen before importing custom YAML and other data sources
+        from celestron_nexstar.api.database.database_seeder import seed_all
         from celestron_nexstar.api.database.models import get_db_session
 
+        logger.info("Initializing static reference data...")
+        console.print("\n[cyan]Initializing static reference data...[/cyan]")
+        console.print("[dim]  • Star name mappings[/dim]")
+        console.print("[dim]  • Meteor showers[/dim]")
+        console.print("[dim]  • Constellations[/dim]")
+        console.print("[dim]  • Asterisms[/dim]")
+        console.print("[dim]  • Dark sky sites[/dim]")
+        console.print("[dim]  • Space events[/dim]")
+        console.print("[dim]  • Variable stars[/dim]")
+        console.print("[dim]  • Comets[/dim]")
+        console.print("[dim]  • Eclipses[/dim]")
+        console.print("[dim]  • Bortle characteristics[/dim]\n")
+
+        static_data: dict[str, int] = {}
+
         async with get_db_session() as session:
-            # Force refresh to ensure we have the latest mappings
-            await seed_star_name_mappings(session, force=True)
+            # Use seed_all which handles all static data seeding
+            await seed_all(session, force=False)
             from sqlalchemy import func, select
 
-            from celestron_nexstar.api.database.models import StarNameMappingModel
+            from celestron_nexstar.api.database.models import (
+                AsterismModel,
+                ConstellationModel,
+                DarkSkySiteModel,
+                MeteorShowerModel,
+                SpaceEventModel,
+            )
 
-            star_mapping_result = await session.scalar(select(func.count(StarNameMappingModel.hr_number)))
-            star_mapping_count = star_mapping_result or 0
-            logger.info(f"Added {star_mapping_count} star name mappings")
-            if star_mapping_count == 0:
-                logger.error("WARNING: No star name mappings were added! Yale BSC imports will not have common names.")
+            meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
+            meteor_count = meteor_result or 0
+            static_data["meteor_showers"] = meteor_count
+            logger.info(f"Added {meteor_count} meteor showers")
+
+            constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
+            constellation_count = constellation_result or 0
+            asterism_result = await session.scalar(select(func.count(AsterismModel.id)))
+            asterism_count = asterism_result or 0
+            static_data["constellations"] = constellation_count
+            static_data["asterisms"] = asterism_count
+            logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
+
+            dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
+            dark_sky_count = dark_sky_result or 0
+            static_data["dark_sky_sites"] = dark_sky_count
+            logger.info(f"Added {dark_sky_count} dark sky sites")
+
+            space_event_result = await session.scalar(select(func.count(SpaceEventModel.id)))
+            space_event_count = space_event_result or 0
+            static_data["space_events"] = space_event_count
+            logger.info(f"Added {space_event_count} space events")
 
         # Step 5: Import data sources
         # Import here to avoid circular dependency
@@ -1362,61 +1399,7 @@ async def rebuild_database(
             logger.warning(f"Failed to repopulate FTS table: {e}")
             # Continue - search will fall back to direct queries
 
-        # Step 6: Initialize other static data
-        from celestron_nexstar.api.database.database_seeder import seed_all
-
-        logger.info("Initializing static reference data...")
-        console.print("\n[cyan]Initializing static reference data...[/cyan]")
-        console.print("[dim]  • Star name mappings[/dim]")
-        console.print("[dim]  • Meteor showers[/dim]")
-        console.print("[dim]  • Constellations[/dim]")
-        console.print("[dim]  • Asterisms[/dim]")
-        console.print("[dim]  • Dark sky sites[/dim]")
-        console.print("[dim]  • Space events[/dim]")
-        console.print("[dim]  • Variable stars[/dim]")
-        console.print("[dim]  • Comets[/dim]")
-        console.print("[dim]  • Eclipses[/dim]")
-        console.print("[dim]  • Bortle characteristics[/dim]\n")
-
-        static_data: dict[str, int] = {}
-
-        async with get_db_session() as session:
-            # Use seed_all which handles all static data seeding
-            await seed_all(session, force=False)
-            from sqlalchemy import func, select
-
-            from celestron_nexstar.api.database.models import (
-                AsterismModel,
-                ConstellationModel,
-                DarkSkySiteModel,
-                MeteorShowerModel,
-                SpaceEventModel,
-            )
-
-            meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
-            meteor_count = meteor_result or 0
-            static_data["meteor_showers"] = meteor_count
-            logger.info(f"Added {meteor_count} meteor showers")
-
-            constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
-            constellation_count = constellation_result or 0
-            asterism_result = await session.scalar(select(func.count(AsterismModel.id)))
-            asterism_count = asterism_result or 0
-            static_data["constellations"] = constellation_count
-            static_data["asterisms"] = asterism_count
-            logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
-
-            dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
-            dark_sky_count = dark_sky_result or 0
-            static_data["dark_sky_sites"] = dark_sky_count
-            logger.info(f"Added {dark_sky_count} dark sky sites")
-
-            space_events_result = await session.scalar(select(func.count(SpaceEventModel.id)))
-            space_events_count = space_events_result or 0
-            static_data["space_events"] = space_events_count
-            logger.info(f"Added {space_events_count} space events")
-
-        # Step 7: Download and process World Atlas light pollution data
+        # Step 6: Download and process World Atlas light pollution data
         logger.info("Downloading and processing World Atlas light pollution data...")
         console.print("\n[cyan]Downloading light pollution data...[/cyan]")
         console.print("[dim]  • World Atlas 2024 PNG images[/dim]")
