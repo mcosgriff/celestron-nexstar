@@ -755,8 +755,8 @@ async def download_world_atlas_data(
     if regions is None:
         regions = list(WORLD_ATLAS_URLS.keys())
 
-    # Create download directory
-    download_dir = Path.home() / ".celestron_nexstar" / "light_pollution"
+    # Create download directory in cache
+    download_dir = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
     download_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, int] = {}

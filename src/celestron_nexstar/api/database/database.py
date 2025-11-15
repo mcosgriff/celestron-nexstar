@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import deal
+from rich.console import Console
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -29,6 +30,9 @@ from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.database.models import CelestialObjectModel, EphemerisFileModel, MetadataModel
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
+
+
+console = Console()
 
 
 logger = logging.getLogger(__name__)
@@ -1159,6 +1163,7 @@ async def rebuild_database(
     mag_limit: float = 15.0,
     skip_backup: bool = False,
     dry_run: bool = False,
+    force_download: bool = False,
 ) -> dict[str, Any]:
     """
     Rebuild database from scratch.
@@ -1321,7 +1326,9 @@ async def rebuild_database(
             try:
                 logger.info(f"Calling import_data_source for {source_id}...")
                 # import_data_source prints to console, so output should be visible
-                success = import_data_source(source_id, mag_limit)
+                from celestron_nexstar.cli.data_import import import_data_source
+
+                success = import_data_source(source_id, mag_limit, force_download=force_download)
                 logger.info(f"import_data_source returned: {success}")
                 if success:
                     # Get count after import
@@ -1359,6 +1366,18 @@ async def rebuild_database(
         from celestron_nexstar.api.database.database_seeder import seed_all
 
         logger.info("Initializing static reference data...")
+        console.print("\n[cyan]Initializing static reference data...[/cyan]")
+        console.print("[dim]  • Star name mappings[/dim]")
+        console.print("[dim]  • Meteor showers[/dim]")
+        console.print("[dim]  • Constellations[/dim]")
+        console.print("[dim]  • Asterisms[/dim]")
+        console.print("[dim]  • Dark sky sites[/dim]")
+        console.print("[dim]  • Space events[/dim]")
+        console.print("[dim]  • Variable stars[/dim]")
+        console.print("[dim]  • Comets[/dim]")
+        console.print("[dim]  • Eclipses[/dim]")
+        console.print("[dim]  • Bortle characteristics[/dim]\n")
+
         static_data: dict[str, int] = {}
 
         async with get_db_session() as session:
@@ -1397,25 +1416,23 @@ async def rebuild_database(
             static_data["space_events"] = space_events_count
             logger.info(f"Added {space_events_count} space events")
 
-        # Step 6: Download and process World Atlas light pollution data
+        # Step 7: Download and process World Atlas light pollution data
         logger.info("Downloading and processing World Atlas light pollution data...")
+        console.print("\n[cyan]Downloading light pollution data...[/cyan]")
+        console.print("[dim]  • World Atlas 2024 PNG images[/dim]")
+        console.print("[dim]  • Stored in ~/.cache/celestron-nexstar/light-pollution/[/dim]\n")
         try:
-            import asyncio
-
             from celestron_nexstar.api.database.light_pollution_db import download_world_atlas_data
 
             # Download all regions (no state filter = all data)
-            # Use a coarser grid resolution (0.2°) for faster processing during setup
-            # Users can re-download with finer resolution later if needed
+            # Use 0.1° resolution for good balance of accuracy and processing time
             logger.info("Downloading World Atlas PNG files (this may take a while)...")
-            # Run async function - this is a sync entry point, so asyncio.run() is safe
-            light_pollution_results = asyncio.run(
-                download_world_atlas_data(
-                    regions=None,  # All regions
-                    grid_resolution=0.2,  # 0.2° ≈ 22km resolution for faster initial setup
-                    force=False,  # Use cached files if available
-                    state_filter=None,  # No filter - process all data
-                )
+            # We're already in an async context, so await directly
+            light_pollution_results = await download_world_atlas_data(
+                regions=None,  # All regions
+                grid_resolution=0.1,  # 0.1° ≈ 11km resolution
+                force=force_download,  # Re-download if force_download is True
+                state_filter=None,  # No filter - process all data
             )
 
             total_grid_points = sum(light_pollution_results.values())
@@ -1459,10 +1476,8 @@ async def rebuild_database(
 
                     if sys.stdin.isatty():
                         # We're in an interactive terminal, prompt for location
-                        from rich.console import Console
                         from rich.prompt import Prompt
 
-                        console = Console()
                         console.print("\n[cyan]Observer Location Required[/cyan]")
                         console.print(
                             "[dim]Your location is needed for weather forecasts and accurate calculations.[/dim]\n"

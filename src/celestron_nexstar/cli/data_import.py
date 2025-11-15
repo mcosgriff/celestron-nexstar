@@ -9,9 +9,10 @@ from __future__ import annotations
 import csv
 import json
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, TypeVar
 
 import yaml
 from rich.console import Console
@@ -25,6 +26,50 @@ from celestron_nexstar.api.database.database import get_database
 
 
 console = Console()
+
+
+T = TypeVar("T")
+
+
+def _run_async_safe(coro: Coroutine[Any, Any, T]) -> T:
+    """
+    Run an async coroutine from a sync context, handling both cases:
+    - If called from sync context: uses asyncio.run()
+    - If called from async context: creates new event loop in thread
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    import asyncio
+    import concurrent.futures
+    import threading
+
+    try:
+        # Check if we're in an async context
+        asyncio.get_running_loop()
+        # We're in an async context, need to use a thread with new event loop
+        future: concurrent.futures.Future[T] = concurrent.futures.Future()
+
+        def run_in_thread() -> None:
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(coro)
+                future.set_result(result)
+                new_loop.close()
+            except Exception as e:
+                future.set_exception(e)
+
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+        return future.result()
+    except RuntimeError:
+        # No running loop, use asyncio.run()
+        return asyncio.run(coro)
 
 
 def get_cache_dir() -> Path:
@@ -172,9 +217,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 catalog_number = parse_catalog_number(name, catalog_name)
 
                 # Check for duplicates before inserting
-                import asyncio
-
-                existing = asyncio.run(db.get_by_name(name))
+                existing = _run_async_safe(db.get_by_name(name))
                 if existing:
                     skipped += 1
                     console.print(f"[dim]Skipping duplicate: {name} (already exists)[/dim]")
@@ -182,7 +225,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     continue
 
                 # Also check by catalog + catalog_number if available
-                if catalog_number is not None and asyncio.run(
+                if catalog_number is not None and _run_async_safe(
                     db.exists_by_catalog_number(catalog_name, catalog_number)
                 ):
                     skipped += 1
@@ -195,7 +238,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
                 # Insert into database
                 try:
-                    asyncio.run(
+                    _run_async_safe(
                         db.insert_object(
                             name=name,
                             catalog=catalog_name,
@@ -452,9 +495,8 @@ def import_celestial_data_geojson(
                 description = "; ".join(description_parts) if description_parts else None
 
                 # Check for duplicates
-                import asyncio
 
-                existing = asyncio.run(db.get_by_name(name))
+                existing = _run_async_safe(db.get_by_name(name))
                 if existing:
                     skipped += 1
                     if verbose:
@@ -464,7 +506,7 @@ def import_celestial_data_geojson(
 
                 # Insert object into database
                 try:
-                    asyncio.run(
+                    _run_async_safe(
                         db.insert_object(
                             name=name,
                             catalog=catalog,
@@ -682,9 +724,8 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                 description = "; ".join(description_parts) if description_parts else None
 
                 # Check for duplicates
-                import asyncio
 
-                existing = asyncio.run(db.get_by_name(name))
+                existing = _run_async_safe(db.get_by_name(name))
                 if existing:
                     skipped += 1
                     if verbose:
@@ -694,7 +735,7 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
 
                 # Insert object into database
                 try:
-                    asyncio.run(
+                    _run_async_safe(
                         db.insert_object(
                             name=name,
                             catalog="celestial_stars",
@@ -795,7 +836,6 @@ def import_celestial_constellations(
     Returns:
         (imported_count, skipped_count)
     """
-    import asyncio
 
     from sqlalchemy import select
 
@@ -1004,7 +1044,7 @@ def import_celestial_constellations(
 
         return imported, skipped
 
-    return asyncio.run(_import())
+    return _run_async_safe(_import())
 
 
 def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
@@ -1019,7 +1059,6 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     Returns:
         (imported_count, skipped_count)
     """
-    import asyncio
 
     from sqlalchemy import select
 
@@ -1160,7 +1199,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
 
         return imported, skipped
 
-    return asyncio.run(_import())
+    return _run_async_safe(_import())
 
 
 # Registry of available data sources
@@ -1278,10 +1317,9 @@ DATA_SOURCES: dict[str, DataSource] = {
 
 def list_data_sources() -> None:
     """Display available data sources."""
-    import asyncio
 
     db = get_database()
-    stats = asyncio.run(db.get_stats())
+    stats = _run_async_safe(db.get_stats())
 
     table = Table(title="Available Data Sources")
     table.add_column("Name", style="cyan")
@@ -1305,7 +1343,6 @@ def list_data_sources() -> None:
             imported = stats.objects_by_catalog.get("messier", 0)
         elif source_id == "celestial_asterisms":
             # Count from asterisms table, not objects table
-            import asyncio
 
             from sqlalchemy import func, select
 
@@ -1316,10 +1353,9 @@ def list_data_sources() -> None:
                     result = await session.scalar(select(func.count(AsterismModel.id)))
                     return result or 0
 
-            imported = asyncio.run(_count())
+            imported = _run_async_safe(_count())
         elif source_id == "celestial_constellations":
             # Count from constellations table, not objects table
-            import asyncio
 
             from sqlalchemy import func, select
 
@@ -1330,7 +1366,7 @@ def list_data_sources() -> None:
                     result = await session.scalar(select(func.count(ConstellationModel.id)))
                     return result or 0
 
-            imported = asyncio.run(_count())
+            imported = _run_async_safe(_count())
         elif source_id == "celestial_local_group":
             imported = stats.objects_by_catalog.get("local_group", 0)
         else:
@@ -1348,13 +1384,14 @@ def list_data_sources() -> None:
     console.print(f"\n[dim]Total objects in database: {stats.total_objects:,}[/dim]")
 
 
-def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
+def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: bool = False) -> bool:
     """
     Import data from a source.
 
     Args:
         source_id: ID of data source (e.g., "celestial_stars_6")
         mag_limit: Maximum magnitude to import
+        force_download: Force re-download of cached files
 
     Returns:
         True if successful
@@ -1394,9 +1431,8 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
 
             # Show updated stats
             db = get_database()
-            import asyncio
 
-            stats = asyncio.run(db.get_stats())
+            stats = _run_async_safe(db.get_stats())
             console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
             return True
@@ -1431,7 +1467,10 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
             return False
         cache_dir = get_cache_dir()
         cache_path = cache_dir / filename
-        if not cache_path.exists():
+        if not cache_path.exists() or force_download:
+            if force_download and cache_path.exists():
+                console.print(f"[dim]Force re-download: removing cached {filename}...[/dim]")
+                cache_path.unlink()
             console.print("Downloading data from celestial_data repository...")
             if not download_celestial_data(filename, cache_path):
                 return False
@@ -1453,9 +1492,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
 
         # Show updated stats
         db = get_database()
-        import asyncio
-
-        stats = asyncio.run(db.get_stats())
+        stats = _run_async_safe(db.get_stats())
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True
@@ -1477,9 +1514,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0) -> bool:
 
         # Show updated stats
         db = get_database()
-        import asyncio
-
-        stats = asyncio.run(db.get_stats())
+        stats = _run_async_safe(db.get_stats())
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True

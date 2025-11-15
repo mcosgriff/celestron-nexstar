@@ -5,6 +5,7 @@ Commands for importing and managing catalog data sources.
 """
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -296,6 +297,7 @@ def setup(
     force: bool = typer.Option(
         False, "--force", "-f", help="Skip confirmation prompt and rebuild database if it exists"
     ),
+    refresh_cache: bool = typer.Option(False, "--refresh-cache", help="Delete cached files and re-download everything"),
 ) -> None:
     """
     Set up the database for first-time use.
@@ -313,6 +315,7 @@ def setup(
         nexstar data setup --skip-ephemeris
         nexstar data setup --mag-limit 12.0
         nexstar data setup --force  # Skip confirmation prompt
+        nexstar data setup --refresh-cache  # Delete cache and re-download everything
     """
     from rich.table import Table
 
@@ -382,6 +385,44 @@ def setup(
         console.print("[yellow]⚠[/yellow] Database does not exist - will create")
         should_rebuild = True
 
+    # Clear cache if requested
+    if refresh_cache:
+        console.print("\n[yellow]Clearing cached files...[/yellow]\n")
+        from celestron_nexstar.cli.data_import import get_cache_dir
+
+        # Clear celestial data cache
+        celestial_cache = get_cache_dir()
+        deleted_count = 0
+        if celestial_cache.exists():
+            for file in celestial_cache.glob("*"):
+                if file.is_file():
+                    file.unlink()
+                    deleted_count += 1
+                    console.print(f"[dim]  Deleted: {file.name}[/dim]")
+            if deleted_count > 0:
+                console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from celestial data cache")
+            else:
+                console.print("[dim]  No files found in celestial data cache[/dim]")
+        else:
+            console.print("[dim]  Celestial data cache directory does not exist[/dim]")
+
+        # Clear light pollution cache
+        light_pollution_cache = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
+        deleted_count = 0
+        if light_pollution_cache.exists():
+            for file in light_pollution_cache.glob("*.png"):
+                file.unlink()
+                deleted_count += 1
+                console.print(f"[dim]  Deleted: {file.name}[/dim]")
+            if deleted_count > 0:
+                console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from light pollution cache")
+            else:
+                console.print("[dim]  No files found in light pollution cache[/dim]")
+        else:
+            console.print("[dim]  Light pollution cache directory does not exist[/dim]")
+
+        console.print()
+
     # Rebuild database if needed
     if should_rebuild:
         console.print("\n[cyan]Rebuilding database with all available data...[/cyan]\n")
@@ -394,13 +435,6 @@ def setup(
             # Note: import_data_source prints to console, so output should be visible
             console.print("[dim]Initializing database schema...[/dim]")
 
-            # Show progress for static data initialization
-            console.print("\n[cyan]Initializing static reference data...[/cyan]")
-            console.print("[dim]  • Meteor showers[/dim]")
-            console.print("[dim]  • Constellations and asterisms[/dim]")
-            console.print("[dim]  • Dark sky sites[/dim]")
-            console.print("[dim]  • Space events[/dim]")
-
             result: dict[str, Any] = asyncio.run(
                 rebuild_database(
                     backup_dir=None,  # Don't backup during setup
@@ -408,6 +442,7 @@ def setup(
                     mag_limit=mag_limit,
                     skip_backup=True,  # Skip backup during setup
                     dry_run=False,
+                    force_download=refresh_cache,  # Force re-download if cache was cleared
                 )
             )
 
@@ -744,6 +779,58 @@ def init_static() -> None:
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("clear-cache", rich_help_panel="Data Management")
+def clear_cache() -> None:
+    """
+    Delete all cached data files.
+
+    This command removes cached files from:
+    - Celestial data cache (~/.cache/celestron-nexstar/celestial-data/)
+    - Light pollution cache (~/.cache/celestron-nexstar/light-pollution/)
+
+    Use this if you want to force re-download of all data files.
+
+    Examples:
+        nexstar data clear-cache
+    """
+    from celestron_nexstar.cli.data_import import get_cache_dir
+
+    console.print("\n[yellow]Clearing cached files...[/yellow]\n")
+
+    # Clear celestial data cache
+    celestial_cache = get_cache_dir()
+    deleted_count = 0
+    if celestial_cache.exists():
+        for file in celestial_cache.glob("*"):
+            if file.is_file():
+                file.unlink()
+                deleted_count += 1
+                console.print(f"[dim]  Deleted: {file.name}[/dim]")
+        if deleted_count > 0:
+            console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from celestial data cache")
+        else:
+            console.print("[dim]  No files found in celestial data cache[/dim]")
+    else:
+        console.print("[dim]  Celestial data cache directory does not exist[/dim]")
+
+    # Clear light pollution cache
+    light_pollution_cache = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
+    deleted_count = 0
+    if light_pollution_cache.exists():
+        for file in light_pollution_cache.glob("*.png"):
+            file.unlink()
+            deleted_count += 1
+            console.print(f"[dim]  Deleted: {file.name}[/dim]")
+        if deleted_count > 0:
+            console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from light pollution cache")
+        else:
+            console.print("[dim]  No files found in light pollution cache[/dim]")
+    else:
+        console.print("[dim]  Light pollution cache directory does not exist[/dim]")
+
+    console.print("\n[green]✓[/green] Cache clearing complete\n")
 
 
 @app.command("stats", rich_help_panel="Database Management")

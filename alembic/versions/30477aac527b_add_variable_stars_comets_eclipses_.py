@@ -43,9 +43,35 @@ def upgrade() -> None:
             sa.Column("notes", sa.Text(), nullable=False),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("idx_variable_star_name", "variable_stars", ["name"], unique=True)
-        op.create_index("idx_variable_type", "variable_stars", ["variable_type"], unique=False)
-        op.create_index("idx_position", "variable_stars", ["ra_hours", "dec_degrees"], unique=False)
+        # Create indexes using IF NOT EXISTS to handle cases where they might already exist
+        indexes_to_create = [
+            ("idx_variable_star_name", ["name"], True),
+            ("idx_variable_type", ["variable_type"], False),
+            ("idx_position", ["ra_hours", "dec_degrees"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON variable_stars ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
+    else:
+        # Table exists, create indexes if they don't exist using IF NOT EXISTS
+        indexes_to_create = [
+            ("idx_variable_star_name", ["name"], True),
+            ("idx_variable_type", ["variable_type"], False),
+            ("idx_position", ["ra_hours", "dec_degrees"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON variable_stars ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
 
     # Create comets table
     if "comets" not in existing_tables:
@@ -63,11 +89,39 @@ def upgrade() -> None:
             sa.Column("notes", sa.Text(), nullable=False),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("idx_comet_name", "comets", ["name"], unique=True)
-        op.create_index("idx_comet_designation", "comets", ["designation"], unique=True)
-        op.create_index("idx_perihelion_date", "comets", ["perihelion_date"], unique=False)
-        op.create_index("idx_peak_date", "comets", ["peak_date"], unique=False)
-        op.create_index("idx_is_periodic", "comets", ["is_periodic"], unique=False)
+        # Create indexes using IF NOT EXISTS to handle cases where they might already exist
+        indexes_to_create = [
+            ("idx_comet_name", ["name"], True),
+            ("idx_comet_designation", ["designation"], True),
+            ("idx_perihelion_date", ["perihelion_date"], False),
+            ("idx_peak_date", ["peak_date"], False),
+            ("idx_is_periodic", ["is_periodic"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON comets ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
+    else:
+        # Table exists, create indexes if they don't exist using IF NOT EXISTS
+        indexes_to_create = [
+            ("idx_comet_name", ["name"], True),
+            ("idx_comet_designation", ["designation"], True),
+            ("idx_perihelion_date", ["perihelion_date"], False),
+            ("idx_peak_date", ["peak_date"], False),
+            ("idx_is_periodic", ["is_periodic"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON comets ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
 
     # Create eclipses table
     if "eclipses" not in existing_tables:
@@ -79,9 +133,35 @@ def upgrade() -> None:
             sa.Column("magnitude", sa.Float(), nullable=False),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index("idx_eclipse_type", "eclipses", ["eclipse_type"], unique=False)
-        op.create_index("idx_eclipse_date", "eclipses", ["date"], unique=False)
-        op.create_index("idx_type_date", "eclipses", ["eclipse_type", "date"], unique=False)
+        # Create indexes using IF NOT EXISTS to handle cases where they might already exist
+        indexes_to_create = [
+            ("idx_eclipse_type", ["eclipse_type"], False),
+            ("idx_eclipse_date", ["date"], False),
+            ("idx_type_date", ["eclipse_type", "date"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON eclipses ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
+    else:
+        # Table exists, create indexes if they don't exist using IF NOT EXISTS
+        indexes_to_create = [
+            ("idx_eclipse_type", ["eclipse_type"], False),
+            ("idx_eclipse_date", ["date"], False),
+            ("idx_type_date", ["eclipse_type", "date"], False),
+        ]
+        for index_name, columns, is_unique in indexes_to_create:
+            try:
+                unique_str = "UNIQUE" if is_unique else ""
+                columns_str = ", ".join(columns)
+                op.execute(f"CREATE {unique_str} INDEX IF NOT EXISTS {index_name} ON eclipses ({columns_str})")
+            except Exception:
+                # Index might already exist, ignore
+                pass
 
     # Create bortle_characteristics table
     if "bortle_characteristics" not in existing_tables:
@@ -98,7 +178,19 @@ def upgrade() -> None:
             sa.Column("recommendations", sa.Text(), nullable=False),
             sa.PrimaryKeyConstraint("bortle_class"),
         )
-        op.create_index("idx_sqm_range", "bortle_characteristics", ["sqm_min", "sqm_max"], unique=False)
+        # Create index using IF NOT EXISTS to handle cases where it might already exist
+        try:
+            op.execute("CREATE INDEX IF NOT EXISTS idx_sqm_range ON bortle_characteristics (sqm_min, sqm_max)")
+        except Exception:
+            # Index might already exist, ignore
+            pass
+    else:
+        # Table exists, create indexes if they don't exist using IF NOT EXISTS
+        try:
+            op.execute("CREATE INDEX IF NOT EXISTS idx_sqm_range ON bortle_characteristics (sqm_min, sqm_max)")
+        except Exception:
+            # Index might already exist, ignore
+            pass
 
 
 def downgrade() -> None:

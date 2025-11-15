@@ -361,6 +361,26 @@ nexstar data sync-ephemeris --list                             # Preview availab
 nexstar data stats                                              # Show database statistics
 ```
 
+**Cached Data:**
+
+The application caches downloaded data files to avoid re-downloading on subsequent runs:
+
+- **Celestial Data Cache**: `~/.cache/celestron-nexstar/celestial-data/`
+  - Stores GeoJSON files from the celestial_data repository (stars, DSOs, Messier objects, constellations, asterisms, etc.)
+  - Files are automatically downloaded on first use and reused for faster imports
+- **Light Pollution Cache**: `~/.cache/celestron-nexstar/light-pollution/`
+  - Stores World Atlas light pollution PNG images
+  - Processed during `nexstar data setup` and reused for faster subsequent setups
+
+**Cache Management:**
+
+```bash
+nexstar data clear-cache                                        # Delete all cached files
+nexstar data setup --refresh-cache                              # Clear cache and re-download everything during setup
+```
+
+Use `--refresh-cache` if you want to ensure you have the latest data from remote sources, or if you're experiencing issues with corrupted cache files.
+
 **Database Migrations:**
 
 The database schema is managed using Alembic migrations. When you update the software, you may need to apply database migrations:
@@ -650,6 +670,22 @@ pre-commit run
 - Check migration status: `nexstar data migrate --dry-run`
 - If issues persist, see the [Database Initialization](#database-initialization) section above
 
+### Cache Issues
+
+**Corrupted or outdated cache files:**
+
+- Clear all cached files: `nexstar data clear-cache`
+- Force re-download during setup: `nexstar data setup --refresh-cache`
+- Cache locations:
+  - Celestial data: `~/.cache/celestron-nexstar/celestial-data/`
+  - Light pollution: `~/.cache/celestron-nexstar/light-pollution/`
+
+**Download failures:**
+
+- Check internet connection
+- Verify cache directory permissions: `ls -ld ~/.cache/celestron-nexstar/`
+- Clear cache and retry: `nexstar data clear-cache && nexstar data setup --refresh-cache`
+
 ### Movement Issues
 
 - Press ESC to stop if telescope is moving unexpectedly
@@ -703,6 +739,8 @@ This project uses comprehensive celestial data from the [celestial_data](https:/
 - **Constellations**: All 88 IAU constellations with boundaries
 - **Asterisms**: Famous star patterns and groupings
 - **Local Group**: Local Group galaxies and Milky Way halo objects
+
+Data files are automatically downloaded from the repository and cached locally in `~/.cache/celestron-nexstar/celestial-data/` for faster subsequent imports. Use `nexstar data clear-cache` to clear cached files or `nexstar data setup --refresh-cache` to force re-download.
 
 **Citation:**
 
