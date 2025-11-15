@@ -302,7 +302,7 @@ def setup(
 
     This command initializes the database by:
     1. Creating database schema (via Alembic migrations)
-    2. Importing ALL available catalog data (custom, OpenNGC, Yale BSC - ~18,000 objects)
+    2. Importing ALL available catalog data from celestial_data (stars, DSOs, Messier, constellations, asterisms, local group) and custom YAML (planets, moons)
     3. Initializing ALL static reference data (meteor showers, constellations, dark sky sites, space events)
     4. Syncing ephemeris file metadata from NAIF (optional)
 
@@ -355,10 +355,13 @@ def setup(
                         if not force:
                             try:
                                 response = typer.prompt(
-                                    "Do you want to delete the existing database and rebuild with all data? (yes/no)",
+                                    "Do you want to delete the existing database and rebuild with all data?",
                                     default="no",
+                                    type=str,
                                 )
-                                if response.lower() not in ("yes", "y"):
+                                # Normalize response: strip whitespace, handle empty string as "no"
+                                response_normalized = (response or "no").strip().lower()
+                                if response_normalized not in ("yes", "y"):
                                     console.print(
                                         "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
                                     )
@@ -1469,8 +1472,10 @@ def rebuild(
         console.print("[yellow]⚠ Warning:[/yellow] Database already exists and will be replaced!")
         console.print("[dim]Use --force to proceed or --dry-run to preview[/dim]\n")
         try:
-            response = typer.prompt("Continue? (yes/no)", default="no")
-            if response.lower() not in ("yes", "y"):
+            response = typer.prompt("Continue? (yes/no)", default="no", type=str)
+            # Normalize response: strip whitespace, handle empty string as "no"
+            response_normalized = (response or "no").strip().lower()
+            if response_normalized not in ("yes", "y"):
                 console.print("\n[dim]Operation cancelled.[/dim]\n")
                 raise typer.Exit(code=0) from None
         except typer.Abort:
@@ -1724,7 +1729,9 @@ def run_migrations(
 
             # Use upgrade to head - this will apply ALL pending migrations in sequence
             # Alembic will automatically apply all migrations from current state to head
-            command.upgrade(alembic_cfg, "head")
+            # Use the determined head_rev (which may be "heads" for multiple branches)
+            upgrade_target = head_rev if head_rev is not None else "head"
+            command.upgrade(alembic_cfg, upgrade_target)
             console.print("\n[bold green]✓ Migrations applied successfully![/bold green]\n")
 
             # Verify the new revision after applying migrations

@@ -46,7 +46,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("geohash", sa.String(length=12), nullable=True))
 
     # Import geohash utility to calculate geohashes
-    from celestron_nexstar.api.geohash_utils import encode
+    from celestron_nexstar.api.location.geohash_utils import encode
 
     # Populate geohash for all existing rows
     # Fetch all rows with lat/lon

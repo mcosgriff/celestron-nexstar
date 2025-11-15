@@ -1218,12 +1218,55 @@ async def rebuild_database(
 
         # Step 3: Run Alembic migrations to create fresh schema
         from alembic.config import Config
+        from alembic.script import ScriptDirectory
 
         from alembic import command  # type: ignore[attr-defined]
 
         alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Schema created via Alembic migrations")
+
+        # Determine the target revision (handle multiple heads)
+        script = ScriptDirectory.from_config(alembic_cfg)
+        try:
+            # Try to get single head first (works when there's no branching)
+            target_rev = script.get_current_head()
+        except Exception:
+            # Multiple heads detected - use get_heads() instead
+            try:
+                heads_list = script.get_heads()
+                if len(heads_list) == 1:
+                    target_rev = heads_list[0]
+                elif len(heads_list) > 1:
+                    # Multiple heads detected - look for a merge migration
+                    logger.info(f"Multiple migration heads detected: {', '.join(heads_list)}")
+
+                    # Search all revisions for a merge migration that combines these heads
+                    merge_found = False
+                    for rev in script.walk_revisions():
+                        if hasattr(rev, "down_revision") and rev.down_revision:
+                            down_rev = rev.down_revision
+                            # Check if this is a merge migration (has tuple of down_revisions)
+                            if isinstance(down_rev, tuple) and len(down_rev) > 1:
+                                # Check if this merge migration combines all current heads
+                                down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
+                                heads_set = set(heads_list)
+                                if down_rev_set == heads_set:
+                                    merge_found = True
+                                    target_rev = rev.revision
+                                    logger.info(f"Found merge migration: {rev.revision}")
+                                    break
+
+                    if not merge_found:
+                        logger.info("No merge migration found. Using 'heads' to upgrade all branches.")
+                        # Use "heads" to upgrade all branches - Alembic will apply merge migrations if they exist
+                        target_rev = "heads"
+                else:
+                    target_rev = "head"  # Fallback
+            except Exception as e:
+                logger.warning(f"Error determining head revision: {e}, using 'head'")
+                target_rev = "head"
+
+        command.upgrade(alembic_cfg, target_rev)
+        logger.info(f"Schema created via Alembic migrations (upgraded to {target_rev})")
 
         # Get fresh database instance after rebuild
         db = get_database()
