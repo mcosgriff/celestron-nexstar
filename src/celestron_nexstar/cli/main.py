@@ -32,7 +32,7 @@ from celestron_nexstar.cli.commands.data import catalog, data, ephemeris
 from celestron_nexstar.cli.commands.location import location, weather
 from celestron_nexstar.cli.commands.observation import multi_night, telescope
 from celestron_nexstar.cli.commands.optics import optics
-from celestron_nexstar.cli.commands.telescope import align, connect, goto, move, position, time, track
+from celestron_nexstar.cli.commands.telescope import align, connect, goto, mount, move, position, time, track
 from celestron_nexstar.cli.commands.vacation import vacation
 
 
@@ -319,6 +319,12 @@ app.add_typer(
     align.app,
     name="align",
     help="Alignment commands",
+    rich_help_panel="Telescope Control",
+)
+app.add_typer(
+    mount.app,
+    name="mount",
+    help="Mount settings and backlash control",
     rich_help_panel="Telescope Control",
 )
 

@@ -1369,6 +1369,165 @@ nexstar shell --port /dev/ttyUSB0
 
 See the main [README](../README.md) for detailed shell documentation.
 
+## Mount Settings and Backlash Control
+
+The `nexstar mount` commands help you configure and optimize your mount's backlash settings and GoTo approach directions. Proper backlash control improves tracking accuracy and GoTo precision, especially important for astrophotography.
+
+### Backlash Information
+
+Learn about backlash and how to control it:
+
+```bash
+nexstar mount backlash-info
+```
+
+This command displays comprehensive information about:
+
+- What backlash is and its effects on tracking and GoTo accuracy
+- Anti-backlash settings (0-99) and how to adjust them
+- GoTo Approach settings and their impact
+- Calibration procedures
+
+### Backlash Calibration
+
+Interactive guide for calibrating anti-backlash settings:
+
+```bash
+# Calibrate both axes
+nexstar mount backlash-calibrate
+
+# Calibrate specific axis
+nexstar mount backlash-calibrate --axis azimuth
+nexstar mount backlash-calibrate --axis altitude
+```
+
+**Options:**
+
+- `--port`, `-p` PORT - Serial port for telescope connection
+- `--axis` [azimuth|altitude|both] - Axis to calibrate (default: both)
+
+The calibration guide walks you through:
+
+1. Setting initial anti-backlash values in the hand control
+2. Testing by slewing at rate 3+ for 10+ arc-minutes
+3. Observing field movement (overshoot vs drift)
+4. Adjusting values until optimal
+
+**Note:** Anti-backlash settings must be adjusted in the hand control menu (Menu > Scope Setup > Anti-Backlash). The CLI provides guidance and testing tools.
+
+### Backlash Recommendations
+
+Get recommended starting values for your mount configuration:
+
+```bash
+# Default (AltAz, Northern Hemisphere)
+nexstar mount backlash-recommendations
+
+# Equatorial mount
+nexstar mount backlash-recommendations --mount-type eq --hemisphere north
+
+# Southern Hemisphere
+nexstar mount backlash-recommendations --mount-type altaz --hemisphere south
+```
+
+**Options:**
+
+- `--mount-type` [altaz|eq] - Mount type (default: altaz)
+- `--hemisphere` [north|south] - Hemisphere (default: north)
+
+**Output includes:**
+
+- Recommended anti-backlash starting values (typically 50 for AltAz)
+- Recommended GoTo Approach settings
+- Calibration tips and important notes
+
+### Backlash Testing
+
+Automated testing tool to verify your anti-backlash settings:
+
+```bash
+# Test azimuth positive direction
+nexstar mount backlash-test --axis azimuth --direction positive --rate 3 --duration 10
+
+# Test altitude negative direction
+nexstar mount backlash-test --axis altitude --direction negative --rate 5 --duration 15
+```
+
+**Options:**
+
+- `--port`, `-p` PORT - Serial port for telescope connection
+- `--axis` [azimuth|altitude] - Axis to test (required)
+- `--direction` [positive|negative] - Direction to test (required)
+- `--rate` INTEGER - Slew rate 1-9 (default: 3)
+- `--duration` FLOAT - Slew duration in seconds (default: 10.0)
+
+The test automatically:
+
+1. Moves the telescope in the specified direction
+2. Stops after the duration
+3. Guides you to observe overshoot, drift, or steady behavior
+4. Provides recommendations for adjustment
+
+### GoTo Approach Information
+
+Learn about GoTo Approach settings:
+
+```bash
+nexstar mount goto-approach-info
+```
+
+This command explains:
+
+- How GoTo Approach affects centering accuracy
+- Direction definitions for AltAz mounts
+- Recommended settings based on telescope configuration
+- Special considerations for equatorial mounts and Southern Hemisphere
+
+**Key Points:**
+
+- GoTo Approach determines final approach direction during GoTo operations
+- Should be opposite to load direction (gravity, accessories)
+- Default for NexStar 6SE/8SE: Altitude negative, Azimuth positive
+- Use same approach directions during alignment for best results
+
+**Reference:**
+
+For detailed information, see the [Celestron knowledge base article](https://www.celestron.com/blogs/knowledgebase/controlling-backlash-in-your-mount).
+
+### Examples
+
+**Complete backlash setup workflow:**
+
+```bash
+# 1. Get information about backlash
+nexstar mount backlash-info
+
+# 2. Get recommended starting values
+nexstar mount backlash-recommendations
+
+# 3. Follow calibration guide
+nexstar mount backlash-calibrate
+
+# 4. Test your settings
+nexstar mount backlash-test --axis azimuth --direction positive --rate 3 --duration 10
+
+# 5. Learn about GoTo Approach
+nexstar mount goto-approach-info
+```
+
+**Quick recommendations for AltAz mount:**
+
+```bash
+nexstar mount backlash-recommendations --mount-type altaz --hemisphere north
+```
+
+**Test after adding accessories:**
+
+```bash
+# After adding camera/eyepiece, test altitude backlash
+nexstar mount backlash-test --axis altitude --direction negative --rate 3 --duration 10
+```
+
 ## Configuration
 
 Most commands require a configured location. Set this once:
@@ -1456,6 +1615,7 @@ The CLI is organized into logical groups:
 - `move` - Manual movement
 - `track` - Tracking control
 - `align` - Alignment commands
+- `mount` - Mount settings and backlash control
 
 **Planning & Observation:**
 

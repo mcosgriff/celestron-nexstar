@@ -125,6 +125,7 @@ Browse and search extensive catalogs from the [celestial_data](https://github.co
 - **Celestial events tracking**: Aurora, eclipses, meteor showers, comets, ISS, and more
 - **Space events calendar**: Planetary Society calendar with viewing location recommendations
 - **Vacation planning**: Plan astronomy viewing for any destination
+- **Backlash control**: Comprehensive tools for optimizing mount backlash and GoTo approach settings
 
 ### Multi-Night Planning & Clear Sky Charts
 
@@ -300,6 +301,16 @@ ephemeris download standard      # ~20MB, includes planets + Jupiter/Saturn moon
 align sync --ra 5.5 --dec 22.5  # Sync to known position
 track set --mode alt_az          # Set tracking mode
 track get                        # Get current mode
+```
+
+#### Mount Settings & Backlash Control
+
+```bash
+mount backlash-info              # Learn about backlash control
+mount backlash-recommendations   # Get recommended settings
+mount backlash-calibrate         # Interactive calibration guide
+mount backlash-test --axis azimuth --direction positive  # Test settings
+mount goto-approach-info         # Learn about GoTo Approach settings
 ```
 
 **Multi-Night Planning** (outside shell)
@@ -692,6 +703,19 @@ pre-commit run
 - Check tracking mode is appropriate for setup
 - Verify coordinates are within valid ranges
 - Ensure telescope is not at mechanical limit
+
+### Backlash and GoTo Accuracy Issues
+
+**Poor GoTo centering or tracking drift:**
+
+- Check backlash settings: `nexstar mount backlash-info`
+- Get recommended settings: `nexstar mount backlash-recommendations`
+- Calibrate backlash: `nexstar mount backlash-calibrate`
+- Test settings: `nexstar mount backlash-test --axis azimuth --direction positive`
+- Verify GoTo Approach settings: `nexstar mount goto-approach-info`
+- Re-calibrate after adding/removing accessories (cameras, eyepieces)
+
+**Reference:** See the [Celestron knowledge base article](https://www.celestron.com/blogs/knowledgebase/controlling-backlash-in-your-mount) for detailed information.
 
 ### Position Tracking Not Working
 
