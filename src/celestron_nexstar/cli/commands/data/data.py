@@ -242,7 +242,7 @@ def sources() -> None:
 
 @app.command("import", rich_help_panel="Data Import")
 def import_source(
-    source: str = typer.Argument(..., help="Data source to import (e.g., 'openngc')"),
+    source: str = typer.Argument(..., help="Data source to import (e.g., 'celestial_stars_6')"),
     mag_limit: float = typer.Option(
         15.0,
         "--mag-limit",
@@ -257,24 +257,25 @@ def import_source(
     Objects are filtered by magnitude to include only those visible with
     typical amateur telescopes.
 
-    Available sources: openngc, yale_bsc, custom
-
     [bold green]Examples:[/bold green]
 
-        # Import custom YAML catalog (catalogs.yaml)
+        # Import custom YAML catalog (planets and moons)
         nexstar data import custom
 
-        # Import OpenNGC catalog (default mag ≤ 15.0)
-        nexstar data import openngc
+        # Import stars from celestial_data (mag ≤ 6)
+        nexstar data import celestial_stars_6
 
-        # Import with custom magnitude limit
-        nexstar data import openngc --mag-limit 12.0
+        # Import DSOs with custom magnitude limit
+        nexstar data import celestial_dsos_14 --mag-limit 12.0
 
-    [bold blue]Available Sources:[/bold blue]
+        # Import Messier objects
+        nexstar data import celestial_messier
 
-        custom    - Custom YAML catalog (catalogs.yaml)
-        openngc   - NGC/IC catalog (13,970 objects)
-        yale_bsc  - Yale Bright Star Catalog (9,096 stars, mag ≤ 6.5)
+        # Import constellations
+        nexstar data import celestial_constellations
+
+        # Import asterisms
+        nexstar data import celestial_asterisms
 
     Use 'nexstar data sources' to see all available sources.
     """
