@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 import deal
 
+from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import angular_separation
@@ -26,9 +27,12 @@ from celestron_nexstar.api.observation.visibility import VisibilityInfo, assess_
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "AlignmentConditions",
     "SkyAlignGroup",
     "SkyAlignObject",
     "TwoStarAlignPair",
+    "find_skyalign_object_by_name",
+    "get_alignment_conditions",
     "get_bright_objects_for_skyalign",
     "suggest_skyalign_objects",
     "suggest_two_star_align_objects",
@@ -65,6 +69,17 @@ class TwoStarAlignPair:
     avg_observability_score: float  # Average observability score
     separation_score: float  # Score based on separation (higher = better separation)
     conditions_score: float = 1.0  # Score based on weather/sky conditions (0.0-1.0, higher = better conditions)
+
+
+@dataclass(frozen=True)
+class AlignmentConditions:
+    """Observing conditions data for alignment suggestions."""
+
+    cloud_cover_percent: float | None = None
+    moon_ra_hours: float | None = None
+    moon_dec_degrees: float | None = None
+    moon_illumination: float | None = None
+    seeing_score: float | None = None
 
 
 # SkyAlign requires bright objects: magnitude ≤ 2.5 for stars, or planets/Moon
@@ -201,6 +216,97 @@ def get_bright_objects_for_skyalign(
     bright_objects.sort(key=lambda x: x.visibility.observability_score, reverse=True)
 
     return bright_objects
+
+
+def get_alignment_conditions(
+    observer_lat: float | None = None,
+    observer_lon: float | None = None,
+    dt: datetime | None = None,
+) -> AlignmentConditions:
+    """
+    Get observing conditions data for alignment suggestions.
+
+    Fetches weather, moon, and seeing data that can be used to improve
+    alignment object suggestions. Returns None values if conditions are unavailable.
+
+    Args:
+        observer_lat: Observer latitude (default: from saved location)
+        observer_lon: Observer longitude (default: from saved location)
+        dt: Datetime to check for (default: now)
+
+    Returns:
+        AlignmentConditions with available data (some fields may be None)
+    """
+    if dt is None:
+        dt = datetime.now(UTC)
+
+    # Get observer location
+    if observer_lat is None or observer_lon is None:
+        location = get_observer_location()
+        observer_lat = location.latitude
+        observer_lon = location.longitude
+
+    cloud_cover_percent = None
+    moon_ra_hours = None
+    moon_dec_degrees = None
+    moon_illumination = None
+    seeing_score = None
+
+    try:
+        from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+        planner = ObservationPlanner()
+        conditions = planner.get_tonight_conditions(lat=observer_lat, lon=observer_lon, start_time=dt)
+        cloud_cover_percent = conditions.weather.cloud_cover_percent
+        seeing_score = conditions.seeing_score
+
+        # Get moon info
+        moon_info = get_moon_info(observer_lat, observer_lon, dt)
+        if moon_info:
+            moon_ra_hours = moon_info.ra_hours
+            moon_dec_degrees = moon_info.dec_degrees
+            moon_illumination = moon_info.illumination
+    except Exception as e:
+        # Conditions unavailable - return with None values
+        logger.debug(f"Could not fetch observing conditions: {e}")
+
+    return AlignmentConditions(
+        cloud_cover_percent=cloud_cover_percent,
+        moon_ra_hours=moon_ra_hours,
+        moon_dec_degrees=moon_dec_degrees,
+        moon_illumination=moon_illumination,
+        seeing_score=seeing_score,
+    )
+
+
+def find_skyalign_object_by_name(
+    display_name: str,
+    observer_lat: float | None = None,
+    observer_lon: float | None = None,
+    dt: datetime | None = None,
+) -> SkyAlignObject | None:
+    """
+    Find a SkyAlignObject by its display name.
+
+    Searches through bright objects suitable for alignment to find one
+    matching the given display name.
+
+    Args:
+        display_name: Display name to search for (e.g., "Vega", "Jupiter")
+        observer_lat: Observer latitude (default: from saved location)
+        observer_lon: Observer longitude (default: from saved location)
+        dt: Datetime to check for (default: now)
+
+    Returns:
+        SkyAlignObject if found, None otherwise
+    """
+    bright_objects = get_bright_objects_for_skyalign(observer_lat=observer_lat, observer_lon=observer_lon, dt=dt)
+
+    for obj in bright_objects:
+        if obj.display_name == display_name:
+            return obj
+
+    return None
 
 
 def _calculate_separation_score(

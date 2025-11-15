@@ -21,6 +21,7 @@ from celestron_nexstar.api.catalogs.catalogs import (
     get_all_objects,
     get_catalog,
     get_object_by_name,
+    get_object_names_for_completion,
     search_objects,
 )
 from celestron_nexstar.api.database.database import get_database
@@ -68,19 +69,8 @@ def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
 
     Returns names from the database that match the incomplete string.
     Case-insensitive matching and sorting.
-
-    The database query handles case-insensitivity, so we pass the incomplete
-    string as-is. The database will convert both the column and the prefix
-    to lowercase for comparison.
     """
-    try:
-        db = get_database()
-        # Database query is already case-insensitive, so pass incomplete as-is
-        # The get_names_for_completion method handles case-insensitive matching
-        return asyncio.run(db.get_names_for_completion(prefix=incomplete, limit=50))
-    except Exception:
-        # If database is not available, return empty list
-        return []
+    return asyncio.run(get_object_names_for_completion(prefix=incomplete, limit=50))
 
 
 @app.command(rich_help_panel="Search & Browse")

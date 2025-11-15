@@ -33,6 +33,7 @@ __all__ = [
     "get_available_catalogs",
     "get_catalog",
     "get_object_by_name",
+    "get_object_names_for_completion",
     "search_objects",
 ]
 
@@ -493,6 +494,32 @@ async def search_objects(
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
+async def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> list[str]:
+    """
+    Get object names for autocompletion.
+
+    Returns names from the database that match the prefix string.
+    Case-insensitive matching and sorting.
+
+    Args:
+        prefix: Prefix string to match (case-insensitive)
+        limit: Maximum number of names to return
+
+    Returns:
+        List of matching object names, sorted alphabetically
+    """
+    from celestron_nexstar.api.database.database import get_database
+
+    try:
+        db = get_database()
+        # Database query handles case-insensitivity
+        return await db.get_names_for_completion(prefix=prefix, limit=limit)
+    except Exception:
+        # If database is not available, return empty list
+        return []
+
+
+@deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 async def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
     Get objects by name (name field only, no common_name).
@@ -508,11 +535,6 @@ async def get_object_by_name(name: str, catalog_name: str | None = None) -> list
         List of matching CelestialObject instances (without match type info)
     """
     from celestron_nexstar.api.database.database import get_database
-
-    # Ensure name is a string
-    name = str(name) if name is not None else ""
-    if not name:
-        return []
 
     all_matches: list[CelestialObject] = []
     seen_names: set[str] = set()
