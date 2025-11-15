@@ -252,11 +252,12 @@ async def get_known_eclipses(db_session: AsyncSession) -> list[dict[str, Any]]:
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import EclipseModel
 
     count = await db_session.scalar(select(func.count(EclipseModel.id)))
     if count == 0:
-        raise RuntimeError("No eclipses found in database. Please seed the database by running: nexstar data seed")
+        raise DatabaseError("No eclipses found in database. Please seed the database by running: nexstar data seed")
 
     result = await db_session.execute(select(EclipseModel))
     models = result.scalars().all()

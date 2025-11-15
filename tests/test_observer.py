@@ -11,6 +11,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from celestron_nexstar.api.core.exceptions import (
+    GeocodingError,
+    LocationNotFoundError,
+    LocationNotSetError,
+)
 from celestron_nexstar.api.location.observer import (
     DEFAULT_LOCATION,
     ObserverLocation,
@@ -353,7 +358,7 @@ class TestGeocodeLocation(unittest.TestCase):
         mock_session.get = MagicMock(return_value=mock_response_context)
         mock_session_class.return_value = mock_session
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(LocationNotFoundError) as context:
             asyncio.run(geocode_location("NonexistentPlace12345"))
 
         self.assertIn("Could not find location", str(context.exception))
@@ -374,7 +379,7 @@ class TestGeocodeLocation(unittest.TestCase):
         mock_session.get = MagicMock(return_value=mock_response_context)
         mock_session_class.return_value = mock_session
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(GeocodingError) as context:
             asyncio.run(geocode_location("New York"))
 
         self.assertIn("Geocoding API returned", str(context.exception))
@@ -384,7 +389,7 @@ class TestGeocodeLocation(unittest.TestCase):
         """Test geocoding when exception occurs"""
         mock_session_class.side_effect = Exception("Connection error")
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(GeocodingError) as context:
             asyncio.run(geocode_location("New York"))
 
         self.assertIn("Failed to geocode", str(context.exception))
@@ -456,7 +461,7 @@ class TestDetectLocationAutomatically(unittest.TestCase):
         mock_system.return_value = None
         mock_ip.return_value = None
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(LocationNotSetError) as context:
             asyncio.run(detect_location_automatically())
 
         self.assertIn("Could not automatically detect", str(context.exception))

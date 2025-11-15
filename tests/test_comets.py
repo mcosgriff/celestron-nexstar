@@ -17,6 +17,7 @@ from celestron_nexstar.api.astronomy.comets import (
     get_upcoming_comets,
     get_visible_comets,
 )
+from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.location.observer import ObserverLocation
 
 
@@ -167,7 +168,7 @@ class TestGetKnownComets(unittest.TestCase):
         """Test error when database is empty"""
         self.mock_session.scalar = AsyncMock(return_value=0)
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(get_known_comets(self.mock_session))
 
         self.assertIn("No comets found", str(context.exception))

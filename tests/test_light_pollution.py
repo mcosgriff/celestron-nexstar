@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.location.light_pollution import (
     BortleClass,
     LightPollutionData,
@@ -145,7 +146,7 @@ class TestGetBortleCharacteristics(unittest.TestCase):
         """Test error when Bortle characteristics not found"""
         self.mock_session.scalar = AsyncMock(return_value=None)
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(_get_bortle_characteristics(self.mock_session, BortleClass.CLASS_3))
 
         self.assertIn("Bortle class", str(context.exception))
@@ -383,7 +384,7 @@ class TestGetLightPollutionData(unittest.TestCase):
         mock_load.return_value = None
         mock_fetch.return_value = None
 
-        with self.assertRaises(RuntimeError) as context:
+        with self.assertRaises(DatabaseError) as context:
             asyncio.run(get_light_pollution_data(self.mock_session, 40.0, -100.0))
 
         self.assertIn("No light pollution data found", str(context.exception))
@@ -468,7 +469,7 @@ class TestGetLightPollutionDataBatch(unittest.TestCase):
             description="Good",
             recommendations=("Good",),
         )
-        mock_get_data.side_effect = [mock_data1, RuntimeError("No data")]
+        mock_get_data.side_effect = [mock_data1, DatabaseError("No data")]
 
         result = asyncio.run(get_light_pollution_data_batch(self.mock_session, locations))
 

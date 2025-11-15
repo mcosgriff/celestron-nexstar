@@ -6,11 +6,13 @@ Tests observation session planning and recommendations.
 
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase, SkyBrightness
+from celestron_nexstar.api.core.exceptions import LocationNotSetError
 from celestron_nexstar.api.location.light_pollution import BortleClass, LightPollutionData
+from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.location.weather import WeatherData
 from celestron_nexstar.api.observation.observation_planner import (
     ObservingConditions,
@@ -130,7 +132,7 @@ class TestObservationPlanner(unittest.TestCase):
         """Test error when no location is set"""
         mock_get_location.return_value = None
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(LocationNotSetError) as context:
             self.planner.get_tonight_conditions()
 
         self.assertIn("No location set", str(context.exception))
@@ -144,14 +146,12 @@ class TestObservationPlanner(unittest.TestCase):
 class TestGetTonightPlan(unittest.TestCase):
     """Test suite for get_tonight_plan function"""
 
-    @patch("celestron_nexstar.api.observation.observation_planner.ObservationPlanner")
-    def test_get_tonight_plan(self, mock_planner_class):
+    @patch.object(ObservationPlanner, "get_tonight_conditions")
+    def test_get_tonight_plan(self, mock_get_tonight_conditions):
         """Test get_tonight_plan function"""
-        mock_planner = MagicMock()
-        mock_planner_class.return_value = mock_planner
-
         from celestron_nexstar.api.observation.observation_planner import ObservingConditions
 
+        # Mock the conditions and recommendations
         weather = WeatherData(temperature_c=20.0, cloud_cover_percent=10.0)
         light_pollution = LightPollutionData(
             bortle_class=BortleClass.CLASS_3,
@@ -166,9 +166,9 @@ class TestGetTonightPlan(unittest.TestCase):
 
         conditions = ObservingConditions(
             timestamp=datetime.now(UTC),
-            latitude=40.0,
-            longitude=-100.0,
-            location_name="Test",
+            latitude=51.4769,
+            longitude=-0.0005,
+            location_name="Test Location",
             weather=weather,
             is_weather_suitable=True,
             light_pollution=light_pollution,
@@ -183,15 +183,18 @@ class TestGetTonightPlan(unittest.TestCase):
             warnings=(),
         )
 
-        mock_planner.get_tonight_conditions.return_value = conditions
-        mock_planner.get_recommendations.return_value = []
+        mock_get_tonight_conditions.return_value = conditions
 
-        result = get_tonight_plan()
+        # Mock get_recommended_objects
+        with patch.object(ObservationPlanner, "get_recommended_objects", return_value=[]):
+            result = get_tonight_plan()
 
-        self.assertIsInstance(result, tuple)
-        self.assertEqual(len(result), 2)
-        self.assertIsInstance(result[0], ObservingConditions)
-        self.assertIsInstance(result[1], list)
+            self.assertIsInstance(result, tuple)
+            self.assertEqual(len(result), 2)
+            self.assertIsInstance(result[0], ObservingConditions)
+            self.assertIsInstance(result[1], list)
+            self.assertEqual(result[0], conditions)
+            self.assertEqual(result[1], [])
 
 
 if __name__ == "__main__":

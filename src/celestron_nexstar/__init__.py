@@ -23,7 +23,7 @@ from celestron_nexstar.api.catalogs.converters import CoordinateConverter
 from celestron_nexstar.api.core.exceptions import (
     CommandError,
     InvalidCoordinateError,
-    NexStarError,
+    NexstarError,
     NotConnectedError,
     TelescopeConnectionError,
     TelescopeTimeoutError,
@@ -72,10 +72,10 @@ __all__ = [
     "GeographicLocation",
     "HorizontalCoordinates",
     "InvalidCoordinateError",
-    # Exceptions
-    "NexStarError",
     # Main telescope class
     "NexStarTelescope",
+    # Exceptions
+    "NexstarError",
     "NotConnectedError",
     "TelescopeConfig",
     "TelescopeConnectionError",

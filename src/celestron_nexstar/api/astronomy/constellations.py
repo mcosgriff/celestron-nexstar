@@ -90,11 +90,12 @@ async def get_prominent_constellations(db_session: AsyncSession) -> list[Constel
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import ConstellationModel
 
     count = await db_session.scalar(select(func.count(ConstellationModel.id)))
     if count == 0:
-        raise RuntimeError(
+        raise DatabaseError(
             "No constellations found in database. Please seed the database by running: nexstar data seed"
         )
 
@@ -119,11 +120,12 @@ async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import AsterismModel
 
     count = await db_session.scalar(select(func.count(AsterismModel.id)))
     if count == 0:
-        raise RuntimeError("No asterisms found in database. Please seed the database by running: nexstar data seed")
+        raise DatabaseError("No asterisms found in database. Please seed the database by running: nexstar data seed")
 
     result = await db_session.execute(select(AsterismModel))
     models = result.scalars().all()

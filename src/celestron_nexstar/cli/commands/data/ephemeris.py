@@ -13,6 +13,11 @@ from rich.table import Table
 from rich.text import Text
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.core.exceptions import (
+    EphemerisDownloadError,
+    EphemerisFileNotFoundError,
+    UnknownEphemerisObjectError,
+)
 from celestron_nexstar.api.ephemeris.ephemeris_manager import (
     EPHEMERIS_FILES,
     EPHEMERIS_SETS,
@@ -313,8 +318,11 @@ def download(
             print_info(f"Available sets: {', '.join(EPHEMERIS_SETS.keys())}")
             raise typer.Exit(code=1) from None
 
-    except Exception as e:
+    except (EphemerisDownloadError, EphemerisFileNotFoundError, UnknownEphemerisObjectError) as e:
         print_error(f"Download failed: {e}")
+        raise typer.Exit(code=1) from e
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
         raise typer.Exit(code=1) from e
 
 

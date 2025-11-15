@@ -11,6 +11,11 @@ from click import Context
 from rich.table import Table
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.core.exceptions import (
+    GeocodingError,
+    LocationNotFoundError,
+    LocationNotSetError,
+)
 from celestron_nexstar.api.location.observer import (
     ObserverLocation,
     detect_location_automatically,
@@ -206,7 +211,7 @@ def set_observer(
         console.print(table)
         print_info("This location will be used for planetary position calculations")
 
-    except ValueError as e:
+    except (GeocodingError, LocationNotFoundError) as e:
         print_error(str(e))
         raise typer.Exit(code=1) from e
     except Exception as e:
@@ -319,7 +324,7 @@ def detect_location(
         else:
             print_info("\nLocation not saved. Use --save to save it.")
 
-    except ValueError as e:
+    except LocationNotSetError as e:
         print_error(str(e))
         print_info("\nYou can set your location manually:")
         print_info('  nexstar location set-observer "City, State"')

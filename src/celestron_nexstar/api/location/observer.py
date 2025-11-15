@@ -15,6 +15,12 @@ from pathlib import Path
 
 import deal
 
+from celestron_nexstar.api.core.exceptions import (
+    GeocodingError,
+    LocationNotFoundError,
+    LocationNotSetError,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +253,7 @@ def clear_observer_location() -> None:
 @deal.post(lambda result: result is not None, message="Geocoded location must be returned")
 # Note: Postconditions on async functions check the coroutine, not the awaited result
 # Latitude/longitude validation happens in the function implementation
-@deal.raises(ValueError)
+@deal.raises(GeocodingError, LocationNotFoundError)
 async def geocode_location(query: str) -> ObserverLocation:
     """
     Geocode a location from city name, address, or ZIP code.
@@ -283,12 +289,12 @@ async def geocode_location(query: str) -> ObserverLocation:
             session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response,
         ):
             if response.status != 200:
-                raise ValueError(f"Geocoding API returned HTTP {response.status}")
+                raise GeocodingError(f"Geocoding API returned HTTP {response.status}")
 
             data = await response.json()
 
         if not data or len(data) == 0:
-            raise ValueError(f"Could not find location: '{query}'") from None
+            raise LocationNotFoundError(f"Could not find location: '{query}'") from None
 
         result = data[0]
         latitude = float(result["lat"])
@@ -309,9 +315,9 @@ async def geocode_location(query: str) -> ObserverLocation:
         )
 
     except Exception as e:
-        if isinstance(e, ValueError):
+        if isinstance(e, (GeocodingError, LocationNotFoundError)):
             raise
-        raise ValueError(f"Failed to geocode location: {e}") from None
+        raise GeocodingError(f"Failed to geocode location: {e}") from None
 
 
 @deal.pre(lambda queries: isinstance(queries, list) and len(queries) > 0, message="Queries must be non-empty list")  # type: ignore[misc,arg-type]
@@ -501,7 +507,7 @@ async def _get_location_from_system() -> ObserverLocation | None:
     return None
 
 
-@deal.raises(ValueError)
+@deal.raises(LocationNotSetError)
 async def detect_location_automatically() -> ObserverLocation:
     """
     Automatically detect user's location.
@@ -528,4 +534,4 @@ async def detect_location_automatically() -> ObserverLocation:
         logger.info("Detected location from IP address")
         return location
 
-    raise ValueError("Could not automatically detect location. Please set it manually.")
+    raise LocationNotSetError("Could not automatically detect location. Please set it manually.")

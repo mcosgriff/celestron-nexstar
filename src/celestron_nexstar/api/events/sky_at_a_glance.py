@@ -16,6 +16,7 @@ import feedparser
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from celestron_nexstar.api.core.exceptions import DataImportFailedError
 from celestron_nexstar.api.database.models import RSSFeedModel
 
 
@@ -134,7 +135,7 @@ async def fetch_and_store_rss_feed(
             http_session.get(feed_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response,
         ):
             if response.status != 200:
-                raise RuntimeError(f"Failed to fetch RSS feed: HTTP {response.status}")
+                raise DataImportFailedError(f"Failed to fetch RSS feed: HTTP {response.status}")
 
             content = await response.text()
 

@@ -13,6 +13,7 @@ from functools import lru_cache
 import deal
 from skyfield.jpllib import SpiceKernel
 
+from celestron_nexstar.api.core.exceptions import EphemerisFileNotFoundError, UnknownEphemerisObjectError
 from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
 
 
@@ -141,7 +142,9 @@ def get_planetary_position(
     planet_key = planet_name.lower()
 
     if planet_key not in PLANET_NAMES:
-        raise ValueError(f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}")
+        raise UnknownEphemerisObjectError(
+            f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}"
+        )
 
     # Get ephemeris name and required BSP file
     # ephemeris_name is the SPICE target name (e.g., "299 VENUS")
@@ -160,7 +163,7 @@ def get_planetary_position(
     try:
         eph = _get_ephemeris(bsp_file)
     except FileNotFoundError:
-        raise ValueError(
+        raise EphemerisFileNotFoundError(
             f"Ephemeris file {bsp_file} not found. "
             f"Download it with: nexstar ephemeris download {bsp_file.replace('.bsp', '')}"
         ) from None
@@ -198,7 +201,7 @@ def get_planetary_position(
                 f"Available objects: {', '.join(str(obj) for obj in available_objects[:20])}...\n"
                 f"The ephemeris file may be missing or corrupted, or the object name may be incorrect."
             )
-            raise ValueError(error_msg) from None
+            raise UnknownEphemerisObjectError(error_msg) from None
 
     # Calculate apparent position from Earth
     astrometric = earth.at(t).observe(target)

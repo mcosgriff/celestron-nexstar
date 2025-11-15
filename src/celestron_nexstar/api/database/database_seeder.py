@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
 from celestron_nexstar.api.database.models import (
     AsterismModel,
     BortleCharacteristicsModel,
@@ -58,7 +59,7 @@ def get_seed_data_path() -> Path:
         return seed_dir
 
     # If still not found, raise an error
-    raise FileNotFoundError(
+    raise CatalogNotFoundError(
         f"Could not find seed data directory. Searched from {current_file}. "
         f"Expected to find cli/data/seed in a parent directory."
     )
@@ -75,14 +76,14 @@ def load_seed_json(filename: str) -> Any:
         Parsed JSON data
 
     Raises:
-        FileNotFoundError: If the seed data file doesn't exist
+        CatalogNotFoundError: If the seed data file doesn't exist
         json.JSONDecodeError: If the JSON file is malformed
     """
     seed_dir = get_seed_data_path()
     json_path = seed_dir / filename
 
     if not json_path.exists():
-        raise FileNotFoundError(f"Seed data file not found: {json_path}")
+        raise CatalogNotFoundError(f"Seed data file not found: {json_path}")
 
     logger.debug(f"Loading seed data from {json_path}")
 

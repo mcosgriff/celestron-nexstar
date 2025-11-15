@@ -14,6 +14,11 @@ from rich.console import Console
 from sqlalchemy import Row
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.core.exceptions import (
+    CatalogNotFoundError,
+    DatabaseRebuildError,
+    DatabaseRestoreError,
+)
 from celestron_nexstar.cli.data_import import import_data_source, list_data_sources
 
 
@@ -745,7 +750,7 @@ def seed_database(
             console.print("\n[bold]✓ All data already seeded[/bold]")
             console.print("[dim]No new records were added. Use --force to re-seed all data.[/dim]\n")
 
-    except FileNotFoundError as e:
+    except CatalogNotFoundError as e:
         console.print(f"\n[red]✗[/red] Seed data file not found: {e}\n")
         console.print("[dim]Make sure seed data files exist in the seed directory.[/dim]\n")
         raise typer.Exit(code=1) from e
@@ -1660,10 +1665,15 @@ def rebuild(
         console.print(f"\n[bold]Database now contains {db_stats.total_objects:,} objects[/bold]")
         console.print("\n[dim]Database rebuild complete![/dim]\n")
 
-    except RuntimeError as e:
+    except DatabaseRebuildError as e:
         console.print(f"\n[red]✗[/red] Rebuild failed: {e}\n")
-        if "backup" in str(e).lower() or "restore" in str(e).lower():
-            console.print("[yellow]Note:[/yellow] If a backup was created, it may have been restored.\n")
+        console.print("[yellow]Note:[/yellow] If a backup was created, it may have been restored.\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from None
+    except DatabaseRestoreError as e:
+        console.print(f"\n[red]✗[/red] Restore failed: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")

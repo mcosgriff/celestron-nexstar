@@ -22,6 +22,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from celestron_nexstar.api.core.exceptions import DatabaseError
+
+
 logger = logging.getLogger(__name__)
 
 # Cache configuration
@@ -130,7 +133,7 @@ async def _get_bortle_characteristics(db_session: AsyncSession, bortle_class: Bo
         select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
     )
     if model is None:
-        raise RuntimeError(
+        raise DatabaseError(
             f"Bortle class {bortle_class.value} characteristics not found in database. "
             "Please seed the database by running: nexstar data seed"
         )
@@ -357,7 +360,7 @@ async def get_light_pollution_data(
 
     if sqm is None:
         # No data in database - raise error with instructions
-        raise RuntimeError(
+        raise DatabaseError(
             f"No light pollution data found in database for location ({lat:.4f}, {lon:.4f}).\n"
             "To load light pollution data into the database, run:\n"
             "  nexstar data download-light-pollution\n"

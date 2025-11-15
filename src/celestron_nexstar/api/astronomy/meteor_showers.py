@@ -74,11 +74,12 @@ async def get_all_meteor_showers(db_session: AsyncSession) -> list[MeteorShower]
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import MeteorShowerModel
 
     count = await db_session.scalar(select(func.count(MeteorShowerModel.id)))
     if count == 0:
-        raise RuntimeError(
+        raise DatabaseError(
             "No meteor showers found in database. Please seed the database by running: nexstar data seed"
         )
 

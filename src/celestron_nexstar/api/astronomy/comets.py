@@ -80,11 +80,12 @@ async def get_known_comets(db_session: AsyncSession) -> list[Comet]:
     """
     from sqlalchemy import func, select
 
+    from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import CometModel
 
     count = await db_session.scalar(select(func.count(CometModel.id)))
     if count == 0:
-        raise RuntimeError("No comets found in database. Please seed the database by running: nexstar data seed")
+        raise DatabaseError("No comets found in database. Please seed the database by running: nexstar data seed")
 
     result = await db_session.execute(select(CometModel))
     models = result.scalars().all()

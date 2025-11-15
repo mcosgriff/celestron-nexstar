@@ -28,6 +28,12 @@ from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.core.exceptions import (
+    DatabaseBackupError,
+    DatabaseNotFoundError,
+    DatabaseRebuildError,
+    DatabaseRestoreError,
+)
 from celestron_nexstar.api.database.models import CelestialObjectModel, EphemerisFileModel, MetadataModel
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 
@@ -1178,7 +1184,7 @@ async def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
 
 
 @deal.post(lambda result: result.exists(), message="Backup file must be created")
-@deal.raises(FileNotFoundError, OSError)
+@deal.raises(DatabaseNotFoundError, DatabaseBackupError, OSError)
 def backup_database(
     db: CatalogDatabase | None = None,
     backup_dir: Path | None = None,
@@ -1196,14 +1202,15 @@ def backup_database(
         Path to the created backup file
 
     Raises:
-        FileNotFoundError: If database doesn't exist
+        DatabaseNotFoundError: If database file doesn't exist
+        DatabaseBackupError: If backup operation fails
         OSError: If backup directory can't be created
     """
     if db is None:
         db = get_database()
 
     if not db.db_path.exists():
-        raise FileNotFoundError(f"Database not found: {db.db_path}")
+        raise DatabaseNotFoundError(f"Database not found: {db.db_path}")
 
     # Determine backup directory
     backup_dir = Path.home() / ".nexstar" / "backups" if backup_dir is None else Path(backup_dir)
@@ -1230,7 +1237,7 @@ def backup_database(
 
 
 @deal.pre(lambda backup_path, db: backup_path.exists(), message="Backup file must exist")  # type: ignore[misc,arg-type]
-@deal.raises(FileNotFoundError)
+@deal.raises(DatabaseNotFoundError, DatabaseRestoreError)
 def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> None:
     """
     Restore database from a backup file.
@@ -1240,14 +1247,15 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
         db: Database instance (default: uses get_database())
 
     Raises:
-        FileNotFoundError: If backup file doesn't exist
+        DatabaseNotFoundError: If backup file doesn't exist
+        DatabaseRestoreError: If restore operation fails
     """
     if db is None:
         db = get_database()
 
     backup_path = Path(backup_path)
     if not backup_path.exists():
-        raise FileNotFoundError(f"Backup file not found: {backup_path}")
+        raise DatabaseNotFoundError(f"Backup file not found: {backup_path}")
 
     # Close any existing connections
     # Run async dispose in sync context
@@ -1270,7 +1278,7 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
 @deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")  # type: ignore[misc,arg-type,operator]
-@deal.raises(RuntimeError)
+@deal.raises(DatabaseRebuildError)
 async def rebuild_database(
     backup_dir: Path | None = None,
     sources: list[str] | None = None,
@@ -1684,7 +1692,7 @@ async def rebuild_database(
                 logger.info("Backup restored successfully")
             except Exception as restore_error:
                 logger.error(f"Failed to restore backup: {restore_error}")
-        raise RuntimeError(f"Database rebuild failed: {e}") from e
+        raise DatabaseRebuildError(f"Database rebuild failed: {e}") from e
 
 
 @deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")

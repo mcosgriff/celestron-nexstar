@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 from skyfield.api import wgs84
 from skyfield.sgp4lib import EarthSatellite
 
+from celestron_nexstar.api.core.exceptions import TLEFetchError
+
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -268,7 +270,7 @@ async def _fetch_group_tle_from_celestrak(
         ):
             if response.status != 200:
                 msg = f"Failed to fetch {group_name} TLE: HTTP {response.status}"
-                raise RuntimeError(msg) from None
+                raise TLEFetchError(msg) from None
 
             data = await response.text()
             lines = data.strip().split("\n")
@@ -296,10 +298,10 @@ async def _fetch_group_tle_from_celestrak(
             return tle_list
 
     except Exception as e:
-        if isinstance(e, RuntimeError):
+        if isinstance(e, TLEFetchError):
             raise
         msg = f"Failed to fetch {group_name} TLE: {e}"
-        raise RuntimeError(msg) from e
+        raise TLEFetchError(msg) from e
 
 
 async def _fetch_starlink_tle_from_celestrak() -> list[tuple[int, str, str, str]]:
