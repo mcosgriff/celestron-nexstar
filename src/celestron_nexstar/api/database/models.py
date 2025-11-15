@@ -373,6 +373,12 @@ class ConstellationModel(Base):
     mythology: Mapped[str | None] = mapped_column(Text, nullable=True)  # Mythology/story
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season (N hemisphere)
 
+    # Composite indexes for position-based queries
+    __table_args__ = (
+        Index("idx_constellation_position", "ra_hours", "dec_degrees"),
+        Index("idx_constellation_bounds", "ra_min_hours", "ra_max_hours", "dec_min_degrees", "dec_max_degrees"),
+    )
+
     def to_constellation(self) -> Constellation:
         """
         Convert ConstellationModel to Constellation dataclass.
@@ -443,6 +449,12 @@ class AsterismModel(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     stars: Mapped[str | None] = mapped_column(Text, nullable=True)  # Component stars (comma-separated)
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season
+
+    # Composite indexes for position-based queries
+    __table_args__ = (
+        Index("idx_asterism_position", "ra_hours", "dec_degrees"),
+        Index("idx_asterism_parent", "parent_constellation"),
+    )
 
     def to_asterism(self) -> Asterism:
         """
