@@ -5,6 +5,7 @@ Commands for importing and managing catalog data sources.
 """
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -242,7 +243,7 @@ def sources() -> None:
 
 @app.command("import", rich_help_panel="Data Import")
 def import_source(
-    source: str = typer.Argument(..., help="Data source to import (e.g., 'openngc')"),
+    source: str = typer.Argument(..., help="Data source to import (e.g., 'celestial_stars_6')"),
     mag_limit: float = typer.Option(
         15.0,
         "--mag-limit",
@@ -257,24 +258,25 @@ def import_source(
     Objects are filtered by magnitude to include only those visible with
     typical amateur telescopes.
 
-    Available sources: openngc, yale_bsc, custom
-
     [bold green]Examples:[/bold green]
 
-        # Import custom YAML catalog (catalogs.yaml)
+        # Import custom YAML catalog (planets and moons)
         nexstar data import custom
 
-        # Import OpenNGC catalog (default mag ≤ 15.0)
-        nexstar data import openngc
+        # Import stars from celestial_data (mag ≤ 6)
+        nexstar data import celestial_stars_6
 
-        # Import with custom magnitude limit
-        nexstar data import openngc --mag-limit 12.0
+        # Import DSOs with custom magnitude limit
+        nexstar data import celestial_dsos_14 --mag-limit 12.0
 
-    [bold blue]Available Sources:[/bold blue]
+        # Import Messier objects
+        nexstar data import celestial_messier
 
-        custom    - Custom YAML catalog (catalogs.yaml)
-        openngc   - NGC/IC catalog (13,970 objects)
-        yale_bsc  - Yale Bright Star Catalog (9,096 stars, mag ≤ 6.5)
+        # Import constellations
+        nexstar data import celestial_constellations
+
+        # Import asterisms
+        nexstar data import celestial_asterisms
 
     Use 'nexstar data sources' to see all available sources.
     """
@@ -295,13 +297,14 @@ def setup(
     force: bool = typer.Option(
         False, "--force", "-f", help="Skip confirmation prompt and rebuild database if it exists"
     ),
+    refresh_cache: bool = typer.Option(False, "--refresh-cache", help="Delete cached files and re-download everything"),
 ) -> None:
     """
     Set up the database for first-time use.
 
     This command initializes the database by:
     1. Creating database schema (via Alembic migrations)
-    2. Importing ALL available catalog data (custom, OpenNGC, Yale BSC - ~18,000 objects)
+    2. Importing ALL available catalog data from celestial_data (stars, DSOs, Messier, constellations, asterisms, local group) and custom YAML (planets, moons)
     3. Initializing ALL static reference data (meteor showers, constellations, dark sky sites, space events)
     4. Syncing ephemeris file metadata from NAIF (optional)
 
@@ -312,6 +315,7 @@ def setup(
         nexstar data setup --skip-ephemeris
         nexstar data setup --mag-limit 12.0
         nexstar data setup --force  # Skip confirmation prompt
+        nexstar data setup --refresh-cache  # Delete cache and re-download everything
     """
     from rich.table import Table
 
@@ -354,10 +358,13 @@ def setup(
                         if not force:
                             try:
                                 response = typer.prompt(
-                                    "Do you want to delete the existing database and rebuild with all data? (yes/no)",
+                                    "Do you want to delete the existing database and rebuild with all data?",
                                     default="no",
+                                    type=str,
                                 )
-                                if response.lower() not in ("yes", "y"):
+                                # Normalize response: strip whitespace, handle empty string as "no"
+                                response_normalized = (response or "no").strip().lower()
+                                if response_normalized not in ("yes", "y"):
                                     console.print(
                                         "\n[dim]Operation cancelled. Use 'nexstar data rebuild' to rebuild later.[/dim]\n"
                                     )
@@ -378,32 +385,75 @@ def setup(
         console.print("[yellow]⚠[/yellow] Database does not exist - will create")
         should_rebuild = True
 
+    # Clear cache if requested
+    if refresh_cache:
+        console.print("\n[yellow]Clearing cached files...[/yellow]\n")
+        from celestron_nexstar.cli.data_import import get_cache_dir
+
+        # Clear celestial data cache
+        celestial_cache = get_cache_dir()
+        deleted_count = 0
+        if celestial_cache.exists():
+            for file in celestial_cache.glob("*"):
+                if file.is_file():
+                    file.unlink()
+                    deleted_count += 1
+                    console.print(f"[dim]  Deleted: {file.name}[/dim]")
+            if deleted_count > 0:
+                console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from celestial data cache")
+            else:
+                console.print("[dim]  No files found in celestial data cache[/dim]")
+        else:
+            console.print("[dim]  Celestial data cache directory does not exist[/dim]")
+
+        # Clear light pollution cache
+        light_pollution_cache = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
+        deleted_count = 0
+        if light_pollution_cache.exists():
+            for file in light_pollution_cache.glob("*.png"):
+                file.unlink()
+                deleted_count += 1
+                console.print(f"[dim]  Deleted: {file.name}[/dim]")
+            if deleted_count > 0:
+                console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from light pollution cache")
+            else:
+                console.print("[dim]  No files found in light pollution cache[/dim]")
+        else:
+            console.print("[dim]  Light pollution cache directory does not exist[/dim]")
+
+        console.print()
+
     # Rebuild database if needed
     if should_rebuild:
         console.print("\n[cyan]Rebuilding database with all available data...[/cyan]\n")
 
+        # Filter sources to only include the most comprehensive catalogs
+        # (e.g., stars_14 includes all stars from stars_6 and stars_8, so skip the smaller ones)
+        default_sources = [
+            source_id
+            for source_id in DATA_SOURCES
+            if source_id not in ("celestial_stars_6", "celestial_stars_8", "celestial_dsos_6", "celestial_dsos_14")
+        ]
+
         # Show what sources will be imported
-        console.print(f"[dim]Will import from {len(DATA_SOURCES)} sources: {', '.join(DATA_SOURCES.keys())}[/dim]\n")
+        console.print(f"[dim]Will import from {len(default_sources)} sources: {', '.join(default_sources)}[/dim]\n")
+        console.print(
+            "[dim]Note: Using most comprehensive catalogs (stars_14 includes stars_6 and stars_8, etc.)[/dim]\n"
+        )
 
         try:
             # Use rebuild_database which handles everything
             # Note: import_data_source prints to console, so output should be visible
             console.print("[dim]Initializing database schema...[/dim]")
 
-            # Show progress for static data initialization
-            console.print("\n[cyan]Initializing static reference data...[/cyan]")
-            console.print("[dim]  • Meteor showers[/dim]")
-            console.print("[dim]  • Constellations and asterisms[/dim]")
-            console.print("[dim]  • Dark sky sites[/dim]")
-            console.print("[dim]  • Space events[/dim]")
-
             result: dict[str, Any] = asyncio.run(
                 rebuild_database(
                     backup_dir=None,  # Don't backup during setup
-                    sources=list(DATA_SOURCES.keys()),  # Import all sources
+                    sources=default_sources,  # Import only comprehensive sources
                     mag_limit=mag_limit,
                     skip_backup=True,  # Skip backup during setup
                     dry_run=False,
+                    force_download=refresh_cache,  # Force re-download if cache was cleared
                 )
             )
 
@@ -612,6 +662,8 @@ def seed_database(
                 "comets": "comets.json",
                 "eclipses": "eclipses.json",
                 "bortle_characteristics": "bortle_characteristics.json",
+                "planets": "sol_planets.json",
+                "moons": "sol_moons.json",
             }
 
             for data_type, filename in seed_file_map.items():
@@ -740,6 +792,58 @@ def init_static() -> None:
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("clear-cache", rich_help_panel="Data Management")
+def clear_cache() -> None:
+    """
+    Delete all cached data files.
+
+    This command removes cached files from:
+    - Celestial data cache (~/.cache/celestron-nexstar/celestial-data/)
+    - Light pollution cache (~/.cache/celestron-nexstar/light-pollution/)
+
+    Use this if you want to force re-download of all data files.
+
+    Examples:
+        nexstar data clear-cache
+    """
+    from celestron_nexstar.cli.data_import import get_cache_dir
+
+    console.print("\n[yellow]Clearing cached files...[/yellow]\n")
+
+    # Clear celestial data cache
+    celestial_cache = get_cache_dir()
+    deleted_count = 0
+    if celestial_cache.exists():
+        for file in celestial_cache.glob("*"):
+            if file.is_file():
+                file.unlink()
+                deleted_count += 1
+                console.print(f"[dim]  Deleted: {file.name}[/dim]")
+        if deleted_count > 0:
+            console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from celestial data cache")
+        else:
+            console.print("[dim]  No files found in celestial data cache[/dim]")
+    else:
+        console.print("[dim]  Celestial data cache directory does not exist[/dim]")
+
+    # Clear light pollution cache
+    light_pollution_cache = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
+    deleted_count = 0
+    if light_pollution_cache.exists():
+        for file in light_pollution_cache.glob("*.png"):
+            file.unlink()
+            deleted_count += 1
+            console.print(f"[dim]  Deleted: {file.name}[/dim]")
+        if deleted_count > 0:
+            console.print(f"[green]✓[/green] Cleared {deleted_count} file(s) from light pollution cache")
+        else:
+            console.print("[dim]  No files found in light pollution cache[/dim]")
+    else:
+        console.print("[dim]  Light pollution cache directory does not exist[/dim]")
+
+    console.print("\n[green]✓[/green] Cache clearing complete\n")
 
 
 @app.command("stats", rich_help_panel="Database Management")
@@ -908,6 +1012,8 @@ def stats() -> None:
             "comets": "comets.json",
             "eclipses": "eclipses.json",
             "bortle_characteristics": "bortle_characteristics.json",
+            "planets": "sol_planets.json",
+            "moons": "sol_moons.json",
         }
 
         for data_type, filename in seed_file_map.items():
@@ -1468,8 +1574,10 @@ def rebuild(
         console.print("[yellow]⚠ Warning:[/yellow] Database already exists and will be replaced!")
         console.print("[dim]Use --force to proceed or --dry-run to preview[/dim]\n")
         try:
-            response = typer.prompt("Continue? (yes/no)", default="no")
-            if response.lower() not in ("yes", "y"):
+            response = typer.prompt("Continue? (yes/no)", default="no", type=str)
+            # Normalize response: strip whitespace, handle empty string as "no"
+            response_normalized = (response or "no").strip().lower()
+            if response_normalized not in ("yes", "y"):
                 console.print("\n[dim]Operation cancelled.[/dim]\n")
                 raise typer.Exit(code=0) from None
         except typer.Abort:
@@ -1615,7 +1723,21 @@ def run_migrations(
         sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
         with sync_engine.connect() as connection:
             context = MigrationContext.configure(connection)
-            current_rev = context.get_current_revision()
+            current_rev: str | None | list[str] = None
+            try:
+                current_rev = context.get_current_revision()
+            except Exception:
+                # Multiple heads in database - use get_current_heads() instead
+                current_heads = context.get_current_heads()
+                if len(current_heads) == 1:
+                    current_rev = current_heads[0]
+                elif len(current_heads) > 1:
+                    # Multiple heads in database - we'll need to handle this
+                    console.print(f"[yellow]⚠[/yellow] Database has multiple heads: {', '.join(current_heads)}")
+                    console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
+                    current_rev = list(current_heads)  # Keep as list for now
+                else:
+                    current_rev = None
 
         # Get head revision(s) from script directory
         script = ScriptDirectory.from_config(alembic_cfg)
@@ -1661,14 +1783,25 @@ def run_migrations(
 
         # Check if there are pending migrations
         migrations_to_apply: list[str] | str = "unknown"
-        if current_rev is None:
+        current_rev_single: str | None = (
+            (current_rev[0] if current_rev else None) if isinstance(current_rev, list) else current_rev
+        )
+
+        if current_rev_single is None:
             console.print("[yellow]⚠[/yellow] Database has no migration history")
             console.print("[dim]This is normal for a new database. Will apply all migrations.[/dim]\n")
             pending = True
             migrations_to_apply = "all migrations"
-        elif head_rev is not None and head_rev != "heads" and current_rev == head_rev:
+        elif isinstance(current_rev, list):
+            # Multiple heads in database - always need to upgrade
+            pending = True
+            migrations_to_apply = "multiple branches (will be merged)"
+            console.print("[yellow]⚠[/yellow] Database has multiple heads")
+            console.print(f"[dim]Current heads: {', '.join(current_rev)}[/dim]")
+            console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
+        elif head_rev is not None and head_rev != "heads" and current_rev_single == head_rev:
             console.print("[green]✓[/green] Database is up to date")
-            console.print(f"[dim]Current revision: {current_rev}[/dim]\n")
+            console.print(f"[dim]Current revision: {current_rev_single}[/dim]\n")
             pending = False
         else:
             # Get the list of revisions that need to be applied
@@ -1676,15 +1809,17 @@ def run_migrations(
             try:
                 # Get the upgrade path from current to head
                 # walk_revisions returns revisions in order from start to end
-                if head_rev is not None and current_rev is not None and head_rev != "heads":
-                    upgrade_path = list(script.walk_revisions(current_rev, head_rev))
-                    migrations_to_apply = [str(rev.revision) for rev in upgrade_path if rev.revision != current_rev]
+                if head_rev is not None and current_rev_single is not None and head_rev != "heads":
+                    upgrade_path = list(script.walk_revisions(current_rev_single, head_rev))
+                    migrations_to_apply = [
+                        str(rev.revision) for rev in upgrade_path if rev.revision != current_rev_single
+                    ]
                 elif head_rev == "heads":
                     # Multiple heads - can't easily determine path, will let Alembic handle it
                     migrations_to_apply = "multiple branches (will be merged)"
 
                     console.print("[yellow]⚠[/yellow] Database is not up to date")
-                    console.print(f"[dim]Current revision: {current_rev}[/dim]")
+                    console.print(f"[dim]Current revision: {current_rev_single}[/dim]")
                     console.print("[dim]Head revision: multiple branches[/dim]")
                     console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
                 else:
@@ -1723,7 +1858,9 @@ def run_migrations(
 
             # Use upgrade to head - this will apply ALL pending migrations in sequence
             # Alembic will automatically apply all migrations from current state to head
-            command.upgrade(alembic_cfg, "head")
+            # Use the determined head_rev (which may be "heads" for multiple branches)
+            upgrade_target = head_rev if head_rev is not None else "head"
+            command.upgrade(alembic_cfg, upgrade_target)
             console.print("\n[bold green]✓ Migrations applied successfully![/bold green]\n")
 
             # Verify the new revision after applying migrations
@@ -1734,7 +1871,12 @@ def run_migrations(
             sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
             with sync_engine.connect() as connection:
                 context = MigrationContext.configure(connection)
-                new_rev = context.get_current_revision()
+                try:
+                    new_rev = context.get_current_revision()
+                except Exception:
+                    # Multiple heads - use get_current_heads()
+                    new_heads = context.get_current_heads()
+                    new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
                 try:
                     head_rev_after = script.get_current_head()
                 except Exception:

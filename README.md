@@ -17,7 +17,7 @@ This isn't just another telescope control library—it's a complete **interactiv
 - **🎮 Video-game-like control**: Use arrow keys to move your telescope in real-time
 - **📊 Live position tracking**: See your telescope's position update every 0.5 seconds in the status bar
 - **🎓 Built-in tutorial**: Interactive lessons guide you from beginner to power user
-- **🗺️ Rich catalogs**: Explore 100+ deep sky objects and 28 planetary moons
+- **🗺️ Rich catalogs**: Explore thousands of stars, deep sky objects, constellations, and 28 planetary moons
 - **📈 Advanced tracking**: History logging, collision detection, velocity tracking, and CSV/JSON export
 - **⚙️ Smart configuration**: Save locations, telescope specs, and download ephemeris data offline
 
@@ -91,9 +91,19 @@ The shell is the heart of this project, designed for real observing sessions:
 
 ### Celestial Object Catalogs
 
-Browse and search extensive catalogs:
+Browse and search extensive catalogs from the [celestial_data](https://github.com/dieghernan/celestial_data) repository:
 
-- **Deep Sky**: Messier (110 objects), NGC popular objects, Caldwell catalog
+- **Stars**: Thousands of stars with proper names (magnitude limits: 6, 8, 14)
+  - Includes common star names matched from comprehensive star name database
+  - Bayer and Flamsteed designations
+- **Deep Sky Objects**: Galaxies, nebulae, and star clusters
+  - Multiple magnitude limits (6, 14, 20) for different telescope capabilities
+  - Bright DSO catalog for easy observing
+- **Messier Objects**: All 110 Messier objects
+- **Constellations**: All 88 IAU constellations with boundaries and metadata
+- **Asterisms**: Famous star patterns (Big Dipper, Summer Triangle, etc.)
+- **Local Group**: Local Group galaxies and Milky Way halo objects
+  - Includes globular clusters (like 47 Tucanae) and dwarf galaxies
 - **Planets**: All major planets with accurate positions
 - **Planetary Moons**: 28 moons including:
   - Jupiter's Galilean moons (Io, Europa, Ganymede, Callisto)
@@ -350,6 +360,26 @@ nexstar data sync-ephemeris                                     # Sync ephemeris
 nexstar data sync-ephemeris --list                             # Preview available ephemeris files
 nexstar data stats                                              # Show database statistics
 ```
+
+**Cached Data:**
+
+The application caches downloaded data files to avoid re-downloading on subsequent runs:
+
+- **Celestial Data Cache**: `~/.cache/celestron-nexstar/celestial-data/`
+  - Stores GeoJSON files from the celestial_data repository (stars, DSOs, Messier objects, constellations, asterisms, etc.)
+  - Files are automatically downloaded on first use and reused for faster imports
+- **Light Pollution Cache**: `~/.cache/celestron-nexstar/light-pollution/`
+  - Stores World Atlas light pollution PNG images
+  - Processed during `nexstar data setup` and reused for faster subsequent setups
+
+**Cache Management:**
+
+```bash
+nexstar data clear-cache                                        # Delete all cached files
+nexstar data setup --refresh-cache                              # Clear cache and re-download everything during setup
+```
+
+Use `--refresh-cache` if you want to ensure you have the latest data from remote sources, or if you're experiencing issues with corrupted cache files.
 
 **Database Migrations:**
 
@@ -630,7 +660,7 @@ pre-commit run
 **Migrations not applying:**
 
 - Ensure you're using the latest version of the software
-- Check database file permissions: `ls -l ~/.nexstar/catalogs.db`
+- Check database file permissions: `ls -l ~/.config/celestron-nexstar/catalogs.db`
 - Try running migrations manually: `nexstar data migrate`
 - If migrations fail, you may need to rebuild the database: `nexstar data rebuild` (this will re-import all data)
 
@@ -639,6 +669,22 @@ pre-commit run
 - Run `nexstar data migrate` to apply pending migrations
 - Check migration status: `nexstar data migrate --dry-run`
 - If issues persist, see the [Database Initialization](#database-initialization) section above
+
+### Cache Issues
+
+**Corrupted or outdated cache files:**
+
+- Clear all cached files: `nexstar data clear-cache`
+- Force re-download during setup: `nexstar data setup --refresh-cache`
+- Cache locations:
+  - Celestial data: `~/.cache/celestron-nexstar/celestial-data/`
+  - Light pollution: `~/.cache/celestron-nexstar/light-pollution/`
+
+**Download failures:**
+
+- Check internet connection
+- Verify cache directory permissions: `ls -ld ~/.cache/celestron-nexstar/`
+- Clear cache and retry: `nexstar data clear-cache && nexstar data setup --refresh-cache`
 
 ### Movement Issues
 
@@ -668,8 +714,7 @@ This project prioritizes the **interactive observing experience**:
 
 Contributions welcome! Areas for improvement:
 
-- Additional telescope models (currently optimized for NexStar 6SE)
-- More catalog integrations (Sharpless, IC, PK, etc.)
+- Additional telescope models (currently optimized for NexStar series)
 - Enhanced planetarium software integration
 - Mobile app using the Python API
 - Additional tutorials or documentation
@@ -684,7 +729,24 @@ MIT License - feel free to use, modify, and distribute.
 - Built on the Celestron NexStar serial protocol
 - Uses Skyfield for astronomical calculations
 - Tutorial system inspired by interactive learning tools
-- Thanks to the astronomy community for catalog data
+
+### Data Sources
+
+This project uses comprehensive celestial data from the [celestial_data](https://github.com/dieghernan/celestial_data) repository, which provides:
+
+- **Stars**: Comprehensive star catalogs with proper names, magnitudes, and designations
+- **Deep Sky Objects**: Galaxies, nebulae, and star clusters with detailed metadata
+- **Constellations**: All 88 IAU constellations with boundaries
+- **Asterisms**: Famous star patterns and groupings
+- **Local Group**: Local Group galaxies and Milky Way halo objects
+
+Data files are automatically downloaded from the repository and cached locally in `~/.cache/celestron-nexstar/celestial-data/` for faster subsequent imports. Use `nexstar data clear-cache` to clear cached files or `nexstar data setup --refresh-cache` to force re-download.
+
+**Citation:**
+
+Please cite the celestial_data dataset as:
+
+> Frohn O, Hernangómez D (2023). "Celestial Data." doi:10.5281/zenodo.7561601 https://doi.org/10.5281/zenodo.7561601, https://dieghernan.github.io/celestial_data/.
 
 ## 📞 Contact
 

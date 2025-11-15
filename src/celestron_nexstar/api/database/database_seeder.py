@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from celestron_nexstar.api.database.models import (
     AsterismModel,
     BortleCharacteristicsModel,
+    CelestialObjectModel,
     CometModel,
     ConstellationModel,
     DarkSkySiteModel,
@@ -613,6 +614,135 @@ async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = Fa
     return added
 
 
+async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed planets into the database (objects table).
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing planets before seeding
+
+    Returns:
+        Number of records added
+    """
+    from celestron_nexstar.api.core.enums import CelestialObjectType
+
+    logger.info("Seeding planets...")
+
+    if force:
+        # Delete existing planets
+        await db_session.execute(
+            delete(CelestialObjectModel).where(CelestialObjectModel.object_type == CelestialObjectType.PLANET.value)
+        )
+        await db_session.commit()
+        logger.info("Cleared existing planets")
+
+    # Load seed data
+    data = load_seed_json("sol_planets.json")
+
+    added = 0
+    for item in data:
+        name = item["name"]
+
+        # Check if already exists (idempotent)
+        existing = await db_session.scalar(
+            select(CelestialObjectModel).where(
+                CelestialObjectModel.name == name, CelestialObjectModel.object_type == CelestialObjectType.PLANET.value
+            )
+        )
+        if existing:
+            continue
+
+        # Create new planet object
+        planet = CelestialObjectModel(
+            name=name,
+            common_name=item.get("common_name"),
+            catalog="planets",
+            ra_hours=item["ra_hours"],
+            dec_degrees=item["dec_degrees"],
+            magnitude=item.get("magnitude"),
+            object_type=CelestialObjectType.PLANET.value,
+            description=item.get("description"),
+            is_dynamic=item.get("is_dynamic", True),
+            ephemeris_name=item.get("ephemeris_name", name.lower()),
+        )
+        db_session.add(planet)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} planets")
+    else:
+        logger.info("Planets already seeded (no new records)")
+
+    return added
+
+
+async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
+    """
+    Seed moons into the database (objects table).
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing moons before seeding
+
+    Returns:
+        Number of records added
+    """
+    from celestron_nexstar.api.core.enums import CelestialObjectType
+
+    logger.info("Seeding moons...")
+
+    if force:
+        # Delete existing moons
+        await db_session.execute(
+            delete(CelestialObjectModel).where(CelestialObjectModel.object_type == CelestialObjectType.MOON.value)
+        )
+        await db_session.commit()
+        logger.info("Cleared existing moons")
+
+    # Load seed data
+    data = load_seed_json("sol_moons.json")
+
+    added = 0
+    for item in data:
+        name = item["name"]
+
+        # Check if already exists (idempotent)
+        existing = await db_session.scalar(
+            select(CelestialObjectModel).where(
+                CelestialObjectModel.name == name, CelestialObjectModel.object_type == CelestialObjectType.MOON.value
+            )
+        )
+        if existing:
+            continue
+
+        # Create new moon object
+        moon = CelestialObjectModel(
+            name=name,
+            common_name=item.get("common_name"),
+            catalog="moons",
+            ra_hours=item["ra_hours"],
+            dec_degrees=item["dec_degrees"],
+            magnitude=item.get("magnitude"),
+            object_type=CelestialObjectType.MOON.value,
+            description=item.get("description"),
+            is_dynamic=item.get("is_dynamic", True),
+            ephemeris_name=item.get("ephemeris_name", name.lower()),
+            parent_planet=item.get("parent_planet"),
+        )
+        db_session.add(moon)
+        added += 1
+
+    if added > 0:
+        await db_session.commit()
+        logger.info(f"Added {added} moons")
+    else:
+        logger.info("Moons already seeded (no new records)")
+
+    return added
+
+
 async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, int]:
     """
     Seed all static reference data into the database.
@@ -716,6 +846,24 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
         logger.error(f"Failed to seed bortle characteristics: {e}")
         results["bortle_characteristics"] = 0
 
+    try:
+        results["planets"] = await seed_planets(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Planets seed file not found, skipping")
+        results["planets"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed planets: {e}")
+        results["planets"] = 0
+
+    try:
+        results["moons"] = await seed_moons(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Moons seed file not found, skipping")
+        results["moons"] = 0
+    except Exception as e:
+        logger.error(f"Failed to seed moons: {e}")
+        results["moons"] = 0
+
     return results
 
 
@@ -800,5 +948,31 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
         status["bortle_characteristics"] = count_result or 0
     except Exception:
         status["bortle_characteristics"] = 0
+
+    # Planets
+    try:
+        from celestron_nexstar.api.core.enums import CelestialObjectType
+
+        count_result = await db_session.scalar(
+            select(func.count(CelestialObjectModel.id)).where(
+                CelestialObjectModel.object_type == CelestialObjectType.PLANET.value
+            )
+        )
+        status["planets"] = count_result or 0
+    except Exception:
+        status["planets"] = 0
+
+    # Moons
+    try:
+        from celestron_nexstar.api.core.enums import CelestialObjectType
+
+        count_result = await db_session.scalar(
+            select(func.count(CelestialObjectModel.id)).where(
+                CelestialObjectModel.object_type == CelestialObjectType.MOON.value
+            )
+        )
+        status["moons"] = count_result or 0
+    except Exception:
+        status["moons"] = 0
 
     return status

@@ -488,6 +488,22 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
                 output_console.print(f"  ⚠ {warn}")
             output_console.print()
 
+        # Space Weather Alerts
+        if conditions.space_weather_alerts:
+            output_console.print("[bold cyan]Space Weather:[/bold cyan]")
+            for alert in conditions.space_weather_alerts:
+                if "aurora" in alert.lower():
+                    output_console.print(f"  🌌 {alert}")
+                elif "radio" in alert.lower() or "GPS" in alert:
+                    output_console.print(f"  📡 {alert}")
+                else:
+                    output_console.print(f"  ⚡ {alert}")
+            if conditions.aurora_opportunity:
+                output_console.print(
+                    "  [bold green]💡 Enhanced aurora opportunity - Consider checking 'nexstar aurora tonight'[/bold green]"
+                )
+            output_console.print()
+
     except ValueError as e:
         output_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from None
@@ -609,6 +625,7 @@ def _show_objects_content(
         table.add_column("Alt", justify="right")
         table.add_column("Transit", style="dim")
         table.add_column("Moon Sep", justify="right", style="dim")
+        table.add_column("Chance", justify="right", style="dim")
         table.add_column("Tips", style="dim")
 
         for obj_rec in objects[:limit]:
@@ -642,6 +659,17 @@ def _show_objects_content(
                 else:
                     moon_sep_text = f"[green]{obj_rec.moon_separation_deg:.0f}°[/green]"  # Good separation
 
+            # Format visibility probability
+            prob = obj_rec.visibility_probability
+            if prob >= 0.8:
+                prob_text = f"[green]{prob:.0%}[/green]"
+            elif prob >= 0.5:
+                prob_text = f"[yellow]{prob:.0%}[/yellow]"
+            elif prob >= 0.3:
+                prob_text = f"[red]{prob:.0%}[/red]"
+            else:
+                prob_text = f"[dim red]{prob:.0%}[/dim red]"
+
             # Use common name if available, otherwise use catalog name
             display_name = obj.common_name or obj.name
 
@@ -653,6 +681,7 @@ def _show_objects_content(
                 f"{obj_rec.altitude:.0f}°",
                 time_str,
                 moon_sep_text,
+                prob_text,
                 tips_text,
             )
 
@@ -1138,12 +1167,10 @@ def _select_object_type_interactive() -> str | None:
     descriptions = {
         ObservingTarget.PLANETS: "Solar system planets",
         ObservingTarget.MOON: "Earth's moon",
-        ObservingTarget.DEEP_SKY: "Deep sky objects (galaxies, nebulae, clusters)",
+        ObservingTarget.DEEP_SKY: "Deep sky objects (galaxies, nebulae, clusters, NGC, IC, Caldwell)",
         ObservingTarget.DOUBLE_STARS: "Double and multiple star systems",
         ObservingTarget.VARIABLE_STARS: "Variable stars",
-        ObservingTarget.MESSIER: "Messier catalog objects",
-        ObservingTarget.CALDWELL: "Caldwell catalog objects",
-        ObservingTarget.NGC_IC: "NGC and IC catalog objects",
+        ObservingTarget.MESSIER: "Messier catalog objects (popular curated list)",
         CelestialObjectType.STAR: "Individual stars",
         CelestialObjectType.PLANET: "Planets (same as 'planets' category)",
         CelestialObjectType.GALAXY: "Galaxies only",

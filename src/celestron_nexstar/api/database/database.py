@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import deal
+from rich.console import Console
 from sqlalchemy import text
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -29,6 +30,9 @@ from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.database.models import CelestialObjectModel, EphemerisFileModel, MetadataModel
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
+
+
+console = Console()
 
 
 logger = logging.getLogger(__name__)
@@ -515,6 +519,93 @@ class CatalogDatabase:
             await session.refresh(model)
             return model.id
 
+    async def insert_objects_batch(
+        self,
+        objects: list[dict[str, Any]],
+    ) -> int:
+        """
+        Insert multiple celestial objects in a single batch operation.
+
+        Args:
+            objects: List of dictionaries with object data (same fields as insert_object)
+
+        Returns:
+            Number of objects inserted
+        """
+        # Ensure FTS table exists before inserting (triggers depend on it)
+        await self.ensure_fts_table()
+
+        if not objects:
+            return 0
+
+        async with self._AsyncSession() as session:
+            models = []
+            for obj in objects:
+                # Convert object_type to string if needed
+                object_type = obj.get("object_type")
+                if isinstance(object_type, CelestialObjectType):
+                    object_type = object_type.value
+
+                model = CelestialObjectModel(
+                    name=obj["name"],
+                    common_name=obj.get("common_name"),
+                    catalog=obj["catalog"],
+                    catalog_number=obj.get("catalog_number"),
+                    ra_hours=obj["ra_hours"],
+                    dec_degrees=obj["dec_degrees"],
+                    magnitude=obj.get("magnitude"),
+                    object_type=object_type,
+                    size_arcmin=obj.get("size_arcmin"),
+                    description=obj.get("description"),
+                    constellation=obj.get("constellation"),
+                    is_dynamic=obj.get("is_dynamic", False),
+                    ephemeris_name=obj.get("ephemeris_name"),
+                    parent_planet=obj.get("parent_planet"),
+                )
+                models.append(model)
+
+            session.add_all(models)
+            await session.commit()
+            return len(models)
+
+    async def get_existing_objects_set(
+        self,
+        catalog: str | None = None,
+    ) -> set[tuple[str, str | None, int | None]]:
+        """
+        Get a set of existing objects for deduplication.
+
+        Returns a set of tuples: (name, common_name, catalog_number)
+        This allows fast O(1) lookup for duplicates.
+
+        Args:
+            catalog: Optional catalog name to filter by
+
+        Returns:
+            Set of tuples (name, common_name, catalog_number)
+        """
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            query = select(
+                CelestialObjectModel.name, CelestialObjectModel.common_name, CelestialObjectModel.catalog_number
+            )
+            if catalog:
+                query = query.where(CelestialObjectModel.catalog == catalog)
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            # Build set of (name, common_name, catalog_number) tuples
+            existing_set: set[tuple[str, str | None, int | None]] = set()
+            for name, common_name, catalog_number in rows:
+                existing_set.add((name, common_name, catalog_number))
+                # Also add common_name as a key if it exists
+                if common_name:
+                    existing_set.add((common_name, common_name, catalog_number))
+
+            return existing_set
+
     @deal.pre(lambda self, object_id: object_id > 0, message="Object ID must be positive")  # type: ignore[misc,arg-type]
     @deal.post(
         lambda result: result is None or isinstance(result, CelestialObject),
@@ -760,6 +851,33 @@ class CatalogDatabase:
             stmt = stmt.order_by(
                 CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc()
             ).limit(limit)
+
+            result = await session.execute(stmt)
+            models = result.scalars().all()
+
+            return [self._model_to_object(model) for model in models]
+
+    async def get_moons_by_parent_planet(self, planet_name: str) -> list[CelestialObject]:
+        """
+        Get all moons for a given parent planet.
+
+        Args:
+            planet_name: Name of the parent planet (e.g., "Mars", "Jupiter")
+
+        Returns:
+            List of moon objects
+        """
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            stmt = (
+                select(CelestialObjectModel)
+                .where(CelestialObjectModel.parent_planet == planet_name)
+                .where(CelestialObjectModel.object_type == CelestialObjectType.MOON.value)
+                .order_by(CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc())
+            )
 
             result = await session.execute(stmt)
             models = result.scalars().all()
@@ -1147,7 +1265,7 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
 
 
 @deal.pre(
-    lambda backup_dir, sources, mag_limit, skip_backup, dry_run: mag_limit > 0,
+    lambda backup_dir, sources, mag_limit, skip_backup, dry_run, force_download: mag_limit > 0,
     message="Magnitude limit must be positive",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
@@ -1159,6 +1277,7 @@ async def rebuild_database(
     mag_limit: float = 15.0,
     skip_backup: bool = False,
     dry_run: bool = False,
+    force_download: bool = False,
 ) -> dict[str, Any]:
     """
     Rebuild database from scratch.
@@ -1218,12 +1337,55 @@ async def rebuild_database(
 
         # Step 3: Run Alembic migrations to create fresh schema
         from alembic.config import Config
+        from alembic.script import ScriptDirectory
 
         from alembic import command  # type: ignore[attr-defined]
 
         alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Schema created via Alembic migrations")
+
+        # Determine the target revision (handle multiple heads)
+        script = ScriptDirectory.from_config(alembic_cfg)
+        try:
+            # Try to get single head first (works when there's no branching)
+            target_rev = script.get_current_head()
+        except Exception:
+            # Multiple heads detected - use get_heads() instead
+            try:
+                heads_list = script.get_heads()
+                if len(heads_list) == 1:
+                    target_rev = heads_list[0]
+                elif len(heads_list) > 1:
+                    # Multiple heads detected - look for a merge migration
+                    logger.info(f"Multiple migration heads detected: {', '.join(heads_list)}")
+
+                    # Search all revisions for a merge migration that combines these heads
+                    merge_found = False
+                    for rev in script.walk_revisions():
+                        if hasattr(rev, "down_revision") and rev.down_revision:
+                            down_rev = rev.down_revision
+                            # Check if this is a merge migration (has tuple of down_revisions)
+                            if isinstance(down_rev, tuple) and len(down_rev) > 1:
+                                # Check if this merge migration combines all current heads
+                                down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
+                                heads_set = set(heads_list)
+                                if down_rev_set == heads_set:
+                                    merge_found = True
+                                    target_rev = rev.revision
+                                    logger.info(f"Found merge migration: {rev.revision}")
+                                    break
+
+                    if not merge_found:
+                        logger.info("No merge migration found. Using 'heads' to upgrade all branches.")
+                        # Use "heads" to upgrade all branches - Alembic will apply merge migrations if they exist
+                        target_rev = "heads"
+                else:
+                    target_rev = "head"  # Fallback
+            except Exception as e:
+                logger.warning(f"Error determining head revision: {e}, using 'head'")
+                target_rev = "head"
+
+        command.upgrade(alembic_cfg, target_rev)
+        logger.info(f"Schema created via Alembic migrations (upgraded to {target_rev})")
 
         # Get fresh database instance after rebuild
         db = get_database()
@@ -1231,91 +1393,26 @@ async def rebuild_database(
         # Ensure FTS table exists (migrations should create it, but ensure it's there)
         await db.ensure_fts_table()
 
-        # Step 4: Populate star name mappings BEFORE importing catalogs that need them
-        # This ensures Yale BSC import can look up common names
-        logger.info("Populating star name mappings...")
-        from celestron_nexstar.api.database.database_seeder import seed_star_name_mappings
+        # Step 4: Initialize static reference data (seed data)
+        # This must happen before importing custom YAML and other data sources
+        from celestron_nexstar.api.database.database_seeder import seed_all
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            # Force refresh to ensure we have the latest mappings
-            await seed_star_name_mappings(session, force=True)
-            from sqlalchemy import func, select
-
-            from celestron_nexstar.api.database.models import StarNameMappingModel
-
-            star_mapping_result = await session.scalar(select(func.count(StarNameMappingModel.hr_number)))
-            star_mapping_count = star_mapping_result or 0
-            logger.info(f"Added {star_mapping_count} star name mappings")
-            if star_mapping_count == 0:
-                logger.error("WARNING: No star name mappings were added! Yale BSC imports will not have common names.")
-
-        # Step 5: Import data sources
-        # Import here to avoid circular dependency
-        from celestron_nexstar.cli.data_import import DATA_SOURCES, import_data_source
-
-        if sources is None:
-            sources = list(DATA_SOURCES.keys())
-
-        imported_counts: dict[str, tuple[int, int]] = {}
-        objects_before_import = 0
-
-        for source_id in sources:
-            if source_id not in DATA_SOURCES:
-                logger.warning(f"Unknown source: {source_id}, skipping")
-                continue
-
-            logger.info(f"Importing {source_id}...")
-            # Get count before import
-            try:
-                db_stats_before = await db.get_stats()
-                objects_before_import = db_stats_before.total_objects
-            except Exception as e:
-                logger.warning(f"Failed to get stats before import: {e}")
-                objects_before_import = 0
-
-            # Import the source
-            try:
-                logger.info(f"Calling import_data_source for {source_id}...")
-                # import_data_source prints to console, so output should be visible
-                success = import_data_source(source_id, mag_limit)
-                logger.info(f"import_data_source returned: {success}")
-                if success:
-                    # Get count after import
-                    try:
-                        db_stats_after = await db.get_stats()
-                        imported = db_stats_after.total_objects - objects_before_import
-                        imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
-                        objects_before_import = db_stats_after.total_objects
-                        logger.info(f"Successfully imported {source_id}: {imported} objects")
-                        if imported == 0:
-                            logger.warning(f"Import reported success but no objects were added for {source_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to get stats after import: {e}")
-                        imported_counts[source_id] = (0, 0)
-                else:
-                    imported_counts[source_id] = (0, 0)
-                    logger.warning(f"import_data_source returned False for {source_id}")
-            except Exception as e:
-                logger.error(f"Exception importing {source_id}: {e}", exc_info=True)
-                imported_counts[source_id] = (0, 0)
-                # Continue with other sources even if one fails
-                # Re-raise if it's a critical error
-                if "database" in str(e).lower() or "schema" in str(e).lower():
-                    raise
-
-        # Repopulate FTS table after all imports to ensure all objects are searchable
-        logger.info("Repopulating FTS search index...")
-        try:
-            await db.repopulate_fts_table()
-        except Exception as e:
-            logger.warning(f"Failed to repopulate FTS table: {e}")
-            # Continue - search will fall back to direct queries
-
-        # Step 6: Initialize other static data
-        from celestron_nexstar.api.database.database_seeder import seed_all
-
         logger.info("Initializing static reference data...")
+        console.print("\n[cyan]Initializing static reference data...[/cyan]")
+        console.print("[dim]  • Star name mappings[/dim]")
+        console.print("[dim]  • Meteor showers[/dim]")
+        console.print("[dim]  • Constellations[/dim]")
+        console.print("[dim]  • Asterisms[/dim]")
+        console.print("[dim]  • Dark sky sites[/dim]")
+        console.print("[dim]  • Space events[/dim]")
+        console.print("[dim]  • Variable stars[/dim]")
+        console.print("[dim]  • Comets[/dim]")
+        console.print("[dim]  • Eclipses[/dim]")
+        console.print("[dim]  • Bortle characteristics[/dim]")
+        console.print("[dim]  • Planets[/dim]")
+        console.print("[dim]  • Moons[/dim]\n")
+
         static_data: dict[str, int] = {}
 
         async with get_db_session() as session:
@@ -1349,46 +1446,136 @@ async def rebuild_database(
             static_data["dark_sky_sites"] = dark_sky_count
             logger.info(f"Added {dark_sky_count} dark sky sites")
 
-            space_events_result = await session.scalar(select(func.count(SpaceEventModel.id)))
-            space_events_count = space_events_result or 0
-            static_data["space_events"] = space_events_count
-            logger.info(f"Added {space_events_count} space events")
+            space_event_result = await session.scalar(select(func.count(SpaceEventModel.id)))
+            space_event_count = space_event_result or 0
+            static_data["space_events"] = space_event_count
+            logger.info(f"Added {space_event_count} space events")
+
+        # Step 5: Import data sources
+        # Import here to avoid circular dependency
+        from celestron_nexstar.cli.data_import import DATA_SOURCES, import_data_source
+
+        if sources is None:
+            # Exclude "custom" from default sources - it's a separate action
+            sources = [s for s in DATA_SOURCES if s != "custom"]
+
+        imported_counts: dict[str, tuple[int, int]] = {}
+        objects_before_import = 0
+
+        for source_id in sources:
+            if source_id not in DATA_SOURCES:
+                logger.warning(f"Unknown source: {source_id}, skipping")
+                continue
+
+            logger.info(f"Importing {source_id}...")
+            # Get count before import
+            try:
+                db_stats_before = await db.get_stats()
+                objects_before_import = db_stats_before.total_objects
+            except Exception as e:
+                logger.warning(f"Failed to get stats before import: {e}")
+                objects_before_import = 0
+
+            # Import the source
+            try:
+                logger.info(f"Calling import_data_source for {source_id}...")
+                # import_data_source prints to console, so output should be visible
+                from celestron_nexstar.cli.data_import import import_data_source
+
+                success = import_data_source(source_id, mag_limit, force_download=force_download)
+                logger.info(f"import_data_source returned: {success}")
+                if success:
+                    # Get count after import
+                    try:
+                        db_stats_after = await db.get_stats()
+                        imported = db_stats_after.total_objects - objects_before_import
+                        imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
+                        objects_before_import = db_stats_after.total_objects
+                        logger.info(f"Successfully imported {source_id}: {imported} objects")
+                        if imported == 0:
+                            logger.warning(f"Import reported success but no objects were added for {source_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get stats after import: {e}")
+                        imported_counts[source_id] = (0, 0)
+                else:
+                    imported_counts[source_id] = (0, 0)
+                    logger.warning(f"import_data_source returned False for {source_id}")
+            except Exception as e:
+                logger.error(f"Exception importing {source_id}: {e}", exc_info=True)
+                imported_counts[source_id] = (0, 0)
+                # Continue with other sources even if one fails
+                # Re-raise if it's a critical error
+                if "database" in str(e).lower() or "schema" in str(e).lower():
+                    raise
+
+        # Repopulate FTS table after all imports to ensure all objects are searchable
+        logger.info("Repopulating FTS search index...")
+        try:
+            await db.repopulate_fts_table()
+        except Exception as e:
+            logger.warning(f"Failed to repopulate FTS table: {e}")
+            # Continue - search will fall back to direct queries
 
         # Step 6: Download and process World Atlas light pollution data
         logger.info("Downloading and processing World Atlas light pollution data...")
+        console.print("\n[cyan]Downloading light pollution data...[/cyan]")
+        console.print("[dim]  • World Atlas 2024 PNG images[/dim]")
+        console.print("[dim]  • Stored in ~/.cache/celestron-nexstar/light-pollution/[/dim]\n")
         try:
-            import asyncio
+            from celestron_nexstar.api.database.light_pollution_db import (
+                _create_light_pollution_table,
+                download_world_atlas_data,
+            )
 
-            from celestron_nexstar.api.database.light_pollution_db import download_world_atlas_data
+            # Ensure light pollution table exists before downloading data
+            logger.info("Ensuring light pollution grid table exists...")
+            console.print("[dim]Ensuring light pollution grid table exists...[/dim]")
+            await _create_light_pollution_table(db)
 
-            # Download all regions (no state filter = all data)
-            # Use a coarser grid resolution (0.2°) for faster processing during setup
-            # Users can re-download with finer resolution later if needed
+            # Download north_america region by default
+            # Users can download other regions later with: nexstar data download-light-pollution --region <region>
+            # Use 0.1° resolution for good balance of accuracy and processing time
             logger.info("Downloading World Atlas PNG files (this may take a while)...")
-            # Run async function - this is a sync entry point, so asyncio.run() is safe
-            light_pollution_results = asyncio.run(
-                download_world_atlas_data(
-                    regions=None,  # All regions
-                    grid_resolution=0.2,  # 0.2° ≈ 22km resolution for faster initial setup
-                    force=False,  # Use cached files if available
-                    state_filter=None,  # No filter - process all data
-                )
+            console.print("[dim]Downloading World Atlas PNG files (this may take a while)...[/dim]")
+            console.print(
+                "[dim]Note: Downloading 'north_america' region by default. Use 'nexstar data download-light-pollution' to download other regions.[/dim]\n"
+            )
+            # We're already in an async context, so await directly
+            light_pollution_results = await download_world_atlas_data(
+                regions=["north_america"],  # North America by default
+                grid_resolution=0.1,  # 0.1° ≈ 11km resolution
+                force=force_download,  # Re-download if force_download is True
+                state_filter=None,  # No filter - process all data
             )
 
             total_grid_points = sum(light_pollution_results.values())
             logger.info(
                 f"Processed {total_grid_points:,} light pollution grid points from {len(light_pollution_results)} regions"
             )
+            if total_grid_points > 0:
+                console.print(
+                    f"[green]✓[/green] Processed {total_grid_points:,} light pollution grid points from {len(light_pollution_results)} regions"
+                )
+            else:
+                console.print("[yellow]⚠ Warning: No light pollution data was imported[/yellow]")
             static_data["light_pollution_grid_points"] = total_grid_points
 
             # Log per-region counts
             for region, count in light_pollution_results.items():
                 logger.info(f"  {region}: {count:,} points")
+                if count > 0:
+                    console.print(f"[dim]  {region}: {count:,} points[/dim]")
         except Exception as e:
+            import traceback
+
             logger.warning(f"Failed to download light pollution data: {e}")
             logger.warning(
                 "Light pollution data can be downloaded later with: nexstar vacation download-light-pollution"
             )
+            # Also print to console for visibility
+            console.print(f"[yellow]⚠ Warning: Failed to download light pollution data: {e}[/yellow]")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(traceback.format_exc())
             static_data["light_pollution_grid_points"] = 0
 
         # Step 7: Pre-fetch 3 days of weather forecast data (if location is configured)
@@ -1416,10 +1603,8 @@ async def rebuild_database(
 
                     if sys.stdin.isatty():
                         # We're in an interactive terminal, prompt for location
-                        from rich.console import Console
                         from rich.prompt import Prompt
 
-                        console = Console()
                         console.print("\n[cyan]Observer Location Required[/cyan]")
                         console.print(
                             "[dim]Your location is needed for weather forecasts and accurate calculations.[/dim]\n"
@@ -1461,8 +1646,8 @@ async def rebuild_database(
                     f"Fetching weather forecast for {location.name} ({location.latitude:.2f}°, {location.longitude:.2f}°)"
                 )
                 # Fetch 3 days = 72 hours of weather forecast
-                # Run async function - this is a sync entry point, so asyncio.run() is safe
-                weather_forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=72))
+                # We're already in an async context, so await directly
+                weather_forecasts = await fetch_hourly_weather_forecast(location, hours=72)
                 if weather_forecasts:
                     logger.info(f"Pre-fetched {len(weather_forecasts)} hours of weather forecast data")
                     static_data["weather_forecast_hours"] = len(weather_forecasts)

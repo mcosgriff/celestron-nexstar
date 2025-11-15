@@ -8,6 +8,8 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
+from celestron_nexstar.cli.commands import glossary
+
 # Import and register subcommands
 from celestron_nexstar.cli.commands.astronomy import (
     aurora,
@@ -21,6 +23,7 @@ from celestron_nexstar.cli.commands.astronomy import (
     occultations,
     planets,
     satellites,
+    space_weather,
     variables,
     zodiacal,
 )
@@ -352,6 +355,12 @@ app.add_typer(
     rich_help_panel="Celestial Events",
 )
 app.add_typer(
+    space_weather.app,
+    name="space-weather",
+    help="Space weather conditions and alerts (NOAA SWPC)",
+    rich_help_panel="Celestial Events",
+)
+app.add_typer(
     eclipse.app,
     name="eclipse",
     help="Lunar and solar eclipse predictions",
@@ -468,6 +477,12 @@ app.add_typer(
     name="dashboard",
     help="Full-screen dashboard",
     rich_help_panel="Data & Management",
+)
+app.add_typer(
+    glossary.app,
+    name="glossary",
+    help="Astronomical terms glossary",
+    rich_help_panel="Utilities",
 )
 
 

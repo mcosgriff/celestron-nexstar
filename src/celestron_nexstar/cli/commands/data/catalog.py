@@ -6,6 +6,7 @@ Commands for searching and managing celestial object catalogs.
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import typer
 from click import Context
@@ -443,6 +444,18 @@ def info(
         # Assess visibility
         visibility_info = assess_visibility(obj)
 
+        # Get observing conditions and calculate visibility probability (like telescope tonight)
+        visibility_probability = None
+        try:
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+            visibility_probability = planner._calculate_visibility_probability(obj, conditions, visibility_info)
+        except Exception:
+            # If we can't get conditions, just use observability_score
+            visibility_probability = visibility_info.observability_score
+
         if json_output:
             visibility_data = {
                 "is_visible": visibility_info.is_visible,
@@ -452,21 +465,42 @@ def info(
                 "observability_score": visibility_info.observability_score,
                 "reasons": list(visibility_info.reasons),
             }
-            print_json(
-                {
-                    "name": obj.name,
-                    "common_name": obj.common_name,
-                    "ra_hours": obj.ra_hours,
-                    "dec_degrees": obj.dec_degrees,
-                    "ra_formatted": format_ra(obj.ra_hours),
-                    "dec_formatted": format_dec(obj.dec_degrees),
-                    "magnitude": obj.magnitude,
-                    "type": obj.object_type,
-                    "catalog": obj.catalog,
-                    "description": obj.description,
-                    "visibility": visibility_data,
-                }
-            )
+
+            # Add visibility probability if available
+            if visibility_probability is not None:
+                visibility_data["visibility_probability"] = visibility_probability
+
+            # Get moons if this is a planet
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            output_data: dict[str, Any] = {
+                "name": obj.name,
+                "common_name": obj.common_name,
+                "ra_hours": obj.ra_hours,
+                "dec_degrees": obj.dec_degrees,
+                "ra_formatted": format_ra(obj.ra_hours),
+                "dec_formatted": format_dec(obj.dec_degrees),
+                "magnitude": obj.magnitude,
+                "type": obj.object_type,
+                "catalog": obj.catalog,
+                "description": obj.description,
+                "visibility": visibility_data,
+            }
+
+            if obj.object_type == CelestialObjectType.PLANET.value:
+                db = get_database()
+                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                if moons:
+                    output_data["moons"] = [
+                        {
+                            "name": moon.name,
+                            "magnitude": moon.magnitude,
+                            "description": moon.description,
+                        }
+                        for moon in moons
+                    ]
+
+            print_json(output_data)
         else:
             # Create detailed info panel
             info_text = Text()
@@ -525,11 +559,37 @@ def info(
             info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.2f}\n", style="white")
             info_text.append(f"  Observability Score: {visibility_info.observability_score:.0%}\n", style="white")
 
+            # Add visibility probability (Chance) if available
+            if visibility_probability is not None:
+                if visibility_probability >= 0.8:
+                    prob_style = "bold green"
+                elif visibility_probability >= 0.5:
+                    prob_style = "yellow"
+                elif visibility_probability >= 0.3:
+                    prob_style = "red"
+                else:
+                    prob_style = "dim red"
+                info_text.append("  Chance of Seeing: ", style="white")
+                info_text.append(f"{visibility_probability:.0%}\n", style=prob_style)
+
             # Reasons
             if visibility_info.reasons:
                 info_text.append("\n  Details:\n", style="dim")
                 for reason in visibility_info.reasons:
                     info_text.append(f"    • {reason}\n", style="dim")
+
+            # Moons (if this is a planet)
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            if obj.object_type == CelestialObjectType.PLANET.value:
+                db = get_database()
+                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                if moons:
+                    info_text.append("\n")
+                    info_text.append("Moons:\n", style="bold yellow")
+                    for moon in moons:
+                        mag_str = f" (mag {moon.magnitude:.2f})" if moon.magnitude else ""
+                        info_text.append(f"  • {moon.name}{mag_str}\n", style="white")
 
             # Description
             if obj.description:

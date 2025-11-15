@@ -1,0 +1,90 @@
+[
+  {
+    "name": "Mercury",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": -0.4,
+    "type": "planet",
+    "description": "Innermost planet, challenging to observe near Sun",
+    "is_dynamic": true,
+    "ephemeris_name": "mercury"
+  },
+  {
+    "name": "Venus",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": -4.4,
+    "type": "planet",
+    "description": "Brightest planet, shows phases like Moon",
+    "is_dynamic": true,
+    "ephemeris_name": "venus"
+  },
+  {
+    "name": "Mars",
+    "common_name": "Red Planet",
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": -2.9,
+    "type": "planet",
+    "description": "Red planet, polar ice caps visible with 6SE",
+    "is_dynamic": true,
+    "ephemeris_name": "mars"
+  },
+  {
+    "name": "Jupiter",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": -2.9,
+    "type": "planet",
+    "description": "Largest planet, cloud bands and Great Red Spot visible",
+    "is_dynamic": true,
+    "ephemeris_name": "jupiter"
+  },
+  {
+    "name": "Saturn",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": 0.2,
+    "type": "planet",
+    "description": "Ringed planet, rings and Cassini Division visible with 6SE",
+    "is_dynamic": true,
+    "ephemeris_name": "saturn"
+  },
+  {
+    "name": "Uranus",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": 5.7,
+    "type": "planet",
+    "description": "Ice giant, appears as small blue-green disk",
+    "is_dynamic": true,
+    "ephemeris_name": "uranus"
+  },
+  {
+    "name": "Neptune",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": 7.8,
+    "type": "planet",
+    "description": "Ice giant, appears as small blue disk",
+    "is_dynamic": true,
+    "ephemeris_name": "neptune"
+  },
+  {
+    "name": "Pluto",
+    "common_name": null,
+    "ra_hours": 0.0,
+    "dec_degrees": 0.0,
+    "magnitude": 14.4,
+    "type": "planet",
+    "description": "Dwarf planet, very challenging to observe (requires large telescope)",
+    "is_dynamic": true,
+    "ephemeris_name": "pluto"
+  }
+]

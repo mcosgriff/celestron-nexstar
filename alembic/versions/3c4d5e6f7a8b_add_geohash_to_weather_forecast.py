@@ -40,7 +40,7 @@ def upgrade() -> None:
     with op.batch_alter_table("weather_forecast", schema=None) as batch_op:
         batch_op.add_column(sa.Column("geohash", sa.String(length=12), nullable=True))
 
-    from celestron_nexstar.api.geohash_utils import encode
+    from celestron_nexstar.api.location.geohash_utils import encode
 
     result = conn.execute(text("SELECT id, latitude, longitude FROM weather_forecast WHERE geohash IS NULL"))
     rows = result.fetchall()
