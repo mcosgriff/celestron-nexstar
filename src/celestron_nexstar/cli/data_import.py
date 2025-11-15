@@ -753,8 +753,32 @@ def import_celestial_messier(geojson_path: Path, mag_limit: float = 15.0, verbos
 
 
 def import_celestial_local_group(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
-    """Import local group galaxies from celestial_data GeoJSON."""
-    return import_celestial_data_geojson(geojson_path, catalog="local_group", mag_limit=mag_limit, verbose=verbose)
+    """
+    Import local group galaxies and Milky Way halo objects from celestial_data GeoJSON.
+
+    Includes Local Group galaxies, Milky Way globular clusters, and dwarf galaxies.
+    """
+    # Map local group object types to our object types
+    lg_type_map = {
+        # Globular clusters
+        "GC": CelestialObjectType.CLUSTER,
+        "Globular Cluster": CelestialObjectType.CLUSTER,
+        # Dwarf galaxies
+        "dSph": CelestialObjectType.GALAXY,  # Dwarf spheroidal
+        "dE": CelestialObjectType.GALAXY,  # Dwarf elliptical
+        "dE5": CelestialObjectType.GALAXY,  # Dwarf elliptical type 5
+        "UFD": CelestialObjectType.GALAXY,  # Ultra-faint dwarf
+        # Irregular galaxies
+        "IBm": CelestialObjectType.GALAXY,  # Irregular barred Magellanic
+        "IBm V-VI": CelestialObjectType.GALAXY,
+        "Im": CelestialObjectType.GALAXY,  # Irregular Magellanic
+        "Im V-VI": CelestialObjectType.GALAXY,
+        # Other galaxy types
+        "Galaxy": CelestialObjectType.GALAXY,
+    }
+    return import_celestial_data_geojson(
+        geojson_path, catalog="local_group", mag_limit=mag_limit, verbose=verbose, object_type_map=lg_type_map
+    )
 
 
 def import_celestial_constellations(
@@ -1242,9 +1266,9 @@ DATA_SOURCES: dict[str, DataSource] = {
     ),
     "celestial_local_group": DataSource(
         name="Celestial Data - Local Group",
-        description="Local Group galaxies and Milky Way halo from celestial_data",
+        description="Local Group galaxies and Milky Way halo objects (globular clusters, dwarf galaxies) from celestial_data",
         url="https://github.com/dieghernan/celestial_data",
-        objects_available=100,  # Approximate
+        objects_available=200,  # Approximate - includes galaxies and globular clusters
         license="BSD-3-Clause",
         attribution="Olaf Frohn and Diego Hernangómez",
         importer=lambda path, mag, verbose: import_celestial_local_group(path, mag, verbose),
