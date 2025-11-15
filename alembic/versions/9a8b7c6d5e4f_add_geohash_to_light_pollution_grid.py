@@ -22,14 +22,36 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """Add geohash column to light_pollution_grid table and populate from lat/lon."""
+    """Add geohash column to light_pollution_grid table and populate from lat/lon.
+    If the table doesn't exist, create it with geohash column included.
+    """
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     existing_tables = inspector.get_table_names()
 
-    # Only proceed if the table exists
+    # Create table if it doesn't exist
     if "light_pollution_grid" not in existing_tables:
-        # Table doesn't exist yet, it will be created with geohash by _create_light_pollution_table
+        # Create the table with all columns including geohash
+        op.execute(
+            text(
+                """
+                CREATE TABLE light_pollution_grid (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    latitude REAL NOT NULL,
+                    longitude REAL NOT NULL,
+                    geohash TEXT NOT NULL,
+                    sqm_value REAL NOT NULL,
+                    region TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(latitude, longitude)
+                )
+                """
+            )
+        )
+        # Create indexes
+        op.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_geohash ON light_pollution_grid(geohash)"))
+        op.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_lat_lon ON light_pollution_grid(latitude, longitude)"))
+        op.execute(text("CREATE INDEX IF NOT EXISTS idx_lp_region ON light_pollution_grid(region)"))
         return
 
     # Check if geohash column already exists

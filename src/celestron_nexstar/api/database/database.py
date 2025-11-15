@@ -519,6 +519,93 @@ class CatalogDatabase:
             await session.refresh(model)
             return model.id
 
+    async def insert_objects_batch(
+        self,
+        objects: list[dict[str, Any]],
+    ) -> int:
+        """
+        Insert multiple celestial objects in a single batch operation.
+
+        Args:
+            objects: List of dictionaries with object data (same fields as insert_object)
+
+        Returns:
+            Number of objects inserted
+        """
+        # Ensure FTS table exists before inserting (triggers depend on it)
+        await self.ensure_fts_table()
+
+        if not objects:
+            return 0
+
+        async with self._AsyncSession() as session:
+            models = []
+            for obj in objects:
+                # Convert object_type to string if needed
+                object_type = obj.get("object_type")
+                if isinstance(object_type, CelestialObjectType):
+                    object_type = object_type.value
+
+                model = CelestialObjectModel(
+                    name=obj["name"],
+                    common_name=obj.get("common_name"),
+                    catalog=obj["catalog"],
+                    catalog_number=obj.get("catalog_number"),
+                    ra_hours=obj["ra_hours"],
+                    dec_degrees=obj["dec_degrees"],
+                    magnitude=obj.get("magnitude"),
+                    object_type=object_type,
+                    size_arcmin=obj.get("size_arcmin"),
+                    description=obj.get("description"),
+                    constellation=obj.get("constellation"),
+                    is_dynamic=obj.get("is_dynamic", False),
+                    ephemeris_name=obj.get("ephemeris_name"),
+                    parent_planet=obj.get("parent_planet"),
+                )
+                models.append(model)
+
+            session.add_all(models)
+            await session.commit()
+            return len(models)
+
+    async def get_existing_objects_set(
+        self,
+        catalog: str | None = None,
+    ) -> set[tuple[str, str | None, int | None]]:
+        """
+        Get a set of existing objects for deduplication.
+
+        Returns a set of tuples: (name, common_name, catalog_number)
+        This allows fast O(1) lookup for duplicates.
+
+        Args:
+            catalog: Optional catalog name to filter by
+
+        Returns:
+            Set of tuples (name, common_name, catalog_number)
+        """
+        async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            query = select(
+                CelestialObjectModel.name, CelestialObjectModel.common_name, CelestialObjectModel.catalog_number
+            )
+            if catalog:
+                query = query.where(CelestialObjectModel.catalog == catalog)
+
+            result = await session.execute(query)
+            rows = result.all()
+
+            # Build set of (name, common_name, catalog_number) tuples
+            existing_set: set[tuple[str, str | None, int | None]] = set()
+            for name, common_name, catalog_number in rows:
+                existing_set.add((name, common_name, catalog_number))
+                # Also add common_name as a key if it exists
+                if common_name:
+                    existing_set.add((common_name, common_name, catalog_number))
+
+            return existing_set
+
     @deal.pre(lambda self, object_id: object_id > 0, message="Object ID must be positive")  # type: ignore[misc,arg-type]
     @deal.post(
         lambda result: result is None or isinstance(result, CelestialObject),
@@ -1405,14 +1492,27 @@ async def rebuild_database(
         console.print("[dim]  • World Atlas 2024 PNG images[/dim]")
         console.print("[dim]  • Stored in ~/.cache/celestron-nexstar/light-pollution/[/dim]\n")
         try:
-            from celestron_nexstar.api.database.light_pollution_db import download_world_atlas_data
+            from celestron_nexstar.api.database.light_pollution_db import (
+                _create_light_pollution_table,
+                download_world_atlas_data,
+            )
 
-            # Download all regions (no state filter = all data)
+            # Ensure light pollution table exists before downloading data
+            logger.info("Ensuring light pollution grid table exists...")
+            console.print("[dim]Ensuring light pollution grid table exists...[/dim]")
+            await _create_light_pollution_table(db)
+
+            # Download north_america region by default
+            # Users can download other regions later with: nexstar data download-light-pollution --region <region>
             # Use 0.1° resolution for good balance of accuracy and processing time
             logger.info("Downloading World Atlas PNG files (this may take a while)...")
+            console.print("[dim]Downloading World Atlas PNG files (this may take a while)...[/dim]")
+            console.print(
+                "[dim]Note: Downloading 'north_america' region by default. Use 'nexstar data download-light-pollution' to download other regions.[/dim]\n"
+            )
             # We're already in an async context, so await directly
             light_pollution_results = await download_world_atlas_data(
-                regions=None,  # All regions
+                regions=["north_america"],  # North America by default
                 grid_resolution=0.1,  # 0.1° ≈ 11km resolution
                 force=force_download,  # Re-download if force_download is True
                 state_filter=None,  # No filter - process all data
@@ -1422,16 +1522,30 @@ async def rebuild_database(
             logger.info(
                 f"Processed {total_grid_points:,} light pollution grid points from {len(light_pollution_results)} regions"
             )
+            if total_grid_points > 0:
+                console.print(
+                    f"[green]✓[/green] Processed {total_grid_points:,} light pollution grid points from {len(light_pollution_results)} regions"
+                )
+            else:
+                console.print("[yellow]⚠ Warning: No light pollution data was imported[/yellow]")
             static_data["light_pollution_grid_points"] = total_grid_points
 
             # Log per-region counts
             for region, count in light_pollution_results.items():
                 logger.info(f"  {region}: {count:,} points")
+                if count > 0:
+                    console.print(f"[dim]  {region}: {count:,} points[/dim]")
         except Exception as e:
+            import traceback
+
             logger.warning(f"Failed to download light pollution data: {e}")
             logger.warning(
                 "Light pollution data can be downloaded later with: nexstar vacation download-light-pollution"
             )
+            # Also print to console for visibility
+            console.print(f"[yellow]⚠ Warning: Failed to download light pollution data: {e}[/yellow]")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(traceback.format_exc())
             static_data["light_pollution_grid_points"] = 0
 
         # Step 7: Pre-fetch 3 days of weather forecast data (if location is configured)
@@ -1502,8 +1616,8 @@ async def rebuild_database(
                     f"Fetching weather forecast for {location.name} ({location.latitude:.2f}°, {location.longitude:.2f}°)"
                 )
                 # Fetch 3 days = 72 hours of weather forecast
-                # Run async function - this is a sync entry point, so asyncio.run() is safe
-                weather_forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=72))
+                # We're already in an async context, so await directly
+                weather_forecasts = await fetch_hourly_weather_forecast(location, hours=72)
                 if weather_forecasts:
                     logger.info(f"Pre-fetched {len(weather_forecasts)} hours of weather forecast data")
                     static_data["weather_forecast_hours"] = len(weather_forecasts)

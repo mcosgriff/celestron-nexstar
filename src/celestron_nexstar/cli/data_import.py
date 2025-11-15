@@ -336,6 +336,11 @@ def import_celestial_data_geojson(
     """
     db = get_database()
 
+    # Pre-fetch existing objects for deduplication
+    console.print(f"[dim]Loading existing {catalog} objects for deduplication...[/dim]")
+    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog=catalog))
+    console.print(f"[dim]Found {len(existing_objects):,} existing {catalog} objects[/dim]")
+
     imported = 0
     skipped = 0
     errors = 0
@@ -362,6 +367,9 @@ def import_celestial_data_geojson(
     if object_type_map is None:
         object_type_map = {}
 
+    # Collect all objects first, then deduplicate once, then batch insert
+    all_objects: list[dict[str, Any]] = []
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -370,7 +378,7 @@ def import_celestial_data_geojson(
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"Importing {catalog} (mag ≤ {mag_limit})...", total=total_features)
+        task = progress.add_task(f"Processing {catalog} (mag ≤ {mag_limit})...", total=total_features)
 
         for feature in features:
             try:
@@ -494,40 +502,22 @@ def import_celestial_data_geojson(
 
                 description = "; ".join(description_parts) if description_parts else None
 
-                # Check for duplicates
-
-                existing = _run_async_safe(db.get_by_name(name))
-                if existing:
-                    skipped += 1
-                    if verbose:
-                        console.print(f"[dim]Skipping duplicate: {name}[/dim]")
-                    progress.advance(task)
-                    continue
-
-                # Insert object into database
-                try:
-                    _run_async_safe(
-                        db.insert_object(
-                            name=name,
-                            catalog=catalog,
-                            ra_hours=ra_hours,
-                            dec_degrees=dec_degrees,
-                            object_type=obj_type,
-                            magnitude=magnitude,
-                            common_name=common_name,
-                            catalog_number=catalog_number,
-                            size_arcmin=size_arcmin,
-                            description=description,
-                            constellation=constellation,
-                        )
-                    )
-
-                    imported += 1
-
-                except Exception as e:
-                    if verbose:
-                        console.print(f"[yellow]Warning: Error importing {name}: {e}[/yellow]")
-                    errors += 1
+                # Add to collection (will deduplicate once at the end)
+                all_objects.append(
+                    {
+                        "name": name,
+                        "catalog": catalog,
+                        "ra_hours": ra_hours,
+                        "dec_degrees": dec_degrees,
+                        "object_type": obj_type,
+                        "magnitude": magnitude,
+                        "common_name": common_name,
+                        "catalog_number": catalog_number,
+                        "size_arcmin": size_arcmin,
+                        "description": description,
+                        "constellation": constellation,
+                    }
+                )
 
             except Exception as e:
                 errors += 1
@@ -535,6 +525,54 @@ def import_celestial_data_geojson(
                     console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
             progress.advance(task)
+
+    # Deduplicate once after all objects are created
+    console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
+    seen_keys: set[tuple[str, str | None, int | None]] = set()
+    deduplicated_objects: list[dict[str, Any]] = []
+    for obj in all_objects:
+        key = (obj["name"], obj.get("common_name"), obj.get("catalog_number"))
+        # Check against both seen objects and existing database objects
+        if key not in seen_keys and key not in existing_objects:
+            # Also check by name alone (common_name might be None)
+            name_key = (obj["name"], None, None)
+            name_key2 = (obj["name"], obj["name"], None)
+            if name_key not in existing_objects and name_key2 not in existing_objects:
+                seen_keys.add(key)
+                deduplicated_objects.append(obj)
+            else:
+                skipped += 1
+        else:
+            skipped += 1
+
+    console.print(f"[dim]After deduplication: {len(deduplicated_objects):,} unique objects to import[/dim]")
+
+    # Batch insert deduplicated objects
+    batch_size = 1000
+    num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size  # Ceiling division
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Importing {catalog}...", total=num_batches)
+
+        for i in range(0, len(deduplicated_objects), batch_size):
+            batch = deduplicated_objects[i : i + batch_size]
+            try:
+                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                imported += batch_imported
+                # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+                progress.advance(task)
+            except Exception as e:
+                if verbose:
+                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                errors += len(batch)
+                # Still advance progress even on error
+                progress.advance(task)
 
     return imported, skipped
 
@@ -581,6 +619,11 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     # Import stars with name enhancement
     db = get_database()
 
+    # Pre-fetch existing objects for deduplication
+    console.print("[dim]Loading existing stars for deduplication...[/dim]")
+    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog="celestial_stars"))
+    console.print(f"[dim]Found {len(existing_objects):,} existing stars[/dim]")
+
     imported = 0
     skipped = 0
     errors = 0
@@ -603,6 +646,9 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     features = geojson_data.get("features", [])
     total_features = len(features)
 
+    # Collect all objects first, then deduplicate once, then batch insert
+    all_objects: list[dict[str, Any]] = []
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -611,7 +657,7 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task(f"Importing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
+        task = progress.add_task(f"Processing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
 
         for feature in features:
             try:
@@ -723,40 +769,22 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                     description_parts.append(f"Flamsteed: {flam}")
                 description = "; ".join(description_parts) if description_parts else None
 
-                # Check for duplicates
-
-                existing = _run_async_safe(db.get_by_name(name))
-                if existing:
-                    skipped += 1
-                    if verbose:
-                        console.print(f"[dim]Skipping duplicate: {name}[/dim]")
-                    progress.advance(task)
-                    continue
-
-                # Insert object into database
-                try:
-                    _run_async_safe(
-                        db.insert_object(
-                            name=name,
-                            catalog="celestial_stars",
-                            ra_hours=ra_hours,
-                            dec_degrees=dec_degrees,
-                            object_type=CelestialObjectType.STAR,
-                            magnitude=magnitude,
-                            common_name=common_name,
-                            catalog_number=catalog_number,
-                            size_arcmin=None,
-                            description=description,
-                            constellation=constellation,
-                        )
-                    )
-
-                    imported += 1
-
-                except Exception as e:
-                    if verbose:
-                        console.print(f"[yellow]Warning: Error importing {name}: {e}[/yellow]")
-                    errors += 1
+                # Add to collection (will deduplicate once at the end)
+                all_objects.append(
+                    {
+                        "name": name,
+                        "catalog": "celestial_stars",
+                        "ra_hours": ra_hours,
+                        "dec_degrees": dec_degrees,
+                        "object_type": CelestialObjectType.STAR,
+                        "magnitude": magnitude,
+                        "common_name": common_name,
+                        "catalog_number": catalog_number,
+                        "size_arcmin": None,
+                        "description": description,
+                        "constellation": constellation,
+                    }
+                )
 
             except Exception as e:
                 errors += 1
@@ -764,6 +792,54 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                     console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
             progress.advance(task)
+
+    # Deduplicate once after all objects are created
+    console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
+    seen_keys: set[tuple[str, str | None, int | None]] = set()
+    deduplicated_objects: list[dict[str, Any]] = []
+    for obj in all_objects:
+        key = (obj["name"], obj.get("common_name"), obj.get("catalog_number"))
+        # Check against both seen objects and existing database objects
+        if key not in seen_keys and key not in existing_objects:
+            # Also check by name alone (common_name might be None)
+            name_key = (obj["name"], None, None)
+            name_key2 = (obj["name"], obj["name"], None)
+            if name_key not in existing_objects and name_key2 not in existing_objects:
+                seen_keys.add(key)
+                deduplicated_objects.append(obj)
+            else:
+                skipped += 1
+        else:
+            skipped += 1
+
+    console.print(f"[dim]After deduplication: {len(deduplicated_objects):,} unique objects to import[/dim]")
+
+    # Batch insert deduplicated objects
+    batch_size = 1000
+    num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size  # Ceiling division
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Importing celestial_stars...", total=num_batches)
+
+        for i in range(0, len(deduplicated_objects), batch_size):
+            batch = deduplicated_objects[i : i + batch_size]
+            try:
+                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                imported += batch_imported
+                # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+                progress.advance(task)
+            except Exception as e:
+                if verbose:
+                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                errors += len(batch)
+                # Still advance progress even on error
+                progress.advance(task)
 
     return imported, skipped
 
@@ -863,8 +939,18 @@ def import_celestial_constellations(
     features = geojson_data.get("features", [])
     total_features = len(features)
 
+    # Collect all constellations first, then deduplicate once, then batch insert
+    all_constellations: list[ConstellationModel] = []
+
     async def _import() -> tuple[int, int]:
-        nonlocal imported, skipped, errors
+        nonlocal imported, skipped, errors, all_constellations
+
+        # Pre-fetch existing constellations for deduplication
+        existing_names: set[str] = set()
+        async with get_db_session() as db_session:
+            result = await db_session.execute(select(ConstellationModel.name))
+            existing_names = {row[0] for row in result.all()}
+            console.print(f"[dim]Found {len(existing_names):,} existing constellations[/dim]")
 
         async with get_db_session() as db_session:
             with Progress(
@@ -901,14 +987,9 @@ def import_celestial_constellations(
                             progress.advance(task)
                             continue
 
-                        # Check if already exists
-                        existing = await db_session.scalar(
-                            select(ConstellationModel).where(ConstellationModel.name == name)
-                        )
-                        if existing:
+                        # Check if already exists using pre-fetched set
+                        if name in existing_names:
                             skipped += 1
-                            if verbose:
-                                console.print(f"[dim]Skipping duplicate: {name}[/dim]")
                             progress.advance(task)
                             continue
 
@@ -1030,8 +1111,7 @@ def import_celestial_constellations(
                             season=season,
                         )
 
-                        db_session.add(constellation)
-                        imported += 1
+                        all_constellations.append(constellation)
 
                     except Exception as e:
                         errors += 1
@@ -1040,7 +1120,49 @@ def import_celestial_constellations(
 
                     progress.advance(task)
 
-                await db_session.commit()
+            # Deduplicate once after all constellations are created
+            console.print(f"[dim]Deduplicating {len(all_constellations):,} constellations...[/dim]")
+            seen_names: set[str] = set()
+            deduplicated_constellations: list[ConstellationModel] = []
+            for const in all_constellations:
+                if const.name not in seen_names and const.name not in existing_names:
+                    seen_names.add(const.name)
+                    deduplicated_constellations.append(const)
+                else:
+                    skipped += 1
+
+            console.print(
+                f"[dim]After deduplication: {len(deduplicated_constellations):,} unique constellations to import[/dim]"
+            )
+
+            # Batch insert deduplicated constellations
+            batch_size = 100
+            num_batches = (len(deduplicated_constellations) + batch_size - 1) // batch_size  # Ceiling division
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Importing constellations...", total=num_batches)
+
+                for i in range(0, len(deduplicated_constellations), batch_size):
+                    batch = deduplicated_constellations[i : i + batch_size]
+                    try:
+                        db_session.add_all(batch)
+                        await db_session.commit()
+                        imported += len(batch)
+                        # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+                        progress.advance(task)
+                    except Exception as e:
+                        if verbose:
+                            console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                        errors += len(batch)
+                        await db_session.rollback()
+                        # Still advance progress even on error
+                        progress.advance(task)
 
         return imported, skipped
 
@@ -1086,8 +1208,18 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     features = geojson_data.get("features", [])
     total_features = len(features)
 
+    # Collect all asterisms first, then deduplicate once, then batch insert
+    all_asterisms: list[AsterismModel] = []
+
     async def _import() -> tuple[int, int]:
-        nonlocal imported, skipped, errors
+        nonlocal imported, skipped, errors, all_asterisms
+
+        # Pre-fetch existing asterisms for deduplication
+        existing_names: set[str] = set()
+        async with get_db_session() as db_session:
+            result = await db_session.execute(select(AsterismModel.name))
+            existing_names = {row[0] for row in result.all()}
+            console.print(f"[dim]Found {len(existing_names):,} existing asterisms[/dim]")
 
         async with get_db_session() as db_session:
             with Progress(
@@ -1124,12 +1256,9 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             progress.advance(task)
                             continue
 
-                        # Check if already exists
-                        existing = await db_session.scalar(select(AsterismModel).where(AsterismModel.name == name))
-                        if existing:
+                        # Check if already exists using pre-fetched set
+                        if name in existing_names:
                             skipped += 1
-                            if verbose:
-                                console.print(f"[dim]Skipping duplicate: {name}[/dim]")
                             progress.advance(task)
                             continue
 
@@ -1185,8 +1314,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             season=season,
                         )
 
-                        db_session.add(asterism)
-                        imported += 1
+                        all_asterisms.append(asterism)
 
                     except Exception as e:
                         errors += 1
@@ -1195,7 +1323,47 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
 
                     progress.advance(task)
 
-                await db_session.commit()
+            # Deduplicate once after all asterisms are created
+            console.print(f"[dim]Deduplicating {len(all_asterisms):,} asterisms...[/dim]")
+            seen_names: set[str] = set()
+            deduplicated_asterisms: list[AsterismModel] = []
+            for asterism_item in all_asterisms:
+                if asterism_item.name not in seen_names and asterism_item.name not in existing_names:
+                    seen_names.add(asterism_item.name)
+                    deduplicated_asterisms.append(asterism_item)
+                else:
+                    skipped += 1
+
+            console.print(f"[dim]After deduplication: {len(deduplicated_asterisms):,} unique asterisms to import[/dim]")
+
+            # Batch insert deduplicated asterisms
+            batch_size = 100
+            num_batches = (len(deduplicated_asterisms) + batch_size - 1) // batch_size  # Ceiling division
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Importing asterisms...", total=num_batches)
+
+                for i in range(0, len(deduplicated_asterisms), batch_size):
+                    batch = deduplicated_asterisms[i : i + batch_size]
+                    try:
+                        db_session.add_all(batch)
+                        await db_session.commit()
+                        imported += len(batch)
+                        # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+                        progress.advance(task)
+                    except Exception as e:
+                        if verbose:
+                            console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                        errors += len(batch)
+                        await db_session.rollback()
+                        # Still advance progress even on error
+                        progress.advance(task)
 
         return imported, skipped
 

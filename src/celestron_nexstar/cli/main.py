@@ -8,6 +8,8 @@ import typer
 from dotenv import load_dotenv
 from rich.console import Console
 
+from celestron_nexstar.cli.commands import glossary
+
 # Import and register subcommands
 from celestron_nexstar.cli.commands.astronomy import (
     aurora,
@@ -468,6 +470,12 @@ app.add_typer(
     name="dashboard",
     help="Full-screen dashboard",
     rich_help_panel="Data & Management",
+)
+app.add_typer(
+    glossary.app,
+    name="glossary",
+    help="Astronomical terms glossary",
+    rich_help_panel="Utilities",
 )
 
 
