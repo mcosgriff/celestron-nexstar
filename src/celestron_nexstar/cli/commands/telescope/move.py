@@ -50,7 +50,7 @@ def fixed(
         raise typer.Exit(code=1) from None
 
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         # Start movement
         success = telescope.move_fixed(direction, rate)
@@ -91,7 +91,7 @@ def stop(
         nexstar move stop --axis alt
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         success = telescope.stop_motion(axis)
         if success:

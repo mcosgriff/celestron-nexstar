@@ -5,11 +5,16 @@ This module implements the low-level NexStar protocol for communicating
 with Celestron telescopes. It handles both serial and TCP/IP communication,
 command formatting, response parsing, and coordinate encoding/decoding.
 
-Protocol Specification:
+Protocol Specification (based on NexStar 6/8SE manual):
 - Serial: Baud Rate 9600, 8 data bits, no parity, 1 stop bit
 - TCP/IP: Default port 4030 (SkyPortal WiFi Adapter)
 - Terminator: '#' character
 - Coordinate Format: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF = 0° to 360°)
+- Motor Resolution: 0.26 arc seconds
+- Software Precision: 16-bit, 20 arc second calculations
+- Slew Speeds: Nine speeds available (5°/sec, 3°/sec, 1°/sec, 0.5°/sec, 32x, 16x, 8x, 4x, 2x)
+- Tracking Rates: Sidereal, Solar, Lunar, and King
+- Tracking Modes: Alt-Az, EQ North, EQ South
 """
 
 from __future__ import annotations
@@ -550,10 +555,22 @@ class NexStarProtocol:
         Initiate variable rate motion.
         Command: P<axis><direction><rate><0><0><0>#
 
+        Slew speeds (NexStar 6/8SE):
+        - Rate 9: 5°/sec (fastest)
+        - Rate 8: 3°/sec
+        - Rate 7: 1°/sec
+        - Rate 6: 0.5°/sec
+        - Rate 5: 32x sidereal
+        - Rate 4: 16x sidereal
+        - Rate 3: 8x sidereal
+        - Rate 2: 4x sidereal
+        - Rate 1: 2x sidereal
+        - Rate 0: Stop
+
         Args:
             axis: 1=azimuth, 2=altitude
             direction: 17=positive, 18=negative
-            rate: 0-9 (0=stop, 9=fastest)
+            rate: 0-9 (0=stop, 9=fastest at 5°/sec)
 
         Returns:
             True if successful

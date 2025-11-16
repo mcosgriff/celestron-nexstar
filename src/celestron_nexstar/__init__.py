@@ -2,7 +2,14 @@
 Celestron NexStar Telescope Control Library
 
 A comprehensive Python library for controlling Celestron NexStar telescopes
-(including the NexStar 6SE) via serial communication.
+(including the NexStar 6SE/8SE) via serial and TCP/IP communication.
+
+Based on NexStar 6/8SE specifications:
+- Motor Resolution: 0.26 arc seconds
+- Software Precision: 16-bit, 20 arc second calculations
+- Slew Speeds: Nine speeds (5°/sec, 3°/sec, 1°/sec, 0.5°/sec, 32x, 16x, 8x, 4x, 2x)
+- Tracking Rates: Sidereal, Solar, Lunar, and King
+- Tracking Modes: Alt-Az, EQ North, EQ South
 
 Example:
     >>> from celestron_nexstar import NexStarTelescope, TelescopeConfig, TrackingMode

@@ -1,10 +1,17 @@
 """
-Celestron NexStar 6SE Telescope API
+Celestron NexStar 6SE/8SE Telescope API
 
 Provides high-level Python interface for controlling Celestron NexStar telescopes.
 
 This module provides a user-friendly interface that wraps the low-level NexStarProtocol
 for convenient telescope control operations.
+
+Based on NexStar 6/8SE specifications:
+- Motor Resolution: 0.26 arc seconds
+- Software Precision: 16-bit, 20 arc second calculations
+- Slew Speeds: Nine speeds (5°/sec, 3°/sec, 1°/sec, 0.5°/sec, 32x, 16x, 8x, 4x, 2x)
+- Tracking Rates: Sidereal, Solar, Lunar, and King
+- Tracking Modes: Alt-Az, EQ North, EQ South
 """
 
 from __future__ import annotations
@@ -37,11 +44,17 @@ logger = logging.getLogger(__name__)
 
 class NexStarTelescope:
     """
-    High-level interface for controlling Celestron NexStar 6SE telescope.
+    High-level interface for controlling Celestron NexStar 6SE/8SE telescope.
 
     This class provides convenient methods for telescope operations by wrapping
     the low-level NexStarProtocol. It handles coordinate conversions, provides
     user-friendly methods, and manages the connection lifecycle.
+
+    Specifications (NexStar 6/8SE):
+    - Motor Resolution: 0.26 arc seconds
+    - Software Precision: 16-bit, 20 arc second calculations
+    - Slew Speeds: Nine speeds available via variable rate motion (0-9)
+    - Tracking Modes: Alt-Az, EQ North, EQ South
 
     Example:
         >>> from celestron_nexstar import NexStarTelescope, TelescopeConfig, TrackingMode
@@ -431,9 +444,21 @@ class NexStarTelescope:
         """
         Move telescope in a fixed direction at specified rate.
 
+        Slew speeds (NexStar 6/8SE):
+        - Rate 9: 5°/sec (fastest)
+        - Rate 8: 3°/sec
+        - Rate 7: 1°/sec
+        - Rate 6: 0.5°/sec
+        - Rate 5: 32x sidereal
+        - Rate 4: 16x sidereal
+        - Rate 3: 8x sidereal
+        - Rate 2: 4x sidereal
+        - Rate 1: 2x sidereal
+        - Rate 0: Stop
+
         Args:
             direction: 'up', 'down', 'left', 'right'
-            rate: Speed rate 0-9 (0=slowest, 9=fastest)
+            rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
 
         Returns:
             True if command successful

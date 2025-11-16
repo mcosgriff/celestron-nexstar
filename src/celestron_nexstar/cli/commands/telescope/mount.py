@@ -124,7 +124,7 @@ def backlash_calibrate(
         nexstar mount backlash-calibrate --axis azimuth
     """
     try:
-        ensure_connected(port)
+        ensure_connected()
 
         console.print("\n[bold cyan]Backlash Calibration Guide[/bold cyan]\n")
 
@@ -257,6 +257,7 @@ West is to the left, so reverse the azimuth settings.
     console.print()
 
     console.print("[bold yellow]Recommended Settings for NexStar 6SE/8SE:[/bold yellow]")
+    console.print("[dim]Motor Resolution: 0.26 arc seconds | Software Precision: 16-bit, 20 arc sec[/dim]")
     console.print("  • Altitude: [bold]Negative[/bold] (tube heavy with accessories)")
     console.print("  • Azimuth: [bold]Positive[/bold] (tracking west)")
     console.print()
@@ -387,7 +388,7 @@ def backlash_test(
         nexstar mount backlash-test --axis altitude --direction negative --rate 5 --duration 15
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         console.print("\n[bold cyan]Backlash Test[/bold cyan]\n")
 

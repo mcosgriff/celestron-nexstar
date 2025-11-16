@@ -645,7 +645,7 @@ def goto(
             raise typer.Exit(code=1) from None
 
         # Get telescope
-        ensure_connected(port)
+        ensure_connected()
 
         # Display object info
         display_name = obj.common_name or obj.name
@@ -654,7 +654,7 @@ def goto(
         # Perform goto
         from celestron_nexstar.cli.commands.telescope.goto import radec as goto_radec
 
-        goto_radec(port=port, ra=obj.ra_hours, dec=obj.dec_degrees, wait=wait, progress=True)
+        goto_radec(ra=obj.ra_hours, dec=obj.dec_degrees, wait=wait, progress=True)
 
     except Exception as e:
         print_error(f"Failed to goto object: {e}")

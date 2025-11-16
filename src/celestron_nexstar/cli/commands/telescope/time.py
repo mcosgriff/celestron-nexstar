@@ -40,7 +40,7 @@ def get_time(
         nexstar time get --json
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         time_info = telescope.get_time()
 
@@ -120,7 +120,7 @@ def set_time(
         raise typer.Exit(code=1) from None
 
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         print_info(f"Setting time to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
 
@@ -154,7 +154,7 @@ def sync_time(
         nexstar time sync --timezone -5
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         # Get current system time
         now = datetime.now()

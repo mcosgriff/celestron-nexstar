@@ -54,7 +54,7 @@ def get_position(
         nexstar position get --watch --interval 2.0
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         if watch:
             # Watch mode - continuously update
@@ -134,7 +134,7 @@ def radec(
         nexstar position radec --json
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
         coords = telescope.get_position_ra_dec()
 
         if json_output:
@@ -167,7 +167,7 @@ def altaz(
         nexstar position altaz --json
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
         coords = telescope.get_position_alt_az()
 
         if json_output:

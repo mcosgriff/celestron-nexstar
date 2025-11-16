@@ -118,9 +118,14 @@ class TelescopeInfo:
     Telescope hardware information.
 
     Attributes:
-        model: Model number (e.g., 6 for NexStar 6SE)
+        model: Model number (e.g., 6 for NexStar 6SE, 8 for NexStar 8SE)
         firmware_major: Firmware major version
         firmware_minor: Firmware minor version
+
+    Note:
+        Based on NexStar 6/8SE specifications:
+        - Motor Resolution: 0.26 arc seconds
+        - Software Precision: 16-bit, 20 arc second calculations
     """
 
     model: int

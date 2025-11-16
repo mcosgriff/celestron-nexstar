@@ -3,6 +3,10 @@ Optical Configuration and Calculations
 
 Manages telescope and eyepiece specifications, calculates limiting magnitudes,
 field of view, and object visibility based on optical parameters.
+
+Telescope Specifications (NexStar 6/8SE):
+- Motor Resolution: 0.26 arc seconds
+- Software Precision: 16-bit, 20 arc second calculations
 """
 
 from __future__ import annotations

@@ -59,7 +59,7 @@ def start(
     tracking_mode = mode_map[mode]
 
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         success = telescope.set_tracking_mode(tracking_mode)
         if success:
@@ -84,7 +84,7 @@ def stop(
         nexstar track stop
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         success = telescope.set_tracking_mode(TrackingMode.OFF)
         if success:
@@ -111,7 +111,7 @@ def status(
         nexstar track status --json
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         mode = telescope.get_tracking_mode()
 

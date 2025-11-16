@@ -71,7 +71,7 @@ def sync(
         raise typer.Exit(code=1) from None
 
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         print_info(f"Syncing to RA {ra:.4f}h, Dec {dec:+.4f}°")
 
@@ -286,7 +286,7 @@ Requirements:
             console.print()
 
         # Connect to telescope
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         # Steps 4-5: Interactive alignment
         alignment_positions: list[tuple[float, float]] = []
@@ -560,7 +560,7 @@ Requirements:
             console.print()
 
         # Connect to telescope
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         # Step 4: First star (manual slew)
         console.print("[dim]Step 4/5:[/dim] Star 1 - Manual Slew")

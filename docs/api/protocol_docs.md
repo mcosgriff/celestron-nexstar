@@ -6,12 +6,19 @@ This module provides a low-level implementation of the NexStar serial communicat
 
 ### Protocol Specification
 
+Based on NexStar 6/8SE manual specifications:
+
 - **Baud Rate**: 9600
 - **Data Bits**: 8
 - **Parity**: None
 - **Stop Bits**: 1
 - **Terminator**: `#` character
 - **Coordinate Format**: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF, representing 0° to 360°)
+- **Motor Resolution**: 0.26 arc seconds
+- **Software Precision**: 16-bit, 20 arc second calculations
+- **Slew Speeds**: Nine speeds available (5°/sec, 3°/sec, 1°/sec, 0.5°/sec, 32x, 16x, 8x, 4x, 2x)
+- **Tracking Rates**: Sidereal, Solar, Lunar, and King
+- **Tracking Modes**: Alt-Az, EQ North, EQ South
 
 ## Protocol Communication Flow
 

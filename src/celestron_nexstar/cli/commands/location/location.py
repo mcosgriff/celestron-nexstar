@@ -70,7 +70,7 @@ def set_location(
         raise typer.Exit(code=1) from None
 
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         print_info(f"Setting location to {latitude:.4f}°, {longitude:.4f}°")
 
@@ -102,7 +102,7 @@ def get_location(
         nexstar location get --json
     """
     try:
-        telescope = ensure_connected(port)
+        telescope = ensure_connected()
 
         location = telescope.get_location()
 

@@ -300,6 +300,7 @@ warn_unused_ignores = false  # Type ignore needed for alembic.command import and
 [[tool.mypy.overrides]]
 module = "celestron_nexstar.api.events.space_weather"
 warn_unused_ignores = false  # Type ignore needed for urllib3.util.retry import
+ignore_missing_imports = true  # urllib3 is a transitive dependency and may not have type stubs
 
 # Suppress deal contract type errors (known limitation with deal.mypy plugin)
 # Deal contracts use lambdas that mypy cannot properly infer types for

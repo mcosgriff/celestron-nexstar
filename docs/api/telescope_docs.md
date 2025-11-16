@@ -4,6 +4,14 @@
 
 This module provides a high-level, user-friendly interface for controlling Celestron NexStar telescopes. It abstracts the low-level serial commands found in `protocol.py` into convenient methods for common telescope operations, such as connecting, moving, and retrieving position data.
 
+### Telescope Specifications (NexStar 6/8SE)
+
+- **Motor Resolution**: 0.26 arc seconds
+- **Software Precision**: 16-bit, 20 arc second calculations
+- **Slew Speeds**: Nine speeds available (5°/sec, 3°/sec, 1°/sec, 0.5°/sec, 32x, 16x, 8x, 4x, 2x)
+- **Tracking Rates**: Sidereal, Solar, Lunar, and King
+- **Tracking Modes**: Alt-Az, EQ North, EQ South
+
 ## `NexStarTelescope` Class
 
 This is the main class for interacting with the telescope. It handles the connection, sends commands, and processes responses.
