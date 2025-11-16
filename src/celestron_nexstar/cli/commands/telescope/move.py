@@ -10,6 +10,7 @@ import typer
 from click import Context
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.core.enums import Direction
 from celestron_nexstar.cli.utils.output import print_error, print_info, print_success
 from celestron_nexstar.cli.utils.state import ensure_connected
 
@@ -28,9 +29,9 @@ app = typer.Typer(help="Manual movement commands", cls=SortedCommandsGroup)
 
 @app.command(rich_help_panel="Movement")
 def fixed(
-    direction: Literal[
-        "up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"
-    ] = typer.Argument(..., help="Direction to move"),
+    direction: Direction = typer.Argument(
+        ..., help="Direction to move (up, down, left, right, up-left, up-right, down-left, down-right)"
+    ),
     rate: int = typer.Option(5, min=0, max=9, help="Movement rate (0-9, 0=slowest, 9=fastest)"),
     duration: float | None = typer.Option(None, help="Duration in seconds (if specified, auto-stops)"),
 ) -> None:
@@ -77,9 +78,9 @@ def fixed(
 
 @app.command(rich_help_panel="Movement")
 def step(
-    direction: Literal[
-        "up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"
-    ] = typer.Argument(..., help="Direction to move"),
+    direction: Direction = typer.Argument(
+        ..., help="Direction to move (up, down, left, right, up-left, up-right, down-left, down-right)"
+    ),
     rate: int = typer.Option(4, min=0, max=9, help="Movement rate (0-9, 0=slowest, 9=fastest)"),
 ) -> None:
     """

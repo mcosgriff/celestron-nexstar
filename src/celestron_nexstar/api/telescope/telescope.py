@@ -24,6 +24,7 @@ import deal
 import serial
 
 from celestron_nexstar.api.catalogs.converters import CoordinateConverter
+from celestron_nexstar.api.core.enums import Direction
 from celestron_nexstar.api.core.exceptions import InvalidCoordinateError, NotConnectedError, TelescopeConnectionError
 from celestron_nexstar.api.core.types import (
     EquatorialCoordinates,
@@ -435,13 +436,12 @@ class NexStarTelescope:
 
     @deal.pre(lambda self, direction, rate: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self, direction, rate: direction.lower() in ["up", "down", "left", "right"],
-        message="Direction must be up/down/left/right",
+        lambda self, direction, rate: isinstance(direction, Direction), message="Direction must be Direction enum"
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     @deal.raises(ValueError)
-    def move_fixed(self, direction: str, rate: int = 4) -> bool:
+    def move_fixed(self, direction: Direction | str, rate: int = 4) -> bool:
         """
         Move telescope in a fixed direction at specified rate.
 
@@ -458,7 +458,7 @@ class NexStarTelescope:
         - Rate 0: Stop
 
         Args:
-            direction: 'up', 'down', 'left', 'right'
+            direction: Direction enum value (UP, DOWN, LEFT, RIGHT)
             rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
 
         Returns:
@@ -468,26 +468,38 @@ class NexStarTelescope:
             ValueError: If direction or rate is invalid
 
         Example:
-            >>> telescope.move_fixed('up', rate=5)
+            >>> from celestron_nexstar.api.core.enums import Direction
+            >>> telescope.move_fixed(Direction.UP, rate=5)
             >>> time.sleep(2)
             >>> telescope.stop_motion('alt')
         """
-        # Map directions to axis and direction codes
+        # Convert string to enum if needed (for backward compatibility)
+        if isinstance(direction, str):
+            try:
+                direction = Direction(direction.lower())
+            except ValueError:
+                raise ValueError(
+                    f"Invalid direction: {direction}. Use Direction enum or 'up', 'down', 'left', 'right'"
+                ) from None
+
+        # Map directions to axis and direction codes (only single-axis directions)
         direction_map = {
-            "up": (2, 17),  # Altitude axis, positive
-            "down": (2, 18),  # Altitude axis, negative
-            "left": (1, 17),  # Azimuth axis, positive
-            "right": (1, 18),  # Azimuth axis, negative
+            Direction.UP: (2, 17),  # Altitude axis, positive
+            Direction.DOWN: (2, 18),  # Altitude axis, negative
+            Direction.LEFT: (1, 17),  # Azimuth axis, positive
+            Direction.RIGHT: (1, 18),  # Azimuth axis, negative
         }
 
-        if direction.lower() not in direction_map:
-            raise ValueError(f"Invalid direction: {direction}. Use 'up', 'down', 'left', or 'right'") from None
+        if direction not in direction_map:
+            raise ValueError(
+                f"Invalid direction for move_fixed: {direction}. Use UP, DOWN, LEFT, or RIGHT (not diagonal)"
+            ) from None
 
         if not 0 <= rate <= 9:
             raise ValueError(f"Invalid rate: {rate}. Must be 0-9") from None
 
-        axis, cmd_dir = direction_map[direction.lower()]
-        logger.debug(f"Moving {direction} at rate {rate}")
+        axis, cmd_dir = direction_map[direction]
+        logger.debug(f"Moving {direction.value} at rate {rate}")
         return self.protocol.variable_rate_motion(axis, cmd_dir, rate)
 
     @deal.pre(lambda self, axis: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
@@ -522,14 +534,13 @@ class NexStarTelescope:
 
     @deal.pre(lambda self, direction, rate: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self, direction, rate: direction.lower()
-        in ["up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"],
-        message="Direction must be up/down/left/right or diagonal",
+        lambda self, direction, rate: isinstance(direction, (Direction, str)),
+        message="Direction must be Direction enum or str",
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     @deal.raises(ValueError)
-    def move_step(self, direction: str, rate: int = 4) -> bool:
+    def move_step(self, direction: Direction | str, rate: int = 4) -> bool:
         """
         Move telescope one step in the specified direction.
 
@@ -549,7 +560,7 @@ class NexStarTelescope:
         - Rate 1: ~0.005° (2x sidereal ≈ 0.02°/sec * 0.2s)
 
         Args:
-            direction: 'up', 'down', 'left', 'right', or diagonal ('up-left', 'up-right', 'down-left', 'down-right')
+            direction: Direction enum value or string (e.g., Direction.UP, 'up', Direction.UP_RIGHT, 'up-right')
             rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
 
         Returns:
@@ -559,32 +570,38 @@ class NexStarTelescope:
             ValueError: If direction or rate is invalid
 
         Example:
-            >>> telescope.move_step('up', rate=5)
+            >>> from celestron_nexstar.api.core.enums import Direction
+            >>> telescope.move_step(Direction.UP, rate=5)
             True
-            >>> telescope.move_step('up-right', rate=7)
+            >>> telescope.move_step(Direction.UP_RIGHT, rate=7)
             True
         """
+        # Convert string to enum if needed (for backward compatibility)
+        if isinstance(direction, str):
+            try:
+                direction = Direction(direction.lower())
+            except ValueError:
+                raise ValueError(f"Invalid direction: {direction}") from None
+
         if rate == 0:
             # Rate 0 means stop, so just stop motion
             return self.stop_motion("both")
 
-        direction_lower = direction.lower()
-
         # Handle diagonal movements
-        if direction_lower in ["up-left", "up-right", "down-left", "down-right"]:
+        if direction in [Direction.UP_LEFT, Direction.UP_RIGHT, Direction.DOWN_LEFT, Direction.DOWN_RIGHT]:
             # For diagonal, move both axes simultaneously
-            if direction_lower == "up-left":
-                alt_success = self.move_fixed("up", rate)
-                az_success = self.move_fixed("left", rate)
-            elif direction_lower == "up-right":
-                alt_success = self.move_fixed("up", rate)
-                az_success = self.move_fixed("right", rate)
-            elif direction_lower == "down-left":
-                alt_success = self.move_fixed("down", rate)
-                az_success = self.move_fixed("left", rate)
-            else:  # down-right
-                alt_success = self.move_fixed("down", rate)
-                az_success = self.move_fixed("right", rate)
+            if direction == Direction.UP_LEFT:
+                alt_success = self.move_fixed(Direction.UP, rate)
+                az_success = self.move_fixed(Direction.LEFT, rate)
+            elif direction == Direction.UP_RIGHT:
+                alt_success = self.move_fixed(Direction.UP, rate)
+                az_success = self.move_fixed(Direction.RIGHT, rate)
+            elif direction == Direction.DOWN_LEFT:
+                alt_success = self.move_fixed(Direction.DOWN, rate)
+                az_success = self.move_fixed(Direction.LEFT, rate)
+            else:  # DOWN_RIGHT
+                alt_success = self.move_fixed(Direction.DOWN, rate)
+                az_success = self.move_fixed(Direction.RIGHT, rate)
 
             if not (alt_success and az_success):
                 return False
@@ -604,20 +621,19 @@ class NexStarTelescope:
         time.sleep(0.2)
 
         # Determine axis from direction and stop
-        axis = "alt" if direction_lower in ["up", "down"] else "az"
+        axis = "alt" if direction in [Direction.UP, Direction.DOWN] else "az"
         return self.stop_motion(axis)
 
     @deal.pre(lambda self, direction, rate, duration: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self, direction, rate, duration: direction.lower()
-        in ["up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"],
-        message="Direction must be up/down/left/right or diagonal",
+        lambda self, direction, rate, duration: isinstance(direction, (Direction, str)),
+        message="Direction must be Direction enum or str",
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate, duration: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate, duration: duration > 0, message="Duration must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     @deal.raises(ValueError)
-    def move_for_time(self, direction: str, duration: float, rate: int = 4) -> bool:
+    def move_for_time(self, direction: Direction | str, duration: float, rate: int = 4) -> bool:
         """
         Move telescope in specified direction for a set duration.
 
@@ -625,7 +641,7 @@ class NexStarTelescope:
         then automatically stops.
 
         Args:
-            direction: 'up', 'down', 'left', 'right', or diagonal ('up-left', 'up-right', 'down-left', 'down-right')
+            direction: Direction enum value or string (e.g., Direction.UP, 'up', Direction.UP_RIGHT, 'up-right')
             duration: Duration in seconds (must be positive)
             rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
 
@@ -636,11 +652,19 @@ class NexStarTelescope:
             ValueError: If direction, rate, or duration is invalid
 
         Example:
-            >>> telescope.move_for_time('up', duration=2.0, rate=5)
+            >>> from celestron_nexstar.api.core.enums import Direction
+            >>> telescope.move_for_time(Direction.UP, duration=2.0, rate=5)
             True
-            >>> telescope.move_for_time('up-right', duration=1.5, rate=7)
+            >>> telescope.move_for_time(Direction.UP_RIGHT, duration=1.5, rate=7)
             True
         """
+        # Convert string to enum if needed (for backward compatibility)
+        if isinstance(direction, str):
+            try:
+                direction = Direction(direction.lower())
+            except ValueError:
+                raise ValueError(f"Invalid direction: {direction}") from None
+
         if rate == 0:
             # Rate 0 means stop
             return self.stop_motion("both")
@@ -648,23 +672,21 @@ class NexStarTelescope:
         if duration <= 0:
             raise ValueError(f"Duration must be positive, got {duration}") from None
 
-        direction_lower = direction.lower()
-
         # Handle diagonal movements
-        if direction_lower in ["up-left", "up-right", "down-left", "down-right"]:
+        if direction in [Direction.UP_LEFT, Direction.UP_RIGHT, Direction.DOWN_LEFT, Direction.DOWN_RIGHT]:
             # For diagonal, move both axes simultaneously
-            if direction_lower == "up-left":
-                alt_success = self.move_fixed("up", rate)
-                az_success = self.move_fixed("left", rate)
-            elif direction_lower == "up-right":
-                alt_success = self.move_fixed("up", rate)
-                az_success = self.move_fixed("right", rate)
-            elif direction_lower == "down-left":
-                alt_success = self.move_fixed("down", rate)
-                az_success = self.move_fixed("left", rate)
-            else:  # down-right
-                alt_success = self.move_fixed("down", rate)
-                az_success = self.move_fixed("right", rate)
+            if direction == Direction.UP_LEFT:
+                alt_success = self.move_fixed(Direction.UP, rate)
+                az_success = self.move_fixed(Direction.LEFT, rate)
+            elif direction == Direction.UP_RIGHT:
+                alt_success = self.move_fixed(Direction.UP, rate)
+                az_success = self.move_fixed(Direction.RIGHT, rate)
+            elif direction == Direction.DOWN_LEFT:
+                alt_success = self.move_fixed(Direction.DOWN, rate)
+                az_success = self.move_fixed(Direction.LEFT, rate)
+            else:  # DOWN_RIGHT
+                alt_success = self.move_fixed(Direction.DOWN, rate)
+                az_success = self.move_fixed(Direction.RIGHT, rate)
 
             if not (alt_success and az_success):
                 return False
@@ -684,7 +706,7 @@ class NexStarTelescope:
         time.sleep(duration)
 
         # Determine axis from direction and stop
-        axis = "alt" if direction_lower in ["up", "down"] else "az"
+        axis = "alt" if direction in [Direction.UP, Direction.DOWN] else "az"
         return self.stop_motion(axis)
 
     @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
