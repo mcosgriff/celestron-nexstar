@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from returns.result import Failure, Success
 
+from celestron_nexstar.api.core.enums import Direction
 from celestron_nexstar.api.core.exceptions import TelescopeConnectionError
 from celestron_nexstar.api.core.types import (
     AlignmentMode,
@@ -321,7 +322,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed("up", rate=5)
+            result = self.telescope.move_fixed(Direction.UP, rate=5)
 
         self.assertTrue(result)
 
@@ -331,7 +332,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed("down", rate=3)
+            result = self.telescope.move_fixed(Direction.DOWN, rate=3)
 
         self.assertTrue(result)
 
@@ -341,7 +342,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed("left", rate=7)
+            result = self.telescope.move_fixed(Direction.LEFT, rate=7)
 
         self.assertTrue(result)
 
@@ -351,7 +352,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed("right", rate=9)
+            result = self.telescope.move_fixed(Direction.RIGHT, rate=9)
 
         self.assertTrue(result)
 
@@ -365,13 +366,13 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test move_fixed with rate too high"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
-                self.telescope.move_fixed("up", rate=10)
+                self.telescope.move_fixed(Direction.UP, rate=10)
 
     def test_move_fixed_invalid_rate_negative(self):
         """Test move_fixed with negative rate"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
-                self.telescope.move_fixed("up", rate=-1)
+                self.telescope.move_fixed(Direction.UP, rate=-1)
 
     def test_stop_motion_both(self):
         """Test stopping motion on both axes"""

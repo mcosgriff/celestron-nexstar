@@ -436,7 +436,8 @@ class NexStarTelescope:
 
     @deal.pre(lambda self, direction, rate: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(
-        lambda self, direction, rate: isinstance(direction, Direction), message="Direction must be Direction enum"
+        lambda self, direction, rate: isinstance(direction, (Direction, str)),
+        message="Direction must be Direction enum or str",
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
