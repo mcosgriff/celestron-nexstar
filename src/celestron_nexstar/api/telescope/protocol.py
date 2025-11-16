@@ -1,22 +1,22 @@
 """
 NexStar Communication Protocol Implementation
 
-This module implements the low-level NexStar serial protocol for communicating
-with Celestron telescopes. It handles serial communication, command formatting,
-response parsing, and coordinate encoding/decoding.
+This module implements the low-level NexStar protocol for communicating
+with Celestron telescopes. It handles both serial and TCP/IP communication,
+command formatting, response parsing, and coordinate encoding/decoding.
 
 Protocol Specification:
-- Baud Rate: 9600
-- Data Bits: 8
-- Parity: None
-- Stop Bits: 1
+- Serial: Baud Rate 9600, 8 data bits, no parity, 1 stop bit
+- TCP/IP: Default port 4030 (SkyPortal WiFi Adapter)
 - Terminator: '#' character
 - Coordinate Format: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF = 0° to 360°)
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import socket
 import time
 
 import deal
@@ -34,44 +34,70 @@ logger = logging.getLogger(__name__)
 
 class NexStarProtocol:
     """
-    Low-level implementation of the NexStar serial communication protocol.
+    Low-level implementation of the NexStar communication protocol.
 
     This class handles:
-    - Serial port management
+    - Serial port and TCP/IP socket management
     - Command transmission and response reception
     - Coordinate encoding/decoding (degrees <-> hex)
     - Protocol-level error handling
+
+    Supports both serial and TCP/IP connections (e.g., via Celestron SkyPortal WiFi Adapter).
     """
 
     # Protocol constants
     TERMINATOR = "#"
     DEFAULT_BAUDRATE = 9600
     DEFAULT_TIMEOUT = 2.0
+    DEFAULT_TCP_PORT = 4030
+    DEFAULT_TCP_HOST = "192.168.4.1"
 
-    def __init__(self, port: str, baudrate: int = DEFAULT_BAUDRATE, timeout: float = DEFAULT_TIMEOUT):
+    def __init__(
+        self,
+        port: str | None = None,
+        baudrate: int = DEFAULT_BAUDRATE,
+        timeout: float = DEFAULT_TIMEOUT,
+        connection_type: str = "serial",
+        host: str = DEFAULT_TCP_HOST,
+        tcp_port: int = DEFAULT_TCP_PORT,
+    ):
         """
         Initialize protocol handler.
 
         Args:
-            port: Serial port path
-            baudrate: Communication speed (default 9600)
-            timeout: Serial timeout in seconds
+            port: Serial port path (required for serial connections)
+            baudrate: Communication speed (default 9600, only used for serial)
+            timeout: Connection timeout in seconds
+            connection_type: 'serial' or 'tcp' (default: 'serial')
+            host: TCP/IP host address (default: '192.168.4.1' for SkyPortal WiFi Adapter)
+            tcp_port: TCP/IP port number (default: 4030 for SkyPortal WiFi Adapter)
         """
-        self.port = port
+        self.connection_type = connection_type
+        self.port = port or "/dev/ttyUSB0"
         self.baudrate = baudrate
         self.timeout = timeout
+        self.host = host
+        self.tcp_port = tcp_port
         self.serial_conn: serial.Serial | None = None
+        self.tcp_socket: socket.socket | None = None
 
     def open(self) -> bool:
         """
-        Open serial connection to telescope.
+        Open connection to telescope (serial or TCP/IP).
 
         Returns:
             True if connection successful
 
         Raises:
-            TelescopeConnectionError: If serial port cannot be opened
+            TelescopeConnectionError: If connection cannot be opened
         """
+        if self.connection_type == "tcp":
+            return self._open_tcp()
+        else:
+            return self._open_serial()
+
+    def _open_serial(self) -> bool:
+        """Open serial connection to telescope."""
         try:
             logger.debug(f"Opening serial connection to {self.port} at {self.baudrate} baud")
             self.serial_conn = serial.Serial(
@@ -89,15 +115,45 @@ class NexStarProtocol:
             logger.error(f"Failed to open serial port {self.port}: {e}")
             raise TelescopeConnectionError(f"Failed to open port {self.port}: {e}") from e
 
+    def _open_tcp(self) -> bool:
+        """Open TCP/IP connection to telescope (e.g., via SkyPortal WiFi Adapter)."""
+        try:
+            logger.debug(f"Opening TCP/IP connection to {self.host}:{self.tcp_port}")
+            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.tcp_socket.settimeout(self.timeout)
+            self.tcp_socket.connect((self.host, self.tcp_port))
+            time.sleep(0.2)  # Allow connection to stabilize
+            logger.info(f"TCP/IP connection opened successfully to {self.host}:{self.tcp_port}")
+            return True
+        except OSError as e:
+            logger.error(f"Failed to open TCP/IP connection to {self.host}:{self.tcp_port}: {e}")
+            if self.tcp_socket:
+                with contextlib.suppress(Exception):
+                    self.tcp_socket.close()
+                self.tcp_socket = None
+            raise TelescopeConnectionError(f"Failed to connect to {self.host}:{self.tcp_port}: {e}") from e
+
     def close(self) -> None:
-        """Close serial connection."""
-        if self.serial_conn and self.serial_conn.is_open:
-            self.serial_conn.close()
-            logger.info(f"Serial connection closed on {self.port}")
+        """Close connection (serial or TCP/IP)."""
+        if self.connection_type == "tcp":
+            if self.tcp_socket:
+                try:
+                    self.tcp_socket.close()
+                    logger.info(f"TCP/IP connection closed to {self.host}:{self.tcp_port}")
+                except Exception as e:
+                    logger.warning(f"Error closing TCP/IP socket: {e}")
+                self.tcp_socket = None
+        else:
+            if self.serial_conn and self.serial_conn.is_open:
+                self.serial_conn.close()
+                logger.info(f"Serial connection closed on {self.port}")
 
     def is_open(self) -> bool:
         """Check if connection is open."""
-        return self.serial_conn is not None and self.serial_conn.is_open
+        if self.connection_type == "tcp":
+            return self.tcp_socket is not None
+        else:
+            return self.serial_conn is not None and self.serial_conn.is_open
 
     def send_command(self, command: str) -> str:
         """
@@ -118,8 +174,15 @@ class NexStarProtocol:
         """
         if not self.is_open():
             logger.error("Attempted to send command while not connected")
-            raise NotConnectedError("Serial port not open") from None
+            raise NotConnectedError("Connection not open") from None
 
+        if self.connection_type == "tcp":
+            return self._send_command_tcp(command)
+        else:
+            return self._send_command_serial(command)
+
+    def _send_command_serial(self, command: str) -> str:
+        """Send command over serial connection."""
         # Type guard to ensure serial_conn is not None
         assert self.serial_conn is not None, "Serial connection should be open at this point"
 
@@ -146,6 +209,54 @@ class NexStarProtocol:
                 response += byte
                 if byte == self.TERMINATOR.encode("ascii"):
                     break
+
+        # Decode and remove terminator
+        response_str = response.decode("ascii").rstrip(self.TERMINATOR)
+        logger.debug(f"Received response: {response_str!r}")
+        return response_str
+
+    def _send_command_tcp(self, command: str) -> str:
+        """Send command over TCP/IP connection."""
+        # Type guard to ensure tcp_socket is not None
+        assert self.tcp_socket is not None, "TCP/IP connection should be open at this point"
+
+        # Send command with terminator
+        full_command = command + self.TERMINATOR
+        logger.debug(f"Sending command: {command!r}")
+        try:
+            self.tcp_socket.sendall(full_command.encode("ascii"))
+        except OSError as e:
+            logger.error(f"Error sending command over TCP/IP: {e}")
+            raise TelescopeConnectionError(f"Failed to send command: {e}") from e
+
+        # Read response until terminator
+        response = b""
+        start_time = time.time()
+
+        while True:
+            if time.time() - start_time > self.timeout:
+                logger.error(f"Timeout waiting for response to command: {command!r}")
+                raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
+
+            try:
+                # Set socket to non-blocking for timeout handling
+                self.tcp_socket.settimeout(0.1)
+                byte = self.tcp_socket.recv(1)
+                if not byte:
+                    # Connection closed
+                    raise TelescopeConnectionError("Connection closed by remote host") from None
+                response += byte
+                if byte == self.TERMINATOR.encode("ascii"):
+                    break
+            except TimeoutError:
+                # Continue waiting if timeout hasn't been exceeded
+                continue
+            except OSError as e:
+                logger.error(f"Error receiving response over TCP/IP: {e}")
+                raise TelescopeConnectionError(f"Failed to receive response: {e}") from e
+            finally:
+                # Restore original timeout
+                self.tcp_socket.settimeout(self.timeout)
 
         # Decode and remove terminator
         response_str = response.decode("ascii").rstrip(self.TERMINATOR)
@@ -295,8 +406,13 @@ class NexStarProtocol:
         try:
             response = self.send_command(f"K{char}")
             return response == char
-        except (NotConnectedError, TelescopeTimeoutError, serial.SerialException):
+        except (NotConnectedError, TelescopeTimeoutError, TelescopeConnectionError):
             return False
+        except Exception:
+            # Handle serial.SerialException for serial connections
+            if self.connection_type == "serial":
+                return False
+            raise
 
     def get_version(self) -> tuple[int, int]:
         """

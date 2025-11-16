@@ -278,7 +278,19 @@ class TestDataclassFields(unittest.TestCase):
     def test_telescope_config_fields(self):
         """Test TelescopeConfig has correct fields"""
         field_names = {f.name for f in fields(TelescopeConfig)}
-        self.assertEqual(field_names, {"port", "baudrate", "timeout", "auto_connect", "verbose"})
+        self.assertEqual(
+            field_names,
+            {
+                "port",
+                "baudrate",
+                "timeout",
+                "auto_connect",
+                "verbose",
+                "connection_type",
+                "host",
+                "tcp_port",
+            },
+        )
 
 
 if __name__ == "__main__":

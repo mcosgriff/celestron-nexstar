@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 
 __all__ = [
@@ -166,10 +167,14 @@ class TelescopeConfig:
 
     Attributes:
         port: Serial port path (e.g., '/dev/ttyUSB0' on Linux, 'COM3' on Windows)
-        baudrate: Communication speed (default 9600 for NexStar)
-        timeout: Serial timeout in seconds
+              For TCP/IP connections, this is ignored in favor of host/port.
+        baudrate: Communication speed (default 9600 for NexStar, only used for serial)
+        timeout: Connection timeout in seconds
         auto_connect: Automatically connect on initialization
         verbose: Enable verbose logging
+        connection_type: Type of connection - 'serial' or 'tcp' (default: 'serial')
+        host: TCP/IP host address (default: '192.168.4.1' for SkyPortal WiFi Adapter)
+        tcp_port: TCP/IP port number (default: 4030 for SkyPortal WiFi Adapter)
     """
 
     port: str = "/dev/ttyUSB0"
@@ -177,3 +182,6 @@ class TelescopeConfig:
     timeout: float = 2.0
     auto_connect: bool = False
     verbose: bool = False
+    connection_type: Literal["serial", "tcp"] = "serial"
+    host: str = "192.168.4.1"
+    tcp_port: int = 4030

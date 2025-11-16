@@ -419,11 +419,35 @@ Migrations are automatically applied during `nexstar data setup`, but if you're 
 
 ### Connection
 
-Connect your Celestron NexStar telescope via USB:
+Connect your Celestron NexStar telescope via USB or WiFi:
+
+**Serial Connection (USB):**
 
 - **macOS**: `/dev/tty.usbserial-XXXXX` (check with `ls /dev/tty.usbserial*`)
 - **Linux**: `/dev/ttyUSB0` (may need: `sudo usermod -a -G dialout $USER`)
 - **Windows**: `COM3`, `COM4`, etc. (check Device Manager)
+
+**TCP/IP Connection (WiFi - SkyPortal WiFi Adapter):**
+
+Control your telescope wirelessly using the Celestron SkyPortal WiFi Adapter:
+
+1. **Connect the adapter** to your telescope's hand control port
+2. **Set adapter to WLAN mode** (creates its own WiFi network)
+3. **Connect your computer** to the adapter's WiFi network (typically named "Celestron-XXXX")
+4. **Connect via TCP/IP**:
+
+```bash
+# Default settings (192.168.4.1:4030)
+nexstar connect --tcp
+
+# Custom host/port
+nexstar connect --tcp --host 192.168.4.1 --tcp-port 4030
+
+# Test connection
+nexstar test --tcp
+```
+
+The adapter uses the same NexStar protocol over TCP/IP, so all telescope commands work identically to serial connections.
 
 ### Location Setup
 

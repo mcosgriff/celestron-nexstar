@@ -83,7 +83,12 @@ class NexStarTelescope:
 
         # Create protocol instance
         self.protocol = NexStarProtocol(
-            port=self.config.port, baudrate=self.config.baudrate, timeout=self.config.timeout
+            port=self.config.port,
+            baudrate=self.config.baudrate,
+            timeout=self.config.timeout,
+            connection_type=self.config.connection_type,
+            host=self.config.host,
+            tcp_port=self.config.tcp_port,
         )
 
         # Keep for backward compatibility with tests
