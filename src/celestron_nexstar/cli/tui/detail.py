@@ -6,13 +6,28 @@ Shows detailed information about a selected celestial object.
 
 from __future__ import annotations
 
-from prompt_toolkit.formatted_text import FormattedText
-
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.observation.visibility import VisibilityInfo
 
 
-def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo) -> FormattedText:
+def _add_rich_line(result: list[str], style: str, text: str) -> None:
+    """Add a line with Rich markup to the result list."""
+    if style:
+        style_map = {
+            "bold": "bold",
+            "dim": "dim",
+            "cyan": "cyan",
+            "yellow": "yellow",
+            "green": "green",
+            "red": "red",
+        }
+        rich_style = style_map.get(style, style)
+        result.append(f"[{rich_style}]{text}[/]")
+    else:
+        result.append(text)
+
+
+def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo) -> str:
     """
     Generate formatted text for object detail view.
 
@@ -29,21 +44,29 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    db_obj = asyncio.run(db.get_by_name(obj.name))
+    # Try to get the current event loop
+    try:
+        _ = asyncio.get_running_loop()
+        # If we're in an event loop, we can't use asyncio.run()
+        # Skip database lookup for now - use catalog object
+        db_obj = None
+        display_obj = obj
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        db_obj = asyncio.run(db.get_by_name(obj.name))
+        # Use database object if available (has more fields), otherwise use catalog object
+        display_obj = db_obj if db_obj else obj
 
-    # Use database object if available (has more fields), otherwise use catalog object
-    display_obj = db_obj if db_obj else obj
-
-    lines: list[tuple[str, str]] = []
+    lines: list[str] = []
 
     # Header
-    lines.append(("bold cyan", f"{display_obj.name}"))
+    _add_rich_line(lines, "bold cyan", f"{display_obj.name}")
     if display_obj.common_name:
-        lines.append(("", " - "))
-        lines.append(("dim", display_obj.common_name))
-    lines.append(("", "\n"))
+        lines.append(" - ")
+        _add_rich_line(lines, "dim", display_obj.common_name)
+    lines.append("\n")
     # Use a simple separator line that will wrap naturally
-    lines.append(("dim", "────────────────────\n"))  # Fixed short separator
+    _add_rich_line(lines, "dim", "────────────────────\n")  # Fixed short separator
 
     # Position (J2000)
     ra_h = int(display_obj.ra_hours)
@@ -55,22 +78,22 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
     dec_dir = "N" if display_obj.dec_degrees >= 0 else "S"
 
     # Position on separate lines to avoid long lines
-    lines.append(("bold", "Position (J2000):\n"))
-    lines.append(("", f"  RA:  {ra_h:02d}h {ra_m:02d}m {ra_s:02d}s\n"))
-    lines.append(("", f"  Dec: {abs(dec_d):02d}° {dec_m:02d}' {dec_s:02d}\" {dec_dir}\n"))
+    _add_rich_line(lines, "bold", "Position (J2000):\n")
+    lines.append(f"  RA:  {ra_h:02d}h {ra_m:02d}m {ra_s:02d}s\n")
+    lines.append(f"  Dec: {abs(dec_d):02d}° {dec_m:02d}' {dec_s:02d}\" {dec_dir}\n")
 
     # Current position
     if visibility_info.altitude_deg is not None and visibility_info.azimuth_deg is not None:
-        lines.append(("bold", "Current: "))
-        lines.append(("cyan", f"Alt:{visibility_info.altitude_deg:5.1f}° "))
-        lines.append(("cyan", f"Az:{visibility_info.azimuth_deg:5.1f}°\n"))
+        _add_rich_line(lines, "bold", "Current: ")
+        _add_rich_line(lines, "cyan", f"Alt:{visibility_info.altitude_deg:5.1f}° ")
+        _add_rich_line(lines, "cyan", f"Az:{visibility_info.azimuth_deg:5.1f}°\n")
 
     # Properties - each on its own line
-    lines.append(("bold", "Type: "))
-    lines.append(("", f"{display_obj.object_type.value}\n"))
+    _add_rich_line(lines, "bold", "Type: ")
+    lines.append(f"{display_obj.object_type.value}\n")
 
-    lines.append(("bold", "Catalog: "))
-    lines.append(("", f"{display_obj.catalog}\n"))
+    _add_rich_line(lines, "bold", "Catalog: ")
+    lines.append(f"{display_obj.catalog}\n")
 
     # Get additional fields from database if available
     if db_obj:
@@ -82,48 +105,48 @@ def get_object_detail_text(obj: CelestialObject, visibility_info: VisibilityInfo
             )
             if model:
                 if model.constellation:
-                    lines.append(("bold", "Const: "))
-                    lines.append(("", f"{model.constellation}\n"))
+                    _add_rich_line(lines, "bold", "Const: ")
+                    lines.append(f"{model.constellation}\n")
                 if model.size_arcmin:
-                    lines.append(("bold", "Size: "))
-                    lines.append(("", f"{model.size_arcmin:.2f}'\n"))
+                    _add_rich_line(lines, "bold", "Size: ")
+                    lines.append(f"{model.size_arcmin:.2f}'\n")
                 if model.catalog_number:
-                    lines.append(("bold", "#: "))
-                    lines.append(("", f"{model.catalog_number}\n"))
+                    _add_rich_line(lines, "bold", "#: ")
+                    lines.append(f"{model.catalog_number}\n")
 
     if display_obj.magnitude is not None:
-        lines.append(("bold", "Mag: "))
-        lines.append(("cyan", f"{display_obj.magnitude:.2f}\n"))
+        _add_rich_line(lines, "bold", "Mag: ")
+        _add_rich_line(lines, "cyan", f"{display_obj.magnitude:.2f}\n")
     if visibility_info.limiting_magnitude:
-        lines.append(("bold", "Limit: "))
-        lines.append(("yellow", f"{visibility_info.limiting_magnitude:.2f}\n"))
+        _add_rich_line(lines, "bold", "Limit: ")
+        _add_rich_line(lines, "yellow", f"{visibility_info.limiting_magnitude:.2f}\n")
 
     # Description (truncated for inline view)
     if display_obj.description:
         desc = display_obj.description.split("\n")[0]  # First line only
         if len(desc) > 60:
             desc = desc[:57] + "..."
-        lines.append(("dim", f"{desc}\n"))
+        _add_rich_line(lines, "dim", f"{desc}\n")
 
     # Visibility info
     if visibility_info.reasons:
-        lines.append(("bold", "Visibility: "))
+        _add_rich_line(lines, "bold", "Visibility: ")
         # Show first reason only for compact view
         first_reason = visibility_info.reasons[0] if visibility_info.reasons else ""
         if len(first_reason) > 50:
             first_reason = first_reason[:47] + "..."
-        lines.append(("", f"{first_reason} "))
-        lines.append(("dim", f"(score: {visibility_info.observability_score:.2f})\n"))
+        lines.append(f"{first_reason} ")
+        _add_rich_line(lines, "dim", f"(score: {visibility_info.observability_score:.2f})\n")
 
     if display_obj.parent_planet:
-        lines.append(("bold", "Parent: "))
-        lines.append(("", f"{display_obj.parent_planet}\n"))
+        _add_rich_line(lines, "bold", "Parent: ")
+        lines.append(f"{display_obj.parent_planet}\n")
 
     # Use a simple separator line that will wrap naturally
-    lines.append(("dim", "────────────────────\n"))  # Fixed short separator
-    lines.append(("dim", "Press Esc to close detail view\n"))
+    _add_rich_line(lines, "dim", "────────────────────\n")  # Fixed short separator
+    _add_rich_line(lines, "dim", "Press Esc to close detail view\n")
 
-    return FormattedText(lines)
+    return "".join(lines)
 
 
 def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) -> None:
@@ -144,10 +167,18 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    db_obj = asyncio.run(db.get_by_name(obj.name))
-
-    # Use database object if available (has more fields), otherwise use catalog object
-    display_obj = db_obj if db_obj else obj
+    # Try to get the current event loop
+    try:
+        _ = asyncio.get_running_loop()
+        # If we're in an event loop, we can't use asyncio.run()
+        # Skip database lookup for now - use catalog object
+        db_obj = None
+        display_obj = obj
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        db_obj = asyncio.run(db.get_by_name(obj.name))
+        # Use database object if available (has more fields), otherwise use catalog object
+        display_obj = db_obj if db_obj else obj
 
     console.print("\n" + "=" * 70)
     console.print(f"[bold cyan]{display_obj.name}[/bold cyan]")
@@ -215,10 +246,7 @@ def show_object_detail(obj: CelestialObject, visibility_info: VisibilityInfo) ->
 
     console.print("\n" + "=" * 70)
     console.print("[dim]Press Enter to return...[/dim]")
-    from prompt_toolkit import PromptSession as _PromptSession
-
-    prompt_session: _PromptSession[str] = _PromptSession()
-    prompt_session.prompt("")
+    input()
 
 
 def show_object_detail_interactive() -> None:
@@ -234,10 +262,7 @@ def show_object_detail_interactive() -> None:
         console = Console()
         console.print("\n[red]No object selected[/red]")
         console.print("[dim]Press Enter to return...[/dim]")
-        from prompt_toolkit import PromptSession as _PromptSession
-
-        session: _PromptSession[str] = _PromptSession()
-        session.prompt("")
+        input()
         return
 
     obj, visibility_info = selected

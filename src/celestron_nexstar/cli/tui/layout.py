@@ -1,101 +1,41 @@
 """
 Layout Construction
 
-Builds the full-screen TUI layout with panes and containers.
+Builds the full-screen TUI layout with panes and containers using Textual.
 """
 
 from __future__ import annotations
 
-from prompt_toolkit.layout.containers import (
-    FloatContainer,
-    HSplit,
-    VSplit,
-    Window,
-)
-from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.layout.dimension import Dimension
+from typing import Any
+
+from textual.containers import Horizontal  # type: ignore[import-not-found]
 
 from celestron_nexstar.cli.tui.panes import (
-    get_conditions_info,
-    get_dataset_info,
-    get_header_info,
-    get_status_info,
-    get_visible_objects_info,
+    ConditionsPane,
+    DatasetPane,
+    HeaderBar,
+    StatusBar,
+    VisibleObjectsPane,
 )
 
 
-def create_layout() -> FloatContainer:
+def create_layout() -> list[Any]:
     """
     Create the main layout for the TUI application.
 
     Returns:
-        Root container with header, panes, and status bar
+        List of widgets for the compose method
     """
     # Header bar
-    header = Window(
-        content=FormattedTextControl(get_header_info),
-        height=Dimension.exact(1),
-        char="─",
-        style="bg:#333333",
-    )
-
-    # Use fixed weight-based sizing to maintain stable proportions
-    # Weights: 3:3:4 = 30%:30%:40% split
-    # ignore_content_width=True prevents content from affecting width calculation
-    # Dataset information pane (left) - 30%
-    dataset_pane = Window(
-        content=FormattedTextControl(get_dataset_info),
-        width=Dimension(weight=3),
-        wrap_lines=True,
-        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
-        style="bg:#1e1e1e",
-    )
-
-    # Conditions pane (middle) - 30%
-    conditions_pane = Window(
-        content=FormattedTextControl(get_conditions_info),
-        width=Dimension(weight=3),
-        wrap_lines=True,
-        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
-        style="bg:#1e1e1e",
-    )
-
-    # Visible objects pane (right) - 40%
-    visible_pane = Window(
-        content=FormattedTextControl(get_visible_objects_info),
-        width=Dimension(weight=4),
-        wrap_lines=True,  # Enable wrapping to prevent text cutoff
-        ignore_content_width=True,  # Ignore content width to maintain stable pane widths
-        style="bg:#1e1e1e",
-    )
+    header = HeaderBar(id="header")
 
     # Main content area with three panes
-    main_content = VSplit(
-        [
-            dataset_pane,
-            Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
-            conditions_pane,
-            Window(width=1, char="│", style="fg:#666666"),  # Vertical divider
-            visible_pane,
-        ]
-    )
+    dataset_pane = DatasetPane(id="dataset-pane", classes="pane")
+    conditions_pane = ConditionsPane(id="conditions-pane", classes="pane")
+    visible_pane = VisibleObjectsPane(id="visible-pane", classes="pane")
 
-    # Status bar - single line
-    status_bar = Window(
-        content=FormattedTextControl(get_status_info),
-        height=Dimension.exact(1),
-        char="─",
-        style="bg:#333333",
-    )
+    # Status bar
+    status_bar = StatusBar(id="status-bar")
 
-    # Root container
-    root_container = HSplit(
-        [
-            header,
-            main_content,
-            status_bar,
-        ]
-    )
-
-    # Wrap in FloatContainer to support modal dialogs
-    return FloatContainer(content=root_container, floats=[])
+    # Return widgets in order
+    return [header, Horizontal(dataset_pane, conditions_pane, visible_pane, id="main-content"), status_bar]

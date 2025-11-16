@@ -2,6 +2,7 @@
 Pane Content Generators
 
 Functions to generate formatted text content for each pane in the TUI.
+Now using Textual widgets with Rich markup.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from prompt_toolkit.formatted_text import FormattedText
+from textual.widgets import Static  # type: ignore[import-not-found]
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,40 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
+
+
+def _add_rich_line(result: list[str], style: str, text: str) -> None:
+    """
+    Add a line with Rich markup to the result list.
+
+    Args:
+        result: List to append to
+        style: Style name (Rich markup compatible)
+        text: Text content
+    """
+    if style:
+        # Convert style names to Rich markup
+        style_map = {
+            "bold": "bold",
+            "dim": "dim",
+            "cyan": "cyan",
+            "yellow": "yellow",
+            "green": "green",
+            "red": "red",
+            "bold yellow": "bold yellow",
+            "bold cyan": "bold cyan",
+            "bold green": "bold green",
+            "bold red": "bold red",
+            "ansigreen": "green",
+            "ansicyan": "cyan",
+            "ansiyellow": "yellow",
+            "ansired": "red",
+            "bg:#444444": "on #444444",
+        }
+        rich_style = style_map.get(style, style)
+        result.append(f"[{rich_style}]{text}[/]")
+    else:
+        result.append(text)
 
 
 def _get_indicator_color(score: float) -> str:
@@ -28,7 +63,7 @@ def _get_indicator_color(score: float) -> str:
         score: Condition score from 0-100
 
     Returns:
-        Color name for prompt_toolkit styling
+        Color name for Rich markup styling
     """
     if score >= 90:
         return "ansigreen"  # Great conditions (green)
@@ -96,90 +131,88 @@ def _calculate_humidity_score(humidity_percent: float) -> float:
     return max(0.0, 100.0 - humidity_percent)
 
 
-def get_dataset_info() -> FormattedText:
+async def _get_dataset_info_async() -> str:
     """
-    Generate formatted text for the dataset information pane.
+    Generate formatted text for the dataset information pane (async version).
 
     Returns:
         Formatted text showing database statistics and catalog information
     """
     try:
-        import asyncio
-
         from celestron_nexstar.api.database.database import get_database
 
         db = get_database()
-        stats = asyncio.run(db.get_stats())
+        stats = await db.get_stats()
 
         from celestron_nexstar.cli.tui.state import get_state
 
         state = get_state()
         is_focused = state.focused_pane == "dataset"
 
-        lines: list[tuple[str, str]] = []
+        lines: list[str] = []
         if is_focused:
-            lines.append(("bold yellow", "▶ Database Statistics\n"))
+            _add_rich_line(lines, "bold yellow", "▶ Database Statistics\n")
         else:
-            lines.append(("bold", "Database Statistics\n"))
-        lines.append(("", "─" * 30 + "\n"))
-        lines.append(("", f"Total Objects: {stats.total_objects:,}\n"))
-        lines.append(("", f"Catalogs: {len(stats.objects_by_catalog)}\n"))
-        lines.append(("", f"Types: {len(stats.objects_by_type)}\n"))
-        lines.append(("", "\n"))
+            _add_rich_line(lines, "bold", "Database Statistics\n")
+        lines.append("─" * 30 + "\n")
+        lines.append(f"Total Objects: {stats.total_objects:,}\n")
+        lines.append(f"Catalogs: {len(stats.objects_by_catalog)}\n")
+        lines.append(f"Types: {len(stats.objects_by_type)}\n")
+        lines.append("\n")
 
         # Magnitude range
         if stats.magnitude_range[0] is not None and stats.magnitude_range[1] is not None:
-            lines.append(("", "Magnitude Range:\n"))
-            lines.append(("cyan", f"  {stats.magnitude_range[0]:.2f} to {stats.magnitude_range[1]:.2f}\n"))
-            lines.append(("", "\n"))
+            lines.append("Magnitude Range:\n")
+            _add_rich_line(lines, "cyan", f"  {stats.magnitude_range[0]:.2f} to {stats.magnitude_range[1]:.2f}\n")
+            lines.append("\n")
 
         # Top catalogs
-        lines.append(("bold", "Top Catalogs:\n"))
+        _add_rich_line(lines, "bold", "Top Catalogs:\n")
         sorted_catalogs = sorted(stats.objects_by_catalog.items(), key=lambda x: x[1], reverse=True)[:5]
         for catalog, count in sorted_catalogs:
-            lines.append(("", f"  {catalog:15s} "))
-            lines.append(("cyan", f"{count:6,}\n"))
+            lines.append(f"  {catalog:15s} ")
+            _add_rich_line(lines, "cyan", f"{count:6,}\n")
 
-        lines.append(("", "\n"))
+        lines.append("\n")
 
         # Top object types
-        lines.append(("bold", "Object Types:\n"))
+        _add_rich_line(lines, "bold", "Object Types:\n")
         sorted_types = sorted(stats.objects_by_type.items(), key=lambda x: x[1], reverse=True)[:5]
         for obj_type, count in sorted_types:
-            lines.append(("", f"  {obj_type:15s} "))
-            lines.append(("yellow", f"{count:6,}\n"))
+            lines.append(f"  {obj_type:15s} ")
+            _add_rich_line(lines, "yellow", f"{count:6,}\n")
 
-        lines.append(("", "\n"))
-        lines.append(("", "─" * 30 + "\n"))
-        lines.append(("bold", "Telescope Configuration\n"))
-        lines.append(("", "\n"))
+        lines.append("\n")
+        lines.append("─" * 30 + "\n")
+        _add_rich_line(lines, "bold", "Telescope Configuration\n")
+        lines.append("\n")
 
         # Get optical configuration
         try:
             from celestron_nexstar.api.observation.optics import get_current_configuration
 
             config = get_current_configuration()
-            lines.append(("", "Telescope:\n"))
-            lines.append(("cyan", f"  {config.telescope.display_name}\n"))
+            lines.append("Telescope:\n")
+            _add_rich_line(lines, "cyan", f"  {config.telescope.display_name}\n")
             lines.append(
-                ("", f'  Aperture: {config.telescope.aperture_mm:.0f}mm ({config.telescope.aperture_inches:.1f}")\n')
+                f'  Aperture: {config.telescope.aperture_mm:.0f}mm ({config.telescope.aperture_inches:.1f}")\n'
             )
-            lines.append(("", f"  Focal Length: {config.telescope.focal_length_mm:.0f}mm\n"))
-            lines.append(("", f"  f-ratio: f/{config.telescope.focal_ratio:.1f}\n"))
-            lines.append(("", "\n"))
+            lines.append(f"  Focal Length: {config.telescope.focal_length_mm:.0f}mm\n")
+            lines.append(f"  f-ratio: f/{config.telescope.focal_ratio:.1f}\n")
+            lines.append("\n")
 
-            lines.append(("", "Eyepiece:\n"))
+            lines.append("Eyepiece:\n")
             eyepiece_name = config.eyepiece.name or f"{config.eyepiece.focal_length_mm:.0f}mm"
-            lines.append(("cyan", f"  {eyepiece_name}\n"))
-            lines.append(("", f"  Focal Length: {config.eyepiece.focal_length_mm:.0f}mm\n"))
-            lines.append(("", f"  Apparent FOV: {config.eyepiece.apparent_fov_deg:.0f}°\n"))
-            lines.append(("", "\n"))
+            _add_rich_line(lines, "cyan", f"  {eyepiece_name}\n")
+            lines.append(f"  Focal Length: {config.eyepiece.focal_length_mm:.0f}mm\n")
+            lines.append(f"  Apparent FOV: {config.eyepiece.apparent_fov_deg:.0f}°\n")
+            lines.append("\n")
 
-            lines.append(("", "Configuration:\n"))
-            lines.append(("", f"  Magnification: {config.magnification:.0f}x\n"))
-            lines.append(("", f"  Exit Pupil: {config.exit_pupil_mm:.2f}mm\n"))
-            lines.append(("", f"  True FOV: {config.true_fov_arcmin:.1f}' ({config.true_fov_deg:.2f}°)\n"))
-            lines.append(("", "\n"))
+            lines.append("Configuration:\n")
+            lines.append(f"  Magnification: {config.magnification:.0f}x\n")
+            lines.append(f"  Exit Pupil: {config.exit_pupil_mm:.2f}mm\n")
+            lines.append(f"  True FOV: {config.true_fov_arcmin:.1f}' ({config.true_fov_deg:.2f}°)\n")
+            lines.append("\n")
 
             # Limiting magnitude
             from celestron_nexstar.api.core.enums import SkyBrightness
@@ -190,17 +223,17 @@ def get_dataset_info() -> FormattedText:
                 sky_brightness=SkyBrightness.GOOD,
                 exit_pupil_mm=config.exit_pupil_mm,
             )
-            lines.append(("", "Limiting Mag: "))
-            lines.append(("yellow", f"{limiting_mag:.2f}\n"))
-            lines.append(("", "\n"))
+            lines.append("Limiting Mag: ")
+            _add_rich_line(lines, "yellow", f"{limiting_mag:.2f}\n")
+            lines.append("\n")
 
         except Exception as e:
-            lines.append(("yellow", f"Config: Error ({e})\n"))
+            _add_rich_line(lines, "yellow", f"Config: Error ({e})\n")
 
         # Telescope Status (if connected)
-        lines.append(("", "─" * 30 + "\n"))
-        lines.append(("bold", "Telescope Status\n"))
-        lines.append(("", "\n"))
+        lines.append("─" * 30 + "\n")
+        _add_rich_line(lines, "bold", "Telescope Status\n")
+        lines.append("\n")
 
         try:
             from celestron_nexstar.cli.utils.state import get_telescope
@@ -208,8 +241,8 @@ def get_dataset_info() -> FormattedText:
             telescope = get_telescope()
             if telescope and telescope.protocol and telescope.protocol.is_open():
                 # Connection status
-                lines.append(("green", "  Connected\n"))
-                lines.append(("", "\n"))
+                _add_rich_line(lines, "green", "  Connected\n")
+                lines.append("\n")
 
                 # Get position
                 try:
@@ -227,19 +260,19 @@ def get_dataset_info() -> FormattedText:
                     dec_s = int(((abs(ra_dec.dec_degrees) - abs(dec_d)) * 60 - dec_m) * 60)
                     dec_dir = "N" if ra_dec.dec_degrees >= 0 else "S"
 
-                    lines.append(("", "Position (RA/Dec):\n"))
-                    lines.append(("cyan", f"  RA:  {ra_h:02d}h {ra_m:02d}m {ra_s:02d}s\n"))
-                    lines.append(("cyan", f"  Dec: {abs(dec_d):02d}° {dec_m:02d}' {dec_s:02d}\" {dec_dir}\n"))
-                    lines.append(("", "\n"))
+                    lines.append("Position (RA/Dec):\n")
+                    _add_rich_line(lines, "cyan", f"  RA:  {ra_h:02d}h {ra_m:02d}m {ra_s:02d}s\n")
+                    _add_rich_line(lines, "cyan", f"  Dec: {abs(dec_d):02d}° {dec_m:02d}' {dec_s:02d}\" {dec_dir}\n")
+                    lines.append("\n")
 
-                    lines.append(("", "Position (Alt/Az):\n"))
-                    lines.append(("cyan", f"  Alt: {alt_az.altitude:5.1f}°\n"))
-                    lines.append(("cyan", f"  Az:  {alt_az.azimuth:5.1f}°\n"))
-                    lines.append(("", "\n"))
+                    lines.append("Position (Alt/Az):\n")
+                    _add_rich_line(lines, "cyan", f"  Alt: {alt_az.altitude:5.1f}°\n")
+                    _add_rich_line(lines, "cyan", f"  Az:  {alt_az.azimuth:5.1f}°\n")
+                    lines.append("\n")
 
                 except Exception:
-                    lines.append(("yellow", "  Position: Unavailable\n"))
-                    lines.append(("", "\n"))
+                    _add_rich_line(lines, "yellow", "  Position: Unavailable\n")
+                    lines.append("\n")
 
                 # Get tracking mode
                 try:
@@ -251,61 +284,79 @@ def get_dataset_info() -> FormattedText:
                         3: "EQ South",
                     }
                     tracking_name = tracking_modes.get(tracking_mode_num, f"Unknown ({tracking_mode_num})")
-                    lines.append(("", "Tracking: "))
-                    lines.append(("cyan", f"{tracking_name}\n"))
+                    lines.append("Tracking: ")
+                    _add_rich_line(lines, "cyan", f"{tracking_name}\n")
                 except Exception:
-                    lines.append(("yellow", "  Tracking: Unknown\n"))
+                    _add_rich_line(lines, "yellow", "  Tracking: Unknown\n")
 
             else:
-                lines.append(("dim", "  Not connected\n"))
-                lines.append(("dim", "  Press 'c' to connect\n"))
+                _add_rich_line(lines, "dim", "  Not connected\n")
+                _add_rich_line(lines, "dim", "  Press 'c' to connect\n")
 
         except Exception as e:
-            lines.append(("yellow", f"Status: Error ({str(e)[:30]})\n"))
+            _add_rich_line(lines, "yellow", f"Status: Error ({str(e)[:30]})\n")
 
         # Session Information
-        lines.append(("", "\n"))
-        lines.append(("", "─" * 30 + "\n"))
-        lines.append(("bold", "Session\n"))
-        lines.append(("", "\n"))
+        lines.append("\n")
+        lines.append("─" * 30 + "\n")
+        _add_rich_line(lines, "bold", "Session\n")
+        lines.append("\n")
 
         try:
             from celestron_nexstar.cli.tui.state import get_state
 
             state = get_state()
             if state.session_start_time is None:
-                lines.append(("dim", "  Not started\n"))
-                lines.append(("dim", "  Press 's' to start\n"))
+                _add_rich_line(lines, "dim", "  Not started\n")
+                _add_rich_line(lines, "dim", "  Press 's' to start\n")
             else:
                 duration = state.get_session_duration()
                 if duration is not None:
                     hours = int(duration)
                     minutes = int((duration - hours) * 60)
-                    lines.append(("", f"  Duration: {hours}h {minutes}m\n"))
-                lines.append(("", f"  Observed: {len(state.observed_objects)}\n"))
+                    lines.append(f"  Duration: {hours}h {minutes}m\n")
+                lines.append(f"  Observed: {len(state.observed_objects)}\n")
                 if state.observed_objects:
                     # Show last 3 observed objects
                     for obj_name in state.observed_objects[-3:]:
-                        lines.append(("dim", f"    • {obj_name[:25]}\n"))
+                        _add_rich_line(lines, "dim", f"    • {obj_name[:25]}\n")
 
         except Exception:
-            lines.append(("yellow", "  Session: Error\n"))
+            _add_rich_line(lines, "yellow", "  Session: Error\n")
 
-        lines.append(("", "\n"))
-        lines.append(("dim", "Press 't'=telescope 'e'=eyepiece\n"))
+        lines.append("\n")
+        _add_rich_line(lines, "dim", "Press 't'=telescope 'e'=eyepiece\n")
 
-        return FormattedText(lines)
+        return "".join(lines)
 
     except Exception as e:
-        return FormattedText(
-            [
-                ("bold red", "Database Error\n"),
-                ("", f"Cannot load database: {e}\n"),
-            ]
-        )
+        return f"[bold red]Database Error\n[/][red]Cannot load database: {e}\n[/]"
 
 
-def get_conditions_info() -> FormattedText:
+def get_dataset_info() -> str:
+    """
+    Generate formatted text for the dataset information pane (sync wrapper).
+
+    Returns:
+        Formatted text showing database statistics and catalog information
+    """
+    try:
+        import asyncio
+
+        # Try to get the current event loop
+        try:
+            asyncio.get_running_loop()
+            # If we're in an event loop, we can't use asyncio.run()
+            # Return a placeholder and let the async version handle it
+            return "[yellow]Loading...[/yellow]"
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            return asyncio.run(_get_dataset_info_async())
+    except Exception as e:
+        return f"[bold red]Database Error\n[/][red]Cannot load database: {e}\n[/]"
+
+
+def get_conditions_info() -> str:
     """
     Generate formatted text for the current conditions pane.
 
@@ -317,12 +368,12 @@ def get_conditions_info() -> FormattedText:
     state = get_state()
     is_focused = state.focused_pane == "conditions"
 
-    lines: list[tuple[str, str]] = []
+    lines: list[str] = []
     if is_focused:
-        lines.append(("bold yellow", "▶ Observing Conditions\n"))
+        _add_rich_line(lines, "bold yellow", "▶ Observing Conditions\n")
     else:
-        lines.append(("bold", "Observing Conditions\n"))
-    lines.append(("", "─" * 30 + "\n"))
+        _add_rich_line(lines, "bold", "Observing Conditions\n")
+    lines.append("─" * 30 + "\n")
 
     # Location
     try:
@@ -340,9 +391,9 @@ def get_conditions_info() -> FormattedText:
                     lon = telescope_location.longitude
                     lat_dir = "N" if lat >= 0 else "S"
                     lon_dir = "E" if lon >= 0 else "W"
-                    lines.append(("", "Location:\n"))
-                    lines.append(("cyan", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
-                    lines.append(("dim", "  (from telescope GPS)\n"))
+                    lines.append("Location:\n")
+                    _add_rich_line(lines, "cyan", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n")
+                    _add_rich_line(lines, "dim", "  (from telescope GPS)\n")
             except Exception:
                 # Fall back to observer location
                 location = get_observer_location()
@@ -351,12 +402,12 @@ def get_conditions_info() -> FormattedText:
                     lon = location.longitude
                     lat_dir = "N" if lat >= 0 else "S"
                     lon_dir = "E" if lon >= 0 else "W"
-                    lines.append(("", "Location:\n"))
+                    lines.append("Location:\n")
                     if location.name:
-                        lines.append(("cyan", f"  {location.name}\n"))
-                    lines.append(("", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
+                        _add_rich_line(lines, "cyan", f"  {location.name}\n")
+                    lines.append(f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n")
                 else:
-                    lines.append(("yellow", "Location: Not set\n"))
+                    _add_rich_line(lines, "yellow", "Location: Not set\n")
         else:
             # No telescope, use observer location
             location = get_observer_location()
@@ -365,16 +416,16 @@ def get_conditions_info() -> FormattedText:
                 lon = location.longitude
                 lat_dir = "N" if lat >= 0 else "S"
                 lon_dir = "E" if lon >= 0 else "W"
-                lines.append(("", "Location:\n"))
+                lines.append("Location:\n")
                 if location.name:
-                    lines.append(("cyan", f"  {location.name}\n"))
-                lines.append(("", f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n"))
+                    _add_rich_line(lines, "cyan", f"  {location.name}\n")
+                lines.append(f"  {abs(lat):.4f}°{lat_dir}, {abs(lon):.4f}°{lon_dir}\n")
             else:
-                lines.append(("yellow", "Location: Not set\n"))
+                _add_rich_line(lines, "yellow", "Location: Not set\n")
     except Exception as e:
-        lines.append(("yellow", f"Location: Error ({e})\n"))
+        _add_rich_line(lines, "yellow", f"Location: Error ({e})\n")
 
-    lines.append(("", "\n"))
+    lines.append("\n")
 
     # Time information
     from datetime import UTC
@@ -389,14 +440,14 @@ def get_conditions_info() -> FormattedText:
         now = datetime.now()
         time_label = "Local"
 
-    lines.append(("", "Time:\n"))
-    lines.append(("cyan", f"  {time_label}: {now.strftime('%H:%M:%S')}\n"))
-    lines.append(("cyan", f"  Date:  {now.strftime('%Y-%m-%d')}\n"))
-    lines.append(("dim", "  Press 'u' to toggle UTC/Local\n"))
-    lines.append(("", "\n"))
+    lines.append("Time:\n")
+    _add_rich_line(lines, "cyan", f"  {time_label}: {now.strftime('%H:%M:%S')}\n")
+    _add_rich_line(lines, "cyan", f"  Date:  {now.strftime('%Y-%m-%d')}\n")
+    _add_rich_line(lines, "dim", "  Press 'u' to toggle UTC/Local\n")
+    lines.append("\n")
 
     # Sky conditions
-    lines.append(("bold", "Sky Conditions:\n"))
+    _add_rich_line(lines, "bold", "Sky Conditions:\n")
 
     # Get observer location for moon/sun calculations
     moon_observer_lat = None
@@ -432,24 +483,24 @@ def get_conditions_info() -> FormattedText:
 
             moon_info = get_moon_info(moon_observer_lat, moon_observer_lon, now)
             if moon_info:
-                lines.append(("", "Moon:\n"))
-                lines.append(("cyan", f"  Phase: {moon_info.phase_name}\n"))
-                lines.append(("", f"  Illumination: {moon_info.illumination * 100:.0f}%\n"))
+                lines.append("Moon:\n")
+                _add_rich_line(lines, "cyan", f"  Phase: {moon_info.phase_name}\n")
+                lines.append(f"  Illumination: {moon_info.illumination * 100:.0f}%\n")
                 if moon_info.altitude_deg > 0:
-                    lines.append(("", f"  Alt: {moon_info.altitude_deg:5.1f}° "))
-                    lines.append(("", f"Az: {moon_info.azimuth_deg:5.1f}°\n"))
+                    lines.append(f"  Alt: {moon_info.altitude_deg:5.1f}° ")
+                    lines.append(f"Az: {moon_info.azimuth_deg:5.1f}°\n")
                 else:
-                    lines.append(("dim", "  Below horizon\n"))
+                    _add_rich_line(lines, "dim", "  Below horizon\n")
             else:
-                lines.append(("yellow", "  Moon: Calculation unavailable\n"))
+                _add_rich_line(lines, "yellow", "  Moon: Calculation unavailable\n")
         except Exception as e:
             # Truncate error message to prevent scrolling
             error_msg = str(e)[:50] + "..." if len(str(e)) > 50 else str(e)
-            lines.append(("yellow", f"  Moon: {error_msg}\n"))
+            _add_rich_line(lines, "yellow", f"  Moon: {error_msg}\n")
     else:
-        lines.append(("yellow", "  Moon: Location not set\n"))
+        _add_rich_line(lines, "yellow", "  Moon: Location not set\n")
 
-    lines.append(("", "\n"))
+    lines.append("\n")
 
     # Sun information
     if moon_observer_lat is not None and moon_observer_lon is not None:
@@ -458,38 +509,38 @@ def get_conditions_info() -> FormattedText:
 
             sun_info = get_sun_info(moon_observer_lat, moon_observer_lon, now)
             if sun_info:
-                lines.append(("", "Sun:\n"))
+                lines.append("Sun:\n")
                 if sun_info.is_daytime:
-                    lines.append(("green", "  Above horizon\n"))
-                    lines.append(("", f"  Alt: {sun_info.altitude_deg:5.1f}° "))
-                    lines.append(("", f"Az: {sun_info.azimuth_deg:5.1f}°\n"))
+                    _add_rich_line(lines, "green", "  Above horizon\n")
+                    lines.append(f"  Alt: {sun_info.altitude_deg:5.1f}° ")
+                    lines.append(f"Az: {sun_info.azimuth_deg:5.1f}°\n")
                     if sun_info.sunset_time:
                         # Convert to local time if needed
                         sunset_local = sun_info.sunset_time
                         if state.time_display_mode == "local":
                             sunset_local = sun_info.sunset_time.replace(tzinfo=UTC).astimezone()
-                        lines.append(("", f"  Sunset: {sunset_local.strftime('%H:%M')}\n"))
+                        lines.append(f"  Sunset: {sunset_local.strftime('%H:%M')}\n")
                 else:
-                    lines.append(("dim", "  Below horizon\n"))
+                    _add_rich_line(lines, "dim", "  Below horizon\n")
                     if sun_info.sunrise_time:
                         # Convert to local time if needed
                         sunrise_local = sun_info.sunrise_time
                         if state.time_display_mode == "local":
                             sunrise_local = sun_info.sunrise_time.replace(tzinfo=UTC).astimezone()
-                        lines.append(("", f"  Sunrise: {sunrise_local.strftime('%H:%M')}\n"))
+                        lines.append(f"  Sunrise: {sunrise_local.strftime('%H:%M')}\n")
             else:
-                lines.append(("yellow", "  Sun: Calculation unavailable\n"))
+                _add_rich_line(lines, "yellow", "  Sun: Calculation unavailable\n")
         except Exception as e:
             # Truncate error message to prevent scrolling
             error_msg = str(e)[:50] + "..." if len(str(e)) > 50 else str(e)
-            lines.append(("yellow", f"  Sun: {error_msg}\n"))
+            _add_rich_line(lines, "yellow", f"  Sun: {error_msg}\n")
     else:
-        lines.append(("yellow", "  Sun: Location not set\n"))
+        _add_rich_line(lines, "yellow", "  Sun: Location not set\n")
 
-    lines.append(("", "\n"))
+    lines.append("\n")
 
     # Weather information
-    lines.append(("bold", "Weather:\n"))
+    _add_rich_line(lines, "bold", "Weather:\n")
     weather_data = None
     weather_status = None
     weather_warning = None
@@ -530,56 +581,72 @@ def get_conditions_info() -> FormattedText:
             weather_location = None
 
         if weather_location:
-            weather_data = asyncio.run(fetch_weather(weather_location))
-            weather_status, weather_warning = assess_observing_conditions(weather_data)
-
-            if weather_data.error:
-                lines.append(("yellow", f"  {weather_data.error}\n"))
-            else:
-                # Status indicator
-                if weather_status == "excellent":
-                    status_color = "green"
-                    status_icon = "✓"
-                elif weather_status == "good":
-                    status_color = "cyan"
-                    status_icon = "○"
-                elif weather_status == "fair":
-                    status_color = "yellow"
-                    status_icon = "⚠"
-                elif weather_status == "poor":
-                    status_color = "red"
-                    status_icon = "✗"
+            # Try to get the current event loop
+            try:
+                _ = asyncio.get_running_loop()
+                # If we're in an event loop, we can't use asyncio.run()
+                # Return placeholder and let async version handle it
+                _add_rich_line(lines, "yellow", "  Weather: Loading...\n")
+                weather_data = None
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run()
+                weather_data = asyncio.run(fetch_weather(weather_location))
+                if weather_data:
+                    weather_status, weather_warning = assess_observing_conditions(weather_data)
                 else:
-                    status_color = "dim"
-                    status_icon = "?"
+                    weather_status = None
+                    weather_warning = None
 
-                lines.append((status_color, f"  {status_icon} {weather_status.title()}\n"))
-                lines.append(("", f"  {weather_warning}\n"))
+            if weather_data:
+                if weather_data.error:
+                    _add_rich_line(lines, "yellow", f"  {weather_data.error}\n")
+                else:
+                    # Status indicator
+                    if weather_status == "excellent":
+                        status_color = "green"
+                        status_icon = "✓"
+                    elif weather_status == "good":
+                        status_color = "cyan"
+                        status_icon = "○"
+                    elif weather_status == "fair":
+                        status_color = "yellow"
+                        status_icon = "⚠"
+                    elif weather_status == "poor":
+                        status_color = "red"
+                        status_icon = "✗"
+                    else:
+                        status_color = "dim"
+                        status_icon = "?"
 
-                # Weather details
-                if weather_data.temperature_c is not None:
-                    lines.append(("", f"  Temp: {weather_data.temperature_c:.1f}°C\n"))
-                if weather_data.cloud_cover_percent is not None:
-                    lines.append(("", f"  Clouds: {weather_data.cloud_cover_percent:.0f}%\n"))
-                if weather_data.humidity_percent is not None:
-                    lines.append(("", f"  Humidity: {weather_data.humidity_percent:.0f}%\n"))
-                if weather_data.wind_speed_ms is not None:
-                    wind_kmh = weather_data.wind_speed_ms * 3.6
-                    lines.append(("", f"  Wind: {wind_kmh:.0f} km/h\n"))
-                if weather_data.visibility_km is not None:
-                    lines.append(("", f"  Visibility: {weather_data.visibility_km:.1f} km\n"))
+                    if weather_status:
+                        _add_rich_line(lines, status_color, f"  {status_icon} {weather_status.title()}\n")
+                    if weather_warning:
+                        lines.append(f"  {weather_warning}\n")
+
+                    # Weather details
+                    if weather_data.temperature_c is not None:
+                        lines.append(f"  Temp: {weather_data.temperature_c:.1f}°C\n")
+                    if weather_data.cloud_cover_percent is not None:
+                        lines.append(f"  Clouds: {weather_data.cloud_cover_percent:.0f}%\n")
+                    if weather_data.humidity_percent is not None:
+                        lines.append(f"  Humidity: {weather_data.humidity_percent:.0f}%\n")
+                    if weather_data.wind_speed_ms is not None:
+                        wind_kmh = weather_data.wind_speed_ms * 3.6
+                        lines.append(f"  Wind: {wind_kmh:.0f} km/h\n")
+                    if weather_data.visibility_km is not None:
+                        lines.append(f"  Visibility: {weather_data.visibility_km:.1f} km\n")
         else:
-            lines.append(("yellow", "  Location not set\n"))
+            _add_rich_line(lines, "yellow", "  Location not set\n")
     except Exception:
         logger = logging.getLogger(__name__)
         logger.exception("Error fetching weather")
-        lines.append(("yellow", "  Weather unavailable\n"))
+        _add_rich_line(lines, "yellow", "  Weather unavailable\n")
 
-    lines.append(("", "\n"))
+    lines.append("\n")
 
     # Observing conditions summary with color-coded indicators
-    lines.append(("", "\n"))
-    lines.append(("bold", "Observing Quality:\n"))
+    lines.append("\n")
+    _add_rich_line(lines, "bold", "Observing Quality:\n")
 
     # Get seeing score from observation planner
     seeing_score: float | None = None
@@ -598,31 +665,31 @@ def get_conditions_info() -> FormattedText:
         if weather_data.cloud_cover_percent is not None:
             cloud_score = _calculate_cloud_cover_score(weather_data.cloud_cover_percent)
             cloud_color = _get_indicator_color(cloud_score)
-            lines.append(("", "  Cloud Cover: "))
-            lines.append((cloud_color, f"● {weather_data.cloud_cover_percent:.0f}%\n"))
+            lines.append("  Cloud Cover: ")
+            _add_rich_line(lines, cloud_color, f"● {weather_data.cloud_cover_percent:.0f}%\n")
 
         # Seeing indicator
         if seeing_score is not None:
             seeing_color = _get_indicator_color(seeing_score)
-            lines.append(("", "  Seeing: "))
-            lines.append((seeing_color, f"● {seeing_score:.0f}/100\n"))
+            lines.append("  Seeing: ")
+            _add_rich_line(lines, seeing_color, f"● {seeing_score:.0f}/100\n")
 
         # Wind indicator
         if weather_data.wind_speed_ms is not None:
             wind_mph = weather_data.wind_speed_ms  # Already in mph when units=imperial
             wind_score = _calculate_wind_score(wind_mph)
             wind_color = _get_indicator_color(wind_score)
-            lines.append(("", "  Wind: "))
-            lines.append((wind_color, f"● {wind_mph:.1f} mph\n"))
+            lines.append("  Wind: ")
+            _add_rich_line(lines, wind_color, f"● {wind_mph:.1f} mph\n")
 
         # Humidity indicator
         if weather_data.humidity_percent is not None:
             humidity_score = _calculate_humidity_score(weather_data.humidity_percent)
             humidity_color = _get_indicator_color(humidity_score)
-            lines.append(("", "  Humidity: "))
-            lines.append((humidity_color, f"● {weather_data.humidity_percent:.0f}%\n"))
+            lines.append("  Humidity: ")
+            _add_rich_line(lines, humidity_color, f"● {weather_data.humidity_percent:.0f}%\n")
     else:
-        lines.append(("yellow", "  Conditions: Unavailable\n"))
+        _add_rich_line(lines, "yellow", "  Conditions: Unavailable\n")
 
     # Additional info
     try:
@@ -636,7 +703,7 @@ def get_conditions_info() -> FormattedText:
                 sky_brightness=SkyBrightness.GOOD,
                 exit_pupil_mm=config.exit_pupil_mm,
             )
-            lines.append(("", f"  Limiting Mag: {limiting_mag:.2f}\n"))
+            lines.append(f"  Limiting Mag: {limiting_mag:.2f}\n")
 
             # Calculate dark sky hours remaining (if sun is below horizon)
             if sun_info and not sun_info.is_daytime and sun_info.sunrise_time:
@@ -644,12 +711,12 @@ def get_conditions_info() -> FormattedText:
                 if sun_info.sunrise_time > now_utc:
                     delta = sun_info.sunrise_time - now_utc
                     hours = delta.total_seconds() / 3600.0
-                    lines.append(("", f"  Dark Hours: {hours:.1f}h\n"))
+                    lines.append(f"  Dark Hours: {hours:.1f}h\n")
     except Exception:
         pass
 
     # Light pollution information
-    lines.append(("", "  Light Pollution: "))
+    lines.append("  Light Pollution: ")
     try:
         from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
 
@@ -687,53 +754,64 @@ def get_conditions_info() -> FormattedText:
                     async with get_db_session() as db_session:
                         return await get_light_pollution_data(db_session, lp_location[0], lp_location[1])
 
-                lp_data = asyncio.run(_get_light_data())
+                # Try to get the current event loop
+                try:
+                    asyncio.get_running_loop()
+                    # If we're in an event loop, we can't use asyncio.run()
+                    # Skip light pollution data for now
+                    lp_data = None
+                except RuntimeError:
+                    # No event loop running, safe to use asyncio.run()
+                    lp_data = asyncio.run(_get_light_data())
 
                 # Display Bortle class with color coding
-                bortle = lp_data.bortle_class
-                if bortle <= BortleClass.CLASS_2:
-                    bortle_color = "green"
-                elif bortle <= BortleClass.CLASS_4:
-                    bortle_color = "cyan"
-                elif bortle <= BortleClass.CLASS_6:
-                    bortle_color = "yellow"
+                if lp_data is None:
+                    _add_rich_line(lines, "yellow", "Loading...\n")
                 else:
-                    bortle_color = "red"
+                    bortle = lp_data.bortle_class
+                    if bortle <= BortleClass.CLASS_2:
+                        bortle_color = "green"
+                    elif bortle <= BortleClass.CLASS_4:
+                        bortle_color = "cyan"
+                    elif bortle <= BortleClass.CLASS_6:
+                        bortle_color = "yellow"
+                    else:
+                        bortle_color = "red"
 
-                lines.append((bortle_color, f"Bortle {bortle.value}\n"))
-                lines.append(("", f"    SQM: {lp_data.sqm_value:.2f} mag/arcsec²\n"))
-                lines.append(("", f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.2f} mag\n"))
+                    _add_rich_line(lines, bortle_color, f"Bortle {bortle.value}\n")
+                    lines.append(f"    SQM: {lp_data.sqm_value:.2f} mag/arcsec²\n")
+                    lines.append(f"    Naked Eye Limit: {lp_data.naked_eye_limiting_magnitude:.2f} mag\n")
 
-                # Show visibility indicators
-                visibility_parts = []
-                if lp_data.milky_way_visible:
-                    visibility_parts.append("Milky Way")
-                if lp_data.airglow_visible:
-                    visibility_parts.append("Airglow")
-                if lp_data.zodiacal_light_visible:
-                    visibility_parts.append("Zodiacal Light")
+                    # Show visibility indicators
+                    visibility_parts = []
+                    if lp_data.milky_way_visible:
+                        visibility_parts.append("Milky Way")
+                    if lp_data.airglow_visible:
+                        visibility_parts.append("Airglow")
+                    if lp_data.zodiacal_light_visible:
+                        visibility_parts.append("Zodiacal Light")
 
-                if visibility_parts:
-                    lines.append(("dim", f"    Visible: {', '.join(visibility_parts)}\n"))
+                    if visibility_parts:
+                        _add_rich_line(lines, "dim", f"    Visible: {', '.join(visibility_parts)}\n")
 
-                # Show source (cached or API)
-                if lp_data.cached:
-                    lines.append(("dim", "    (cached)\n"))
-                elif lp_data.source:
-                    lines.append(("dim", f"    (source: {lp_data.source})\n"))
+                    # Show source (cached or API)
+                    if lp_data.cached:
+                        _add_rich_line(lines, "dim", "    (cached)\n")
+                    elif lp_data.source:
+                        _add_rich_line(lines, "dim", f"    (source: {lp_data.source})\n")
             except Exception as e:
                 logger.exception("Error fetching light pollution data")
-                lines.append(("yellow", f"Error: {str(e)[:30]}...\n"))
+                _add_rich_line(lines, "yellow", f"Error: {str(e)[:30]}...\n")
         else:
-            lines.append(("yellow", "Location not set\n"))
+            _add_rich_line(lines, "yellow", "Location not set\n")
     except Exception:
         logger.exception("Error in light pollution display")
-        lines.append(("yellow", "Unavailable\n"))
+        _add_rich_line(lines, "yellow", "Unavailable\n")
 
-    return FormattedText(lines)
+    return "".join(lines)
 
 
-def get_visible_objects_info() -> FormattedText:
+def get_visible_objects_info() -> str:
     """
     Generate formatted text for the visible objects pane.
 
@@ -745,12 +823,12 @@ def get_visible_objects_info() -> FormattedText:
     state = get_state()
     is_focused = state.focused_pane == "visible"
 
-    lines: list[tuple[str, str]] = []
+    lines: list[str] = []
     if is_focused:
-        lines.append(("bold yellow", "▶ Currently Visible Objects\n"))
+        _add_rich_line(lines, "bold yellow", "▶ Currently Visible Objects\n")
     else:
-        lines.append(("bold", "Currently Visible Objects\n"))
-    lines.append(("", "─" * 40 + "\n"))
+        _add_rich_line(lines, "bold", "Currently Visible Objects\n")
+    lines.append("─" * 40 + "\n")
 
     try:
         from celestron_nexstar.api.database.database import get_database
@@ -791,10 +869,10 @@ def get_visible_objects_info() -> FormattedText:
                 observer_lat = location.latitude
                 observer_lon = location.longitude
             else:
-                lines.append(("yellow", "Location not set.\n"))
-                lines.append(("", "Use 'location set' to configure.\n"))
+                _add_rich_line(lines, "yellow", "Location not set.\n")
+                lines.append("Use 'location set' to configure.\n")
                 state.set_visible_objects([])
-                return FormattedText(lines)
+                return "".join(lines)
 
         # Get objects from database
         db = get_database()
@@ -812,7 +890,16 @@ def get_visible_objects_info() -> FormattedText:
 
         import asyncio
 
-        all_objects = asyncio.run(db.filter_objects(max_magnitude=max_mag, limit=1000))
+        # Try to get the current event loop
+        try:
+            asyncio.get_running_loop()
+            # If we're in an event loop, we can't use asyncio.run()
+            # Return placeholder
+            _add_rich_line(lines, "yellow", "Loading objects...\n")
+            all_objects = []
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            all_objects = asyncio.run(db.filter_objects(max_magnitude=max_mag, limit=1000))
 
         # Filter visible objects (returns list of (object, visibility_info) tuples)
         visible = filter_visible_objects(
@@ -824,10 +911,10 @@ def get_visible_objects_info() -> FormattedText:
         )
 
         if not visible:
-            lines.append(("yellow", "No visible objects found.\n"))
-            lines.append(("", "Check location and time settings.\n"))
+            _add_rich_line(lines, "yellow", "No visible objects found.\n")
+            lines.append("Check location and time settings.\n")
             state.set_visible_objects([])
-            return FormattedText(lines)
+            return "".join(lines)
 
         # Apply filtering and sorting using API functions
         from celestron_nexstar.api.observation.filtering import filter_and_sort_objects
@@ -848,23 +935,23 @@ def get_visible_objects_info() -> FormattedText:
         state.set_visible_objects(visible_sorted[:50])
 
         # Show sorting/filtering info
-        lines.append(("dim", f"Sort: {state.sort_by} "))
+        _add_rich_line(lines, "dim", f"Sort: {state.sort_by} ")
         if state.sort_reverse:
-            lines.append(("dim", "↓ "))
+            _add_rich_line(lines, "dim", "↓ ")
         else:
-            lines.append(("dim", "↑ "))
+            _add_rich_line(lines, "dim", "↑ ")
         if state.search_mode:
             if state.search_query:
-                lines.append(("yellow", f"| Search: '{state.search_query[:15]}'"))
+                _add_rich_line(lines, "yellow", f"| Search: '{state.search_query[:15]}'")
             else:
-                lines.append(("yellow", "| Search: (press '/' again to enter text)"))
-            lines.append(("dim", " Esc to cancel\n"))
+                _add_rich_line(lines, "yellow", "| Search: (press '/' again to enter text)")
+            _add_rich_line(lines, "dim", " Esc to cancel\n")
         elif state.search_query:
-            lines.append(("dim", f"| Search: '{state.search_query[:15]}' "))
+            _add_rich_line(lines, "dim", f"| Search: '{state.search_query[:15]}' ")
         if state.filter_type:
-            lines.append(("dim", f"| Type: {state.filter_type} "))
-        lines.append(("dim", "\n"))
-        lines.append(("", "\n"))
+            _add_rich_line(lines, "dim", f"| Type: {state.filter_type} ")
+        _add_rich_line(lines, "dim", "\n")
+        lines.append("\n")
 
         # Show detail view at top if active
         if state.show_detail and state.focused_pane == "visible":
@@ -873,35 +960,30 @@ def get_visible_objects_info() -> FormattedText:
                 from celestron_nexstar.cli.tui.detail import get_object_detail_text
 
                 detail_text = get_object_detail_text(selected[0], selected[1])
-                # Add detail lines to output
-                # FormattedText is a list of tuples, convert to list of lines
-                detail_lines_list = list(detail_text)
-                for line in detail_lines_list:
-                    # Ensure line is a tuple[str, str] (ignore mouse handlers if present)
-                    if isinstance(line, tuple) and len(line) >= 2:
-                        lines.append((line[0], line[1]))
-                lines.append(("", "\n"))
+                # Add detail text (already Rich markup string)
+                lines.append(detail_text)
+                lines.append("\n")
 
         # Display top 30 objects
-        lines.append(("", f"Showing {min(30, len(visible_sorted))} of {len(visible_sorted)} objects\n"))
+        lines.append(f"Showing {min(30, len(visible_sorted))} of {len(visible_sorted)} objects\n")
         if not state.show_detail:
-            lines.append(("dim", "Press '3' to focus, ↑↓ to navigate, Enter for details\n"))
-        lines.append(("", "\n"))
+            _add_rich_line(lines, "dim", "Press '3' to focus, ↑↓ to navigate, Enter for details\n")
+        lines.append("\n")
 
         for idx, (obj, visibility_info) in enumerate(visible_sorted[:30]):
             # Highlight selected item
             is_selected = idx == state.selected_index and state.focused_pane == "visible"
             if is_selected:
-                lines.append(("bg:#444444", "> "))  # Selection marker
+                _add_rich_line(lines, "bg:#444444", "> ")  # Selection marker
             else:
-                lines.append(("", "  "))
+                lines.append("  ")
 
             # Object name
             name = obj.name[:18]
             if is_selected:
-                lines.append(("bold underline", f"{name:18s} "))
+                _add_rich_line(lines, "bold underline", f"{name:18s} ")
             else:
-                lines.append(("bold", f"{name:18s} "))
+                _add_rich_line(lines, "bold", f"{name:18s} ")
 
             # Altitude
             if visibility_info.altitude_deg is not None:
@@ -912,40 +994,40 @@ def get_visible_objects_info() -> FormattedText:
                     color = "yellow"
                 else:
                     color = "red"
-                lines.append((color, alt_str))
+                _add_rich_line(lines, color, alt_str)
             else:
-                lines.append(("dim", "Alt: N/A"))
+                _add_rich_line(lines, "dim", "Alt: N/A")
 
-            lines.append(("", " "))
+            lines.append(" ")
 
             # Magnitude
             if visibility_info.magnitude is not None:
-                lines.append(("cyan", f"Mag:{visibility_info.magnitude:5.2f}"))
+                _add_rich_line(lines, "cyan", f"Mag:{visibility_info.magnitude:5.2f}")
             else:
-                lines.append(("dim", "Mag: N/A"))
+                _add_rich_line(lines, "dim", "Mag: N/A")
 
-            lines.append(("", "\n"))
+            lines.append("\n")
 
     except Exception as e:
-        lines.append(("bold red", "Error\n"))
-        lines.append(("", f"Cannot load visible objects: {e}\n"))
+        _add_rich_line(lines, "bold red", "Error\n")
+        lines.append(f"Cannot load visible objects: {e}\n")
         state.set_visible_objects([])
 
-    return FormattedText(lines)
+    return "".join(lines)
 
 
-def get_header_info() -> FormattedText:
+def get_header_info() -> str:
     """
     Generate formatted text for the header bar.
 
     Returns:
         Formatted text for header showing connection status and title
     """
-    lines: list[tuple[str, str]] = []
+    lines: list[str] = []
 
     # Title
-    lines.append(("bold cyan", "NexStar Telescope Dashboard"))
-    lines.append(("", " " * 20))
+    _add_rich_line(lines, "bold cyan", "NexStar Telescope Dashboard")
+    lines.append(" " * 20)
 
     # Connection status
     try:
@@ -953,11 +1035,11 @@ def get_header_info() -> FormattedText:
 
         telescope = get_telescope()
         if telescope and telescope.protocol and telescope.protocol.is_open():
-            lines.append(("bold green", "● Connected"))
+            _add_rich_line(lines, "bold green", "● Connected")
         else:
-            lines.append(("bold red", "○ Disconnected"))
+            _add_rich_line(lines, "bold red", "○ Disconnected")
     except Exception:
-        lines.append(("bold yellow", "○ Unknown"))
+        _add_rich_line(lines, "bold yellow", "○ Unknown")
 
     # Time
     from datetime import UTC
@@ -972,24 +1054,73 @@ def get_header_info() -> FormattedText:
         now = datetime.now()
         time_label = "Local"
 
-    lines.append(("", " " * 5))
-    lines.append(("dim", f"{time_label} "))
-    lines.append(("", now.strftime("%H:%M:%S")))
+    lines.append(" " * 5)
+    _add_rich_line(lines, "dim", f"{time_label} ")
+    lines.append(now.strftime("%H:%M:%S"))
 
-    return FormattedText(lines)
+    return "".join(lines)
 
 
-def get_status_info() -> FormattedText:
+def get_status_info() -> str:
     """
     Generate formatted text for the status bar.
 
     Returns:
-        Formatted text for status bar showing position, tracking info, and help
+        Formatted text for status bar showing time, weather, GPS, and telescope position
     """
+    import asyncio
+    from datetime import datetime
+
     from celestron_nexstar.cli.tui.state import get_state
 
     state = get_state()
-    lines: list[tuple[str, str]] = []
+    lines: list[str] = []
+
+    # Current time
+    now = datetime.now()
+    time_str = now.strftime("%H:%M:%S")
+    _add_rich_line(lines, "bold cyan", f"Time: {time_str}")
+    lines.append(" | ")
+
+    # Weather (temperature and cloud cover)
+    try:
+        from celestron_nexstar.api.location.observer import get_observer_location
+        from celestron_nexstar.api.location.weather import fetch_weather
+
+        location = get_observer_location()
+        # Try to get the current event loop
+        try:
+            asyncio.get_running_loop()
+            # If we're in an event loop, we can't use asyncio.run()
+            # Skip weather for now
+            weather = None
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run()
+            weather = asyncio.run(fetch_weather(location))
+
+        if weather and weather.temperature_c is not None:
+            # WeatherData.temperature_c is actually in Fahrenheit when units=imperial
+            temp_str = f"{weather.temperature_c:.1f}°F"
+            _add_rich_line(lines, "yellow", f"Temp: {temp_str}")
+            lines.append(" | ")
+
+        if weather and weather.cloud_cover_percent is not None:
+            cloud_str = f"{weather.cloud_cover_percent:.0f}%"
+            _add_rich_line(lines, "yellow", f"Clouds: {cloud_str}")
+            lines.append(" | ")
+    except Exception:
+        pass  # Silently fail if weather unavailable
+
+    # GPS coordinates
+    try:
+        from celestron_nexstar.api.location.observer import get_observer_location
+
+        location = get_observer_location()
+        gps_str = f"{location.latitude:.4f}, {location.longitude:.4f}"
+        _add_rich_line(lines, "green", f"GPS: {gps_str}")
+        lines.append(" | ")
+    except Exception:
+        pass  # Silently fail if location unavailable
 
     # Telescope position if connected
     try:
@@ -1000,43 +1131,145 @@ def get_status_info() -> FormattedText:
             try:
                 ra_dec = telescope.get_position_ra_dec()
                 alt_az = telescope.get_position_alt_az()
-                lines.append(("cyan", f"RA:{ra_dec.ra_hours:6.2f}h "))
-                lines.append(("cyan", f"Dec:{ra_dec.dec_degrees:6.2f}° "))
-                lines.append(("cyan", f"Alt:{alt_az.altitude:5.1f}° "))
-                lines.append(("cyan", f"Az:{alt_az.azimuth:5.1f}° "))
-                lines.append(("", " | "))
+                _add_rich_line(lines, "cyan", f"RA:{ra_dec.ra_hours:6.2f}h ")
+                _add_rich_line(lines, "cyan", f"Dec:{ra_dec.dec_degrees:6.2f}° ")
+                _add_rich_line(lines, "cyan", f"Alt:{alt_az.altitude:5.1f}° ")
+                _add_rich_line(lines, "cyan", f"Az:{alt_az.azimuth:5.1f}° ")
+                lines.append(" | ")
             except Exception:
-                pass
+                _add_rich_line(lines, "cyan", "Scope: Connected")
+                lines.append(" | ")
     except Exception:
-        pass
+        pass  # Silently fail if telescope unavailable
 
     # Help text - context sensitive, single line
     if state.focused_pane == "visible":
         if state.search_mode:
             # Show search mode indicator
             if state.search_query:
-                lines.append(
-                    (
-                        "dim",
-                        f"↑↓=nav Enter=detail s=sort r=reverse f=filter Search: '{state.search_query[:15]}' Esc=cancel",
-                    )
+                _add_rich_line(
+                    lines,
+                    "dim",
+                    f"↑↓=nav Enter=detail s=sort r=reverse f=filter Search: '{state.search_query[:15]}' Esc=cancel",
                 )
             else:
-                lines.append(
-                    ("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter Search mode (press '/' to enter) Esc=cancel")
+                _add_rich_line(
+                    lines,
+                    "dim",
+                    "↑↓=nav Enter=detail s=sort r=reverse f=filter Search mode (press '/' to enter) Esc=cancel",
                 )
         elif state.show_detail:
-            lines.append(("dim", "↑↓=nav Enter/Esc=detail s=sort r=reverse f=filter /=search"))
+            _add_rich_line(lines, "dim", "↑↓=nav Enter/Esc=detail s=sort r=reverse f=filter /=search")
         else:
-            lines.append(("dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter /=search"))
+            _add_rich_line(lines, "dim", "↑↓=nav Enter=detail s=sort r=reverse f=filter /=search")
     elif state.focused_pane == "conditions":
         # Unique help for conditions pane
-        lines.append(("dim", "q=quit r=refresh u=toggle UTC/Local l=location 1/2/3=focus"))
+        _add_rich_line(lines, "dim", "q=quit r=refresh u=toggle UTC/Local l=location 1/2/3=focus")
     elif state.focused_pane == "dataset":
         # Help for dataset pane
-        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session 1/2/3=focus"))
+        _add_rich_line(lines, "dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session 1/2/3=focus")
     else:
         # Default help text
-        lines.append(("dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session u=time 1/2/3=focus"))
+        _add_rich_line(lines, "dim", "q=quit r=refresh t=telescope e=eyepiece c=connect s=session u=time 1/2/3=focus")
 
-    return FormattedText(lines)
+    return "".join(lines)
+
+
+# Textual Widget Classes
+
+
+class HeaderBar(Static):
+    """Header bar widget."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the header bar widget."""
+        kwargs.setdefault("markup", True)
+        super().__init__(*args, **kwargs)
+
+    def on_mount(self) -> None:
+        """Start updating header."""
+        self.set_interval(1.0, self.update_content)
+
+    def update_content(self) -> None:
+        """Update header content."""
+        rich_markup = get_header_info()
+        self.update(rich_markup)
+
+
+class DatasetPane(Static):
+    """Dataset information pane widget."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the dataset pane widget."""
+        kwargs.setdefault("markup", True)
+        super().__init__(*args, **kwargs)
+
+    def on_mount(self) -> None:
+        """Start updating pane."""
+        self.set_interval(2.0, self.update_content)
+        self.update_content()
+
+    def update_content(self) -> None:
+        """Update pane content."""
+
+        async def _update() -> None:
+            rich_markup = await _get_dataset_info_async()
+            self.update(rich_markup)
+
+        self.run_worker(_update())
+
+
+class ConditionsPane(Static):
+    """Conditions information pane widget."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the conditions pane widget."""
+        kwargs.setdefault("markup", True)
+        super().__init__(*args, **kwargs)
+
+    def on_mount(self) -> None:
+        """Start updating pane."""
+        self.set_interval(2.0, self.update_content)
+        self.update_content()
+
+    def update_content(self) -> None:
+        """Update pane content."""
+        rich_markup = get_conditions_info()
+        self.update(rich_markup)
+
+
+class VisibleObjectsPane(Static):
+    """Visible objects pane widget."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the visible objects pane widget."""
+        kwargs.setdefault("markup", True)
+        super().__init__(*args, **kwargs)
+
+    def on_mount(self) -> None:
+        """Start updating pane."""
+        self.set_interval(2.0, self.update_content)
+        self.update_content()
+
+    def update_content(self) -> None:
+        """Update pane content."""
+        rich_markup = get_visible_objects_info()
+        self.update(rich_markup)
+
+
+class StatusBar(Static):
+    """Status bar widget."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the status bar widget."""
+        kwargs.setdefault("markup", True)
+        super().__init__(*args, **kwargs)
+
+    def on_mount(self) -> None:
+        """Start updating status bar."""
+        self.set_interval(1.0, self.update_content)
+
+    def update_content(self) -> None:
+        """Update status bar content."""
+        rich_markup = get_status_info()
+        self.update(rich_markup)

@@ -25,8 +25,7 @@ app = typer.Typer(help="Full-screen dashboard commands", cls=SortedCommandsGroup
 console = Console()
 
 
-@app.command(rich_help_panel="Dashboard")
-def show() -> None:
+def _launch_dashboard() -> None:
     """
     Launch the full-screen telescope dashboard.
 
@@ -56,3 +55,31 @@ def show() -> None:
     except Exception as e:
         console.print(f"\n[red]Error: {e}[/red]")
         raise typer.Exit(code=1) from e
+
+
+@app.callback(invoke_without_command=True)
+def dashboard_callback(ctx: typer.Context) -> None:
+    """
+    Launch the full-screen telescope dashboard.
+
+    The dashboard displays:
+    - Database statistics and catalog information
+    - Current observing conditions
+    - List of currently visible objects
+
+    Keyboard shortcuts:
+    - q or Ctrl+Q: Quit
+    - r: Refresh all panes
+    - 1/2/3: Focus different panes (coming soon)
+    - Ctrl+C: Exit gracefully
+    """
+    if ctx.invoked_subcommand is None:
+        _launch_dashboard()
+
+
+@app.command(rich_help_panel="Dashboard", name="show")
+def show() -> None:
+    """
+    Launch the full-screen telescope dashboard (same as 'nexstar dashboard').
+    """
+    _launch_dashboard()
