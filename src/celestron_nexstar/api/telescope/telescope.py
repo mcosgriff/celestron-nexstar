@@ -17,6 +17,7 @@ Based on NexStar 6/8SE specifications:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Literal
 
 import deal
@@ -440,7 +441,7 @@ class NexStarTelescope:
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
     @deal.raises(ValueError)
-    def move_fixed(self, direction: str, rate: int = 9) -> bool:
+    def move_fixed(self, direction: str, rate: int = 4) -> bool:
         """
         Move telescope in a fixed direction at specified rate.
 
@@ -518,6 +519,173 @@ class NexStarTelescope:
 
         logger.debug(f"Stopped motion on {axis} axis")
         return success
+
+    @deal.pre(lambda self, direction, rate: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, direction, rate: direction.lower()
+        in ["up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"],
+        message="Direction must be up/down/left/right or diagonal",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
+    @deal.raises(ValueError)
+    def move_step(self, direction: str, rate: int = 4) -> bool:
+        """
+        Move telescope one step in the specified direction.
+
+        This mimics a single button press on the NexStar hand controller.
+        The step size depends on the rate - faster rates result in larger steps
+        in the same time duration (0.2 seconds).
+
+        Step sizes (approximate, for 0.2 second duration):
+        - Rate 9: ~1.0° (5°/sec * 0.2s)
+        - Rate 8: ~0.6° (3°/sec * 0.2s)
+        - Rate 7: ~0.2° (1°/sec * 0.2s)
+        - Rate 6: ~0.1° (0.5°/sec * 0.2s)
+        - Rate 5: ~0.07° (32x sidereal ≈ 0.35°/sec * 0.2s)
+        - Rate 4: ~0.03° (16x sidereal ≈ 0.17°/sec * 0.2s)
+        - Rate 3: ~0.02° (8x sidereal ≈ 0.08°/sec * 0.2s)
+        - Rate 2: ~0.01° (4x sidereal ≈ 0.04°/sec * 0.2s)
+        - Rate 1: ~0.005° (2x sidereal ≈ 0.02°/sec * 0.2s)
+
+        Args:
+            direction: 'up', 'down', 'left', 'right', or diagonal ('up-left', 'up-right', 'down-left', 'down-right')
+            rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
+
+        Returns:
+            True if command successful
+
+        Raises:
+            ValueError: If direction or rate is invalid
+
+        Example:
+            >>> telescope.move_step('up', rate=5)
+            True
+            >>> telescope.move_step('up-right', rate=7)
+            True
+        """
+        if rate == 0:
+            # Rate 0 means stop, so just stop motion
+            return self.stop_motion("both")
+
+        direction_lower = direction.lower()
+
+        # Handle diagonal movements
+        if direction_lower in ["up-left", "up-right", "down-left", "down-right"]:
+            # For diagonal, move both axes simultaneously
+            if direction_lower == "up-left":
+                alt_success = self.move_fixed("up", rate)
+                az_success = self.move_fixed("left", rate)
+            elif direction_lower == "up-right":
+                alt_success = self.move_fixed("up", rate)
+                az_success = self.move_fixed("right", rate)
+            elif direction_lower == "down-left":
+                alt_success = self.move_fixed("down", rate)
+                az_success = self.move_fixed("left", rate)
+            else:  # down-right
+                alt_success = self.move_fixed("down", rate)
+                az_success = self.move_fixed("right", rate)
+
+            if not (alt_success and az_success):
+                return False
+
+            # Move for step duration (0.2 seconds)
+            time.sleep(0.2)
+
+            # Stop both axes
+            return self.stop_motion("both")
+
+        # Handle single-axis movements
+        success = self.move_fixed(direction, rate)
+        if not success:
+            return False
+
+        # Move for step duration (0.2 seconds)
+        time.sleep(0.2)
+
+        # Determine axis from direction and stop
+        axis = "alt" if direction_lower in ["up", "down"] else "az"
+        return self.stop_motion(axis)
+
+    @deal.pre(lambda self, direction, rate, duration: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, direction, rate, duration: direction.lower()
+        in ["up", "down", "left", "right", "up-left", "up-right", "down-left", "down-right"],
+        message="Direction must be up/down/left/right or diagonal",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, direction, rate, duration: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, direction, rate, duration: duration > 0, message="Duration must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
+    @deal.raises(ValueError)
+    def move_for_time(self, direction: str, duration: float, rate: int = 4) -> bool:
+        """
+        Move telescope in specified direction for a set duration.
+
+        Starts movement at the specified rate, waits for the duration,
+        then automatically stops.
+
+        Args:
+            direction: 'up', 'down', 'left', 'right', or diagonal ('up-left', 'up-right', 'down-left', 'down-right')
+            duration: Duration in seconds (must be positive)
+            rate: Speed rate 0-9 (0=stop, 9=fastest at 5°/sec)
+
+        Returns:
+            True if command successful
+
+        Raises:
+            ValueError: If direction, rate, or duration is invalid
+
+        Example:
+            >>> telescope.move_for_time('up', duration=2.0, rate=5)
+            True
+            >>> telescope.move_for_time('up-right', duration=1.5, rate=7)
+            True
+        """
+        if rate == 0:
+            # Rate 0 means stop
+            return self.stop_motion("both")
+
+        if duration <= 0:
+            raise ValueError(f"Duration must be positive, got {duration}") from None
+
+        direction_lower = direction.lower()
+
+        # Handle diagonal movements
+        if direction_lower in ["up-left", "up-right", "down-left", "down-right"]:
+            # For diagonal, move both axes simultaneously
+            if direction_lower == "up-left":
+                alt_success = self.move_fixed("up", rate)
+                az_success = self.move_fixed("left", rate)
+            elif direction_lower == "up-right":
+                alt_success = self.move_fixed("up", rate)
+                az_success = self.move_fixed("right", rate)
+            elif direction_lower == "down-left":
+                alt_success = self.move_fixed("down", rate)
+                az_success = self.move_fixed("left", rate)
+            else:  # down-right
+                alt_success = self.move_fixed("down", rate)
+                az_success = self.move_fixed("right", rate)
+
+            if not (alt_success and az_success):
+                return False
+
+            # Move for specified duration
+            time.sleep(duration)
+
+            # Stop both axes
+            return self.stop_motion("both")
+
+        # Handle single-axis movements
+        success = self.move_fixed(direction, rate)
+        if not success:
+            return False
+
+        # Move for specified duration
+        time.sleep(duration)
+
+        # Determine axis from direction and stop
+        axis = "alt" if direction_lower in ["up", "down"] else "az"
+        return self.stop_motion(axis)
 
     @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is not None, message="Tracking mode must be returned")
