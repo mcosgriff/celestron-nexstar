@@ -66,7 +66,7 @@ from celestron_nexstar.api.core.utils import (
 from celestron_nexstar.api.telescope.telescope import NexStarTelescope
 
 
-__version__ = "0.2.0"  # Bumped version for new architecture
+__version__ = "0.1.0"
 __author__ = "Your Name"
 __email__ = "your.email@example.com"
 

@@ -64,6 +64,7 @@ dev = [
     "mypy>=1.18.2",  # Match pre-commit version for consistency
     "ruff>=0.14.4",
     "pre-commit>=4.0.0",
+    "python-semantic-release>=9.0.0",
 ]
 
 [project.scripts]
@@ -122,6 +123,24 @@ skip_covered = false
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.semantic_release]
+version_variable = [
+    "src/celestron_nexstar/__init__.py:__version__",
+    "src/celestron_nexstar/cli/__init__.py:__version__",
+    "pyproject.toml:project.version",
+]
+build_command = "uv build"
+dist_path = "dist"
+upload_to_vcs_release = true
+upload_to_pypi = false  # Set to true when ready to auto-publish
+changelog_file = "CHANGELOG.md"
+commit_author = "semantic-release <semantic-release>"
+commit_message = "chore: release v{version}"
+tag_commit = true
+tag_message = "Release version {version}"
+major_on_zero = false  # Treat 0.x versions as pre-release
+version_toml = ["pyproject.toml:project.version"]
 
 [tool.ruff]
 # Set line length to match previous black configuration
