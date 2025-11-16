@@ -98,6 +98,20 @@ class NexStarTelescope:
         if self.config.auto_connect:
             self.connect()
 
+    def _ensure_connected(self) -> None:
+        """
+        Ensure telescope is connected, attempting to reconnect if not open.
+
+        This is called before operations that require a connection.
+        If the connection is not open, attempts to reconnect using the saved config.
+
+        Raises:
+            TelescopeConnectionError: If reconnection fails
+        """
+        if not self.protocol.is_open():
+            logger.info("Connection not open, attempting to reconnect...")
+            self.connect()
+
     @deal.pre(lambda self: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is True, message="Connection must succeed")
     @deal.raises(TelescopeConnectionError)
@@ -272,11 +286,10 @@ class NexStarTelescope:
             HorizontalCoordinates(azimuth=0.0, altitude=0.0)
         )
 
-    @deal.pre(lambda self, ra_hours, dec_degrees: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, ra_hours, dec_degrees: 0 <= ra_hours < 24, message="RA must be 0-24 hours")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, ra_hours, dec_degrees: -90 <= dec_degrees <= 90, message="Dec must be -90 to +90 degrees")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is True, message="Goto must succeed")
-    @deal.raises(NotConnectedError, InvalidCoordinateError)
+    @deal.raises(NotConnectedError, InvalidCoordinateError, TelescopeConnectionError)
     def goto_ra_dec(self, ra_hours: float, dec_degrees: float) -> bool:
         """
         Slew telescope to specific RA/Dec coordinates.
@@ -289,13 +302,17 @@ class NexStarTelescope:
             True if command successful
 
         Raises:
-            NotConnectedError: If not connected to telescope
+            NotConnectedError: If not connected to telescope and reconnection fails
+            TelescopeConnectionError: If reconnection fails
 
         Example:
             >>> # Slew to Polaris
             >>> telescope.goto_ra_dec(2.5303, 89.2641)
             True
         """
+        # Ensure connection before operation
+        self._ensure_connected()
+
         # Convert to protocol format
         ra_deg = CoordinateConverter.ra_hours_to_degrees(ra_hours)
         dec_deg = CoordinateConverter.dec_to_unsigned(dec_degrees)
@@ -303,11 +320,10 @@ class NexStarTelescope:
         logger.info(f"Slewing to RA {ra_hours:.4f}h, Dec {dec_degrees:.4f}°")
         return self.protocol.goto_ra_dec_precise(ra_deg, dec_deg)
 
-    @deal.pre(lambda self, azimuth, altitude: self.protocol.is_open(), message="Telescope must be connected")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, azimuth, altitude: 0 <= azimuth < 360, message="Azimuth must be 0-360 degrees")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, azimuth, altitude: -90 <= altitude <= 90, message="Altitude must be -90 to +90 degrees")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is True, message="Goto must succeed")
-    @deal.raises(NotConnectedError, InvalidCoordinateError)
+    @deal.raises(NotConnectedError, InvalidCoordinateError, TelescopeConnectionError)
     def goto_alt_az(self, azimuth: float, altitude: float) -> bool:
         """
         Slew telescope to specific Alt/Az coordinates.
@@ -320,13 +336,17 @@ class NexStarTelescope:
             True if command successful
 
         Raises:
-            NotConnectedError: If not connected to telescope
+            NotConnectedError: If not connected to telescope and reconnection fails
+            TelescopeConnectionError: If reconnection fails
 
         Example:
             >>> # Slew to zenith
             >>> telescope.goto_alt_az(0.0, 90.0)
             True
         """
+        # Ensure connection before operation
+        self._ensure_connected()
+
         # Convert altitude to unsigned format
         alt_deg = CoordinateConverter.altitude_to_unsigned(altitude)
 

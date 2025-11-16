@@ -169,12 +169,20 @@ class NexStarProtocol:
             Response string (without terminator)
 
         Raises:
-            NotConnectedError: If not connected
+            NotConnectedError: If not connected and reconnection fails
+            TelescopeConnectionError: If reconnection fails
             TelescopeTimeoutError: If no response within timeout
         """
         if not self.is_open():
-            logger.error("Attempted to send command while not connected")
-            raise NotConnectedError("Connection not open") from None
+            logger.info("Connection not open, attempting to reconnect...")
+            try:
+                if not self.open():
+                    logger.error("Failed to reconnect")
+                    raise NotConnectedError("Connection not open and reconnection failed") from None
+                logger.info("Reconnected successfully")
+            except TelescopeConnectionError as e:
+                logger.error(f"Reconnection failed: {e}")
+                raise NotConnectedError("Connection not open and reconnection failed") from e
 
         if self.connection_type == "tcp":
             return self._send_command_tcp(command)

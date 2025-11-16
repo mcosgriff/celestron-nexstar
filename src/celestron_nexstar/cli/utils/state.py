@@ -7,7 +7,12 @@ Manages telescope connection state across CLI commands.
 import contextlib
 from typing import Any
 
+import typer
+from rich.console import Console
+from rich.prompt import Prompt
+
 from celestron_nexstar import NexStarTelescope, TelescopeConfig
+from celestron_nexstar.cli.utils.output import print_error, print_info
 
 
 # Global telescope instance
@@ -35,35 +40,83 @@ def clear_telescope() -> None:
     _telescope = None
 
 
-def ensure_connected(port: str | None = None) -> NexStarTelescope:
+def ensure_connected() -> NexStarTelescope:
     """
     Ensure telescope is connected, creating connection if needed.
 
-    Args:
-        port: Serial port to connect to (required if not already connected)
+    If telescope exists but is not connected, attempts to reconnect using saved config.
+    If no telescope exists, prompts user to choose connection type (serial or TCP/IP).
 
     Returns:
         Connected telescope instance
 
     Raises:
-        RuntimeError: If not connected and no port specified
+        typer.Exit: If connection fails or user cancels
     """
     global _telescope
+    console = Console()
 
+    # Check if telescope exists and is connected
     if _telescope is not None:
-        return _telescope
+        # Try to reconnect if not open
+        if not _telescope.protocol.is_open():
+            print_info("Telescope connection lost. Attempting to reconnect...")
+            try:
+                _telescope.connect()
+                print_info("Reconnected successfully")
+                return _telescope
+            except Exception as e:
+                print_error(f"Failed to reconnect: {e}")
+                # Clear the broken connection
+                clear_telescope()
+        else:
+            return _telescope
 
-    if port is None:
-        raise RuntimeError(
-            "Not connected to telescope. Please specify a port with --port or set NEXSTAR_PORT environment variable."
-        )
+    # No telescope exists - prompt user for connection type
+    print_info("Telescope not connected. Please choose connection type:")
+    connection_type = Prompt.ask(
+        "Connection type",
+        choices=["serial", "tcp"],
+        default="serial",
+        console=console,
+    )
+
+    if connection_type == "tcp":
+        # TCP/IP connection
+        host = Prompt.ask("TCP/IP host", default="192.168.4.1", console=console)
+        tcp_port_str = Prompt.ask("TCP/IP port", default="4030", console=console)
+        try:
+            tcp_port = int(tcp_port_str)
+        except ValueError:
+            print_error(f"Invalid port number: {tcp_port_str}")
+            raise typer.Exit(code=1) from None
+
+        config = TelescopeConfig(connection_type="tcp", host=host, tcp_port=tcp_port)
+        connection_desc = f"{host}:{tcp_port}"
+    else:
+        # Serial connection
+        port = Prompt.ask("Serial port", default="/dev/ttyUSB0", console=console)
+        baudrate_str = Prompt.ask("Baud rate", default="9600", console=console)
+        try:
+            baudrate = int(baudrate_str)
+        except ValueError:
+            print_error(f"Invalid baud rate: {baudrate_str}")
+            raise typer.Exit(code=1) from None
+
+        config = TelescopeConfig(port=port, baudrate=baudrate)
+        connection_desc = port
 
     # Create and connect telescope
-    config = TelescopeConfig(port=port)
-    _telescope = NexStarTelescope(config)
-    _telescope.connect()
-
-    return _telescope
+    try:
+        with console.status(f"[bold blue]Connecting to telescope on {connection_desc}...", spinner="dots"):
+            _telescope = NexStarTelescope(config)
+            _telescope.connect()
+        print_info(f"Connected to telescope on {connection_desc}")
+        return _telescope
+    except Exception as e:
+        print_error(f"Failed to connect: {e}")
+        _telescope = None
+        raise typer.Exit(code=1) from e
 
 
 def get_cli_state() -> dict[str, Any]:
