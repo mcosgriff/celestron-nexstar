@@ -640,5 +640,261 @@ def _show_next_content(
     )
 
 
+@app.command("how")
+def show_how(
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file (auto-generates filename)"),
+    export_path: str | None = typer.Option(
+        None, "--export-path", help="Custom export file path (overrides auto-generated filename)"
+    ),
+) -> None:
+    """Explain how aurora visibility is determined."""
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("how")
+        file_console = create_file_console()
+        _show_how_content(file_console)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_how_content(console)
+
+
+def _show_how_content(output_console: Console | FileConsole) -> None:
+    """Display information about how aurora visibility is determined."""
+    output_console.print("\n[bold cyan]How Aurora Visibility is Determined[/bold cyan]\n")
+
+    output_console.print(
+        "[dim]Aurora visibility is calculated using the AgentCalc algorithm, which combines geomagnetic "
+        "activity (Kp index) with logistic probability modeling and environmental factors. The algorithm "
+        "determines the auroral boundary latitude and calculates visibility probability based on your "
+        "location relative to that boundary.[/dim]\n"
+    )
+
+    # Algorithm overview
+    output_console.print("[bold]Algorithm Overview[/bold]")
+    output_console.print("  • Calculate auroral boundary latitude from Kp index")
+    output_console.print("  • Calculate base probability using logistic function")
+    output_console.print("  • Apply multiplicative adjustments for environmental factors")
+    output_console.print("  • Aurora is visible if probability > 0.5 (50%) and it's dark\n")
+
+    # Kp Index and Auroral Boundary
+    output_console.print("[bold]1. Geomagnetic Activity (Kp Index) - [yellow]Most Important[/yellow][/bold]")
+    output_console.print(
+        "  The Kp index measures geomagnetic activity on a scale of 0-9. Higher Kp values indicate "
+        "stronger geomagnetic storms and lower auroral boundaries (aurora visible further south)."
+    )
+    output_console.print()
+
+    table_kp = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table_kp.add_column("Kp Index", style="cyan")
+    table_kp.add_column("Activity Level", style="white")
+    table_kp.add_column("Auroral Boundary", justify="right", style="green")
+    table_kp.add_column("Visibility Level", style="dim")
+
+    table_kp.add_row("0-2", "Very Low", "≥ 60°", "None")
+    table_kp.add_row("3", "Low", "57°", "Low")
+    table_kp.add_row("4", "Low-Moderate", "54°", "Low")
+    table_kp.add_row("5", "Moderate", "51°", "Moderate")
+    table_kp.add_row("6", "High", "48°", "High")
+    table_kp.add_row("7", "Very High", "45°", "Very High")
+    table_kp.add_row("8", "Extreme", "42°", "Very High")
+    table_kp.add_row("9", "Extreme", "39°", "Very High")
+
+    output_console.print(table_kp)
+    output_console.print()
+
+    output_console.print("[bold]Auroral Boundary Formula[/bold]")
+    output_console.print("  The auroral boundary (equatorward edge of auroral oval) is calculated using:")
+    output_console.print("  [green]φ_b = 66 - 3K[/green]")
+    output_console.print("  where:")
+    output_console.print("    • φ_b = auroral boundary latitude (degrees)")
+    output_console.print("    • K = Kp index (0-9)")
+    output_console.print()
+    output_console.print(
+        "  [dim]💡 Example: At Kp 5, the boundary is at 66 - (3 x 5) = 51° latitude. "
+        "Observers north of 51° have a good chance of seeing aurora.[/dim]\n"
+    )
+
+    # Base Probability Calculation
+    output_console.print("[bold]2. Base Probability Calculation[/bold]")
+    output_console.print(
+        "  The base probability uses a logistic function based on your latitude relative to the auroral boundary:"
+    )
+    output_console.print("  [green]P = 1 / (1 + e^(-(φ - φ_b)))[/green]")
+    output_console.print("  where:")
+    output_console.print("    • P = base probability (0.0-1.0)")
+    output_console.print("    • φ = observer latitude (degrees)")
+    output_console.print("    • φ_b = auroral boundary latitude (degrees)")
+    output_console.print()
+    output_console.print(
+        "  [dim]This gives high probability when you're well north of the boundary, and low probability when south.[/dim]\n"
+    )
+
+    # Environmental Factors
+    output_console.print("[bold]3. Environmental Factor Adjustments[/bold]")
+    output_console.print("  The base probability is multiplied by factors for environmental conditions:\n")
+
+    # Cloud Cover
+    output_console.print("[bold]Cloud Cover Adjustment[/bold]")
+    output_console.print("  Factor = [green](1 - C/100)[/green]")
+    output_console.print("  where C = cloud cover percentage (0-100)")
+    output_console.print()
+    table_cloud = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table_cloud.add_column("Cloud Cover", style="cyan")
+    table_cloud.add_column("Factor", justify="right", style="green")
+    table_cloud.add_column("Impact", style="dim")
+
+    table_cloud.add_row("0% (Clear)", "1.0", "No reduction")
+    table_cloud.add_row("25%", "0.75", "25% reduction")
+    table_cloud.add_row("50% (Partly Cloudy)", "0.5", "50% reduction")
+    table_cloud.add_row("75%", "0.25", "75% reduction")
+    table_cloud.add_row("100% (Overcast)", "0.0", "Blocks aurora completely")
+
+    output_console.print(table_cloud)
+    output_console.print()
+
+    # Light Pollution
+    output_console.print("[bold]Light Pollution (Bortle Class) Adjustment[/bold]")
+    output_console.print("  Factor = [green](1 - B/12)[/green]")
+    output_console.print("  where B = Bortle class (1-9)")
+    output_console.print()
+    table_bortle = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table_bortle.add_column("Bortle Class", style="cyan")
+    table_bortle.add_column("Description", style="white")
+    table_bortle.add_column("Factor", justify="right", style="green")
+    table_bortle.add_column("Impact", style="dim")
+
+    table_bortle.add_row("1", "Excellent dark sky", "0.92", "8% reduction")
+    table_bortle.add_row("2", "Typical dark site", "0.83", "17% reduction")
+    table_bortle.add_row("3", "Rural", "0.75", "25% reduction")
+    table_bortle.add_row("4", "Rural/Suburban", "0.67", "33% reduction")
+    table_bortle.add_row("5", "Suburban", "0.58", "42% reduction")
+    table_bortle.add_row("6", "Bright Suburban", "0.5", "50% reduction")
+    table_bortle.add_row("7", "Suburban/Urban", "0.42", "58% reduction")
+    table_bortle.add_row("8", "City", "0.33", "67% reduction")
+    table_bortle.add_row("9", "Inner City", "0.25", "75% reduction")
+
+    output_console.print(table_bortle)
+    output_console.print()
+
+    # Moon Phase
+    output_console.print("[bold]Moon Illumination Adjustment[/bold]")
+    output_console.print("  Factor = [green](1 - M/200)[/green]")
+    output_console.print("  where M = moon illumination percentage (0-100)")
+    output_console.print()
+    table_moon = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table_moon.add_column("Moon Phase", style="cyan")
+    table_moon.add_column("Illumination", style="white")
+    table_moon.add_column("Factor", justify="right", style="green")
+    table_moon.add_column("Impact", style="dim")
+
+    table_moon.add_row("New Moon", "0%", "1.0", "No reduction")
+    table_moon.add_row("Crescent", "25%", "0.875", "12.5% reduction")
+    table_moon.add_row("Quarter", "50%", "0.75", "25% reduction")
+    table_moon.add_row("Gibbous", "75%", "0.625", "37.5% reduction")
+    table_moon.add_row("Full Moon", "100%", "0.5", "50% reduction")
+
+    output_console.print(table_moon)
+    output_console.print()
+
+    # Visibility Threshold
+    output_console.print("[bold]Visibility Threshold[/bold]")
+    output_console.print("  • Aurora is considered [green]visible[/green] if:")
+    output_console.print("    - Visibility probability > 0.5 (50%)")
+    output_console.print("    - AND it's dark (after sunset, before sunrise)")
+    output_console.print()
+
+    # Visibility Levels
+    output_console.print("[bold]Visibility Levels (from Kp Index)[/bold]")
+    table_levels = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table_levels.add_column("Level", style="cyan")
+    table_levels.add_column("Kp Range", style="white")
+    table_levels.add_column("Description", style="dim")
+
+    table_levels.add_row("[bold bright_green]Very High[/bold bright_green]", "≥ 8.0", "Extreme geomagnetic activity")
+    table_levels.add_row("[bold green]High[/bold green]", "≥ 6.0", "High geomagnetic activity")
+    table_levels.add_row("[bold yellow]Moderate[/bold yellow]", "≥ 5.0", "Moderate geomagnetic activity")
+    table_levels.add_row("[yellow]Low[/yellow]", "≥ 3.0", "Low geomagnetic activity")
+    table_levels.add_row("[dim]None[/dim]", "< 3.0", "Very low activity")
+
+    output_console.print(table_levels)
+    output_console.print()
+
+    # Example Calculation
+    output_console.print("[bold]Example Calculation[/bold]")
+    output_console.print("  Scenario: Observer at 55°N, Kp 5, 20% clouds, Bortle Class 3, 30% moon")
+    output_console.print()
+    output_console.print("  Step 1: Calculate auroral boundary")
+    output_console.print("    φ_b = 66 - (3 x 5) = [green]51°[/green]")
+    output_console.print()
+    output_console.print("  Step 2: Calculate latitude difference")
+    output_console.print("    lat_diff = 55° - 51° = [green]4°[/green] (observer is 4° north of boundary)")
+    output_console.print()
+    output_console.print("  Step 3: Calculate base probability")
+    output_console.print("    P = 1 / (1 + e^(-4)) = [green]0.982[/green] (98.2%)")
+    output_console.print()
+    output_console.print("  Step 4: Apply cloud cover factor")
+    output_console.print("    cloud_factor = 1 - (20/100) = [green]0.8[/green]")
+    output_console.print("    P = 0.982 x 0.8 = [green]0.786[/green] (78.6%)")
+    output_console.print()
+    output_console.print("  Step 5: Apply Bortle class factor")
+    output_console.print("    bortle_factor = 1 - (3/12) = [green]0.75[/green]")
+    output_console.print("    P = 0.786 x 0.75 = [green]0.589[/green] (58.9%)")
+    output_console.print()
+    output_console.print("  Step 6: Apply moon illumination factor")
+    output_console.print("    moon_factor = 1 - (30/200) = [green]0.85[/green]")
+    output_console.print("    P = 0.589 x 0.85 = [green]0.501[/green] (50.1%)")
+    output_console.print()
+    output_console.print("  Final Probability: [bold green]0.501 (50.1%)[/bold green]")
+    output_console.print("  Visibility Level: [bold green]Moderate[/bold green]")
+    output_console.print("  Visible: [bold green]Yes[/bold green] (probability > 0.5 and dark)\n")
+
+    # Important Notes
+    output_console.print("[bold]Important Notes[/bold]")
+    output_console.print(
+        "  • [yellow]Kp Index is Critical:[/yellow] The Kp index determines the auroral boundary. "
+        "Higher Kp values allow aurora to be visible at lower latitudes."
+    )
+    output_console.print(
+        "  • [yellow]Latitude Matters:[/yellow] Observers closer to the poles have better chances. "
+        "The logistic function gives exponentially higher probability as you move north of the boundary."
+    )
+    output_console.print(
+        "  • [yellow]Multiplicative Adjustments:[/yellow] Environmental factors multiply the base probability, "
+        "so poor conditions can significantly reduce visibility chances."
+    )
+    output_console.print(
+        "  • [yellow]Cloud Cover Blocks:[/yellow] Heavy cloud cover can completely block aurora visibility, "
+        "even with high geomagnetic activity."
+    )
+    output_console.print(
+        "  • [yellow]Light Pollution Impact:[/yellow] Light pollution reduces visibility but doesn't block "
+        "aurora completely. Bright aurora can still be seen from suburban areas."
+    )
+    output_console.print(
+        "  • [yellow]Moon Phase:[/yellow] A bright moon reduces visibility of faint aurora but doesn't "
+        "affect bright displays as much."
+    )
+    output_console.print()
+
+    # Data Sources
+    output_console.print("[bold]Data Sources[/bold]")
+    output_console.print("  • Kp Index: NOAA Space Weather Prediction Center (SWPC)")
+    output_console.print("  • Algorithm: AgentCalc aurora visibility calculator")
+    output_console.print("  • Reference: https://agentcalc.com/aurora-visibility-calculator")
+    output_console.print("  • Light Pollution: Bortle class from light pollution database")
+    output_console.print("  • Moon Phase: Calculated using astronomical algorithms")
+    output_console.print("  • Cloud Cover: Weather forecast data")
+    output_console.print("  • Darkness: Calculated from sunset/sunrise times\n")
+
+    output_console.print(
+        "[dim]💡 The algorithm is based on the AgentCalc model, which uses real-time geomagnetic data "
+        "and statistical modeling to predict aurora visibility.[/dim]\n"
+    )
+
+
 if __name__ == "__main__":
     app()

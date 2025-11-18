@@ -19,6 +19,7 @@ from celestron_nexstar.api.location.weather import (
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
+    fetch_historical_weather_climatology,
     fetch_hourly_weather_forecast,
     fetch_weather,
 )
@@ -503,3 +504,168 @@ def show_next_3_days_weather(
     except Exception as e:
         print_error(f"Failed to get weather forecast: {e}")
         raise typer.Exit(code=1) from e
+
+
+@app.command("historical", rich_help_panel="Weather Information")
+def show_historical_weather(
+    months: int = typer.Option(12, "--months", "-m", help="Number of months to show (3, 6, or 12, default: 12)"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """
+    Display historical cloud cover climatology for the observer location.
+
+    Shows monthly average cloud cover statistics based on historical weather data
+    from Open-Meteo Historical API. Data is cached in the database for future use.
+
+    Examples:
+        nexstar weather historical
+        nexstar weather historical --months 6
+        nexstar weather historical --months 3 --json
+    """
+    try:
+        location = get_observer_location()
+
+        # Validate months parameter
+        if months not in [3, 6, 12]:
+            print_error("Months must be 3, 6, or 12")
+            raise typer.Exit(code=1) from None
+
+        # Determine which months we need to show
+        from datetime import datetime
+
+        current_month = datetime.now(UTC).month
+
+        # Show last N months (rolling window)
+        months_to_show = []
+        for i in range(months):
+            month_num = ((current_month - 1 - i) % 12) + 1
+            months_to_show.append(month_num)
+        months_to_show.reverse()  # Show in chronological order
+        required_months = set(months_to_show)
+
+        # Fetch historical data (will use cache if available, only fetch missing months)
+        console.print("[dim]Checking database for historical weather data...[/dim]")
+        monthly_stats = asyncio.run(fetch_historical_weather_climatology(location, required_months=required_months))
+
+        if not monthly_stats:
+            print_error("Historical weather data not available")
+            raise typer.Exit(code=1) from None
+
+        if json_output:
+            import json
+
+            output = {
+                "location": {
+                    "latitude": location.latitude,
+                    "longitude": location.longitude,
+                    "name": location.name,
+                },
+                "historical_data": [
+                    {
+                        "month": month,
+                        "month_name": _get_month_name(month),
+                        "avg_cloud_cover_percent": monthly_stats[month].get("avg"),
+                        "min_cloud_cover_percent": monthly_stats[month].get("min"),
+                        "max_cloud_cover_percent": monthly_stats[month].get("max"),
+                        "p25_cloud_cover_percent": monthly_stats[month].get("p25"),
+                        "p75_cloud_cover_percent": monthly_stats[month].get("p75"),
+                    }
+                    for month in months_to_show
+                    if month in monthly_stats
+                ],
+            }
+            console.print(json.dumps(output, indent=2))
+            return
+
+        # Display formatted output
+        location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
+        console.print(f"\n[bold cyan]Historical Cloud Cover Climatology for {location_name}[/bold cyan]")
+        console.print("[dim]Monthly averages based on historical weather data (2000-present)[/dim]")
+        console.print(f"[dim]Showing last {months} months[/dim]\n")
+
+        # Create table
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Month", style="cyan")
+        table.add_column("Average", justify="right", style="white")
+        table.add_column("Range (Best-Worst)", justify="right", style="dim")
+        table.add_column("25th-75th Percentile", justify="right", style="dim")
+        table.add_column("Quality", style="green")
+
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        for month in months_to_show:
+            if month not in monthly_stats:
+                continue
+
+            stats = monthly_stats[month]
+            avg = stats.get("avg")
+            min_val = stats.get("min")
+            max_val = stats.get("max")
+            p25 = stats.get("p25")
+            p75 = stats.get("p75")
+
+            month_name = month_names[month - 1]
+
+            # Format average
+            avg_str = f"{avg:.1f}%" if avg is not None else "[dim]-[/dim]"
+
+            # Format range
+            if min_val is not None and max_val is not None:
+                range_str = f"{min_val:.0f}%-{max_val:.0f}%"
+            else:
+                range_str = "[dim]-[/dim]"
+
+            # Format percentile range
+            percentile_str = f"{p25:.0f}%-{p75:.0f}%" if p25 is not None and p75 is not None else "[dim]-[/dim]"
+
+            # Format quality based on average
+            if avg is not None:
+                if avg < 30:
+                    quality = "[green]Excellent[/green]"
+                elif avg < 50:
+                    quality = "[yellow]Good[/yellow]"
+                elif avg < 70:
+                    quality = "[yellow]Fair[/yellow]"
+                else:
+                    quality = "[red]Poor[/red]"
+            else:
+                quality = "[dim]-[/dim]"
+
+            table.add_row(month_name, avg_str, range_str, percentile_str, quality)
+
+        console.print(table)
+
+        console.print("\n[bold]Understanding the Data:[/bold]")
+        console.print("  • [dim]Average: Mean cloud cover percentage for the month[/dim]")
+        console.print("  • [dim]Range: Minimum (best case) to Maximum (worst case) cloud cover[/dim]")
+        console.print("  • [dim]25th-75th Percentile: Typical range (50% of days fall within this range)[/dim]")
+        console.print("  • [dim]Quality: Overall assessment based on average cloud cover[/dim]")
+        console.print(
+            "\n[dim]💡 Tip: Lower cloud cover percentages indicate clearer skies and better observing conditions.[/dim]"
+        )
+        console.print(
+            "[dim]💡 Tip: Use this data to plan Milky Way viewing trips - look for months with lower averages.[/dim]\n"
+        )
+
+    except Exception as e:
+        print_error(f"Failed to get historical weather data: {e}")
+        raise typer.Exit(code=1) from e
+
+
+def _get_month_name(month: int) -> str:
+    """Get full month name from month number."""
+    month_names = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ]
+    return month_names[month - 1] if 1 <= month <= 12 else "Unknown"

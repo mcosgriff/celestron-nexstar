@@ -295,6 +295,58 @@ class WeatherForecastModel(Base):
         return f"<WeatherForecast(id={self.id}, lat={self.latitude}, lon={self.longitude}, timestamp='{self.forecast_timestamp}')>"
 
 
+class HistoricalWeatherModel(Base):
+    """
+    SQLAlchemy model for historical weather climatology data.
+
+    Stores monthly average cloud cover statistics by location for long-term predictions.
+    Data is fetched from Open-Meteo Historical Weather API and cached indefinitely.
+    """
+
+    __tablename__ = "historical_weather"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Location (used to identify historical data for a location)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    geohash: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
+
+    # Month (1-12) for which this data applies
+    month: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+
+    # Historical cloud cover statistics (from Open-Meteo Historical API)
+    avg_cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # Average cloud cover
+    min_cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # Minimum (best case)
+    max_cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # Maximum (worst case)
+    p25_cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # 25th percentile
+    p40_cloud_cover_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # 40th percentile (tighter range)
+    p60_cloud_cover_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # 60th percentile (tighter range)
+    p75_cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # 75th percentile
+    std_dev_cloud_cover_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )  # Standard deviation (confidence indicator)
+
+    # Metadata
+    years_of_data: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Number of years used for average
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Composite index for location + month lookups
+    __table_args__ = (
+        Index("idx_historical_location_month", "latitude", "longitude", "month"),
+        Index("idx_historical_geohash_month", "geohash", "month"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of historical weather."""
+        return f"<HistoricalWeather(id={self.id}, lat={self.latitude}, lon={self.longitude}, month={self.month})>"
+
+
 class ISSPassModel(Base):
     """
     SQLAlchemy model for cached ISS pass predictions.

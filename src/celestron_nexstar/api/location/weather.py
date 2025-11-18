@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 import aiohttp
 import numpy as np
 
-from celestron_nexstar.api.database.models import WeatherForecastModel
+from celestron_nexstar.api.database.models import HistoricalWeatherModel, WeatherForecastModel
 from celestron_nexstar.api.location.observer import ObserverLocation
 
 
@@ -985,3 +985,360 @@ async def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[Observe
             data_map[location] = WeatherData(error="Unexpected error")
 
     return data_map
+
+
+async def fetch_historical_weather_climatology(
+    location: ObserverLocation,
+    start_year: int = 2000,
+    end_year: int | None = None,
+    required_months: set[int] | None = None,
+) -> dict[int, dict[str, float | None]] | None:
+    """
+    Fetch historical weather climatology data from Open-Meteo Historical API.
+
+    Retrieves monthly average cloud cover statistics for a location.
+    Data is cached in the database for future use. Only fetches from API if
+    required months are missing from the database.
+
+    Args:
+        location: Observer location
+        start_year: Start year for historical data (default: 2000)
+        end_year: End year for historical data (default: current year - 1)
+        required_months: Set of month numbers (1-12) that are required. If None, all 12 months are required.
+                        Only fetches from API if any required months are missing from database.
+
+    Returns:
+        Dictionary mapping month (1-12) to cloud cover statistics, or None if fetch fails
+        Statistics include: avg, min, max, p25, p75
+    """
+    if end_year is None:
+        end_year = datetime.now(UTC).year - 1  # Use last complete year
+
+    if required_months is None:
+        required_months = set(range(1, 13))  # All 12 months
+
+    # Check database first
+    from sqlalchemy import and_, select
+
+    from celestron_nexstar.api.database.database import get_database
+    from celestron_nexstar.api.location.geohash_utils import encode
+
+    db = get_database()
+    monthly_stats: dict[int, dict[str, float | None]] = {}
+    months_in_db: set[int] = set()
+
+    try:
+        async with db._AsyncSession() as session:
+            # Check what months we have in the database
+            stmt = (
+                select(HistoricalWeatherModel)
+                .where(
+                    and_(
+                        HistoricalWeatherModel.latitude == location.latitude,
+                        HistoricalWeatherModel.longitude == location.longitude,
+                    )
+                )
+                .order_by(HistoricalWeatherModel.month)
+            )
+            result = await session.execute(stmt)
+            existing_data = result.scalars().all()
+
+            # Build dictionary of months we have
+            for record in existing_data:
+                months_in_db.add(record.month)
+                monthly_stats[record.month] = {
+                    "avg": record.avg_cloud_cover_percent,
+                    "min": record.min_cloud_cover_percent,
+                    "max": record.max_cloud_cover_percent,
+                    "p25": record.p25_cloud_cover_percent,
+                    "p40": record.p40_cloud_cover_percent,
+                    "p60": record.p60_cloud_cover_percent,
+                    "p75": record.p75_cloud_cover_percent,
+                    "std_dev": record.std_dev_cloud_cover_percent,
+                }
+
+            # Check if we have all required months
+            missing_months = required_months - months_in_db
+            if not missing_months:
+                # We have all required months in the database
+                logger.debug(
+                    f"Using cached historical weather data for location {location.latitude}, {location.longitude} "
+                    f"(all {len(required_months)} required months available)"
+                )
+                return monthly_stats
+
+            # We're missing some months - need to fetch from API
+            logger.debug(
+                f"Missing {len(missing_months)} months in database for location {location.latitude}, {location.longitude}. "
+                f"Fetching from API (will get all 12 months)."
+            )
+    except Exception as e:
+        logger.debug(f"Error checking database for historical weather: {e}")
+        # If database check fails, proceed to fetch from API
+
+    # Fetch from Open-Meteo Historical API
+    # Note: The API returns all 12 months in one call, so we fetch all months even if we only need some.
+    # This is more efficient than making multiple API calls, and we cache all months for future use.
+    logger.debug(f"Fetching historical weather data from Open-Meteo for {location.latitude}, {location.longitude}")
+    try:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params: dict[str, str | int | float] = {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "start_date": f"{start_year}-01-01",
+            "end_date": f"{end_year}-12-31",
+            "hourly": "cloud_cover",
+            "timezone": "auto",
+        }
+
+        async with (
+            aiohttp.ClientSession() as http_session,
+            http_session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
+        ):
+            if response.status != 200:
+                logger.warning(f"Open-Meteo Historical API returned status {response.status}")
+                return None
+
+            data = await response.json()
+
+        # Process hourly data to calculate monthly statistics
+        hourly = data.get("hourly", {})
+        hourly_time = hourly.get("time", [])
+        hourly_cloud_cover = hourly.get("cloud_cover", [])
+
+        if not hourly_time or not hourly_cloud_cover:
+            logger.warning("No hourly data in Open-Meteo Historical API response")
+            return None
+
+        # Group data by month and calculate statistics
+        monthly_data: dict[int, list[float]] = {month: [] for month in range(1, 13)}
+
+        for i, time_str in enumerate(hourly_time):
+            if i >= len(hourly_cloud_cover):
+                break
+
+            try:
+                time_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                month = time_dt.month
+                cloud_cover = hourly_cloud_cover[i]
+
+                if cloud_cover is not None and not (np is not None and np.isnan(cloud_cover)):
+                    monthly_data[month].append(float(cloud_cover))
+            except (ValueError, TypeError, IndexError):
+                continue
+
+        # Calculate statistics for each month
+        # Note: monthly_stats may already contain some months from the database
+        # We'll update/add all months from the API, but preserve existing database data if API fails for a month
+        now_db = datetime.now(UTC)
+        years_of_data = end_year - start_year + 1
+        geohash = encode(location.latitude, location.longitude, precision=9)
+
+        for month in range(1, 13):
+            values = monthly_data[month]
+            if not values:
+                # No data for this month from API
+                # If we don't have it in database either, use None
+                if month not in monthly_stats:
+                    monthly_stats[month] = {
+                        "avg": None,
+                        "min": None,
+                        "max": None,
+                        "p25": None,
+                        "p40": None,
+                        "p60": None,
+                        "p75": None,
+                        "std_dev": None,
+                    }
+                # Otherwise, keep the existing database data
+                continue
+
+            # Calculate statistics
+            values_sorted = sorted(values)
+            n = len(values_sorted)
+
+            avg = sum(values) / n
+            min_val = values_sorted[0]
+            max_val = values_sorted[-1]
+
+            # Calculate percentiles
+            p25_idx = int(n * 0.25)
+            p40_idx = int(n * 0.40)
+            p60_idx = int(n * 0.60)
+            p75_idx = int(n * 0.75)
+            p25 = values_sorted[p25_idx] if p25_idx < n else None
+            p40 = values_sorted[p40_idx] if p40_idx < n else None
+            p60 = values_sorted[p60_idx] if p60_idx < n else None
+            p75 = values_sorted[p75_idx] if p75_idx < n else None
+
+            # Calculate standard deviation
+            if n > 1:
+                variance = sum((x - avg) ** 2 for x in values) / (n - 1)
+                std_dev = variance**0.5
+            else:
+                std_dev = None
+
+            # Update/add this month's statistics (overwrite database data with fresh API data)
+            monthly_stats[month] = {
+                "avg": avg,
+                "min": min_val,
+                "max": max_val,
+                "p25": p25,
+                "p40": p40,
+                "p60": p60,
+                "p75": p75,
+                "std_dev": std_dev,
+            }
+
+            # Store in database
+            try:
+                async with db._AsyncSession() as session:
+                    # Check if record exists
+                    stmt = (
+                        select(HistoricalWeatherModel)
+                        .where(
+                            and_(
+                                HistoricalWeatherModel.latitude == location.latitude,
+                                HistoricalWeatherModel.longitude == location.longitude,
+                                HistoricalWeatherModel.month == month,
+                            )
+                        )
+                        .limit(1)
+                    )
+                    result = await session.execute(stmt)
+                    existing = result.scalar_one_or_none()
+
+                    if existing:
+                        # Update existing record
+                        existing.geohash = geohash
+                        existing.avg_cloud_cover_percent = avg
+                        existing.min_cloud_cover_percent = min_val
+                        existing.max_cloud_cover_percent = max_val
+                        existing.p25_cloud_cover_percent = p25
+                        existing.p40_cloud_cover_percent = p40
+                        existing.p60_cloud_cover_percent = p60
+                        existing.p75_cloud_cover_percent = p75
+                        existing.std_dev_cloud_cover_percent = std_dev
+                        existing.years_of_data = years_of_data
+                        existing.fetched_at = now_db
+                    else:
+                        # Insert new record
+                        new_record = HistoricalWeatherModel(
+                            latitude=location.latitude,
+                            longitude=location.longitude,
+                            geohash=geohash,
+                            month=month,
+                            avg_cloud_cover_percent=avg,
+                            min_cloud_cover_percent=min_val,
+                            max_cloud_cover_percent=max_val,
+                            p25_cloud_cover_percent=p25,
+                            p40_cloud_cover_percent=p40,
+                            p60_cloud_cover_percent=p60,
+                            p75_cloud_cover_percent=p75,
+                            std_dev_cloud_cover_percent=std_dev,
+                            years_of_data=years_of_data,
+                            fetched_at=now_db,
+                        )
+                        session.add(new_record)
+
+                    await session.commit()
+            except Exception as e:
+                logger.warning(f"Error storing historical weather data for month {month}: {e}")
+
+        logger.debug(f"Fetched and stored historical weather data for {years_of_data} years")
+        return monthly_stats
+
+    except Exception as e:
+        logger.warning(f"Error fetching historical weather from Open-Meteo: {e}")
+        return None
+
+
+async def get_historical_cloud_cover_for_month(
+    location: ObserverLocation,
+    month: int,
+    use_tighter_range: bool = True,
+) -> tuple[float | None, float | None, float | None] | None:
+    """
+    Get historical cloud cover statistics for a specific month.
+
+    Checks database first, fetches from API if not available.
+
+    Args:
+        location: Observer location
+        month: Month (1-12)
+        use_tighter_range: If True, use p40-p60 (tighter range). If False, use p25-p75 (wider range).
+
+    Returns:
+        Tuple of (best_case_cloud_cover, worst_case_cloud_cover, std_dev) percentages, or None if unavailable
+        Uses p40-p60 (tighter) or p25-p75 (wider) based on use_tighter_range parameter
+    """
+    # Check database first
+    from sqlalchemy import and_, select
+
+    from celestron_nexstar.api.database.database import get_database
+
+    db = get_database()
+    try:
+        async with db._AsyncSession() as session:
+            stmt = (
+                select(HistoricalWeatherModel)
+                .where(
+                    and_(
+                        HistoricalWeatherModel.latitude == location.latitude,
+                        HistoricalWeatherModel.longitude == location.longitude,
+                        HistoricalWeatherModel.month == month,
+                    )
+                )
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            record = result.scalar_one_or_none()
+
+            if record:
+                if use_tighter_range:
+                    # Use p40-p60 for tighter range, but fall back to p25-p75 if not available
+                    # Check if p40/p60 exist (might not if migration hasn't been run or data is old)
+                    try:
+                        p40 = getattr(record, "p40_cloud_cover_percent", None)
+                        p60 = getattr(record, "p60_cloud_cover_percent", None)
+                        if p40 is not None and p60 is not None:
+                            std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                            return (p40, p60, std_dev)
+                    except AttributeError:
+                        pass  # Columns don't exist, fall through to p25-p75
+
+                    # Fall back to p25-p75 if p40-p60 not available (e.g., old data before migration)
+                    if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
+                        logger.debug(f"Using p25-p75 for month {month} (p40-p60 not available)")
+                        std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                        return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
+                else:
+                    # Use p25-p75 for wider range
+                    if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
+                        std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                        return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
+    except Exception as e:
+        logger.debug(f"Error checking database for historical weather month {month}: {e}")
+
+    # If not in database, try to fetch all months (more efficient than fetching one at a time)
+    monthly_stats = await fetch_historical_weather_climatology(location)
+    if monthly_stats and month in monthly_stats:
+        stats = monthly_stats[month]
+        if use_tighter_range:
+            p40 = stats.get("p40")
+            p60 = stats.get("p60")
+            if p40 is not None and p60 is not None:
+                return (p40, p60, stats.get("std_dev"))
+            # Fall back to p25-p75 if p40-p60 not available
+            p25 = stats.get("p25")
+            p75 = stats.get("p75")
+            if p25 is not None and p75 is not None:
+                logger.debug(f"Using p25-p75 for month {month} (p40-p60 not available)")
+                return (p25, p75, stats.get("std_dev"))
+        else:
+            p25 = stats.get("p25")
+            p75 = stats.get("p75")
+            if p25 is not None and p75 is not None:
+                return (p25, p75, stats.get("std_dev"))
+
+    return None
