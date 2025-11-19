@@ -337,6 +337,9 @@ async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> 
     # Load seed data
     data = load_seed_json("dark_sky_sites.json")
 
+    # Filter out metadata/attribution objects (objects with _comment, _attribution, or _note keys)
+    data = [item for item in data if not (isinstance(item, dict) and any(key.startswith("_") for key in item))]
+
     # Import geohash utilities
     from celestron_nexstar.api.location.geohash_utils import encode
 

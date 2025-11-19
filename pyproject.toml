@@ -34,9 +34,11 @@ dependencies = [
     "skyfield>=1.49",
     "astropy>=6.0.0",
     "geopy>=2.4.0",
+    "geopandas>=0.14.0",
+    "shapely>=2.0.0",
     "prompt-toolkit>=3.0.0",
     "sqlalchemy>=2.0.0",
-    "greenlet>=3.0.0",  # Required for SQLAlchemy async operations (run_sync, etc.)
+    "greenlet>=3.0.0", # Required for SQLAlchemy async operations (run_sync, etc.)
     "aiosqlite>=0.20.0",
     "alembic>=1.13.0",
     "sqlalchemyseed>=0.4.0",
@@ -53,6 +55,7 @@ dependencies = [
     "numpy>=2.3.4",
     "pandas>=2.3.3",
     "feedparser>=6.0.0",
+    "beautifulsoup4>=4.14.2",
 ]
 
 [project.optional-dependencies]
@@ -283,6 +286,16 @@ module = [
     "numpy.*",
     "pandas",
     "pandas.*",
+    "geopandas",
+    "geopandas.*",
+    "shapely",
+    "shapely.*",
+    "bs4",
+    "bs4.*",
+    "playwright",
+    "playwright.*",
+    "selenium",
+    "selenium.*",
     "click",
     "click.*",
     "dbus",

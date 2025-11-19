@@ -1806,7 +1806,12 @@ def run_migrations(
 def rebuild_seed_files(
     data_type: str = typer.Argument(
         ...,
-        help="Type of seed data to rebuild: 'comets', 'variable_stars', or 'all'",
+        help="Type of seed data to rebuild: 'comets', 'variable_stars', 'dark_sky_sites', or 'all'",
+    ),
+    skip_scraping: bool = typer.Option(
+        False,
+        "--skip-scraping",
+        help="Skip web scraping for dark_sky_sites (use existing seed file only). Recommended if you have ethical concerns about scraping.",
     ),
     max_magnitude: float = typer.Option(
         10.0,
@@ -1830,10 +1835,12 @@ def rebuild_seed_files(
     Data Sources:
     - Comets: Minor Planet Center (MPC) and COBS (Comet Observation Database)
     - Variable Stars: AAVSO VSX (Variable Star Index) and GCVS (General Catalog of Variable Stars)
+    - Dark Sky Sites: International Dark-Sky Association (IDA) official list
 
     Examples:
         nexstar data rebuild-seed comets
         nexstar data rebuild-seed variable_stars --max-mag 8.0
+        nexstar data rebuild-seed dark_sky_sites
         nexstar data rebuild-seed all --limit 100
     """
     from celestron_nexstar.api.database.database_seeder import get_seed_data_path
@@ -1877,6 +1884,67 @@ def rebuild_seed_files(
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+    if data_type in ("dark_sky_sites", "all"):
+        console.print("\n[bold]Fetching dark sky sites data...[/bold]")
+        if skip_scraping:
+            console.print("[yellow]⚠[/yellow] Skipping web scraping (--skip-scraping flag set)")
+            console.print("[dim]Using existing seed file only. To update data, remove --skip-scraping flag.[/dim]")
+            console.print(
+                "[dim]Note: Consider contacting IDA to request official data access: https://www.darksky.org/contact/[/dim]"
+            )
+            dark_sites_path = seed_dir / "dark_sky_sites.json"
+            if dark_sites_path.exists():
+                from celestron_nexstar.api.database.database_seeder import load_seed_json
+
+                existing_data = load_seed_json("dark_sky_sites.json")
+                count = len(
+                    [
+                        item
+                        for item in existing_data
+                        if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+                    ]
+                )
+                console.print(f"[green]✓[/green] Using existing seed file with {count} dark sky sites")
+            else:
+                console.print(
+                    "[yellow]⚠[/yellow] No existing seed file found. Run without --skip-scraping to create one."
+                )
+        else:
+            console.print("[yellow]⚠[/yellow] [bold]Ethical Notice:[/bold] This will scrape the IDA website.")
+            console.print(
+                "[dim]The IDA website uses Cloudflare protection. Scraping may violate their terms of service.[/dim]"
+            )
+            console.print("[dim]Consider:[/dim]")
+            console.print("[dim]  • Contacting IDA for official data access: https://www.darksky.org/contact/[/dim]")
+            console.print("[dim]  • Using --skip-scraping to use existing data only[/dim]")
+            console.print("[dim]  • Manually updating the seed file from official sources[/dim]")
+            console.print()
+            proceed = typer.confirm("Do you want to proceed with scraping?", default=False)
+            if not proceed:
+                console.print("[yellow]Skipping dark sky sites scraping.[/yellow]")
+                console.print("[dim]Use --skip-scraping flag to skip this prompt in the future.[/dim]")
+            else:
+                try:
+                    dark_sites_data = asyncio.run(_fetch_dark_sky_sites_data())
+                    dark_sites_path = seed_dir / "dark_sky_sites.json"
+                    with open(dark_sites_path, "w", encoding="utf-8") as f:
+                        import json
+
+                        json.dump(dark_sites_data, f, indent=2, ensure_ascii=False)
+                    count = len(
+                        [
+                            item
+                            for item in dark_sites_data
+                            if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+                        ]
+                    )
+                    console.print(f"[green]✓[/green] Wrote {count} dark sky sites to {dark_sites_path}")
+                except Exception as e:
+                    console.print(f"[red]✗[/red] Error fetching dark sky sites data: {e}")
+                    import traceback
+
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
     console.print("\n[bold green]✓ Seed file rebuild complete![/bold green]")
     console.print("[dim]Run 'nexstar data seed --force' to update the database with new data.[/dim]\n")
@@ -2202,6 +2270,745 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
         stars = stars[:limit]
 
     return stars
+
+
+async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
+    """
+    Fetch dark sky sites data from the International Dark-Sky Association (IDA).
+
+    This function fetches the latest list of International Dark Sky Places from the IDA website,
+    geocodes their locations, estimates Bortle class and SQM values, and merges with existing data.
+
+    Note: The IDA website uses Cloudflare protection which may prevent automated scraping.
+    If scraping fails, consider:
+    - Manually updating the seed file
+    - Checking if IDA provides an official API or data export
+    - Using alternative data sources
+
+    Data Source: International Dark-Sky Association (IDA)
+    URL: https://darksky.org/what-we-do/international-dark-sky-places/all-places/
+
+    Returns:
+        List of dark sky site dictionaries in seed file format
+    """
+    import re
+    from datetime import datetime
+
+    import aiohttp
+
+    from celestron_nexstar.api.database.database_seeder import get_seed_data_path, load_seed_json
+
+    ida_base_url = "https://darksky.org"
+    ida_places_url = f"{ida_base_url}/what-we-do/international-dark-sky-places/all-places/?_location_dropdown=usa"
+    geocode_url = "https://nominatim.openstreetmap.org/search"
+    geocode_delay = 1.0  # Rate limiting
+
+    def estimate_bortle_from_description(description: str, designation: str) -> int:
+        """Estimate Bortle class from description and designation type."""
+        desc_lower = description.lower()
+        desig_lower = designation.lower()
+
+        if "sanctuary" in desig_lower:
+            return 1
+        if "park" in desig_lower or "reserve" in desig_lower:
+            if any(word in desc_lower for word in ["darkest", "pristine", "exceptional", "excellent"]):
+                return 1
+            return 2
+        if "community" in desig_lower:
+            return 2
+        if "urban" in desig_lower:
+            return 3
+        return 2
+
+    def estimate_sqm_from_bortle(bortle: int) -> float:
+        """Estimate SQM value from Bortle class."""
+        sqm_map = {1: 22.0, 2: 21.8, 3: 21.3, 4: 20.4, 5: 19.1, 6: 18.0, 7: 17.0, 8: 16.0, 9: 15.0}
+        return sqm_map.get(bortle, 21.0)
+
+    async def geocode_location(name: str, country: str = "") -> tuple[float, float] | None:
+        """Geocode a location name to get latitude and longitude."""
+        query = f"{name}, {country}" if country else name
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                params = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
+                headers = {"User-Agent": "Celestron-NexStar/1.0 (Dark Sky Sites Data Compilation)"}
+
+                async with session.get(geocode_url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data and len(data) > 0:
+                            return (float(data[0]["lat"]), float(data[0]["lon"]))
+        except Exception:
+            pass
+
+        return None
+
+    def generate_geohash(lat: float, lon: float) -> str:
+        """Generate a geohash for a location."""
+        try:
+            from celestron_nexstar.api.location.geohash_utils import encode
+
+            return encode(lat, lon, precision=9)
+        except ImportError:
+            return ""
+
+    # Try to load existing data to merge with
+    seed_dir = get_seed_data_path()
+    existing_file = seed_dir / "dark_sky_sites.json"
+    existing_places: list[dict[str, Any]] = []
+    existing_names: set[str] = set()
+
+    if existing_file.exists():
+        try:
+            existing_data = load_seed_json("dark_sky_sites.json")
+            # Filter out metadata objects
+            existing_places = [
+                item
+                for item in existing_data
+                if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+            ]
+            existing_names = {place["name"].lower() for place in existing_places}
+            console.print(f"[dim]Found {len(existing_places)} existing dark sky sites[/dim]")
+        except Exception:
+            pass
+
+    # Fetch places from IDA website
+    # Note: The IDA website may use JavaScript to load content dynamically, which means
+    # BeautifulSoup (which only parses static HTML) may not see all places. The IDA has
+    # over 200 certified places, so if we find fewer than that, the website structure
+    # may have changed or requires JavaScript rendering.
+    places: list[dict[str, Any]] = []
+
+    try:
+        # Try to import BeautifulSoup
+        try:
+            from bs4 import BeautifulSoup
+
+        except ImportError:
+            console.print("[yellow]⚠[/yellow] BeautifulSoup4 not installed. Install with: pip install beautifulsoup4")
+            console.print("[dim]Falling back to existing seed file.[/dim]")
+            return existing_places
+
+        # Try to use Playwright or Selenium for JavaScript rendering
+        # The IDA website has a "Load More" button that needs to be clicked to see all places
+        use_browser_automation = False
+        browser_html = None
+
+        # Try Playwright first (faster and more modern)
+        try:
+            from playwright.async_api import async_playwright
+
+            console.print("[dim]Using Playwright to render JavaScript and click 'Load More' button...[/dim]")
+            console.print("[dim]Loading page (this may take a moment - Cloudflare challenge may appear)...[/dim]")
+            async with async_playwright() as p:
+                try:
+                    # Launch browser with more realistic settings to avoid Cloudflare detection
+                    # Non-headless mode is less likely to be detected by Cloudflare
+                    # Set headless=False if you want to see the browser (useful for debugging)
+                    # For production, you might want to try headless=True first, then fall back to False
+                    browser = await p.chromium.launch(
+                        headless=False,  # Non-headless is less likely to trigger Cloudflare
+                        timeout=30000,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-dev-shm-usage",
+                            "--no-sandbox",
+                        ],
+                    )
+                except Exception as e:
+                    console.print(f"[yellow]⚠[/yellow] Failed to launch browser: {e}")
+                    console.print("[dim]Make sure Chromium is installed: uv run playwright install chromium[/dim]")
+                    raise
+
+                # Create a context with realistic browser settings
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
+                )
+
+                page = await context.new_page()
+
+                # Remove webdriver property to avoid detection
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
+                try:
+                    console.print(f"[dim]Navigating to {ida_places_url}...[/dim]")
+                    # Try 'load' first, which waits for all resources
+                    await page.goto(ida_places_url, wait_until="load", timeout=60000)
+                    console.print("[dim]Page loaded, waiting for Cloudflare challenge (if present)...[/dim]")
+
+                    # Wait for Cloudflare challenge to complete
+                    # Cloudflare usually shows a challenge page, then redirects
+                    await page.wait_for_timeout(10000)  # Give Cloudflare time to process
+
+                    # Check if we're on a Cloudflare challenge page
+                    page_title = await page.title()
+                    page_url = page.url
+                    if (
+                        "just a moment" in page_title.lower()
+                        or "checking your browser" in page_title.lower()
+                        or "challenge" in page_url.lower()
+                    ):
+                        console.print("[dim]Cloudflare challenge detected, waiting for it to complete...[/dim]")
+                        # Wait for redirect away from challenge page
+                        try:
+                            await page.wait_for_function(
+                                "window.location.href.indexOf('challenge') === -1 && document.title.toLowerCase().indexOf('just a moment') === -1",
+                                timeout=30000,
+                            )
+                            console.print("[dim]Cloudflare challenge completed[/dim]")
+                        except Exception:
+                            console.print(
+                                "[yellow]⚠[/yellow] Cloudflare challenge may still be active, continuing anyway..."
+                            )
+
+                    console.print("[dim]Waiting for JavaScript to render content...[/dim]")
+                    await page.wait_for_timeout(5000)  # Give JavaScript more time to render
+
+                    # Wait for content to appear - look for common elements
+                    try:
+                        # Wait for either the load more button or some content to appear
+                        await page.wait_for_selector(
+                            "button.facetwp-load-more, .facetwp-template, [class*='place'], [class*='card'], .facetwp-results",
+                            timeout=15000,
+                            state="visible",
+                        )
+                        console.print("[dim]Content elements detected[/dim]")
+                    except Exception:
+                        console.print("[yellow]⚠[/yellow] No expected content elements found, but continuing...")
+
+                    # Scroll to trigger lazy loading
+                    console.print("[dim]Scrolling to trigger content loading...[/dim]")
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(3000)
+                    await page.evaluate("window.scrollTo(0, 0)")
+                    await page.wait_for_timeout(2000)
+
+                    # Check page content length
+                    content_length = len(await page.content())
+                    console.print(f"[dim]Page HTML length: {content_length} characters[/dim]")
+                except Exception as e:
+                    console.print(f"[yellow]⚠[/yellow] Failed to load page: {e}")
+                    await browser.close()
+                    raise
+
+                # Click "Load More" button repeatedly until all places are loaded
+                console.print("[dim]Looking for 'Load More' button...[/dim]")
+                max_clicks = 20  # Safety limit
+                clicks = 0
+
+                while clicks < max_clicks:
+                    try:
+                        # Check current content length to see if clicking is adding content
+                        current_content = await page.content()
+                        current_length = len(current_content)
+
+                        # Look for "Load More" button with various possible selectors
+                        # Note: The IDA site uses FacetWP with class "facetwp-load-more"
+                        load_more_selectors = [
+                            "button.facetwp-load-more",  # Specific to IDA site
+                            "[class*='facetwp-load-more']",  # More flexible
+                            "button:has-text('Load More')",
+                            "button:has-text('Load more')",
+                            "button:has-text('Show More')",
+                            "button:has-text('Show more')",
+                            "a:has-text('Load More')",
+                            "a:has-text('Load more')",
+                            "a:has-text('Show More')",
+                            "a:has-text('Show more')",
+                            "text='Load More'",
+                            "text='Load more'",
+                            "[class*='load-more']",
+                            "[class*='loadMore']",
+                            "[class*='show-more']",
+                            "[class*='showMore']",
+                            "[id*='load-more']",
+                            "[id*='loadMore']",
+                            "[id*='show-more']",
+                            "[id*='showMore']",
+                            "[aria-label*='Load More']",
+                            "[aria-label*='Load more']",
+                        ]
+
+                        button_found = False
+                        for selector in load_more_selectors:
+                            try:
+                                button = page.locator(selector).first
+                                if await button.is_visible(timeout=2000):
+                                    await button.click(timeout=5000)
+                                    # FacetWP uses AJAX, so wait a bit longer for content to load
+                                    await page.wait_for_timeout(4000)  # Wait for AJAX content to load
+
+                                    # Wait for the button to become visible again (if more content is available)
+                                    # or wait for loading indicator to disappear
+                                    from contextlib import suppress
+
+                                    with suppress(Exception):
+                                        await page.wait_for_selector(
+                                            "button.facetwp-load-more:not([disabled])", timeout=3000, state="visible"
+                                        )  # Button might not reappear if all content is loaded
+
+                                    # Scroll down to trigger any lazy loading
+                                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                    await page.wait_for_timeout(2000)
+
+                                    clicks += 1
+                                    button_found = True
+                                    console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]")
+                                    break
+                            except Exception:
+                                continue
+
+                        if not button_found:
+                            # No more button found, we've loaded everything
+                            if clicks == 0:
+                                console.print(
+                                    "[dim]No 'Load More' button found - checking if content is already loaded...[/dim]"
+                                )
+                                # Try scrolling to see if more content loads
+                                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                await page.wait_for_timeout(3000)
+                                new_content = await page.content()
+                                if len(new_content) > current_length:
+                                    console.print("[dim]Scrolling loaded more content, continuing...[/dim]")
+                                    continue
+                            else:
+                                console.print(f"[dim]No more 'Load More' button found after {clicks} clicks[/dim]")
+                            break
+                    except Exception as e:
+                        console.print(f"[dim]Error during button click loop: {e}[/dim]")
+                        break
+
+                # Get the fully rendered HTML
+                console.print("[dim]Extracting page content...[/dim]")
+                browser_html = await page.content()
+
+                # Debug: Save HTML to file for inspection
+                import os
+
+                debug_file = os.path.join(os.path.expanduser("~"), "ida_page_debug.html")
+                with open(debug_file, "w", encoding="utf-8") as f:
+                    f.write(browser_html)
+                console.print(f"[dim]Saved page HTML to {debug_file} for debugging[/dim]")
+
+                await context.close()
+                await browser.close()
+                use_browser_automation = True
+                console.print(f"[green]✓[/green] Loaded page with browser automation ({clicks} 'Load More' clicks)")
+
+        except ImportError:
+            # Playwright not installed, try Selenium
+            pass
+        except Exception as e:
+            # Browser automation failed, fall back to static HTML
+            console.print(f"[yellow]⚠[/yellow] Browser automation failed: {e}")
+            console.print("[dim]Falling back to static HTML parsing (may miss many places)...[/dim]")
+            use_browser_automation = False
+            browser_html = None
+
+        # If Playwright failed or wasn't available, try Selenium
+        if not use_browser_automation:
+            try:
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support import expected_conditions
+                from selenium.webdriver.support.ui import WebDriverWait
+
+                console.print("[dim]Using Selenium to render JavaScript and click 'Load More' button...[/dim]")
+                options = Options()
+                options.add_argument("--headless")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+
+                driver = webdriver.Chrome(options=options)
+                driver.get(ida_places_url)
+
+                # Click "Load More" button repeatedly
+                max_clicks = 20
+                clicks = 0
+                while clicks < max_clicks:
+                    try:
+                        # Try various selectors for the Load More button
+                        # Note: The IDA site uses FacetWP with class "facetwp-load-more"
+                        load_more_selectors = [
+                            "//button[contains(@class, 'facetwp-load-more')]",  # Specific to IDA site
+                            "//button[contains(text(), 'Load More')]",
+                            "//button[contains(text(), 'Load more')]",
+                            "//a[contains(text(), 'Load More')]",
+                            "//a[contains(text(), 'Load more')]",
+                            "//*[contains(@class, 'load-more')]",
+                            "//*[contains(@class, 'loadMore')]",
+                        ]
+
+                        button_found = False
+                        for xpath in load_more_selectors:
+                            try:
+                                button = WebDriverWait(driver, 2).until(
+                                    expected_conditions.element_to_be_clickable((By.XPATH, xpath))
+                                )
+                                button.click()
+                                import time
+
+                                time.sleep(4)  # FacetWP uses AJAX, wait longer for content to load
+                                clicks += 1
+                                button_found = True
+                                console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]", end="\r")
+                                break
+                            except Exception:
+                                continue
+
+                        if not button_found:
+                            break
+                    except Exception:
+                        break
+
+                console.print()  # New line after progress
+                browser_html = driver.page_source
+                driver.quit()
+                use_browser_automation = True
+                console.print("[green]✓[/green] Loaded page with browser automation")
+
+            except ImportError:
+                console.print(
+                    "[yellow]⚠[/yellow] Neither Playwright nor Selenium is installed. "
+                    "Install one to extract all places:"
+                )
+                console.print("[dim]  pip install playwright  # Recommended (faster)[/dim]")
+                console.print("[dim]  playwright install chromium[/dim]")
+                console.print("[dim]  OR[/dim]")
+                console.print("[dim]  pip install selenium  # Alternative[/dim]")
+                console.print("[dim]Falling back to static HTML parsing (may miss many places)...[/dim]")
+
+        # Use browser-rendered HTML if available, otherwise use static HTML
+        if use_browser_automation and browser_html:
+            html = browser_html
+        else:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (compatible; Celestron-NexStar/1.0; +https://github.com/mcosgriff/celestron-nexstar)",
+                }
+
+                console.print(f"[dim]Fetching from {ida_places_url}...[/dim]")
+
+                async with session.get(
+                    ida_places_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status != 200:
+                        console.print(f"[yellow]⚠[/yellow] IDA website returned status {response.status}")
+                        console.print("[dim]Falling back to existing seed file.[/dim]")
+                        return existing_places
+
+                    html = await response.text()
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Debug: Check what's actually on the page
+        page_text = soup.get_text()
+        console.print(f"[dim]Page text length: {len(page_text)} characters[/dim]")
+
+        # Look for common patterns that might indicate places
+        if "International Dark Sky" in page_text or "Dark Sky Park" in page_text:
+            console.print("[dim]Found dark sky place keywords in page text[/dim]")
+        else:
+            console.print("[yellow]⚠[/yellow] No dark sky place keywords found - page may not have loaded correctly")
+
+        # The IDA website might have different structures - try multiple approaches
+        # Approach 1: Look for links to individual place pages (various URL patterns)
+        place_links = soup.find_all("a", href=re.compile(r"/places/|/idsp/|/find/|/conservation/", re.I))
+
+        # Also try looking for any links that might contain place names
+        # The IDA website might list places in various formats
+        all_links = soup.find_all("a", href=True)
+        for link in all_links:
+            href = link.get("href", "")
+            # Look for patterns like /places/name or /idsp/name
+            if re.search(r"/(places|idsp|find)/[^/]+", href, re.I) and link not in place_links:
+                place_links.append(link)
+
+        # Initialize seen_names early to avoid "used before definition" error
+        seen_names: set[str] = set()
+
+        # Also look for place names in the text content - they might be in divs, spans, or other elements
+        # Look for elements that might contain place information
+        if len(place_links) == 0:
+            console.print("[dim]No links found, trying to find place names in text content...[/dim]")
+            # Look for common patterns like "Park Name" or "Name National Park"
+            place_name_patterns = soup.find_all(
+                string=re.compile(
+                    r"(National Park|State Park|International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary)",
+                    re.I,
+                )
+            )
+            if place_name_patterns:
+                console.print(f"[dim]Found {len(place_name_patterns)} potential place name patterns in text[/dim]")
+
+            # Try to find place cards or list items that might contain place information
+            # Look for common card/list patterns
+            cards = soup.find_all(["div", "article", "li"], class_=re.compile(r"card|item|place|location|park", re.I))
+            if cards:
+                console.print(f"[dim]Found {len(cards)} potential place cards/items[/dim]")
+                # Try to extract place names from cards
+                for card in cards[:50]:  # Limit to first 50 to avoid too much processing
+                    text = card.get_text(strip=True)
+                    # Look for place name patterns in card text
+                    name_match = re.search(
+                        r"^([A-Z][a-zA-Z\s&]+?)(?:\s+(?:National|State|International Dark Sky|Dark Sky))", text
+                    )
+                    if name_match:
+                        name = name_match.group(1).strip()
+                        if len(name) > 3 and name.lower() not in seen_names:
+                            # Try to find a link within the card
+                            card_link = card.find("a", href=True)
+                            if card_link:
+                                href = card_link.get("href", "")
+                                if href and href not in [link.get("href", "") for link in place_links]:
+                                    place_links.append(card_link)
+
+        console.print(f"[dim]Found {len(place_links)} place links[/dim]")
+
+        # Extract unique place names from links
+        for link in place_links:
+            try:
+                # Get text from link or from parent elements
+                name = link.get_text(strip=True)
+                if not name:
+                    # Try getting from title attribute or data attributes
+                    name = link.get("title", "") or link.get("data-name", "")
+
+                if not name or len(name) < 3:
+                    continue
+
+                # Clean up the name (remove extra whitespace, common prefixes)
+                name = re.sub(r"\s+", " ", name).strip()
+                name = re.sub(r"^(International Dark Sky |Dark Sky )", "", name, flags=re.I)
+
+                if name.lower() in seen_names or name.lower() in existing_names:
+                    continue
+
+                seen_names.add(name.lower())
+
+                # Try to extract designation from link text or nearby elements
+                designation = "International Dark Sky Place"
+                link_text = link.get_text(strip=True)
+                parent = link.parent
+
+                # Look for designation keywords
+                if re.search(r"Park", link_text, re.I):
+                    designation = "International Dark Sky Park"
+                elif re.search(r"Reserve", link_text, re.I):
+                    designation = "International Dark Sky Reserve"
+                elif re.search(r"Sanctuary", link_text, re.I):
+                    designation = "International Dark Sky Sanctuary"
+                elif re.search(r"Community", link_text, re.I):
+                    designation = "International Dark Sky Community"
+                elif re.search(r"Urban", link_text, re.I):
+                    designation = "Urban Night Sky Place"
+
+                # Try to get description from nearby elements
+                description = designation
+                if parent:
+                    desc_elem = parent.find(
+                        ["p", "div", "span"], class_=re.compile(r"description|summary|excerpt|text", re.I)
+                    )
+                    if desc_elem:
+                        description = desc_elem.get_text(strip=True)
+
+                # Try to extract location from link or nearby text
+                country = ""
+                location_text = link_text + " " + (parent.get_text() if parent else "")
+                location_match = re.search(
+                    r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", location_text
+                )
+                if location_match:
+                    country = location_match.group(2)
+
+                places.append(
+                    {"name": name, "designation": designation, "description": description, "country": country}
+                )
+
+            except Exception:
+                continue
+
+        # Approach 2: Look for text content that might contain place names
+        # Sometimes places are listed in plain text or in lists
+        if len(places) < 100:
+            console.print("[dim]Trying alternative extraction methods...[/dim]")
+
+            # Look for list items or divs that might contain place information
+            list_items = soup.find_all(
+                ["li", "div", "p"],
+                string=re.compile(
+                    r"(National Park|State Park|National Monument|National Preserve|National Recreation Area|"
+                    r"International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary|"
+                    r"Dark Sky Community|Urban Night Sky)",
+                    re.I,
+                ),
+            )
+
+            for item in list_items:
+                text = item.get_text(strip=True)
+                # Try to extract place name (usually before the designation)
+                match = re.search(
+                    r"^([^,]+?)\s*(?:National Park|State Park|National Monument|International Dark Sky)", text, re.I
+                )
+                if match:
+                    name = match.group(1).strip()
+                    if name and len(name) > 3 and name.lower() not in seen_names and name.lower() not in existing_names:
+                        seen_names.add(name.lower())
+                        # Determine designation
+                        designation = "International Dark Sky Place"
+                        if "Park" in text:
+                            designation = "International Dark Sky Park"
+                        elif "Reserve" in text:
+                            designation = "International Dark Sky Reserve"
+                        elif "Sanctuary" in text:
+                            designation = "International Dark Sky Sanctuary"
+                        elif "Community" in text:
+                            designation = "International Dark Sky Community"
+                        elif "Urban" in text:
+                            designation = "Urban Night Sky Place"
+
+                        places.append(
+                            {
+                                "name": name,
+                                "designation": designation,
+                                "description": text,
+                                "country": "",
+                            }
+                        )
+
+        # Approach 3: If we still didn't find many places, try looking for structured data (JSON-LD, data attributes)
+        if len(places) < 100:
+            # Look for JSON-LD structured data
+            json_ld_scripts = soup.find_all("script", type="application/ld+json")
+            for script in json_ld_scripts:
+                try:
+                    import json
+
+                    data = json.loads(script.string)
+                    # Process structured data if found
+                    if isinstance(data, dict) and "name" in data:
+                        name = data.get("name", "")
+                        if name and name.lower() not in seen_names and name.lower() not in existing_names:
+                            places.append(
+                                {
+                                    "name": name,
+                                    "designation": data.get("description", "International Dark Sky Place"),
+                                    "description": data.get("description", ""),
+                                    "country": data.get("address", {}).get("addressCountry", "")
+                                    if isinstance(data.get("address"), dict)
+                                    else "",
+                                }
+                            )
+                except Exception:
+                    continue
+
+            # Look for data attributes or map markers
+            data_places = soup.find_all(attrs={"data-name": True}) or soup.find_all(attrs={"data-place": True})
+            for elem in data_places:
+                try:
+                    name = elem.get("data-name") or elem.get("data-place")
+                    if name and name.lower() not in seen_names and name.lower() not in existing_names:
+                        seen_names.add(name.lower())
+                        places.append(
+                            {
+                                "name": name,
+                                "designation": "International Dark Sky Place",
+                                "description": elem.get_text(strip=True) or "International Dark Sky Place",
+                                "country": "",
+                            }
+                        )
+                except Exception:
+                    continue
+
+        console.print(f"[dim]Extracted {len(places)} unique places from IDA website[/dim]")
+
+        # Warn if we found very few places (IDA has 200+ certified places)
+        if len(places) < 100:
+            console.print(
+                f"[yellow]⚠[/yellow] Only found {len(places)} places, but IDA has 200+ certified places. "
+                "The website may use JavaScript to load content dynamically."
+            )
+            console.print(
+                "[dim]You may need to manually add more places to the seed file, or the website structure may have changed.[/dim]"
+            )
+
+    except Exception as e:
+        console.print(f"[yellow]⚠[/yellow] Error fetching from IDA website: {e}")
+        console.print("[dim]Falling back to existing seed file.[/dim]")
+        return existing_places
+
+    if not places:
+        console.print("[yellow]⚠[/yellow] No new places found from IDA website.")
+        console.print("[dim]The existing seed file will be preserved.[/dim]")
+        console.print(
+            "[dim]The IDA website may use JavaScript to load content. Consider manually adding places or using "
+            "browser automation tools for a complete list.[/dim]"
+        )
+        return existing_places
+
+    # Process places: geocode, estimate values
+    console.print(f"[dim]Processing {len(places)} new places...[/dim]")
+    processed = []
+
+    for i, place in enumerate(places, 1):
+        console.print(f"[dim]Processing {i}/{len(places)}: {place['name']}...[/dim]", end="\r")
+
+        coords = await geocode_location(place["name"], place.get("country", ""))
+        if not coords:
+            continue
+
+        lat, lon = coords
+        bortle = estimate_bortle_from_description(place["description"], place["designation"])
+        sqm = estimate_sqm_from_bortle(bortle)
+        geohash = generate_geohash(lat, lon)
+
+        processed_place = {
+            "name": place["name"],
+            "latitude": round(lat, 4),
+            "longitude": round(lon, 4),
+            "geohash": geohash,
+            "bortle_class": bortle,
+            "sqm_value": sqm,
+            "description": place["description"],
+            "notes": f"{place['designation']}. Data from International Dark-Sky Association.",
+        }
+
+        processed.append(processed_place)
+
+        # Rate limiting
+        if i < len(places):
+            await asyncio.sleep(geocode_delay)
+
+    console.print()  # New line after progress
+
+    # Merge with existing
+    merged = existing_places + processed
+    merged.sort(key=lambda x: x["name"])
+
+    # Add attribution metadata at the beginning
+    result = [
+        {
+            "_comment": "Data sourced from the International Dark-Sky Association (IDA) official list of International Dark Sky Places. URL: https://www.darksky.org/our-work/conservation/idsp/",
+            "_attribution": "International Dark-Sky Association (IDA) - https://www.darksky.org/",
+            "_note": f"Bortle class and SQM values are estimates based on designation type and site descriptions. Last updated: {datetime.now().strftime('%Y-%m-%d')}. For the most up-to-date information and official designations, visit the IDA website.",
+        },
+        *merged,
+    ]
+
+    console.print(
+        f"[green]✓[/green] Processed {len(processed)} new places, {len(existing_places)} existing places kept"
+    )
+    console.print(f"[dim]Total: {len(merged)} dark sky sites[/dim]")
+
+    return result
 
 
 def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
