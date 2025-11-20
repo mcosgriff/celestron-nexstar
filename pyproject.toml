@@ -1,6 +1,6 @@
 [project]
 name = "celestron-nexstar"
-version = "1.2.0"
+version = "1.2.1"
 description = "Python API for controlling Celestron NexStar 6SE telescopes via serial communication"
 authors = [{email = "matthew@cosgriff.io"}]
 license = {text = "MIT"}
