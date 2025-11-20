@@ -133,7 +133,7 @@ def print_telescope_info(model: int, firmware_major: int, firmware_minor: int) -
     info_text.append("Firmware: ", style="bold cyan")
     info_text.append(f"{firmware_major}.{firmware_minor:02d}", style="white")
 
-    panel = Panel(
+    panel = Panel.fit(
         info_text,
         title="[bold]Telescope Information[/bold]",
         border_style="green",

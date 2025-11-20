@@ -297,7 +297,7 @@ def by_name(
             info_text.append("Description:\n", style="bold yellow")
             info_text.append(f"  {obj.description}\n", style="white")
 
-        panel = Panel(
+        panel = Panel.fit(
             info_text,
             title=f"[bold]Slew to {display_name}?[/bold]",
             border_style="cyan",

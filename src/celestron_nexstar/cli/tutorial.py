@@ -217,7 +217,7 @@ class TutorialSystem:
             if example:
                 panel_content += f"\n\n[dim]Example:[/dim] [green]{escape(example)}[/green]"
 
-            self.console.print(Panel(panel_content, border_style="cyan", padding=(0, 2)))
+            self.console.print(Panel.fit(panel_content, border_style="cyan", padding=(0, 2)))
 
             # Wait for user to acknowledge (except last step)
             if i < len(lesson.steps):

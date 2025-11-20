@@ -150,7 +150,7 @@ def status() -> None:
             for alert in conditions.alerts:
                 alert_text.append(f"  ⚠ {alert}\n", style="yellow")
             console.print(
-                Panel(alert_text, title="[bold yellow]Space Weather Alerts[/bold yellow]", border_style="yellow")
+                Panel.fit(alert_text, title="[bold yellow]Space Weather Alerts[/bold yellow]", border_style="yellow")
             )
             console.print()
 
@@ -166,7 +166,7 @@ def status() -> None:
         info_text.append("  • Negative Bz values enhance aurora activity\n", style="white")
         info_text.append("  • Use 'nexstar aurora tonight' for detailed aurora forecast\n", style="dim")
 
-        console.print(Panel(info_text, title="[dim]Information[/dim]", border_style="dim"))
+        console.print(Panel.fit(info_text, title="[dim]Information[/dim]", border_style="dim"))
         console.print()
 
         if conditions.last_updated:

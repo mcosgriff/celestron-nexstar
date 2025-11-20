@@ -93,7 +93,7 @@ starts moving, which can affect:
 
    nexstar mount backlash-calibrate
 """
-    console.print(Panel(info_text.strip(), border_style="cyan"))
+    console.print(Panel.fit(info_text.strip(), border_style="cyan"))
     console.print()
 
     console.print("[bold yellow]Tips:[/bold yellow]")
@@ -151,7 +151,7 @@ This procedure will help you find optimal anti-backlash settings.
 [bold]Note:[/bold] You must adjust these settings in the hand control menu.
 This command provides guidance only.
 """
-        console.print(Panel(instructions.strip(), border_style="yellow"))
+        console.print(Panel.fit(instructions.strip(), border_style="yellow"))
         console.print()
 
         if axis in ["azimuth", "both"]:
@@ -253,7 +253,7 @@ declination when you flip the scope to the opposite side of the mount
 
 West is to the left, so reverse the azimuth settings.
 """
-    console.print(Panel(info_text.strip(), border_style="cyan"))
+    console.print(Panel.fit(info_text.strip(), border_style="cyan"))
     console.print()
 
     console.print("[bold yellow]Recommended Settings for NexStar 6SE/8SE:[/bold yellow]")

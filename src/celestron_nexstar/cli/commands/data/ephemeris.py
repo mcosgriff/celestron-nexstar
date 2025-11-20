@@ -32,7 +32,6 @@ from celestron_nexstar.api.ephemeris.ephemeris_manager import (
     verify_file,
 )
 from celestron_nexstar.cli.utils.output import (
-    calculate_panel_width,
     console,
     print_error,
     print_info,
@@ -213,12 +212,7 @@ def show_info(
         info_text.append("When to use:\n", style="bold yellow")
         info_text.append(f"   {info.use_case}\n", style="white")
 
-        panel = Panel(
-            info_text,
-            title=f"[bold]{info.display_name}[/bold]",
-            border_style="cyan",
-            width=calculate_panel_width(info_text, console),
-        )
+        panel = Panel.fit(info_text, title=f"[bold]{info.display_name}[/bold]", border_style="cyan")
         console.print(panel)
 
         # Show download command if not installed

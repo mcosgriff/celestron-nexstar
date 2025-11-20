@@ -748,7 +748,7 @@ def _show_articles_content(
         # Create panel with source name as title
         panel_content = "\n".join(source_content)
         panel_title = f"{source} ({len(source_articles)} article(s))"
-        output_console.print(Panel(panel_content, title=panel_title, border_style="yellow"))
+        output_console.print(Panel.fit(panel_content, title=panel_title, border_style="yellow"))
         output_console.print()  # Empty line between panels
 
     output_console.print(

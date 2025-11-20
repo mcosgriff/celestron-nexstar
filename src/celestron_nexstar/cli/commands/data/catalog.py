@@ -29,7 +29,6 @@ from celestron_nexstar.api.observation.visibility import assess_visibility
 from celestron_nexstar.cli.utils.database import check_database_setup
 from celestron_nexstar.cli.utils.export import FileConsole
 from celestron_nexstar.cli.utils.output import (
-    calculate_panel_width,
     console,
     format_dec,
     format_ra,
@@ -587,12 +586,7 @@ def info(
                 info_text.append("Description:\n", style="bold yellow")
                 info_text.append(f"  {obj.description}\n", style="white")
 
-            panel = Panel(
-                info_text,
-                title=f"[bold]{obj.name}[/bold]",
-                border_style="cyan",
-                width=calculate_panel_width(info_text, console),
-            )
+            panel = Panel.fit(info_text, title=f"[bold]{obj.name}[/bold]", border_style="cyan")
             console.print(panel)
 
             # Show goto hint
