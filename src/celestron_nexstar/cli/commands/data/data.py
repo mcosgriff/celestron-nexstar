@@ -2331,12 +2331,12 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
 
         try:
             async with aiohttp.ClientSession() as session:
-                params = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
+                params: dict[str, str | int] = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
                 headers = {"User-Agent": "Celestron-NexStar/1.0 (Dark Sky Sites Data Compilation)"}
 
                 async with session.get(geocode_url, params=params, headers=headers) as response:
                     if response.status == 200:
-                        data = await response.json()
+                        data: list[dict[str, Any]] = await response.json()
                         if data and len(data) > 0:
                             return (float(data[0]["lat"]), float(data[0]["lon"]))
         except Exception:
@@ -2727,9 +2727,10 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
         # The IDA website might list places in various formats
         all_links = soup.find_all("a", href=True)
         for link in all_links:
-            href = link.get("href", "")
+            href_attr = link.get("href", "")
+            href = str(href_attr) if href_attr else ""
             # Look for patterns like /places/name or /idsp/name
-            if re.search(r"/(places|idsp|find)/[^/]+", href, re.I) and link not in place_links:
+            if href and re.search(r"/(places|idsp|find)/[^/]+", href, re.I) and link not in place_links:
                 place_links.append(link)
 
         # Initialize seen_names early to avoid "used before definition" error
@@ -2767,8 +2768,9 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                             # Try to find a link within the card
                             card_link = card.find("a", href=True)
                             if card_link:
-                                href = card_link.get("href", "")
-                                if href and href not in [link.get("href", "") for link in place_links]:
+                                href_attr = card_link.get("href", "")
+                                href = str(href_attr) if href_attr else ""
+                                if href and href not in [str(link.get("href", "") or "") for link in place_links]:
                                     place_links.append(card_link)
 
         console.print(f"[dim]Found {len(place_links)} place links[/dim]")
@@ -2777,10 +2779,12 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
         for link in place_links:
             try:
                 # Get text from link or from parent elements
-                name = link.get_text(strip=True)
+                name_text = link.get_text(strip=True)
+                name = str(name_text) if name_text else ""
                 if not name:
                     # Try getting from title attribute or data attributes
-                    name = link.get("title", "") or link.get("data-name", "")
+                    title_attr = link.get("title", "") or link.get("data-name", "")
+                    name = str(title_attr) if title_attr else ""
 
                 if not name or len(name) < 3:
                     continue
@@ -2842,15 +2846,21 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
             console.print("[dim]Trying alternative extraction methods...[/dim]")
 
             # Look for list items or divs that might contain place information
-            list_items = soup.find_all(
-                ["li", "div", "p"],
-                string=re.compile(
-                    r"(National Park|State Park|National Monument|National Preserve|National Recreation Area|"
-                    r"International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary|"
-                    r"Dark Sky Community|Urban Night Sky)",
-                    re.I,
-                ),
+            # Find all tags first, then filter by text content
+            name_pattern = re.compile(
+                r"(National Park|State Park|National Monument|National Preserve|National Recreation Area|"
+                r"International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary|"
+                r"Dark Sky Community|Urban Night Sky)",
+                re.I,
             )
+            list_items = []
+            for tag_name in ["li", "div", "p"]:
+                items = soup.find_all(tag_name)
+                # Filter items by text content matching the pattern
+                for item in items:
+                    text = item.get_text(strip=True)
+                    if text and name_pattern.search(text):
+                        list_items.append(item)
 
             for item in list_items:
                 text = item.get_text(strip=True)
@@ -2892,14 +2902,21 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                 try:
                     import json
 
-                    data = json.loads(script.string)
+                    script_string = script.string
+                    if script_string is None:
+                        continue
+                    data: dict[str, Any] | list[dict[str, Any]] = json.loads(script_string)
                     # Process structured data if found
                     if isinstance(data, dict) and "name" in data:
-                        name = data.get("name", "")
-                        if name and name.lower() not in seen_names and name.lower() not in existing_names:
+                        place_name: str = str(data.get("name", ""))
+                        if (
+                            place_name
+                            and place_name.lower() not in seen_names
+                            and place_name.lower() not in existing_names
+                        ):
                             places.append(
                                 {
-                                    "name": name,
+                                    "name": place_name,
                                     "designation": data.get("description", "International Dark Sky Place"),
                                     "description": data.get("description", ""),
                                     "country": data.get("address", {}).get("addressCountry", "")
@@ -2914,7 +2931,8 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
             data_places = soup.find_all(attrs={"data-name": True}) or soup.find_all(attrs={"data-place": True})
             for elem in data_places:
                 try:
-                    name = elem.get("data-name") or elem.get("data-place")
+                    name_attr = elem.get("data-name") or elem.get("data-place")
+                    name = str(name_attr) if name_attr else ""
                     if name and name.lower() not in seen_names and name.lower() not in existing_names:
                         seen_names.add(name.lower())
                         places.append(
