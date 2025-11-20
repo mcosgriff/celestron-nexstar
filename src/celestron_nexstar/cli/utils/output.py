@@ -160,14 +160,15 @@ def calculate_panel_width(content: "RenderableType", console: Console | None = N
         console = globals()["console"]
 
     # Get plain text representation to measure width
-    if hasattr(content, "plain"):
-        # Rich Text objects have a plain property
-        plain_text = content.plain
-    elif isinstance(content, str):
-        plain_text = content
-    else:
-        # Fallback to string representation
-        plain_text = str(content)
+    match content:
+        case obj if hasattr(obj, "plain"):
+            # Rich Text objects have a plain property
+            plain_text = obj.plain
+        case str() as s:
+            plain_text = s
+        case _:
+            # Fallback to string representation
+            plain_text = str(content)
 
     # Find the longest line
     content_lines = plain_text.split("\n")

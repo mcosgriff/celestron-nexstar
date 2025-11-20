@@ -232,19 +232,20 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
         # Below 5 mph: insufficient mixing (reduced score)
         # Above 10 mph: turbulence increases (reduced score)
         # Above 20 mph: poor conditions (0 points)
-        if 5.0 <= wind_mph <= 10.0:
-            wind_score = 30.0
-        elif wind_mph < 5.0:
-            # Below 5 mph: score reduces linearly
-            wind_score = wind_mph * 6.0  # 0-30 points
-        elif wind_mph <= 15.0:
-            # 10-15 mph: score reduces gradually
-            wind_score = 30.0 - (wind_mph - 10.0) * 3.0  # 30-15 points
-        elif wind_mph <= 20.0:
-            # 15-20 mph: score reduces more sharply
-            wind_score = 15.0 - (wind_mph - 15.0) * 3.0  # 15-0 points
-        else:
-            wind_score = 0.0
+        match wind_mph:
+            case w if 5.0 <= w <= 10.0:
+                wind_score = 30.0
+            case w if w < 5.0:
+                # Below 5 mph: score reduces linearly
+                wind_score = w * 6.0  # 0-30 points
+            case w if w <= 15.0:
+                # 10-15 mph: score reduces gradually
+                wind_score = 30.0 - (w - 10.0) * 3.0  # 30-15 points
+            case w if w <= 20.0:
+                # 15-20 mph: score reduces more sharply
+                wind_score = 15.0 - (w - 15.0) * 3.0  # 15-0 points
+            case _:
+                wind_score = 0.0
         total_score += wind_score
     else:
         total_score += 15.0
@@ -272,19 +273,22 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
     # Measures rate of temperature change per hour
     # Smaller changes = more stable air = better seeing
     # Each degree F per hour reduces score
-    if abs(temperature_change_per_hour) <= 0.5:
-        stability_score = 20.0  # Very stable
-    elif abs(temperature_change_per_hour) <= 1.0:
-        stability_score = 18.0
-    elif abs(temperature_change_per_hour) <= 2.0:
-        stability_score = 15.0
-    elif abs(temperature_change_per_hour) <= 3.0:
-        stability_score = 10.0
-    elif abs(temperature_change_per_hour) <= 5.0:
-        stability_score = 5.0
-    else:
-        stability_score = 0.0  # Rapid changes = unstable
-    total_score += stability_score
+    if temperature_change_per_hour is not None:
+        temp_change_abs = abs(temperature_change_per_hour)
+        match temp_change_abs:
+            case t if t <= 0.5:
+                stability_score = 20.0  # Very stable
+            case t if t <= 1.0:
+                stability_score = 18.0
+            case t if t <= 2.0:
+                stability_score = 15.0
+            case t if t <= 3.0:
+                stability_score = 10.0
+            case t if t <= 5.0:
+                stability_score = 5.0
+            case _:
+                stability_score = 0.0  # Rapid changes = unstable
+        total_score += stability_score
 
     # 5. Cloud Cover (blocks measurement, not seeing itself)
     # According to Clear Sky Chart: "A white block on the seeing line means that there was
@@ -849,26 +853,27 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
         condition = None
         if weather_code is not None:
             code = int(weather_code)
-            if code == 0:
-                condition = "Clear"
-            elif code in (1, 2, 3):
-                condition = "Partly Cloudy"
-            elif code in (45, 48):
-                condition = "Foggy"
-            elif code in (51, 53, 55, 56, 57):
-                condition = "Drizzle"
-            elif code in (61, 63, 65, 66, 67):
-                condition = "Rain"
-            elif code in (71, 73, 75, 77):
-                condition = "Snow"
-            elif code in (80, 81, 82):
-                condition = "Rain Showers"
-            elif code in (85, 86):
-                condition = "Snow Showers"
-            elif code in (95, 96, 99):
-                condition = "Thunderstorm"
-            else:
-                condition = "Cloudy"
+            match code:
+                case 0:
+                    condition = "Clear"
+                case 1 | 2 | 3:
+                    condition = "Partly Cloudy"
+                case 45 | 48:
+                    condition = "Foggy"
+                case 51 | 53 | 55 | 56 | 57:
+                    condition = "Drizzle"
+                case 61 | 63 | 65 | 66 | 67:
+                    condition = "Rain"
+                case 71 | 73 | 75 | 77:
+                    condition = "Snow"
+                case 80 | 81 | 82:
+                    condition = "Rain Showers"
+                case 85 | 86:
+                    condition = "Snow Showers"
+                case 95 | 96 | 99:
+                    condition = "Thunderstorm"
+                case _:
+                    condition = "Cloudy"
 
         weather_data = WeatherData(
             temperature_c=temp_f,

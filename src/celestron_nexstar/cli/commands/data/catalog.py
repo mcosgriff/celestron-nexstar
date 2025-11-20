@@ -528,36 +528,38 @@ def info(
             if visibility_info.azimuth_deg is not None:
                 # Convert azimuth to cardinal direction
                 az = visibility_info.azimuth_deg
-                if az < 22.5 or az >= 337.5:
-                    direction = "N"
-                elif az < 67.5:
-                    direction = "NE"
-                elif az < 112.5:
-                    direction = "E"
-                elif az < 157.5:
-                    direction = "SE"
-                elif az < 202.5:
-                    direction = "S"
-                elif az < 247.5:
-                    direction = "SW"
-                elif az < 292.5:
-                    direction = "W"
-                else:
-                    direction = "NW"
+                match az:
+                    case a if a < 22.5 or a >= 337.5:
+                        direction = "N"
+                    case a if a < 67.5:
+                        direction = "NE"
+                    case a if a < 112.5:
+                        direction = "E"
+                    case a if a < 157.5:
+                        direction = "SE"
+                    case a if a < 202.5:
+                        direction = "S"
+                    case a if a < 247.5:
+                        direction = "SW"
+                    case a if a < 292.5:
+                        direction = "W"
+                    case _:
+                        direction = "NW"
                 info_text.append(f"  Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})\n", style="white")
             info_text.append(f"  Limiting Magnitude: {visibility_info.limiting_magnitude:.2f}\n", style="white")
             info_text.append(f"  Observability Score: {visibility_info.observability_score:.0%}\n", style="white")
 
             # Add visibility probability (Chance) if available
             if visibility_probability is not None:
-                if visibility_probability >= 0.8:
-                    prob_style = "bold green"
-                elif visibility_probability >= 0.5:
-                    prob_style = "yellow"
-                elif visibility_probability >= 0.3:
-                    prob_style = "red"
-                else:
-                    prob_style = "dim red"
+                match visibility_probability:
+                    case prob if prob >= 0.8:
+                        prob_style = "bold green"
+                    case prob if prob >= 0.5:
+                        prob_style = "yellow"
+                    case prob if prob >= 0.3:
+                        prob_style = "red"
+                    case _:
+                        prob_style = "dim red"
                 info_text.append("  Chance of Seeing: ", style="white")
                 info_text.append(f"{visibility_probability:.0%}\n", style=prob_style)
 

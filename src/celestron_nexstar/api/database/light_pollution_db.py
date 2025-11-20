@@ -91,18 +91,19 @@ def _rgb_to_sqm(r: int, g: int, b: int) -> float:
     # Map brightness to SQM (inverse relationship: brighter = lower SQM)
     # SQM ranges from ~17 (brightest/white) to ~22 (darkest/black)
     # Using a logarithmic scale for better distribution
-    if brightness < 0.01:  # Very dark (black)
-        sqm = 22.0
-    elif brightness < 0.1:  # Dark blue
-        sqm = 21.5 + (brightness / 0.1) * 0.5
-    elif brightness < 0.3:  # Blue to green
-        sqm = 20.5 + ((brightness - 0.1) / 0.2) * 1.0
-    elif brightness < 0.6:  # Green to yellow
-        sqm = 19.0 + ((brightness - 0.3) / 0.3) * 1.5
-    elif brightness < 0.9:  # Yellow to red
-        sqm = 18.0 + ((brightness - 0.6) / 0.3) * 1.0
-    else:  # Red to white
-        sqm = 17.0 + ((brightness - 0.9) / 0.1) * 0.5
+    match brightness:
+        case b if b < 0.01:  # Very dark (black)
+            sqm = 22.0
+        case b if b < 0.1:  # Dark blue
+            sqm = 21.5 + (b / 0.1) * 0.5
+        case b if b < 0.3:  # Blue to green
+            sqm = 20.5 + ((b - 0.1) / 0.2) * 1.0
+        case b if b < 0.6:  # Green to yellow
+            sqm = 19.0 + ((b - 0.3) / 0.3) * 1.5
+        case b if b < 0.9:  # Yellow to red
+            sqm = 18.0 + ((b - 0.6) / 0.3) * 1.0
+        case _:  # Red to white
+            sqm = 17.0 + ((brightness - 0.9) / 0.1) * 0.5
 
     # Clamp to reasonable range
     return max(17.0, min(22.0, sqm))

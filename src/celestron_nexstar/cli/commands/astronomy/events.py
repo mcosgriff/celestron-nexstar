@@ -311,14 +311,16 @@ def _select_event_type_interactive() -> str | None:
         headers=["Event Type", "Description"],
     )
 
-    if selected is None:
-        return None
-    if isinstance(selected, str) and selected == "all":
-        return "all"
-    if isinstance(selected, SpaceEventType):
-        return selected.value
-    # Should not reach here, but handle it
-    return None
+    match selected:
+        case None:
+            return None
+        case str() as s if s == "all":
+            return "all"
+        case SpaceEventType() as event_type:
+            return event_type.value
+        case _:
+            # Should not reach here, but handle it
+            return None
 
 
 def _show_viewing_recommendation_content(
@@ -530,15 +532,17 @@ def show_articles(
             raise typer.Exit(1)
         days_back = days
         period_display = f"last {days} day(s)"
-    elif period.lower() == "week":
-        days_back = 7
-        period_display = "This Week"
-    elif period.lower() == "month":
-        days_back = 30
-        period_display = "This Month"
     else:
-        console.print(f"[red]Error: Period must be 'week' or 'month', got '{period}'[/red]")
-        raise typer.Exit(1)
+        match period.lower():
+            case "week":
+                days_back = 7
+                period_display = "This Week"
+            case "month":
+                days_back = 30
+                period_display = "This Month"
+            case _:
+                console.print(f"[red]Error: Period must be 'week' or 'month', got '{period}'[/red]")
+                raise typer.Exit(1)
 
     try:
 
@@ -580,10 +584,12 @@ def show_articles(
                         )
                         articles.append(article)
                     return articles
-                elif period.lower() == "week":
-                    return await get_articles_this_week(db_session)
                 else:
-                    return await get_articles_this_month(db_session)
+                    match period.lower():
+                        case "week":
+                            return await get_articles_this_week(db_session)
+                        case _:
+                            return await get_articles_this_month(db_session)
 
         articles = asyncio.run(_get_articles())
 

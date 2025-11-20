@@ -150,18 +150,19 @@ def _show_milky_way_content(
     }
     vis_level_str += f"[dim]{level_calc.get(forecast.visibility_level, '')}[/dim]"
     table.add_row("Visibility Level", vis_level_str)
-    if score_pct >= 70:
-        score_color = "[bold bright_green]"
-        score_desc = " (Excellent conditions)"
-    elif score_pct >= 50:
-        score_color = "[green]"
-        score_desc = " (Good conditions)"
-    elif score_pct >= 30:
-        score_color = "[yellow]"
-        score_desc = " (Fair conditions)"
-    else:
-        score_color = "[red]"
-        score_desc = " (Poor conditions)"
+    match score_pct:
+        case s if s >= 70:
+            score_color = "[bold bright_green]"
+            score_desc = " (Excellent conditions)"
+        case s if s >= 50:
+            score_color = "[green]"
+            score_desc = " (Good conditions)"
+        case s if s >= 30:
+            score_color = "[yellow]"
+            score_desc = " (Fair conditions)"
+        case _:
+            score_color = "[red]"
+            score_desc = " (Poor conditions)"
     table.add_row("Visibility Score", f"{score_color}{score_pct:.1f}%{score_desc}[/{score_color.strip('[]')}]")
 
     # Light pollution (Bortle class)
@@ -195,25 +196,27 @@ def _show_milky_way_content(
         moon_pct = forecast.moon_illumination * 100
         moon_status_parts = []
 
-        if moon_pct < 1:
-            moon_status_parts.append("[green]New Moon - ideal[/green]")
-        elif moon_pct < 30:
-            moon_status_parts.append("[green]Crescent - good[/green]")
-        elif moon_pct < 70:
-            moon_status_parts.append("[yellow]Quarter - moderate[/yellow]")
-        else:
-            moon_status_parts.append("[red]Bright moon - poor[/red]")
+        match moon_pct:
+            case p if p < 1:
+                moon_status_parts.append("[green]New Moon - ideal[/green]")
+            case p if p < 30:
+                moon_status_parts.append("[green]Crescent - good[/green]")
+            case p if p < 70:
+                moon_status_parts.append("[yellow]Quarter - moderate[/yellow]")
+            case _:
+                moon_status_parts.append("[red]Bright moon - poor[/red]")
 
         # Add moon altitude information
         if forecast.moon_altitude is not None:
-            if forecast.moon_altitude < 0:
-                moon_status_parts.append("(below horizon - no impact)")
-            elif forecast.moon_altitude < 10:
-                moon_status_parts.append(f"(low: {forecast.moon_altitude:.0f}° - minimal impact)")
-            elif forecast.moon_altitude < 30:
-                moon_status_parts.append(f"(moderate: {forecast.moon_altitude:.0f}° - some impact)")
-            else:
-                moon_status_parts.append(f"(high: {forecast.moon_altitude:.0f}° - significant impact)")
+            match forecast.moon_altitude:
+                case alt if alt < 0:
+                    moon_status_parts.append("(below horizon - no impact)")
+                case alt if alt < 10:
+                    moon_status_parts.append(f"(low: {alt:.0f}° - minimal impact)")
+                case alt if alt < 30:
+                    moon_status_parts.append(f"(moderate: {alt:.0f}° - some impact)")
+                case _:
+                    moon_status_parts.append(f"(high: {forecast.moon_altitude:.0f}° - significant impact)")
 
         moon_display = f"{moon_pct:.0f}% illuminated " + " ".join(moon_status_parts)
         table.add_row("Moon Phase", moon_display)
@@ -562,14 +565,15 @@ def _show_when_content(
 
         # Format score with color
         score_pct = max_score * 100.0
-        if score_pct >= 70:
-            score_str = f"[bold bright_green]{score_pct:.0f}%[/bold bright_green]"
-        elif score_pct >= 50:
-            score_str = f"[green]{score_pct:.0f}%[/green]"
-        elif score_pct >= 30:
-            score_str = f"[yellow]{score_pct:.0f}%[/yellow]"
-        else:
-            score_str = f"[dim]{score_pct:.0f}%[/dim]"
+        match score_pct:
+            case s if s >= 70:
+                score_str = f"[bold bright_green]{s:.0f}%[/bold bright_green]"
+            case s if s >= 50:
+                score_str = f"[green]{s:.0f}%[/green]"
+            case s if s >= 30:
+                score_str = f"[yellow]{s:.0f}%[/yellow]"
+            case _:
+                score_str = f"[dim]{score_pct:.0f}%[/dim]"
 
         # Format visibility level with calculation
         vis_str = _format_visibility_level(visibility_level)
@@ -800,33 +804,36 @@ def _show_next_content(
             min_pct = opp.min_visibility_score * 100.0
             max_pct = opp.max_visibility_score * 100.0
             # Show range: min-max (expected)
-            if score_pct >= 70:
-                score_display = f"[bold bright_green]{min_pct:.0f}-{max_pct:.0f}%[/bold bright_green]"
-            elif score_pct >= 50:
-                score_display = f"[green]{min_pct:.0f}-{max_pct:.0f}%[/green]"
-            elif score_pct >= 30:
-                score_display = f"[yellow]{min_pct:.0f}-{max_pct:.0f}%[/yellow]"
-            else:
-                score_display = f"[dim]{min_pct:.0f}-{max_pct:.0f}%[/dim]"
+            match score_pct:
+                case s if s >= 70:
+                    score_display = f"[bold bright_green]{min_pct:.0f}-{max_pct:.0f}%[/bold bright_green]"
+                case s if s >= 50:
+                    score_display = f"[green]{min_pct:.0f}-{max_pct:.0f}%[/green]"
+                case s if s >= 30:
+                    score_display = f"[yellow]{min_pct:.0f}-{max_pct:.0f}%[/yellow]"
+                case _:
+                    score_display = f"[dim]{min_pct:.0f}-{max_pct:.0f}%[/dim]"
         else:
             # Fallback to single score
-            if score_pct >= 70:
-                score_display = f"[bold bright_green]{score_pct:.0f}%[/bold bright_green]"
-            elif score_pct >= 50:
-                score_display = f"[green]{score_pct:.0f}%[/green]"
-            elif score_pct >= 30:
-                score_display = f"[yellow]{score_pct:.0f}%[/yellow]"
-            else:
-                score_display = f"[dim]{score_pct:.0f}%[/dim]"
+            match score_pct:
+                case s if s >= 70:
+                    score_display = f"[bold bright_green]{s:.0f}%[/bold bright_green]"
+                case s if s >= 50:
+                    score_display = f"[green]{s:.0f}%[/green]"
+                case s if s >= 30:
+                    score_display = f"[yellow]{s:.0f}%[/yellow]"
+                case _:
+                    score_display = f"[dim]{score_pct:.0f}%[/dim]"
 
         # Format moon phase factor
         moon_pct = opp.moon_phase_factor * 100.0
-        if moon_pct >= 80:
-            moon_display = f"[green]{moon_pct:.0f}%[/green]"
-        elif moon_pct >= 50:
-            moon_display = f"[yellow]{moon_pct:.0f}%[/yellow]"
-        else:
-            moon_display = f"[red]{moon_pct:.0f}%[/red]"
+        match moon_pct:
+            case p if p >= 80:
+                moon_display = f"[green]{p:.0f}%[/green]"
+            case p if p >= 50:
+                moon_display = f"[yellow]{p:.0f}%[/yellow]"
+            case _:
+                moon_display = f"[red]{moon_pct:.0f}%[/red]"
 
         # Format galactic center factor
         gc_pct = opp.galactic_center_factor * 100.0

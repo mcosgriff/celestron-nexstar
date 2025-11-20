@@ -138,25 +138,27 @@ def show_current_weather(
         # Cloud Cover
         if weather.cloud_cover_percent is not None:
             cloud_cover = weather.cloud_cover_percent
-            if cloud_cover < 20:
-                cloud_str = f"[green]{cloud_cover:.0f}%[/green] (Clear)"
-            elif cloud_cover < 50:
-                cloud_str = f"[yellow]{cloud_cover:.0f}%[/yellow] (Partly Cloudy)"
-            elif cloud_cover < 80:
-                cloud_str = f"[yellow]{cloud_cover:.0f}%[/yellow] (Mostly Cloudy)"
-            else:
-                cloud_str = f"[red]{cloud_cover:.0f}%[/red] (Overcast)"
+            match cloud_cover:
+                case c if c < 20:
+                    cloud_str = f"[green]{c:.0f}%[/green] (Clear)"
+                case c if c < 50:
+                    cloud_str = f"[yellow]{c:.0f}%[/yellow] (Partly Cloudy)"
+                case c if c < 80:
+                    cloud_str = f"[yellow]{c:.0f}%[/yellow] (Mostly Cloudy)"
+                case _:
+                    cloud_str = f"[red]{cloud_cover:.0f}%[/red] (Overcast)"
             table.add_row("Cloud Cover", cloud_str)
 
         # Wind Speed
         if weather.wind_speed_ms is not None:
             wind_mph = weather.wind_speed_ms  # Already in mph
-            if wind_mph < 10:
-                wind_str = f"[green]{wind_mph:.1f} mph[/green] (Calm)"
-            elif wind_mph < 20:
-                wind_str = f"[yellow]{wind_mph:.1f} mph[/yellow] (Moderate)"
-            else:
-                wind_str = f"[red]{wind_mph:.1f} mph[/red] (Strong)"
+            match wind_mph:
+                case w if w < 10:
+                    wind_str = f"[green]{w:.1f} mph[/green] (Calm)"
+                case w if w < 20:
+                    wind_str = f"[yellow]{w:.1f} mph[/yellow] (Moderate)"
+                case _:
+                    wind_str = f"[red]{wind_mph:.1f} mph[/red] (Strong)"
             table.add_row("Wind Speed", wind_str)
 
         # Visibility
@@ -180,21 +182,22 @@ def show_current_weather(
         seeing_score = calculate_seeing_conditions(weather)
 
         # Status indicator
-        if status == "excellent":
-            status_color = "green"
-            status_icon = "✓"
-        elif status == "good":
-            status_color = "cyan"
-            status_icon = "○"
-        elif status == "fair":
-            status_color = "yellow"
-            status_icon = "⚠"
-        elif status == "poor":
-            status_color = "red"
-            status_icon = "✗"
-        else:
-            status_color = "dim"
-            status_icon = "?"
+        match status:
+            case "excellent":
+                status_color = "green"
+                status_icon = "✓"
+            case "good":
+                status_color = "cyan"
+                status_icon = "○"
+            case "fair":
+                status_color = "yellow"
+                status_icon = "⚠"
+            case "poor":
+                status_color = "red"
+                status_icon = "✗"
+            case _:
+                status_color = "dim"
+                status_icon = "?"
 
         console.print(
             f"[bold]Observing Conditions:[/bold] [{status_color}]{status_icon} {status.title()}[/{status_color}]"
@@ -340,14 +343,15 @@ def show_today_weather(
             seeing_str = f"{seeing:.0f}/100"
 
             # Quality
-            if seeing >= 80:
-                quality = "[green]Excellent[/green]"
-            elif seeing >= 60:
-                quality = "[yellow]Good[/yellow]"
-            elif seeing >= 40:
-                quality = "[dim]Fair[/dim]"
-            else:
-                quality = "[red]Poor[/red]"
+            match seeing:
+                case s if s >= 80:
+                    quality = "[green]Excellent[/green]"
+                case s if s >= 60:
+                    quality = "[yellow]Good[/yellow]"
+                case s if s >= 40:
+                    quality = "[dim]Fair[/dim]"
+                case _:
+                    quality = "[red]Poor[/red]"
 
             table.add_row(time_str, temp_str, cloud_str, wind_str, seeing_str, quality)
 

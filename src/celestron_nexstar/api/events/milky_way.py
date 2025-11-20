@@ -120,18 +120,16 @@ def _estimate_cloud_cover_for_season(
     # Best case = typically clearer months, Worst case = typically cloudier months
     # These are rough estimates - used when historical data is unavailable
 
-    # Winter (Dec, Jan, Feb) - often clearer in many regions
-    if month in [12, 1, 2]:
-        return (15.0, 60.0, False, None)  # Best: Clear, Worst: Partly Cloudy to Cloudy
-    # Spring (Mar, Apr, May) - variable
-    elif month in [3, 4, 5]:
-        return (25.0, 70.0, False, None)  # Best: Partly Cloudy, Worst: Cloudy
-    # Summer (Jun, Jul, Aug) - often clearer in many regions (monsoon season varies by location)
-    elif month in [6, 7, 8]:
-        return (20.0, 65.0, False, None)  # Best: Clear to Partly Cloudy, Worst: Cloudy
-    # Fall (Sep, Oct, Nov) - variable
-    else:  # 9, 10, 11
-        return (20.0, 65.0, False, None)  # Best: Clear to Partly Cloudy, Worst: Cloudy
+    # Determine season based on month
+    match month:
+        case 12 | 1 | 2:  # Winter - often clearer in many regions
+            return (15.0, 60.0, False, None)  # Best: Clear, Worst: Partly Cloudy to Cloudy
+        case 3 | 4 | 5:  # Spring - variable
+            return (25.0, 70.0, False, None)  # Best: Partly Cloudy, Worst: Cloudy
+        case 6 | 7 | 8:  # Summer - often clearer in many regions (monsoon season varies by location)
+            return (20.0, 65.0, False, None)  # Best: Clear to Partly Cloudy, Worst: Cloudy
+        case _:  # Fall (9, 10, 11) - variable
+            return (20.0, 65.0, False, None)  # Best: Clear to Partly Cloudy, Worst: Cloudy
 
 
 def _cloud_cover_category_to_percent(category: str) -> float:
@@ -145,14 +143,15 @@ def _cloud_cover_category_to_percent(category: str) -> float:
         Cloud cover percentage (0-100)
     """
     category_lower = category.lower().strip()
-    if category_lower == "clear":
-        return 10.0  # Average of 0-20%
-    elif category_lower in ["partly cloudy", "partly_cloudy"]:
-        return 35.0  # Average of 20-50%
-    elif category_lower == "cloudy":
-        return 75.0  # Average of 50-100%
-    else:  # Unknown
-        return 50.0  # Conservative estimate
+    match category_lower:
+        case "clear":
+            return 10.0  # Average of 0-20%
+        case "partly cloudy" | "partly_cloudy":
+            return 35.0  # Average of 20-50%
+        case "cloudy":
+            return 75.0  # Average of 50-100%
+        case _:  # Unknown
+            return 50.0  # Conservative estimate
 
 
 def _calculate_visibility_score(
@@ -287,16 +286,17 @@ def _score_to_visibility_level(score: float) -> str:
     Returns:
         Visibility level string
     """
-    if score >= 0.7:
-        return "excellent"
-    elif score >= 0.5:
-        return "good"
-    elif score >= 0.3:
-        return "fair"
-    elif score >= 0.1:
-        return "poor"
-    else:
-        return "none"
+    match score:
+        case s if s >= 0.7:
+            return "excellent"
+        case s if s >= 0.5:
+            return "good"
+        case s if s >= 0.3:
+            return "fair"
+        case s if s >= 0.1:
+            return "poor"
+        case _:
+            return "none"
 
 
 def check_milky_way_visibility(

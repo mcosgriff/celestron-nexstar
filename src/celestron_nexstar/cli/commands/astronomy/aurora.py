@@ -75,20 +75,21 @@ def _format_visibility_level(level: str) -> str:
 
 def _format_kp_index(kp: float) -> str:
     """Format Kp index with color based on activity level."""
-    if kp >= 8.0:
-        return f"[bold bright_red]{kp:.1f}[/bold bright_red] (Extreme)"
-    elif kp >= 7.0:
-        return f"[bold red]{kp:.1f}[/bold red] (Very High)"
-    elif kp >= 6.0:
-        return f"[bold yellow]{kp:.1f}[/bold yellow] (High)"
-    elif kp >= 5.0:
-        return f"[yellow]{kp:.1f}[/yellow] (Moderate)"
-    elif kp >= 4.0:
-        return f"[cyan]{kp:.1f}[/cyan] (Low-Moderate)"
-    elif kp >= 3.0:
-        return f"[dim]{kp:.1f}[/dim] (Low)"
-    else:
-        return f"[dim]{kp:.1f}[/dim] (Very Low)"
+    match kp:
+        case k if k >= 8.0:
+            return f"[bold bright_red]{k:.1f}[/bold bright_red] (Extreme)"
+        case k if k >= 7.0:
+            return f"[bold red]{k:.1f}[/bold red] (Very High)"
+        case k if k >= 6.0:
+            return f"[bold yellow]{k:.1f}[/bold yellow] (High)"
+        case k if k >= 5.0:
+            return f"[yellow]{k:.1f}[/yellow] (Moderate)"
+        case k if k >= 4.0:
+            return f"[cyan]{k:.1f}[/cyan] (Low-Moderate)"
+        case k if k >= 3.0:
+            return f"[dim]{k:.1f}[/dim] (Low)"
+        case _:
+            return f"[dim]{kp:.1f}[/dim] (Very Low)"
 
 
 @app.command("tonight")
@@ -160,23 +161,25 @@ def _show_aurora_content(
         swx = get_space_weather_conditions()
         if swx.g_scale:
             g_scale_display = f"G{swx.g_scale.level} ({swx.g_scale.display_name})"
-            if swx.g_scale.level >= 3:
-                g_scale_display = f"[bold red]{g_scale_display}[/bold red]"
-            elif swx.g_scale.level >= 1:
-                g_scale_display = f"[yellow]{g_scale_display}[/yellow]"
-            else:
-                g_scale_display = f"[green]{g_scale_display}[/green]"
+            match swx.g_scale.level:
+                case level if level >= 3:
+                    g_scale_display = f"[bold red]{g_scale_display}[/bold red]"
+                case level if level >= 1:
+                    g_scale_display = f"[yellow]{g_scale_display}[/yellow]"
+                case _:
+                    g_scale_display = f"[green]{g_scale_display}[/green]"
             table.add_row("NOAA G-Scale", g_scale_display)
 
         # Add solar wind Bz if available (important for aurora)
         if swx.solar_wind_bz is not None:
             bz_display = f"{swx.solar_wind_bz:.1f} nT"
-            if swx.solar_wind_bz < -5:
-                bz_display = f"[green]{bz_display} (favorable for aurora)[/green]"
-            elif swx.solar_wind_bz < 0:
-                bz_display = f"[yellow]{bz_display}[/yellow]"
-            else:
-                bz_display = f"[white]{bz_display}[/white]"
+            match swx.solar_wind_bz:
+                case bz if bz < -5:
+                    bz_display = f"[green]{bz_display} (favorable for aurora)[/green]"
+                case bz if bz < 0:
+                    bz_display = f"[yellow]{bz_display}[/yellow]"
+                case _:
+                    bz_display = f"[white]{bz_display}[/white]"
             table.add_row("Solar Wind Bz", bz_display)
     except Exception:
         # Space weather data unavailable, skip
@@ -184,15 +187,16 @@ def _show_aurora_content(
 
     # Visibility Probability (AgentCalc algorithm)
     prob_pct = forecast.visibility_probability * 100.0
-    if prob_pct >= 70:
-        prob_color = "[bold bright_green]"
-        prob_desc = " (Strong odds)"
-    elif prob_pct >= 30:
-        prob_color = "[yellow]"
-        prob_desc = " (Possible)"
-    else:
-        prob_color = "[red]"
-        prob_desc = " (Low odds)"
+    match prob_pct:
+        case p if p >= 70:
+            prob_color = "[bold bright_green]"
+            prob_desc = " (Strong odds)"
+        case p if p >= 30:
+            prob_color = "[yellow]"
+            prob_desc = " (Possible)"
+        case _:
+            prob_color = "[red]"
+            prob_desc = " (Low odds)"
     table.add_row("Visibility Probability", f"{prob_color}{prob_pct:.1f}%{prob_desc}[/{prob_color.strip('[]')}]")
 
     # Visibility Level
@@ -292,22 +296,24 @@ def _show_aurora_content(
             output_console.print(f"  • [dim]Your location ({abs(location.latitude):.1f}°N) is too far south[/dim]")
             # Calculate what Kp would be needed for this latitude
             needed_kp = None
-            if abs(location.latitude) < 40.0:
-                needed_kp = 9.0
-            elif abs(location.latitude) < 45.0:
-                needed_kp = 8.0
-            elif abs(location.latitude) < 50.0:
-                needed_kp = 7.0
-            elif abs(location.latitude) < 55.0:
-                needed_kp = 6.0
-            elif abs(location.latitude) < 60.0:
-                needed_kp = 5.0
-            elif abs(location.latitude) < 65.0:
-                needed_kp = 4.0
-            elif abs(location.latitude) < 70.0:
-                needed_kp = 3.0
-            else:
-                needed_kp = 2.0
+            lat_abs = abs(location.latitude)
+            match lat_abs:
+                case lat if lat < 40.0:
+                    needed_kp = 9.0
+                case lat if lat < 45.0:
+                    needed_kp = 8.0
+                case lat if lat < 50.0:
+                    needed_kp = 7.0
+                case lat if lat < 55.0:
+                    needed_kp = 6.0
+                case lat if lat < 60.0:
+                    needed_kp = 5.0
+                case lat if lat < 65.0:
+                    needed_kp = 4.0
+                case lat if lat < 70.0:
+                    needed_kp = 3.0
+                case _:
+                    needed_kp = 2.0
 
             if needed_kp:
                 output_console.print(f"  • [dim]To see aurora at your latitude, you need Kp ≥ {needed_kp:.0f}[/dim]")
@@ -521,22 +527,23 @@ def _show_next_content(
 
     # Determine what Kp is needed
     needed_kp = None
-    if min_lat < 40.0:
-        needed_kp = 9.0
-    elif min_lat < 45.0:
-        needed_kp = 8.0
-    elif min_lat < 50.0:
-        needed_kp = 7.0
-    elif min_lat < 55.0:
-        needed_kp = 6.0
-    elif min_lat < 60.0:
-        needed_kp = 5.0
-    elif min_lat < 65.0:
-        needed_kp = 4.0
-    elif min_lat < 70.0:
-        needed_kp = 3.0
-    else:
-        needed_kp = 2.0
+    match min_lat:
+        case lat if lat < 40.0:
+            needed_kp = 9.0
+        case lat if lat < 45.0:
+            needed_kp = 8.0
+        case lat if lat < 50.0:
+            needed_kp = 7.0
+        case lat if lat < 55.0:
+            needed_kp = 6.0
+        case lat if lat < 60.0:
+            needed_kp = 5.0
+        case lat if lat < 65.0:
+            needed_kp = 4.0
+        case lat if lat < 70.0:
+            needed_kp = 3.0
+        case _:
+            needed_kp = 2.0
 
     # Get solar cycle info
     cycle_info = get_solar_cycle_info()
