@@ -598,11 +598,11 @@ async def _process_png_to_database(
                 # Spatial join to find points within boundaries (much faster than loop)
                 points_within = gpd.sjoin(points_gdf, boundaries_gdf, how="inner", predicate="within")  # type: ignore[arg-type]
 
-                # Process filtered points
-                for _, row in points_within.iterrows():
-                    lat = float(row["latitude"])
-                    lon = float(row["longitude"])
-                    sqm = float(row["sqm_value"])
+                # Process filtered points using itertuples (much faster than iterrows)
+                for row in points_within.itertuples():
+                    lat = float(row.latitude)
+                    lon = float(row.longitude)
+                    sqm = float(row.sqm_value)
 
                     batch_data.append((lat, lon, sqm, region))
 
@@ -614,39 +614,59 @@ async def _process_png_to_database(
                         if progress and task_id is not None:
                             progress.update(task_id, advance=batch_size)
             else:
-                # No valid boundaries, process all points
-                for i in range(len(y_indices)):
-                    for j in range(len(x_indices)):
-                        lat = float(lat_rounded[i, j])
-                        lon = float(lon_rounded[i, j])
-                        sqm = float(sqm_values[i, j])
+                # No valid boundaries, process all points using vectorized operations
+                # Flatten arrays for vectorized processing
+                lats_flat = lat_rounded.flatten()
+                lons_flat = lon_rounded.flatten()
+                sqm_flat = sqm_values.flatten()
 
-                        batch_data.append((lat, lon, sqm, region))
+                # Create batch_data using numpy (much faster than nested loops)
+                # All arrays have the same length (flattened from same shape), so strict=True is safe
+                all_data = list(
+                    zip(
+                        lats_flat.astype(float),
+                        lons_flat.astype(float),
+                        sqm_flat.astype(float),
+                        [region] * len(lats_flat),
+                        strict=True,
+                    )
+                )
 
-                        # Insert in batches
-                        if len(batch_data) >= batch_size:
-                            await _insert_batch(db, batch_data)
-                            inserted += len(batch_data)
-                            batch_data = []
-                            if progress and task_id is not None:
-                                progress.update(task_id, advance=batch_size)
+                # Process in batches for database insertion
+                for batch_start in range(0, len(all_data), batch_size):
+                    batch_end = min(batch_start + batch_size, len(all_data))
+                    batch_chunk = all_data[batch_start:batch_end]
+                    await _insert_batch(db, batch_chunk)
+                    inserted += len(batch_chunk)
+                    if progress and task_id is not None:
+                        progress.update(task_id, advance=len(batch_chunk))
         else:
-            # No boundary filter - process all points (vectorized iteration)
-            for i in range(len(y_indices)):
-                for j in range(len(x_indices)):
-                    lat = float(lat_rounded[i, j])
-                    lon = float(lon_rounded[i, j])
-                    sqm = float(sqm_values[i, j])
+            # No boundary filter - process all points using vectorized operations
+            # Flatten arrays for vectorized processing
+            lats_flat = lat_rounded.flatten()
+            lons_flat = lon_rounded.flatten()
+            sqm_flat = sqm_values.flatten()
 
-                    batch_data.append((lat, lon, sqm, region))
+            # Create batch_data using numpy (much faster than nested loops)
+            # All arrays have the same length (flattened from same shape), so strict=True is safe
+            all_data = list(
+                zip(
+                    lats_flat.astype(float),
+                    lons_flat.astype(float),
+                    sqm_flat.astype(float),
+                    [region] * len(lats_flat),
+                    strict=True,
+                )
+            )
 
-                    # Insert in batches
-                    if len(batch_data) >= batch_size:
-                        await _insert_batch(db, batch_data)
-                        inserted += len(batch_data)
-                        batch_data = []
-                        if progress and task_id is not None:
-                            progress.update(task_id, advance=batch_size)
+            # Process in batches for database insertion
+            for batch_start in range(0, len(all_data), batch_size):
+                batch_end = min(batch_start + batch_size, len(all_data))
+                batch_chunk = all_data[batch_start:batch_end]
+                await _insert_batch(db, batch_chunk)
+                inserted += len(batch_chunk)
+                if progress and task_id is not None:
+                    progress.update(task_id, advance=len(batch_chunk))
     else:
         # Fallback to original pixel-by-pixel method
         for y in range(0, height, y_step):
