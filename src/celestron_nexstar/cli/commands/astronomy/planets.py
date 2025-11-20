@@ -18,6 +18,7 @@ from celestron_nexstar.api.astronomy.planetary_events import (
     get_planetary_conjunctions,
     get_planetary_oppositions,
 )
+from celestron_nexstar.api.astronomy.solar_system_ascii import create_solar_system_ascii
 from celestron_nexstar.api.location.observer import ObserverLocation, get_observer_location
 from celestron_nexstar.cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -281,6 +282,28 @@ def _show_oppositions_content(
     output_console.print("  • Planet is visible all night (rises at sunset, sets at sunrise)")
     output_console.print("  • Best viewing with telescope for detail")
     output_console.print("\n[dim]💡 Tip: Plan your observing sessions around oppositions![/dim]\n")
+
+
+@app.command("solar-system")
+def show_solar_system(
+    width: int = typer.Option(80, "--width", "-w", help="Width of ASCII display (default: 80)"),
+    height: int = typer.Option(40, "--height", "-h", help="Height of ASCII display (default: 40)"),
+) -> None:
+    """
+    Display ASCII art of the solar system showing planets in their current positions.
+
+    This is an easter egg command that shows a top-down view of the solar system
+    with planets positioned according to their current orbital locations.
+    """
+    from datetime import UTC, datetime
+
+    console.print("\n[bold cyan]🌌 Solar System ASCII Art[/bold cyan]\n")
+    console.print("[dim]Top-down view of the solar system (ecliptic plane)[/dim]\n")
+
+    ascii_art = create_solar_system_ascii(dt=datetime.now(UTC), width=width, height=height)
+    console.print(f"[pre]{ascii_art}[/pre]")
+
+    console.print("\n[dim]💡 Tip: Try different --width and --height values for different views![/dim]\n")
 
 
 if __name__ == "__main__":
