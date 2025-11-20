@@ -530,9 +530,12 @@ def show_historical_weather(
         location = get_observer_location()
 
         # Validate months parameter
-        if months not in [3, 6, 12]:
-            print_error("Months must be 3, 6, or 12")
-            raise typer.Exit(code=1) from None
+        match months:
+            case 3 | 6 | 12:
+                pass
+            case _:
+                print_error("Months must be 3, 6, or 12")
+                raise typer.Exit(code=1) from None
 
         # Determine which months we need to show
         from datetime import datetime

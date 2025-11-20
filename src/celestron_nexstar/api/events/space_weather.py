@@ -46,6 +46,9 @@ class NOAAScale:
         """Get display name for the scale."""
         if self.level == 0:
             return "None"
+        # Only known scale types (R, S, G) use level names
+        if self.scale_type not in ("R", "S", "G"):
+            return f"Level {self.level}"
         # All scales (R, S, G) use the same level names
         level_names = {1: "Minor", 2: "Moderate", 3: "Strong", 4: "Severe", 5: "Extreme"}
         return level_names.get(self.level, f"Level {self.level}")

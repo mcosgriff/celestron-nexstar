@@ -11,6 +11,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import combinations
 
 import deal
 
@@ -555,53 +556,49 @@ def suggest_skyalign_objects(
     # Try combinations (limit to top N objects to avoid too many combinations)
     top_objects = bright_objects[:20]  # Consider top 20 objects
 
-    for i in range(len(top_objects)):
-        for j in range(i + 1, len(top_objects)):
-            for k in range(j + 1, len(top_objects)):
-                obj1, obj2, obj3 = top_objects[i], top_objects[j], top_objects[k]
+    for obj1, obj2, obj3 in combinations(top_objects, 3):
+        # Check minimum separation
+        min_sep, sep_score = _calculate_separation_score(obj1, obj2, obj3)
 
-                # Check minimum separation
-                min_sep, sep_score = _calculate_separation_score(obj1, obj2, obj3)
+        if min_sep < MIN_SEPARATION_DEG:
+            continue  # Objects too close together
 
-                if min_sep < MIN_SEPARATION_DEG:
-                    continue  # Objects too close together
+        # Check if collinear
+        if _check_collinear(obj1, obj2, obj3):
+            continue  # Objects in a line
 
-                # Check if collinear
-                if _check_collinear(obj1, obj2, obj3):
-                    continue  # Objects in a line
+        # Calculate average observability score
+        avg_score = (
+            obj1.visibility.observability_score
+            + obj2.visibility.observability_score
+            + obj3.visibility.observability_score
+        ) / 3.0
 
-                # Calculate average observability score
-                avg_score = (
-                    obj1.visibility.observability_score
-                    + obj2.visibility.observability_score
-                    + obj3.visibility.observability_score
-                ) / 3.0
+        # Only include groups with good observability
+        if avg_score < 0.6:
+            continue
 
-                # Only include groups with good observability
-                if avg_score < 0.6:
-                    continue
+        # Calculate conditions score if conditions data provided
+        conditions_score = _calculate_conditions_score(
+            obj1,
+            obj2,
+            obj3,
+            cloud_cover_percent=cloud_cover_percent,
+            moon_ra_hours=moon_ra_hours,
+            moon_dec_degrees=moon_dec_degrees,
+            moon_illumination=moon_illumination,
+            seeing_score=seeing_score,
+        )
 
-                # Calculate conditions score if conditions data provided
-                conditions_score = _calculate_conditions_score(
-                    obj1,
-                    obj2,
-                    obj3,
-                    cloud_cover_percent=cloud_cover_percent,
-                    moon_ra_hours=moon_ra_hours,
-                    moon_dec_degrees=moon_dec_degrees,
-                    moon_illumination=moon_illumination,
-                    seeing_score=seeing_score,
-                )
-
-                groups.append(
-                    SkyAlignGroup(
-                        objects=(obj1, obj2, obj3),
-                        min_separation_deg=min_sep,
-                        avg_observability_score=avg_score,
-                        separation_score=sep_score,
-                        conditions_score=conditions_score,
-                    )
-                )
+        groups.append(
+            SkyAlignGroup(
+                objects=(obj1, obj2, obj3),
+                min_separation_deg=min_sep,
+                avg_observability_score=avg_score,
+                separation_score=sep_score,
+                conditions_score=conditions_score,
+            )
+        )
 
     # Sort by combined score (observability + separation + conditions)
     def group_score(group: SkyAlignGroup) -> float:
@@ -801,44 +798,41 @@ def suggest_two_star_align_objects(
     # Try combinations (limit to top N objects to avoid too many combinations)
     top_objects = bright_objects[:30]  # Consider top 30 objects for more options
 
-    for i in range(len(top_objects)):
-        for j in range(i + 1, len(top_objects)):
-            obj1, obj2 = top_objects[i], top_objects[j]
+    for obj1, obj2 in combinations(top_objects, 2):
+        # Check minimum separation
+        separation, sep_score = _calculate_two_star_separation_score(obj1, obj2)
 
-            # Check minimum separation
-            separation, sep_score = _calculate_two_star_separation_score(obj1, obj2)
+        if separation < MIN_SEPARATION_DEG:
+            continue  # Objects too close together
 
-            if separation < MIN_SEPARATION_DEG:
-                continue  # Objects too close together
+        # Calculate average observability score
+        avg_score = (obj1.visibility.observability_score + obj2.visibility.observability_score) / 2.0
 
-            # Calculate average observability score
-            avg_score = (obj1.visibility.observability_score + obj2.visibility.observability_score) / 2.0
+        # Only include pairs with good observability
+        if avg_score < 0.6:
+            continue
 
-            # Only include pairs with good observability
-            if avg_score < 0.6:
-                continue
+        # Calculate conditions score if conditions data provided
+        conditions_score = _calculate_two_star_conditions_score(
+            obj1,
+            obj2,
+            cloud_cover_percent=cloud_cover_percent,
+            moon_ra_hours=moon_ra_hours,
+            moon_dec_degrees=moon_dec_degrees,
+            moon_illumination=moon_illumination,
+            seeing_score=seeing_score,
+        )
 
-            # Calculate conditions score if conditions data provided
-            conditions_score = _calculate_two_star_conditions_score(
-                obj1,
-                obj2,
-                cloud_cover_percent=cloud_cover_percent,
-                moon_ra_hours=moon_ra_hours,
-                moon_dec_degrees=moon_dec_degrees,
-                moon_illumination=moon_illumination,
-                seeing_score=seeing_score,
+        pairs.append(
+            TwoStarAlignPair(
+                star1=obj1,
+                star2=obj2,
+                separation_deg=separation,
+                avg_observability_score=avg_score,
+                separation_score=sep_score,
+                conditions_score=conditions_score,
             )
-
-            pairs.append(
-                TwoStarAlignPair(
-                    star1=obj1,
-                    star2=obj2,
-                    separation_deg=separation,
-                    avg_observability_score=avg_score,
-                    separation_score=sep_score,
-                    conditions_score=conditions_score,
-                )
-            )
+        )
 
     # Sort by combined score (observability + separation + conditions)
     def pair_score(pair: TwoStarAlignPair) -> float:

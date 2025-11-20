@@ -2336,7 +2336,7 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                 async with session.get(geocode_url, params=params, headers=headers) as response:
                     if response.status == 200:
                         data: list[dict[str, Any]] = await response.json()
-                        if data and len(data) > 0:
+                        if data:
                             return (float(data[0]["lat"]), float(data[0]["lon"]))
         except Exception:
             pass
@@ -2737,7 +2737,7 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
 
         # Also look for place names in the text content - they might be in divs, spans, or other elements
         # Look for elements that might contain place information
-        if len(place_links) == 0:
+        if not place_links:
             console.print("[dim]No links found, trying to find place names in text content...[/dim]")
             # Look for common patterns like "Park Name" or "Name National Park"
             place_name_patterns = soup.find_all(
@@ -3079,7 +3079,7 @@ def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
             # Or it might be a dict with Name directly
             elif "Name" in data:
                 star_data = data
-        elif isinstance(data, list) and len(data) > 0:
+        elif isinstance(data, list) and data:
             # If it's a list, take the first element
             first_item = data[0]
             if isinstance(first_item, dict):

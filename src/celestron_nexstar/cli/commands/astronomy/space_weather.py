@@ -207,7 +207,7 @@ def ovation() -> None:
             forecasts_by_time[forecast.timestamp].append(forecast)
 
         # Display forecasts for each time period
-        for timestamp in sorted(forecasts_by_time.keys()):
+        for timestamp in sorted(forecasts_by_time):
             time_forecasts = forecasts_by_time[timestamp]
             console.print(f"[bold]Forecast for {timestamp.strftime('%Y-%m-%d %H:%M UTC')}[/bold]")
 

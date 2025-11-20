@@ -1131,7 +1131,7 @@ def shell() -> None:
                 sys.argv = old_argv
 
                 # Auto-start tracking after successful align command
-                if command_success and len(args) > 0 and args[0] == "align" and not tracker.enabled:
+                if command_success and args and args[0] == "align" and not tracker.enabled:
                     tracker.start()
                     console.print("\n[dim]→ Background position tracking started automatically[/dim]")
                     console.print("[dim]  Position updates will appear in the status bar[/dim]")
