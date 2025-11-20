@@ -668,8 +668,11 @@ class DarkSkySiteModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
-    # Composite index for location queries
-    __table_args__ = (Index("idx_location", "latitude", "longitude"),)
+    # Composite indexes for location queries
+    __table_args__ = (
+        Index("idx_location", "latitude", "longitude"),
+        Index("idx_dark_sky_geohash", "geohash"),  # For efficient spatial proximity searches
+    )
 
     def __repr__(self) -> str:
         """String representation of the site."""

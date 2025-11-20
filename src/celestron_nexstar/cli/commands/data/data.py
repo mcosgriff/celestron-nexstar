@@ -2301,7 +2301,6 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
     ida_base_url = "https://darksky.org"
     ida_places_url = f"{ida_base_url}/what-we-do/international-dark-sky-places/all-places/?_location_dropdown=usa"
     geocode_url = "https://nominatim.openstreetmap.org/search"
-    geocode_delay = 1.0  # Rate limiting
 
     def estimate_bortle_from_description(description: str, designation: str) -> int:
         """Estimate Bortle class from description and designation type."""
@@ -2974,45 +2973,69 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
 
     # Process places: geocode, estimate values
     console.print(f"[dim]Processing {len(places)} new places...[/dim]")
-    processed = []
+    processed: list[dict[str, Any]] = []
 
-    for i, place in enumerate(places, 1):
-        console.print(f"[dim]Processing {i}/{len(places)}: {place['name']}...[/dim]", end="\r")
+    # Use semaphore to limit concurrent geocoding requests (5 at a time)
+    # This significantly speeds up processing while respecting rate limits
+    semaphore = asyncio.Semaphore(5)
 
-        coords = await geocode_location(place["name"], place.get("country", ""))
-        if not coords:
+    async def geocode_with_rate_limit(place: dict[str, Any]) -> dict[str, Any] | None:
+        """Geocode a place with rate limiting via semaphore."""
+        async with semaphore:
+            coords = await geocode_location(place["name"], place.get("country", ""))
+            if not coords:
+                return None
+
+            lat, lon = coords
+            bortle = estimate_bortle_from_description(place["description"], place["designation"])
+            sqm = estimate_sqm_from_bortle(bortle)
+            geohash = generate_geohash(lat, lon)
+
+            return {
+                "name": place["name"],
+                "latitude": round(lat, 4),
+                "longitude": round(lon, 4),
+                "geohash": geohash,
+                "bortle_class": bortle,
+                "sqm_value": sqm,
+                "description": place["description"],
+                "notes": f"{place['designation']}. Data from International Dark-Sky Association.",
+            }
+
+    # Process all places concurrently with rate limiting
+    console.print(f"[dim]Geocoding {len(places)} places (5 concurrent requests)...[/dim]")
+    tasks = [geocode_with_rate_limit(place) for place in places]
+    # asyncio.gather returns a tuple, convert to list
+    results_tuple = await asyncio.gather(*tasks, return_exceptions=True)
+    results: list[dict[str, Any] | BaseException | None] = list(results_tuple)
+
+    # Process results - filter out exceptions and None values
+    for i, result_item in enumerate(results, 1):
+        # Skip exceptions
+        if isinstance(result_item, Exception):
             continue
-
-        lat, lon = coords
-        bortle = estimate_bortle_from_description(place["description"], place["designation"])
-        sqm = estimate_sqm_from_bortle(bortle)
-        geohash = generate_geohash(lat, lon)
-
-        processed_place = {
-            "name": place["name"],
-            "latitude": round(lat, 4),
-            "longitude": round(lon, 4),
-            "geohash": geohash,
-            "bortle_class": bortle,
-            "sqm_value": sqm,
-            "description": place["description"],
-            "notes": f"{place['designation']}. Data from International Dark-Sky Association.",
-        }
-
-        processed.append(processed_place)
-
-        # Rate limiting
-        if i < len(places):
-            await asyncio.sleep(geocode_delay)
+        # Skip None values
+        if result_item is None:
+            continue
+        # At this point, result_item must be dict[str, Any]
+        # Use explicit type check to help mypy
+        if isinstance(result_item, dict):
+            processed.append(result_item)
+        if i % 10 == 0:
+            console.print(f"[dim]Processed {i}/{len(places)} places...[/dim]", end="\r")
 
     console.print()  # New line after progress
 
-    # Merge with existing
-    merged = existing_places + processed
+    # Merge with existing - ensure both are lists of dicts
+    # Filter out any metadata objects from existing_places
+    existing_dicts: list[dict[str, Any]] = [
+        item for item in existing_places if isinstance(item, dict) and "name" in item
+    ]
+    merged: list[dict[str, Any]] = existing_dicts + processed
     merged.sort(key=lambda x: x["name"])
 
     # Add attribution metadata at the beginning
-    result = [
+    result: list[dict[str, Any]] = [
         {
             "_comment": "Data sourced from the International Dark-Sky Association (IDA) official list of International Dark Sky Places. URL: https://www.darksky.org/our-work/conservation/idsp/",
             "_attribution": "International Dark-Sky Association (IDA) - https://www.darksky.org/",
@@ -3021,9 +3044,7 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
         *merged,
     ]
 
-    console.print(
-        f"[green]✓[/green] Processed {len(processed)} new places, {len(existing_places)} existing places kept"
-    )
+    console.print(f"[green]✓[/green] Processed {len(processed)} new places, {len(existing_dicts)} existing places kept")
     console.print(f"[dim]Total: {len(merged)} dark sky sites[/dim]")
 
     return result

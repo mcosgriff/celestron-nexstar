@@ -176,19 +176,20 @@ def find_dark_sites_near(
             distances_km = distances_m / 1000.0
 
             # Filter by exact distance and create DarkSkySite objects
-            for idx, row in sites_within.iterrows():
+            # Use itertuples for better performance (10-100x faster than iterrows)
+            for row in sites_within.itertuples():
                 # Get distance for this row (distances_km is aligned with sites_within index)
-                distance = float(distances_km.loc[idx])
+                distance = float(distances_km.loc[row.Index])
                 if distance <= max_distance_km:
                     site = DarkSkySite(
-                        name=row["name"],
-                        latitude=row["latitude"],
-                        longitude=row["longitude"],
-                        bortle_class=BortleClass(row["bortle_class"]),
-                        sqm_value=row["sqm_value"],
+                        name=row.name,
+                        latitude=row.latitude,
+                        longitude=row.longitude,
+                        bortle_class=BortleClass(row.bortle_class),
+                        sqm_value=row.sqm_value,
                         distance_km=distance,
-                        description=row["description"],
-                        notes=row.get("notes"),
+                        description=row.description,
+                        notes=getattr(row, "notes", None),
                     )
                     sites.append(site)
 
@@ -250,19 +251,20 @@ def find_dark_sites_near(
             distances_km = distances_m / 1000.0
 
             # Filter by exact distance and create DarkSkySite objects
-            for idx, row in sites_within.iterrows():
+            # Use itertuples for better performance (10-100x faster than iterrows)
+            for row in sites_within.itertuples():
                 # Get distance for this row (distances_km is aligned with sites_within index)
-                distance = float(distances_km.loc[idx])
+                distance = float(distances_km.loc[row.Index])
                 if distance <= max_distance_km:
                     site = DarkSkySite(
-                        name=row["name"],
-                        latitude=row["latitude"],
-                        longitude=row["longitude"],
-                        bortle_class=BortleClass(row["bortle_class"]),
-                        sqm_value=row["sqm_value"],
+                        name=row.name,
+                        latitude=row.latitude,
+                        longitude=row.longitude,
+                        bortle_class=BortleClass(row.bortle_class),
+                        sqm_value=row.sqm_value,
                         distance_km=distance,
-                        description=row["description"],
-                        notes=row.get("notes"),
+                        description=row.description,
+                        notes=getattr(row, "notes", None),
                     )
                     sites.append(site)
     except Exception as e:

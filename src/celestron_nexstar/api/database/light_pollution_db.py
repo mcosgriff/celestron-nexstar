@@ -492,6 +492,9 @@ async def _process_png_to_database(
     # Use numpy for vectorized processing if available
     if numpy_available and np is not None:
         # Convert PIL image to numpy array
+        # Note: For very large images (>10,000x10,000 pixels), this may use significant memory.
+        # The vectorized numpy approach is already quite efficient, but for extremely large images,
+        # consider processing in chunks to reduce peak memory usage.
         img_array = np.array(img)
         if len(img_array.shape) == 2:
             # Grayscale - convert to RGB

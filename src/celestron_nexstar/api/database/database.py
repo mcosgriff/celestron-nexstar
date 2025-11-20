@@ -165,10 +165,19 @@ class CatalogDatabase:
 
         # Use aiosqlite for async SQLite support
         # SQLite URL format for async: sqlite+aiosqlite:///
+        # Optimize connection pooling for SQLite:
+        # - pool_size: SQLite doesn't use traditional pooling, but this sets max connections
+        # - max_overflow: Additional connections beyond pool_size
+        # - pool_pre_ping: Verify connections before using (prevents stale connections)
+        # - pool_recycle: Recycle connections after this many seconds (not critical for SQLite)
         self._engine = create_async_engine(
             f"sqlite+aiosqlite:///{self.db_path}",
             echo=False,  # Set to True for SQL debugging
             future=True,
+            pool_size=10,  # Maximum number of connections to maintain
+            max_overflow=5,  # Additional connections beyond pool_size
+            pool_pre_ping=True,  # Verify connections before using (prevents stale connections)
+            pool_recycle=3600,  # Recycle connections after 1 hour (not critical for SQLite)
         )
         self._AsyncSession = async_sessionmaker(
             bind=self._engine,
