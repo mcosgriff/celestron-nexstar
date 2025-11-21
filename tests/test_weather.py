@@ -750,7 +750,7 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
     def test_fetch_weather_handles_database_error(self, mock_get_db: MagicMock) -> None:
         """Test that fetch_weather handles database errors gracefully"""
         # Mock database to raise exception
-        mock_get_db.side_effect = Exception("Database error")
+        mock_get_db.side_effect = RuntimeError("Database error")
 
         # Should fall back to API
         with patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession") as mock_session_class:
@@ -1009,7 +1009,7 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
         mock_db._engine = mock_engine
 
         # First call raises exception (table doesn't exist), second succeeds
-        mock_conn.execute.side_effect = [Exception("Table not found"), None]
+        mock_conn.execute.side_effect = [RuntimeError("Table not found"), None]
 
         # Mock session for database queries
         mock_db_session = AsyncMock()
@@ -1115,7 +1115,7 @@ class TestFetchWeatherDatabase(unittest.TestCase):
         mock_db._engine = mock_engine
 
         # First call raises exception (table doesn't exist), second succeeds
-        mock_conn.execute.side_effect = [Exception("Table not found"), None]
+        mock_conn.execute.side_effect = [RuntimeError("Table not found"), None]
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
         result = asyncio.run(fetch_weather(location))

@@ -150,9 +150,10 @@ class TestGetSolarWindData(unittest.TestCase):
     @patch("celestron_nexstar.api.events.space_weather._get_cached_session")
     def test_get_solar_wind_data_error(self, mock_get_session):
         """Test solar wind data fetch with error"""
+        import requests
         mock_session = MagicMock()
         mock_get_session.return_value = mock_session
-        mock_session.get.side_effect = Exception("Network error")
+        mock_session.get.side_effect = requests.RequestException("Network error")
 
         result = get_solar_wind_data()
 
@@ -204,9 +205,10 @@ class TestGetGoesXrayData(unittest.TestCase):
     @patch("celestron_nexstar.api.events.space_weather._get_cached_session")
     def test_get_goes_xray_data_error(self, mock_get_session):
         """Test GOES X-ray data fetch with error"""
+        import requests
         mock_session = MagicMock()
         mock_get_session.return_value = mock_session
-        mock_session.get.side_effect = Exception("Network error")
+        mock_session.get.side_effect = requests.RequestException("Network error")
 
         result = get_goes_xray_data()
 
@@ -241,9 +243,10 @@ class TestGetKpApData(unittest.TestCase):
     @patch("celestron_nexstar.api.events.space_weather._get_cached_session")
     def test_get_kp_ap_data_error(self, mock_get_session):
         """Test Kp/Ap data fetch with error"""
+        import requests
         mock_session = MagicMock()
         mock_get_session.return_value = mock_session
-        mock_session.get.side_effect = Exception("Network error")
+        mock_session.get.side_effect = requests.RequestException("Network error")
 
         result = get_kp_ap_data()
 

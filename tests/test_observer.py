@@ -387,7 +387,16 @@ class TestGeocodeLocation(unittest.TestCase):
     @patch("aiohttp.ClientSession")
     def test_geocode_location_exception(self, mock_session_class):
         """Test geocoding when exception occurs"""
-        mock_session_class.side_effect = Exception("Connection error")
+        import aiohttp
+        # Mock the session and make session.get() raise an exception
+        mock_session = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Connection error"))
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
 
         with self.assertRaises(GeocodingError) as context:
             asyncio.run(geocode_location("New York"))
@@ -929,7 +938,7 @@ class TestLoadLocationAutoDetect(unittest.TestCase):
         temp_config_file = Path(temp_dir) / "observer_location.json"
         mock_get_path.return_value = temp_config_file
         mock_isatty.return_value = True
-        mock_detect.side_effect = Exception("Detection failed")
+        mock_detect.side_effect = RuntimeError("Detection failed")
 
         with patch("rich.console.Console") as mock_console_class, \
              patch("rich.prompt.Confirm") as mock_confirm_class:
