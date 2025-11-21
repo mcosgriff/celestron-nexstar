@@ -15,7 +15,12 @@ from pathlib import Path
 
 import requests_cache
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
-from urllib3.util.retry import Retry  # type: ignore[import-not-found]
+
+
+try:
+    from urllib3.util.retry import Retry  # type: ignore[import-not-found]
+except ImportError:
+    Retry = None  # type: ignore[assignment,misc]
 
 
 logger = logging.getLogger(__name__)
@@ -110,14 +115,15 @@ def _get_cached_session() -> requests_cache.CachedSession:
         expire_after=1800,  # 30 minutes
     )
 
-    # Add retry strategy
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=0.2,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    cache_session.mount("https://", adapter)
+    # Add retry strategy if urllib3 is available
+    if Retry is not None:
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=0.2,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        cache_session.mount("https://", adapter)
 
     return cache_session
 

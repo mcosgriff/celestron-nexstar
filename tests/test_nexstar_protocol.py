@@ -493,6 +493,192 @@ class TestNexStarProtocol(unittest.TestCase):
         expected_cmd = f"H{chr(12)}{chr(30)}{chr(0)}{chr(10)}{chr(14)}{chr(24)}{chr(0)}{chr(0)}"
         mock_send_empty.assert_called_once_with(expected_cmd)
 
+    # ========== TCP/IP Connection Tests ==========
+
+    def test_init_tcp(self):
+        """Test protocol initialization with TCP/IP"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        self.assertEqual(protocol.host, "192.168.1.100")
+        self.assertEqual(protocol.tcp_port, 4030)
+        self.assertEqual(protocol.connection_type, "tcp")
+        self.assertIsNone(protocol.tcp_socket)
+
+    @patch("celestron_nexstar.api.telescope.protocol.socket.socket")
+    @patch("celestron_nexstar.api.telescope.protocol.time.sleep")
+    def test_open_tcp_success(self, mock_sleep, mock_socket_class):
+        """Test successful TCP/IP connection opening"""
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+
+        result = protocol.open()
+
+        self.assertTrue(result)
+        mock_socket.connect.assert_called_once_with(("192.168.1.100", 4030))
+        mock_sleep.assert_called_once_with(0.2)
+
+    @patch("celestron_nexstar.api.telescope.protocol.socket.socket")
+    def test_open_tcp_failure(self, mock_socket_class):
+        """Test TCP/IP connection opening failure"""
+        mock_socket = MagicMock()
+        mock_socket.connect.side_effect = OSError("Connection refused")
+        mock_socket_class.return_value = mock_socket
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+
+        with self.assertRaises(TelescopeConnectionError) as context:
+            protocol.open()
+
+        self.assertIn("Connection refused", str(context.exception))
+
+    @patch("celestron_nexstar.api.telescope.protocol.socket.socket")
+    def test_close_tcp(self, mock_socket_class):
+        """Test closing TCP/IP connection"""
+        mock_socket = MagicMock()
+        mock_socket_class.return_value = mock_socket
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        protocol.open()
+        protocol.close()
+
+        mock_socket.close.assert_called_once()
+
+    @patch("celestron_nexstar.api.telescope.protocol.socket.socket")
+    def test_close_tcp_exception(self, mock_socket_class):
+        """Test closing TCP/IP connection with exception"""
+        mock_socket = MagicMock()
+        mock_socket.close.side_effect = Exception("Close error")
+        mock_socket_class.return_value = mock_socket
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        protocol.open()
+        # Should not raise exception
+        protocol.close()
+
+    def test_is_open_tcp_true(self):
+        """Test is_open when TCP/IP connection is active"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_socket = MagicMock()
+        protocol.tcp_socket = mock_socket
+
+        self.assertTrue(protocol.is_open())
+
+    def test_is_open_tcp_false(self):
+        """Test is_open when TCP/IP connection is not active"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        self.assertFalse(protocol.is_open())
+
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
+    def test_send_command_tcp_success(self, mock_time):
+        """Test successful command send over TCP/IP"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_socket = MagicMock()
+        mock_socket.recv.side_effect = [b"4", b"\x15", b"#"]
+        protocol.tcp_socket = mock_socket
+
+        mock_time.return_value = 0
+
+        response = protocol.send_command("V")
+
+        self.assertEqual(response, "4\x15")
+        mock_socket.sendall.assert_called_once_with(b"V#")
+
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
+    def test_send_command_tcp_timeout(self, mock_time):
+        """Test TCP/IP command timeout"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp", timeout=1.0)
+        mock_socket = MagicMock()
+        # Simulate timeout by raising TimeoutError (which is caught and loop continues)
+        # until the overall timeout is exceeded
+        mock_socket.recv.side_effect = TimeoutError("Socket timeout")
+        protocol.tcp_socket = mock_socket
+
+        # Simulate time progression: start at 0, then quickly exceed timeout
+        # The loop checks time.time() - start_time > timeout
+        # We need start_time to be 0, then subsequent calls to exceed 1.0
+        time_values = [0.0, 0.5, 1.1]  # First call is start, second is check, third exceeds timeout
+        mock_time.side_effect = iter(time_values)
+
+        with self.assertRaises(TelescopeTimeoutError):
+            protocol.send_command("V")
+
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
+    def test_send_command_tcp_connection_closed(self, mock_time):
+        """Test TCP/IP command when connection is closed"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_socket = MagicMock()
+        mock_socket.recv.return_value = b""  # Connection closed
+        protocol.tcp_socket = mock_socket
+
+        mock_time.return_value = 0
+
+        with self.assertRaises(TelescopeConnectionError) as context:
+            protocol.send_command("V")
+
+        self.assertIn("Connection closed", str(context.exception))
+
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
+    def test_send_command_tcp_send_error(self, mock_time):
+        """Test TCP/IP command send error"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_socket = MagicMock()
+        mock_socket.sendall.side_effect = OSError("Send error")
+        protocol.tcp_socket = mock_socket
+
+        mock_time.return_value = 0
+
+        with self.assertRaises(TelescopeConnectionError) as context:
+            protocol.send_command("V")
+
+        self.assertIn("Send error", str(context.exception))
+
+    @patch("celestron_nexstar.api.telescope.protocol.time.time")
+    def test_send_command_tcp_recv_error(self, mock_time):
+        """Test TCP/IP command receive error"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_socket = MagicMock()
+        mock_socket.recv.side_effect = OSError("Recv error")
+        protocol.tcp_socket = mock_socket
+
+        mock_time.return_value = 0
+
+        with self.assertRaises(TelescopeConnectionError) as context:
+            protocol.send_command("V")
+
+        self.assertIn("Recv error", str(context.exception))
+
+    @patch.object(NexStarProtocol, "send_command")
+    def test_echo_tcp_exception(self, mock_send):
+        """Test echo command with TCP/IP exception"""
+        protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
+        mock_send.side_effect = Exception("TCP error")
+        # For TCP, exception should be re-raised (not caught)
+        with self.assertRaises(Exception):
+            protocol.echo("x")
+
+    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "decode_coordinate_pair")
+    def test_get_ra_dec_precise_failure(self, mock_decode, mock_send):
+        """Test get RA/Dec precise with decode failure"""
+        from returns.result import Failure
+
+        mock_send.return_value = "12345678,87654321"
+        mock_decode.return_value = Failure("Invalid format")
+
+        result = self.protocol.get_ra_dec_precise()
+
+        self.assertIsInstance(result, Failure)
+
+    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "decode_coordinate_pair")
+    def test_get_alt_az_precise_failure(self, mock_decode, mock_send):
+        """Test get Alt/Az precise with decode failure"""
+        from returns.result import Failure
+
+        mock_send.return_value = "12345678,87654321"
+        mock_decode.return_value = Failure("Invalid format")
+
+        result = self.protocol.get_alt_az_precise()
+
+        self.assertIsInstance(result, Failure)
+
 
 if __name__ == "__main__":
     unittest.main()

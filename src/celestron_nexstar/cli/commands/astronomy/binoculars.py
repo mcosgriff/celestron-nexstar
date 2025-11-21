@@ -31,6 +31,10 @@ from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.database.models import get_db_session
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.api.observation.optics import COMMON_BINOCULARS
+from celestron_nexstar.api.observation.planning_utils import (
+    generate_observation_checklist,
+    generate_session_log_template,
+)
 from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point, format_object_path
 from celestron_nexstar.cli.utils.export import FileConsole, create_file_console, export_to_text
 
@@ -645,3 +649,60 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
 
         output_console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
+
+
+@app.command("checklist", rich_help_panel="Planning Tools")
+def show_checklist(
+    export: bool = typer.Option(False, "--export", "-e", help="Export checklist to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Generate pre-observation checklist for binocular viewing."""
+    checklist = generate_observation_checklist(equipment_type="binoculars")
+
+    if export:
+        export_path_obj = (
+            Path(export_path) if export_path else Path(f"binoculars_checklist_{datetime.now().strftime('%Y%m%d')}.txt")
+        )
+        file_console = create_file_console()
+        _show_checklist_content(file_console, checklist)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_checklist_content(console, checklist)
+
+
+def _show_checklist_content(output_console: Console | FileConsole, checklist: list[str]) -> None:
+    """Display checklist content."""
+    output_console.print("\n[bold cyan]Pre-Observation Checklist (Binoculars)[/bold cyan]\n")
+    for i, item in enumerate(checklist, 1):
+        output_console.print(f"  {i}. [ ] {item}")
+    output_console.print()
+
+
+@app.command("log-template", rich_help_panel="Planning Tools")
+def show_log_template(
+    export: bool = typer.Option(False, "--export", "-e", help="Export template to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Generate observation session log template."""
+    location = get_observer_location()
+    location_name = location.name if location else None
+
+    template = generate_session_log_template(location=location_name)
+
+    if export:
+        export_path_obj = (
+            Path(export_path) if export_path else Path(f"binoculars_log_{datetime.now().strftime('%Y%m%d')}.txt")
+        )
+        file_console = create_file_console()
+        file_console.print(template)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    console.print(template)
