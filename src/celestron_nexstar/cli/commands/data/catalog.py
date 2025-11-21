@@ -62,6 +62,134 @@ def _generate_export_filename(catalog: str) -> Path:
     return Path(filename)
 
 
+def _format_description_with_type_explanation(desc: str) -> str:
+    """
+    Parse description field for "Type: ..." patterns and add human-readable explanations.
+
+    Args:
+        desc: Description string that may contain "Type: ..." patterns
+
+    Returns:
+        Description with type explanations added
+    """
+    import re
+
+    if not desc:
+        return desc
+
+    # Pattern to match "Type: <type_code>" in the description
+    # Handles cases like "Type: s", "Type: dSph/dE3", "Type: dSph pec:"
+    pattern = r"Type:\s*([^\s,;:]+(?:\/[^\s,;:]+)?)(?:\s|$|:)"
+
+    def replace_type(match: re.Match[str]) -> str:
+        type_code = match.group(1)
+        explanation = _explain_object_type(type_code)
+        if explanation != type_code:
+            return f"Type: {type_code} ({explanation})"
+        return match.group(0)  # Return original if no explanation found
+
+    # Replace all "Type: ..." patterns with explanations
+    result = re.sub(pattern, replace_type, desc)
+    return result
+
+
+def _explain_object_type(type_str: str) -> str:
+    """
+    Convert technical object type codes to human-readable descriptions.
+
+    Args:
+        type_str: Technical type code (e.g., "dSph/dE3", "s", "E0", "SBa")
+
+    Returns:
+        Human-readable description of the type
+    """
+    # Normalize the type string
+    type_lower = type_str.lower().strip()
+
+    # Galaxy morphological types (Hubble classification and variations)
+    galaxy_types = {
+        # Spiral galaxies
+        "s": "Spiral galaxy",
+        "sa": "Spiral galaxy (tightly wound arms)",
+        "sb": "Barred spiral galaxy",
+        "sba": "Barred spiral galaxy (tightly wound arms)",
+        "sbb": "Barred spiral galaxy (moderate arms)",
+        "sbc": "Barred spiral galaxy (loosely wound arms)",
+        "sc": "Spiral galaxy (loosely wound arms)",
+        "sab": "Intermediate spiral galaxy",
+        "sbab": "Intermediate barred spiral galaxy",
+        "s0": "Lenticular galaxy (disk-like, no spiral arms)",
+        "s0/a": "Lenticular galaxy (transitional to spiral)",
+        # Elliptical galaxies
+        "e": "Elliptical galaxy",
+        "e0": "Spherical elliptical galaxy",
+        "e1": "Elliptical galaxy (slightly flattened)",
+        "e2": "Elliptical galaxy (moderately flattened)",
+        "e3": "Elliptical galaxy (flattened)",
+        "e4": "Elliptical galaxy (very flattened)",
+        "e5": "Elliptical galaxy (extremely flattened)",
+        "e6": "Elliptical galaxy (nearly disk-like)",
+        "e7": "Elliptical galaxy (disk-like)",
+        # Dwarf galaxies
+        "dsph": "Dwarf spheroidal galaxy (small, faint, round)",
+        "de": "Dwarf elliptical galaxy (small elliptical)",
+        "de3": "Dwarf elliptical galaxy (flattened)",
+        "dsphe3": "Dwarf spheroidal/elliptical galaxy (small, faint)",
+        "dsphe": "Dwarf spheroidal galaxy",
+        "dwarf": "Dwarf galaxy (small, low luminosity)",
+        # Irregular galaxies
+        "i": "Irregular galaxy (no defined shape)",
+        "irr": "Irregular galaxy (no defined shape)",
+        "irregular": "Irregular galaxy",
+        "ibm": "Irregular galaxy (Magellanic type)",
+        "ibc": "Irregular galaxy (compact)",
+        # Other galaxy types
+        "pec": "Peculiar galaxy (unusual structure)",
+        "peculiar": "Peculiar galaxy",
+        "compact": "Compact galaxy",
+        "starburst": "Starburst galaxy (active star formation)",
+    }
+
+    # Check for combined types (e.g., "dSph/dE3")
+    if "/" in type_str:
+        parts = [p.strip() for p in type_str.split("/")]
+        explanations = []
+        for part in parts:
+            part_lower = part.lower()
+            # Try exact match first
+            if part_lower in galaxy_types:
+                explanations.append(galaxy_types[part_lower])
+            else:
+                # Try partial match for combined types
+                matched = False
+                sorted_keys = sorted(galaxy_types.keys(), key=len, reverse=True)
+                for key in sorted_keys:
+                    if part_lower == key or part_lower.startswith(key) or key in part_lower:
+                        explanations.append(galaxy_types[key])
+                        matched = True
+                        break
+                if not matched:
+                    explanations.append(part)  # Keep original if not recognized
+        if explanations:
+            return " / ".join(explanations)
+
+    # Check exact match first
+    if type_lower in galaxy_types:
+        return galaxy_types[type_lower]
+
+    # Check for partial matches (e.g., "SBa" matches "sba"), but be careful with short keys
+    # Sort by key length (longest first) to match more specific types first
+    sorted_keys = sorted(galaxy_types.keys(), key=len, reverse=True)
+    for key in sorted_keys:
+        # Only match if the key is at the start of the type string (to avoid "star" matching "s")
+        # Or if it's a complete word match
+        if type_lower == key or type_lower.startswith(key + "/") or type_lower.endswith("/" + key):
+            return galaxy_types[key]
+
+    # If no match found, return original (it's probably already human-readable like "galaxy", "star", etc.)
+    return type_str
+
+
 def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
     """
     Autocompletion function for object names.
@@ -173,8 +301,16 @@ def search(
                     dec_str = f"{obj.dec_degrees:+.1f}°"
                     mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                     desc = obj.common_name or obj.description or ""
+                    # Add human-readable type explanation to description if it contains "Type: ..."
+                    desc = _format_description_with_type_explanation(desc)
+                    # Also add explanation to the Type column if it's a technical code
+                    obj_type_str = str(obj.object_type)
+                    type_explanation = _explain_object_type(obj_type_str)
+                    type_display = (
+                        f"{obj.object_type} ({type_explanation})" if type_explanation != obj_type_str else obj_type_str
+                    )
 
-                    table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                    table.add_row(obj.name, obj.catalog, type_display, ra_str, dec_str, mag_str, desc[:60])
 
                 console.print(table)
                 console.print()  # Blank line between tables
@@ -201,8 +337,18 @@ def search(
                         dec_str = f"{obj.dec_degrees:+.1f}°"
                         mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                         desc = obj.common_name or obj.description or ""
+                        # Add human-readable type explanation to description if it contains "Type: ..."
+                        desc = _format_description_with_type_explanation(desc)
+                        # Also add explanation to the Type column if it's a technical code
+                        obj_type_str = str(obj.object_type)
+                        type_explanation = _explain_object_type(obj_type_str)
+                        type_display = (
+                            f"{obj.object_type} ({type_explanation})"
+                            if type_explanation != obj_type_str
+                            else obj_type_str
+                        )
 
-                        table.add_row(obj.name, obj.catalog, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                        table.add_row(obj.name, obj.catalog, type_display, ra_str, dec_str, mag_str, desc[:60])
 
                     console.print(table)
                     console.print()
@@ -317,11 +463,19 @@ def list_catalog(
                 dec_str = f"{obj.dec_degrees:+.1f}°"
                 mag_str = f"{obj.magnitude:.2f}" if obj.magnitude else "N/A"
                 desc = obj.common_name or obj.description or ""
+                # Add human-readable type explanation to description if it contains "Type: ..."
+                desc = _format_description_with_type_explanation(desc)
+                # Also add explanation to the Type column if it's a technical code
+                obj_type_str = str(obj.object_type)
+                type_explanation = _explain_object_type(obj_type_str)
+                type_display = (
+                    f"{obj.object_type} ({type_explanation})" if type_explanation != obj_type_str else obj_type_str
+                )
 
                 if catalog_name == "moons":
-                    table.add_row(obj.name, obj.object_type, obj.parent_planet, ra_str, dec_str, mag_str, desc[:40])
+                    table.add_row(obj.name, type_display, obj.parent_planet, ra_str, dec_str, mag_str, desc[:60])
                 else:
-                    table.add_row(obj.name, obj.object_type, ra_str, dec_str, mag_str, desc[:40])
+                    table.add_row(obj.name, type_display, ra_str, dec_str, mag_str, desc[:60])
 
             output_console.print(table)
 
@@ -513,7 +667,11 @@ def info(
 
             # Metadata
             info_text.append("Properties:\n", style="bold yellow")
-            info_text.append(f"  Type:     {obj.object_type}\n", style="white")
+            type_explanation = _explain_object_type(obj.object_type)
+            if type_explanation != obj.object_type:
+                info_text.append(f"  Type:     {obj.object_type} ({type_explanation})\n", style="white")
+            else:
+                info_text.append(f"  Type:     {obj.object_type}\n", style="white")
             if obj.magnitude:
                 info_text.append(f"  Magnitude: {obj.magnitude:.2f}\n", style="white")
             info_text.append(f"  Catalog:  {obj.catalog}\n", style="white")
@@ -613,7 +771,9 @@ def info(
             if obj.description:
                 info_text.append("\n")
                 info_text.append("Description:\n", style="bold yellow")
-                info_text.append(f"  {obj.description}\n", style="white")
+                # Add type explanations to description
+                formatted_desc = _format_description_with_type_explanation(obj.description)
+                info_text.append(f"  {formatted_desc}\n", style="white")
 
             panel = Panel.fit(info_text, title=f"[bold]{obj.name}[/bold]", border_style="cyan")
             console.print(panel)
