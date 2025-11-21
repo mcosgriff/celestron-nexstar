@@ -1,263 +1,48 @@
 [
   {
-    "name": "Cherry Springs State Park",
-    "latitude": 41.6631,
-    "longitude": -77.8264,
-    "geohash": "dr2tj0891",
-    "bortle_class": 2,
-    "sqm_value": 21.9,
-    "description": "Gold-tier International Dark Sky Park in Pennsylvania",
-    "notes": "One of the darkest skies on the East Coast"
+    "_comment": "Data sourced from the International Dark-Sky Association (IDA) official list of International Dark Sky Places. URL: https://www.darksky.org/our-work/conservation/idsp/",
+    "_attribution": "International Dark-Sky Association (IDA) - https://www.darksky.org/",
+    "_note": "Bortle class and SQM values are estimates based on designation type and site descriptions. Last updated: 2025-11-18. For the most up-to-date information and official designations, visit the IDA website."
   },
   {
-    "name": "Big Bend National Park",
-    "latitude": 29.1275,
-    "longitude": -103.2425,
-    "geohash": "9tntdwmpg",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Texas",
-    "notes": "Some of the darkest skies in the continental US"
-  },
-  {
-    "name": "Death Valley National Park",
-    "latitude": 36.5054,
-    "longitude": -116.8664,
-    "geohash": "9qkzsts7r",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in California",
-    "notes": "Extremely dark skies, excellent for deep-sky observing"
-  },
-  {
-    "name": "Natural Bridges National Monument",
-    "latitude": 37.6094,
-    "longitude": -110.0139,
-    "geohash": "9w9vbwd6d",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "World's first International Dark Sky Park (2007) in Utah",
-    "notes": "Excellent for Milky Way photography. Some of the darkest skies in the U.S."
-  },
-  {
-    "name": "Black Canyon of the Gunnison National Park",
-    "latitude": 38.575,
-    "longitude": -107.725,
-    "geohash": "9wg7kwm59",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Steep-walled chasm with minimal light pollution. North Rim and South Rim viewing areas. AstroFest events in September."
-  },
-  {
-    "name": "Great Sand Dunes National Park and Preserve",
-    "latitude": 37.7306,
-    "longitude": -105.5125,
-    "geohash": "9wsyxh8hs",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Tallest dunes in North America. Milky Way visible over otherworldly landscape. Best viewing on moonless nights in late summer."
-  },
-  {
-    "name": "Mesa Verde National Park",
-    "latitude": 37.2306,
-    "longitude": -108.4617,
-    "geohash": "9wdggcseg",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park and UNESCO World Heritage Site in Colorado",
-    "notes": "Best viewing at Morefield Campground and Park Point. Evening ranger programs Memorial Day to Labor Day."
-  },
-  {
-    "name": "Florissant Fossil Beds National Monument",
-    "latitude": 38.9117,
-    "longitude": -105.2856,
-    "geohash": "9wvjk5tm5",
+    "name": "ARTIS Park",
+    "latitude": 53.1983,
+    "longitude": -2.4936,
+    "geohash": "gcqnxk2nr",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Closest dark sky park to Front Range (~1 hour west of Colorado Springs). Hornbek Homestead area open 24/7 for stargazing."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Dinosaur National Monument",
-    "latitude": 40.5333,
-    "longitude": -108.9833,
-    "geohash": "9x4w84bg9",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado/Utah",
-    "notes": "One of the darkest places in the United States. Echo Park and Split Mountain Campground offer excellent viewing."
-  },
-  {
-    "name": "Curecanti National Recreation Area",
-    "latitude": 38.45,
-    "longitude": -107.3167,
-    "geohash": "9wgdtzw77",
+    "name": "Albanyà",
+    "latitude": 41.0,
+    "longitude": 20.0,
+    "geohash": "srq1ppgd2",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Three reservoirs with protected dark skies. Elk Creek Campground amphitheater has summer programs."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Browns Canyon National Monument",
-    "latitude": 38.6167,
-    "longitude": -106.05,
-    "geohash": "9wuedvbwx",
+    "name": "Alpes Azur Mercantour",
+    "latitude": 44.1825,
+    "longitude": 7.1497,
+    "geohash": "spv56enjz",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Ruby Mountain and Hecla Junction campgrounds offer excellent dark-sky viewing. Summer stargazing programs available."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Gunnison Gorge National Conservation Area",
-    "latitude": 38.55,
-    "longitude": -107.7167,
-    "geohash": "9wg7kcg44",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "Some of the darkest skies in the world. Cottonwood Grove Campground and Peach Valley Staging Area accessible by car."
-  },
-  {
-    "name": "Hovenweep National Monument",
-    "latitude": 37.3833,
-    "longitude": -109.0833,
-    "geohash": "9wdkttrvw",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado/Utah (2014)",
-    "notes": "Ancient Puebloan ruins with exceptional dark skies. Square Tower Group offers excellent viewing."
-  },
-  {
-    "name": "Jackson Lake State Park",
-    "latitude": 40.4333,
-    "longitude": -104.0833,
-    "geohash": "9xjyp88v5",
+    "name": "Antelope Island",
+    "latitude": 40.9569,
+    "longitude": -112.2104,
+    "geohash": "9x20yxfyu",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "Colorado's first state park International Dark Sky Park",
-    "notes": "Known as 'an oasis of the plains'. Excellent dark sky viewing in eastern Colorado."
-  },
-  {
-    "name": "Lake City",
-    "latitude": 38.03,
-    "longitude": -107.315,
-    "geohash": "9wg8mgpsg",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "High-altitude community (8,661 ft). Lake City Star Fest each June with star parties and telescope viewing."
-  },
-  {
-    "name": "Top of the Pines",
-    "latitude": 38.15,
-    "longitude": -107.75,
-    "geohash": "9wg3h0fzg",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Colorado",
-    "notes": "175-acre recreation area at 8,650 ft elevation. Among the darkest skies in Colorado. Best April-November."
-  },
-  {
-    "name": "Crestone",
-    "latitude": 37.9967,
-    "longitude": -105.6983,
-    "geohash": "9wub4v0fg",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "Small village at base of Sangre de Cristo Mountains. Dark Sky Crestone hosts periodic community events."
-  },
-  {
-    "name": "Norwood",
-    "latitude": 38.1333,
-    "longitude": -108.2833,
-    "geohash": "9wfbzvyw8",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "7,000-foot mesa location with wide night-sky vistas. High-desert climate with frequently clear skies."
-  },
-  {
-    "name": "Ridgway",
-    "latitude": 38.15,
-    "longitude": -107.75,
-    "geohash": "9wg3h0fzg",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "Remote setting in San Juan Mountains foothills. Milky Way often visible from downtown. Ridgway Athletic Park recommended."
-  },
-  {
-    "name": "Westcliffe & Silver Cliff",
-    "latitude": 38.1333,
-    "longitude": -105.4667,
-    "geohash": "9wv0bjcqx",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "Highest-altitude International Dark Sky Communities in the world. Smokey Jack Observatory with powerful telescope."
-  },
-  {
-    "name": "Paonia",
-    "latitude": 38.8667,
-    "longitude": -107.6,
-    "geohash": "9wgmpe2nf",
-    "bortle_class": 2,
-    "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Colorado",
-    "notes": "Cradled within West Elk Mountains. West Elk Loop scenic byway. Dark-sky events with local experts."
-  },
-  {
-    "name": "Canyonlands National Park",
-    "latitude": 38.2469,
-    "longitude": -109.8803,
-    "geohash": "9wccedes7",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2015)",
-    "notes": "Expansive views of the night sky over rugged canyons. Free from light pollution."
-  },
-  {
-    "name": "Capitol Reef National Park",
-    "latitude": 38.2917,
-    "longitude": -111.2617,
-    "geohash": "9wbcu4v9q",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2015)",
-    "notes": "Clear, dark skies ideal for stargazing. Waterpocket Fold provides natural light barriers."
-  },
-  {
-    "name": "Bryce Canyon National Park",
-    "latitude": 37.5931,
-    "longitude": -112.1872,
-    "geohash": "9w8jz5eg8",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2019)",
-    "notes": "Known for dark skies and astronomy programs. Hoodoos create dramatic silhouettes against the Milky Way."
-  },
-  {
-    "name": "Arches National Park",
-    "latitude": 38.7331,
-    "longitude": -109.5925,
-    "geohash": "9wfh65jht",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2019)",
-    "notes": "Breathtaking night sky views over iconic arches. Balanced Rock and Delicate Arch are popular viewing spots."
-  },
-  {
-    "name": "Dead Horse Point State Park",
-    "latitude": 38.4833,
-    "longitude": -109.7333,
-    "geohash": "9wcfyvwtk",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2016)",
-    "notes": "Stunning views of the night sky over the Colorado River. Overlook provides 360-degree views."
+    "description": "Antelope Island State Park consists of 11,655 ha (28,800 acres) of land on the eponymous island separating shallow Farmington …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
   },
   {
     "name": "Antelope Island State Park",
@@ -270,34 +55,214 @@
     "notes": "Dark skies just outside Salt Lake City. Great Salt Lake provides natural light barrier."
   },
   {
-    "name": "Goblin Valley State Park",
-    "latitude": 38.5667,
-    "longitude": -110.7,
-    "geohash": "9wc72uyer",
-    "bortle_class": 1,
-    "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2016)",
-    "notes": "Unique rock formations (goblins) under pristine night skies. Remote location ensures dark skies."
-  },
-  {
-    "name": "Timpanogos Cave National Monument",
-    "latitude": 40.4406,
-    "longitude": -111.7089,
-    "geohash": "9x0w41bp9",
+    "name": "Antelope, Oregon",
+    "latitude": 44.9105,
+    "longitude": -120.7227,
+    "geohash": "9rfpkzsqs",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in Utah (2015)",
-    "notes": "Dark skies near the Wasatch Front. Cave tours available during the day."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Goosenecks State Park",
-    "latitude": 37.1667,
-    "longitude": -109.9167,
-    "geohash": "9w9g6vcpe",
+    "name": "Anza-Borrego Desert",
+    "latitude": 33.0955,
+    "longitude": -116.3019,
+    "geohash": "9mvk32ze3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Anza-Borrego Desert State Park is state park in southern California, U.S. By land area, it is the country’s second-largest …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Anza-Borrego Desert State Park",
+    "latitude": 33.0955,
+    "longitude": -116.3019,
+    "geohash": "9mvk32ze3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Aoraki Mackenzie",
+    "latitude": -43.595,
+    "longitude": 170.1422,
+    "geohash": "rb0zzxv8x",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Aotea Great Barrier Island",
+    "latitude": -36.1994,
+    "longitude": 175.4173,
+    "geohash": "rcsdpdngp",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Arches",
+    "latitude": 48.1179,
+    "longitude": 6.5279,
+    "geohash": "u0s9sx97r",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Arches National Park lies north of Moab in the state of Utah. One of Utah’s “Mighty 5” National Parks, …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Arches National Park",
+    "latitude": 38.7331,
+    "longitude": -109.5925,
+    "geohash": "9wfh65jht",
     "bortle_class": 1,
     "sqm_value": 22.0,
-    "description": "International Dark Sky Park in Utah (2021)",
-    "notes": "Deep meanders of the San Juan River. Spectacular night sky views over the canyon."
+    "description": "International Dark Sky Park in Utah (2019)",
+    "notes": "Breathtaking night sky views over iconic arches. Balanced Rock and Delicate Arch are popular viewing spots."
+  },
+  {
+    "name": "Arkaroola Wilderness Sanctuary",
+    "latitude": -30.3116,
+    "longitude": 139.3362,
+    "geohash": "r4e5d9vw1",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bannau Brycheiniog",
+    "latitude": 51.8902,
+    "longitude": -3.469,
+    "geohash": "gcjx1n3fq",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Bannau Brycheiniog National Park (Brecon Beacons) is situated in a part of south Wales where sheep outnumber people 30 …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bavarian Forest National Park",
+    "latitude": 48.9946,
+    "longitude": 13.3799,
+    "geohash": "u29w8rnyn",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bee Cave",
+    "latitude": 30.3085,
+    "longitude": -97.945,
+    "geohash": "9v6k7jw85",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Beverly Shores, Indiana",
+    "latitude": 41.6925,
+    "longitude": -86.9775,
+    "geohash": "dp6jhvbus",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Big Bend National Park",
+    "latitude": 29.1275,
+    "longitude": -103.2425,
+    "geohash": "9tntdwmpg",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Texas",
+    "notes": "Some of the darkest skies in the continental US"
+  },
+  {
+    "name": "Big Bend Ranch",
+    "latitude": 29.9192,
+    "longitude": -95.7355,
+    "geohash": "9v7fjqxs0",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Big Bend Ranch State Park is a ~355,000 acres state park in the “Trans-Pecos” region of far west Texas, …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Big Bend Ranch State Park",
+    "latitude": 29.5303,
+    "longitude": -104.1246,
+    "geohash": "9tjzyxff3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Big Cypress National Preserve",
+    "latitude": 25.9361,
+    "longitude": -81.0951,
+    "geohash": "dhw7d9s2f",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Big Park / Village of Oak Creek, Arizona",
+    "latitude": 34.7781,
+    "longitude": -111.7783,
+    "geohash": "9w0tb7jsb",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bisbee, Arizona",
+    "latitude": 31.4417,
+    "longitude": -109.916,
+    "geohash": "9t9ffgc97",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Black Canyon of the Gunnison National Park",
+    "latitude": 38.575,
+    "longitude": -107.725,
+    "geohash": "9wg7kwm59",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Steep-walled chasm with minimal light pollution. North Rim and South Rim viewing areas. AstroFest events in September."
+  },
+  {
+    "name": "Black Gap Wildlife Management Area",
+    "latitude": 29.5613,
+    "longitude": -102.887,
+    "geohash": "9tqb4tryy",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Blanco, Texas",
+    "latitude": 30.2419,
+    "longitude": -98.4005,
+    "geohash": "9v6h0c6gz",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
     "name": "Bluff, Utah",
@@ -310,34 +275,124 @@
     "notes": "Near Bears Ears National Monument and Monument Valley. Attractive spot for astrotourism."
   },
   {
-    "name": "Springdale, Utah",
-    "latitude": 37.1881,
-    "longitude": -113.0,
-    "geohash": "9qxes9gum",
+    "name": "Bon Accord, Alberta",
+    "latitude": 53.8365,
+    "longitude": -113.4124,
+    "geohash": "c3x670xsk",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Community in Utah (2023)",
-    "notes": "Gateway to Zion National Park. Community commitment to preserving the night sky."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Chaco Culture National Historical Park",
-    "latitude": 36.0619,
-    "longitude": -107.9667,
-    "geohash": "9w7jphv5c",
+    "name": "Borrego Springs, California",
+    "latitude": 33.2549,
+    "longitude": -116.3569,
+    "geohash": "9mvm0jz7w",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Browns Canyon National Monument",
+    "latitude": 38.6167,
+    "longitude": -106.05,
+    "geohash": "9wuedvbwx",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Ruby Mountain and Hecla Junction campgrounds offer excellent dark-sky viewing. Summer stargazing programs available."
+  },
+  {
+    "name": "Bruneau Dunes",
+    "latitude": 46.9801,
+    "longitude": 0.7902,
+    "geohash": "u02e3brqt",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Bruneau Dunes State Park is located on southern Idaho’s northern edge of the vast Owyhee desert. Equidistant between Boise …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bruneau Dunes State Park",
+    "latitude": 42.8909,
+    "longitude": -115.7028,
+    "geohash": "9rtsp05c9",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bryce Canyon",
+    "latitude": 37.6184,
+    "longitude": -112.1422,
+    "geohash": "9w8q00hx1",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Bryce Canyon National Park, a sprawling reserve in southern Utah, is known for crimson-colored “hoodoos,” which are spire-shaped rock …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Bryce Canyon National Park",
+    "latitude": 37.5931,
+    "longitude": -112.1872,
+    "geohash": "9w8jz5eg8",
     "bortle_class": 1,
     "sqm_value": 22.0,
-    "description": "International Dark Sky Park in New Mexico (2013)",
-    "notes": "Ancient Puebloan architecture and dark skies. Renowned for both archaeology and astronomy."
+    "description": "International Dark Sky Park in Utah (2019)",
+    "notes": "Known for dark skies and astronomy programs. Hoodoos create dramatic silhouettes against the Milky Way."
   },
   {
-    "name": "Clayton Lake State Park",
-    "latitude": 36.5667,
-    "longitude": -103.3167,
-    "geohash": "9ww80bz06",
+    "name": "Buffalo National River",
+    "latitude": 36.0401,
+    "longitude": -93.3098,
+    "geohash": "9ymth8vus",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in New Mexico (2010)",
-    "notes": "Features a 14-inch Meade telescope. Hosts monthly star-gazing events."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Camp Verde, Arizona",
+    "latitude": 34.5636,
+    "longitude": -111.8543,
+    "geohash": "9w0kwsn5v",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Canyonlands National Park",
+    "latitude": 38.2469,
+    "longitude": -109.8803,
+    "geohash": "9wccedes7",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Utah (2015)",
+    "notes": "Expansive views of the night sky over rugged canyons. Free from light pollution."
+  },
+  {
+    "name": "Cape Lookout National Seashore",
+    "latitude": 34.8308,
+    "longitude": -76.3421,
+    "geohash": "dq1wnu9ru",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Capitol Reef National Park",
+    "latitude": 38.2917,
+    "longitude": -111.2617,
+    "geohash": "9wbcu4v9q",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Utah (2015)",
+    "notes": "Clear, dark skies ideal for stargazing. Waterpocket Fold provides natural light barriers."
   },
   {
     "name": "Capulin Volcano National Monument",
@@ -350,6 +405,106 @@
     "notes": "'Park After Dark' events with ranger-led night sky programs. Volcanic crater provides unique viewing."
   },
   {
+    "name": "Cataloochee Ranch",
+    "latitude": 35.5649,
+    "longitude": -83.1002,
+    "geohash": "dnkfm42k9",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Cedar Breaks National Monument",
+    "latitude": 37.6119,
+    "longitude": -112.8376,
+    "geohash": "9qxvbr40y",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Central Idaho",
+    "latitude": 43.6109,
+    "longitude": -116.2015,
+    "geohash": "9rv25g0s5",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Chaco Culture National Historical Park",
+    "latitude": 36.0619,
+    "longitude": -107.9667,
+    "geohash": "9w7jphv5c",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in New Mexico (2013)",
+    "notes": "Ancient Puebloan architecture and dark skies. Renowned for both archaeology and astronomy."
+  },
+  {
+    "name": "Cherry Springs State Park",
+    "latitude": 41.6631,
+    "longitude": -77.8264,
+    "geohash": "dr2tj0891",
+    "bortle_class": 2,
+    "sqm_value": 21.9,
+    "description": "Gold-tier International Dark Sky Park in Pennsylvania",
+    "notes": "One of the darkest skies on the East Coast"
+  },
+  {
+    "name": "Chiricahua National Monument",
+    "latitude": 32.014,
+    "longitude": -109.3475,
+    "geohash": "9tdnpezwc",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "City of Rocks National Reserve",
+    "latitude": 42.0725,
+    "longitude": -113.7062,
+    "geohash": "9rrpke1dn",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Clayton Lake State Park",
+    "latitude": 36.5667,
+    "longitude": -103.3167,
+    "geohash": "9ww80bz06",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in New Mexico (2010)",
+    "notes": "Features a 14-inch Meade telescope. Hosts monthly star-gazing events."
+  },
+  {
+    "name": "Copper Breaks State Park",
+    "latitude": 34.1142,
+    "longitude": -99.7568,
+    "geohash": "9y141fr3b",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Cosmic Campground",
+    "latitude": 33.4797,
+    "longitude": -108.9232,
+    "geohash": "9tfw3qu9d",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
     "name": "Cosmic Campground International Dark Sky Sanctuary",
     "latitude": 33.4667,
     "longitude": -108.8833,
@@ -358,6 +513,126 @@
     "sqm_value": 22.0,
     "description": "First International Dark Sky Sanctuary in the Northern Hemisphere (2016)",
     "notes": "3.5-acre site in Gila National Forest. 360-degree unobstructed views. Nearest significant light source over 40 miles away."
+  },
+  {
+    "name": "Cottonwood Canyon State Park",
+    "latitude": 45.4699,
+    "longitude": -120.4426,
+    "geohash": "c246em835",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Cottonwood, Arizona",
+    "latitude": 34.7476,
+    "longitude": -112.0272,
+    "geohash": "9w0mdv870",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Craters Of The Moon National Monument",
+    "latitude": 43.405,
+    "longitude": -113.5061,
+    "geohash": "9rxqcjeks",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Crestone",
+    "latitude": 37.9967,
+    "longitude": -105.6983,
+    "geohash": "9wub4v0fg",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "Small village at base of Sangre de Cristo Mountains. Dark Sky Crestone hosts periodic community events."
+  },
+  {
+    "name": "Crestone, Colorado",
+    "latitude": 37.9954,
+    "longitude": -105.6992,
+    "geohash": "9wub4ub5q",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Curecanti National Recreation Area",
+    "latitude": 38.45,
+    "longitude": -107.3167,
+    "geohash": "9wgdtzw77",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Three reservoirs with protected dark skies. Elk Creek Campground amphitheater has summer programs."
+  },
+  {
+    "name": "Dead Horse Point State Park",
+    "latitude": 38.4833,
+    "longitude": -109.7333,
+    "geohash": "9wcfyvwtk",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Utah (2016)",
+    "notes": "Stunning views of the night sky over the Colorado River. Overlook provides 360-degree views."
+  },
+  {
+    "name": "Death Valley National Park",
+    "latitude": 36.5054,
+    "longitude": -116.8664,
+    "geohash": "9qkzsts7r",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in California",
+    "notes": "Extremely dark skies, excellent for deep-sky observing"
+  },
+  {
+    "name": "Devils River State Natural Area — Del Norte Unit",
+    "latitude": 29.9352,
+    "longitude": -100.9336,
+    "geohash": "9v24r1w3h",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Dinosaur National Monument",
+    "latitude": 40.5333,
+    "longitude": -108.9833,
+    "geohash": "9x4w84bg9",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado/Utah",
+    "notes": "One of the darkest places in the United States. Echo Park and Split Mountain Campground offer excellent viewing."
+  },
+  {
+    "name": "Dripping Springs, Texas",
+    "latitude": 30.1902,
+    "longitude": -98.0867,
+    "geohash": "9v65xzzqw",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "East Canyon State Park",
+    "latitude": 40.9044,
+    "longitude": -111.5949,
+    "geohash": "9x28sw7j3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
     "name": "El Morro National Monument",
@@ -370,6 +645,36 @@
     "notes": "Historical inscriptions and petroglyphs. Pristine night sky views."
   },
   {
+    "name": "Enchanted Rock State Natural Area",
+    "latitude": 30.5046,
+    "longitude": -98.8232,
+    "geohash": "9v3tx1pnk",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Flagstaff, Arizona",
+    "latitude": 35.1988,
+    "longitude": -111.6518,
+    "geohash": "9w285r9xe",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Florissant Fossil Beds National Monument",
+    "latitude": 38.9117,
+    "longitude": -105.2856,
+    "geohash": "9wvjk5tm5",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Closest dark sky park to Front Range (~1 hour west of Colorado Springs). Hornbek Homestead area open 24/7 for stargazing."
+  },
+  {
     "name": "Fort Union National Monument",
     "latitude": 35.9,
     "longitude": -105.0167,
@@ -380,34 +685,94 @@
     "notes": "Special evening programs highlighting the unique nighttime environment. Historic fort ruins."
   },
   {
-    "name": "Salinas Pueblo Missions National Monument",
-    "latitude": 34.6,
-    "longitude": -106.3667,
-    "geohash": "9whkgddps",
+    "name": "Fountain Hills, Arizona",
+    "latitude": 33.6117,
+    "longitude": -111.7174,
+    "geohash": "9tbx1ycfk",
     "bortle_class": 2,
     "sqm_value": 21.8,
-    "description": "International Dark Sky Park in New Mexico (2016)",
-    "notes": "Impressive night sky views, especially at Gran Quivira. Spanish mission ruins."
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
-    "name": "Valles Caldera National Preserve",
-    "latitude": 35.8833,
-    "longitude": -106.5333,
-    "geohash": "9wkhpu2g6",
+    "name": "Fredericksburg, Texas",
+    "latitude": 30.2752,
+    "longitude": -98.872,
+    "geohash": "9v3snp7tg",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Fremont Indian State Park",
+    "latitude": 38.576,
+    "longitude": -112.3408,
+    "geohash": "9wb57wecy",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Fry Family Park",
+    "latitude": 40.666,
+    "longitude": -81.3403,
+    "geohash": "dpnpm51b6",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Geauga Observatory Park",
+    "latitude": 41.5851,
+    "longitude": -81.0821,
+    "geohash": "dpqkdfmfe",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Goblin Valley State Park",
+    "latitude": 38.5667,
+    "longitude": -110.7,
+    "geohash": "9wc72uyer",
     "bortle_class": 1,
     "sqm_value": 22.0,
-    "description": "International Dark Sky Park in New Mexico (2021)",
-    "notes": "Stunning views of the night skies over expansive mountain meadows. 13-mile wide volcanic caldera."
+    "description": "International Dark Sky Park in Utah (2016)",
+    "notes": "Unique rock formations (goblins) under pristine night skies. Remote location ensures dark skies."
   },
   {
-    "name": "Valle de Oro National Wildlife Refuge",
-    "latitude": 35.0167,
-    "longitude": -106.6833,
-    "geohash": "9whphqee4",
-    "bortle_class": 3,
-    "sqm_value": 21.5,
-    "description": "First Urban Night Sky Place in New Mexico (2019)",
-    "notes": "First Urban Night Sky Place, demonstrating best practices for protecting the night sky from light pollution near Albuquerque."
+    "name": "Goosenecks State Park",
+    "latitude": 37.1667,
+    "longitude": -109.9167,
+    "geohash": "9w9g6vcpe",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Utah (2021)",
+    "notes": "Deep meanders of the San Juan River. Spectacular night sky views over the canyon."
+  },
+  {
+    "name": "Grand Canyon National Park",
+    "latitude": 36.3079,
+    "longitude": -112.2929,
+    "geohash": "9w2ns9wu9",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Grand Canyon-Parashant National Monument",
+    "latitude": 36.3013,
+    "longitude": -113.6067,
+    "geohash": "9qrnwb6nh",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   },
   {
     "name": "Great Basin National Park",
@@ -420,6 +785,276 @@
     "notes": "High elevation, very dark skies"
   },
   {
+    "name": "Great Sand Dunes National Park and Preserve",
+    "latitude": 37.7306,
+    "longitude": -105.5125,
+    "geohash": "9wsyxh8hs",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Tallest dunes in North America. Milky Way visible over otherworldly landscape. Best viewing on moonless nights in late summer."
+  },
+  {
+    "name": "Groveland, Florida",
+    "latitude": 28.5602,
+    "longitude": -81.8561,
+    "geohash": "djjf3r4pq",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Gunnison Gorge National Conservation Area",
+    "latitude": 38.55,
+    "longitude": -107.7167,
+    "geohash": "9wg7kcg44",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "Some of the darkest skies in the world. Cottonwood Grove Campground and Peach Valley Staging Area accessible by car."
+  },
+  {
+    "name": "Hawthorn Woods, Illinois",
+    "latitude": 42.217,
+    "longitude": -88.0495,
+    "geohash": "dp92hmk79",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Headlands",
+    "latitude": 52.2533,
+    "longitude": -0.8521,
+    "geohash": "gcr3k87t2",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Helper, Utah",
+    "latitude": 39.6841,
+    "longitude": -110.8546,
+    "geohash": "9x11v2q0u",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Homer Glen, Illinois",
+    "latitude": 41.6,
+    "longitude": -87.9381,
+    "geohash": "dp3kwvj3t",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Horseshoe Bay, Texas",
+    "latitude": 30.5442,
+    "longitude": -98.367,
+    "geohash": "9v6jc87kg",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Hovenweep National Monument",
+    "latitude": 37.3833,
+    "longitude": -109.0833,
+    "geohash": "9wdkttrvw",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado/Utah (2014)",
+    "notes": "Ancient Puebloan ruins with exceptional dark skies. Square Tower Group offers excellent viewing."
+  },
+  {
+    "name": "Jackson Hole Airport",
+    "latitude": 43.6088,
+    "longitude": -110.738,
+    "geohash": "9xc204ep8",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Jackson Lake State Park",
+    "latitude": 40.4333,
+    "longitude": -104.0833,
+    "geohash": "9xjyp88v5",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "Colorado's first state park International Dark Sky Park",
+    "notes": "Known as 'an oasis of the plains'. Excellent dark sky viewing in eastern Colorado."
+  },
+  {
+    "name": "Jonestown, Texas",
+    "latitude": 30.4955,
+    "longitude": -97.9233,
+    "geohash": "9v6m7xw3h",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Jordanelle State Park",
+    "latitude": 40.6261,
+    "longitude": -111.4138,
+    "geohash": "9x0z0eybn",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Joshua Tree National Park",
+    "latitude": 33.8971,
+    "longitude": -115.9511,
+    "geohash": "9qj8c6ybx",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Julian, California",
+    "latitude": 33.074,
+    "longitude": -116.5878,
+    "geohash": "9mvh4uzmf",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Kartchner Caverns State Park",
+    "latitude": 31.8399,
+    "longitude": -110.3505,
+    "geohash": "9t9t0um1p",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Katahdin Woods and Waters National Monument",
+    "latitude": 45.9766,
+    "longitude": -68.7335,
+    "geohash": "f2pjecvc4",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Ketchum, Idaho",
+    "latitude": 43.6807,
+    "longitude": -114.3637,
+    "geohash": "9ry8mxffv",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Kissimmee Prairie Preserve State Park",
+    "latitude": 27.5614,
+    "longitude": -81.0571,
+    "geohash": "dhykg92h9",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Kitt Peak National Observatory",
+    "latitude": 31.9583,
+    "longitude": -111.5967,
+    "geohash": "9t8tu9cf8",
+    "bortle_class": 2,
+    "sqm_value": 21.9,
+    "description": "Professional observatory in Arizona",
+    "notes": "Public observing programs available"
+  },
+  {
+    "name": "Lake City",
+    "latitude": 38.03,
+    "longitude": -107.315,
+    "geohash": "9wg8mgpsg",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "High-altitude community (8,661 ft). Lake City Star Fest each June with star parties and telescope viewing."
+  },
+  {
+    "name": "Lakewood Village, Texas",
+    "latitude": 33.1426,
+    "longitude": -96.9695,
+    "geohash": "9vgh93mjb",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Liberty Hill, Texas",
+    "latitude": 30.6649,
+    "longitude": -97.9225,
+    "geohash": "9v6q7wqup",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Lost Trail National Wildlife Refuge",
+    "latitude": 48.1774,
+    "longitude": -114.893,
+    "geohash": "c2w61d3my",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Lyndon B. Johnson National Historical Park",
+    "latitude": 30.2508,
+    "longitude": -98.6241,
+    "geohash": "9v3u5fbpu",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Mammoth Cave National Park",
+    "latitude": 37.1842,
+    "longitude": -86.123,
+    "geohash": "dndg81pjk",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Massacre Rim Wilderness Study Area",
+    "latitude": 41.7008,
+    "longitude": -119.6842,
+    "geohash": "9r6vhx2se",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
     "name": "Mauna Kea Visitor Center",
     "latitude": 19.8206,
     "longitude": -155.4681,
@@ -428,6 +1063,326 @@
     "sqm_value": 22.0,
     "description": "High-altitude observing site in Hawaii",
     "notes": "Elevation 9,200 ft, excellent seeing"
+  },
+  {
+    "name": "Medicine Rocks State Park",
+    "latitude": 46.0444,
+    "longitude": -104.4713,
+    "geohash": "c8jtywnk3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Merritt Reservoir State Recreation Area",
+    "latitude": 42.6025,
+    "longitude": -100.8948,
+    "geohash": "9z8625d97",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Mesa Verde National Park",
+    "latitude": 37.2306,
+    "longitude": -108.4617,
+    "geohash": "9wdggcseg",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park and UNESCO World Heritage Site in Colorado",
+    "notes": "Best viewing at Morefield Campground and Park Point. Evening ranger programs Memorial Day to Labor Day."
+  },
+  {
+    "name": "Middle Fork River Forest Preserve",
+    "latitude": 40.3827,
+    "longitude": -87.9703,
+    "geohash": "dp1mwpmyp",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Milton Reimers Ranch Park",
+    "latitude": 30.3676,
+    "longitude": -98.122,
+    "geohash": "9v6hz0mb2",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Natural Bridge State Park",
+    "latitude": 42.7075,
+    "longitude": -73.09,
+    "geohash": "drs4by9t0",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Natural Bridges National Monument",
+    "latitude": 37.6094,
+    "longitude": -110.0139,
+    "geohash": "9w9vbwd6d",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "World's first International Dark Sky Park (2007) in Utah",
+    "notes": "Excellent for Milky Way photography. Some of the darkest skies in the U.S."
+  },
+  {
+    "name": "Newport State Park",
+    "latitude": 45.2432,
+    "longitude": -86.9863,
+    "geohash": "f041ks683",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "North Fork Park",
+    "latitude": 40.7809,
+    "longitude": -110.2431,
+    "geohash": "9x1xgrgmt",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Norwood",
+    "latitude": 38.1333,
+    "longitude": -108.2833,
+    "geohash": "9wfbzvyw8",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "7,000-foot mesa location with wide night-sky vistas. High-desert climate with frequently clear skies."
+  },
+  {
+    "name": "Norwood, Colorado",
+    "latitude": 38.1305,
+    "longitude": -108.2923,
+    "geohash": "9wfbztryw",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Obed Wild and Scenic River",
+    "latitude": 36.1087,
+    "longitude": -84.7245,
+    "geohash": "dn7v2j3s8",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Oracle State Park",
+    "latitude": 32.6201,
+    "longitude": -110.7271,
+    "geohash": "9tc3866cz",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Oregon Outback",
+    "latitude": 44.0058,
+    "longitude": -121.301,
+    "geohash": "9rcdrep21",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Palos Preserves",
+    "latitude": 41.6789,
+    "longitude": -87.8437,
+    "geohash": "dp3t156jm",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Paonia",
+    "latitude": 38.8667,
+    "longitude": -107.6,
+    "geohash": "9wgmpe2nf",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "Cradled within West Elk Mountains. West Elk Loop scenic byway. Dark-sky events with local experts."
+  },
+  {
+    "name": "Petrified Forest National Park",
+    "latitude": 34.9745,
+    "longitude": -109.708,
+    "geohash": "9w1yzwcj4",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Pipe Spring National Monument",
+    "latitude": 36.8628,
+    "longitude": -112.7399,
+    "geohash": "9qxcdw9md",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Prineville Reservoir State Park",
+    "latitude": 44.1264,
+    "longitude": -120.7237,
+    "geohash": "9rf5hbgxj",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Rainbow Bridge National Monument",
+    "latitude": 37.0781,
+    "longitude": -110.9655,
+    "geohash": "9w94fvv7s",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Rappahannock County Park",
+    "latitude": 38.711,
+    "longitude": -78.1523,
+    "geohash": "dqbkjx55x",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Ridgway",
+    "latitude": 38.15,
+    "longitude": -107.75,
+    "geohash": "9wg3h0fzg",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "Remote setting in San Juan Mountains foothills. Milky Way often visible from downtown. Ridgway Athletic Park recommended."
+  },
+  {
+    "name": "Ridgway, Colorado",
+    "latitude": 38.1528,
+    "longitude": -107.7617,
+    "geohash": "9wg35c6rc",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Rockport State Park",
+    "latitude": 45.1959,
+    "longitude": -83.3305,
+    "geohash": "f0h9pg8t7",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Saguaro National Park",
+    "latitude": 32.1684,
+    "longitude": -110.6183,
+    "geohash": "9t9r4b44m",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Salinas Pueblo Missions National Monument",
+    "latitude": 34.6,
+    "longitude": -106.3667,
+    "geohash": "9whkgddps",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in New Mexico (2016)",
+    "notes": "Impressive night sky views, especially at Gran Quivira. Spanish mission ruins."
+  },
+  {
+    "name": "Sedona, Arizona",
+    "latitude": 34.8689,
+    "longitude": -111.7614,
+    "geohash": "9w0w2g9vc",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Sinks Canyon State Park",
+    "latitude": 42.748,
+    "longitude": -108.8091,
+    "geohash": "9xde5yp97",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Sisters, Oregon",
+    "latitude": 44.2909,
+    "longitude": -121.5493,
+    "geohash": "9rcefnft3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Sky Meadows State Park",
+    "latitude": 38.991,
+    "longitude": -77.9589,
+    "geohash": "dqbtf404c",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "South Llano River State Park",
+    "latitude": 30.4261,
+    "longitude": -99.8002,
+    "geohash": "9v3j0fzsv",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Springdale, Utah",
+    "latitude": 37.1881,
+    "longitude": -113.0,
+    "geohash": "9qxes9gum",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Utah (2023)",
+    "notes": "Gateway to Zion National Park. Community commitment to preserving the night sky."
   },
   {
     "name": "Spruce Knob",
@@ -440,13 +1395,293 @@
     "notes": "Dark sky site in the Appalachians"
   },
   {
-    "name": "Kitt Peak National Observatory",
-    "latitude": 31.9583,
-    "longitude": -111.5967,
-    "geohash": "9t8tu9cf8",
+    "name": "Stacy Park",
+    "latitude": 39.7568,
+    "longitude": -86.1336,
+    "geohash": "dp4dpvrrv",
     "bortle_class": 2,
-    "sqm_value": 21.9,
-    "description": "Professional observatory in Arizona",
-    "notes": "Public observing programs available"
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Staunton River State Park",
+    "latitude": 36.7063,
+    "longitude": -78.6794,
+    "geohash": "dq80cd5mm",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Steinaker State Park",
+    "latitude": 40.5196,
+    "longitude": -109.5314,
+    "geohash": "9x4ne83sj",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Stephen C. Foster State Park",
+    "latitude": 30.8232,
+    "longitude": -82.3648,
+    "geohash": "djmrmepy3",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Teton County",
+    "latitude": 43.9139,
+    "longitude": -110.638,
+    "geohash": "9xc3f67c4",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "The Aoraki Mackenzie",
+    "latitude": -43.7332,
+    "longitude": 170.0937,
+    "geohash": "rb0znwd7y",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "The Aoraki Mackenzie International Dark Sky Reserve is comprised of Aoraki / Mt. Cook National Park and the Mackenzie …",
+    "notes": "International Dark Sky Park. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "The Swag",
+    "latitude": 52.6137,
+    "longitude": -1.9425,
+    "geohash": "gcqe7f12z",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "This U.S.",
+    "latitude": 36.2156,
+    "longitude": -105.8898,
+    "geohash": "9wkwn2v7j",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "This U.S. national park renowned for its hiking and backpacking trails nestles in the “Big Bend” of the Rio …",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Thousand Hills State Park",
+    "latitude": 40.1757,
+    "longitude": -92.6446,
+    "geohash": "9znhecf28",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Timpanogos Cave National Monument",
+    "latitude": 40.4406,
+    "longitude": -111.7089,
+    "geohash": "9x0w41bp9",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Park in Utah (2015)",
+    "notes": "Dark skies near the Wasatch Front. Cave tours available during the day."
+  },
+  {
+    "name": "Tonto National Monument",
+    "latitude": 33.6469,
+    "longitude": -111.1136,
+    "geohash": "9tbzrt1xd",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Top of the Pines",
+    "latitude": 38.15,
+    "longitude": -107.75,
+    "geohash": "9wg3h0fzg",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in Colorado",
+    "notes": "175-acre recreation area at 8,650 ft elevation. Among the darkest skies in Colorado. Best April-November."
+  },
+  {
+    "name": "Torrey, Utah",
+    "latitude": 38.2997,
+    "longitude": -111.4205,
+    "geohash": "9wbcbs604",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Town of Breckenridge, Colorado",
+    "latitude": 39.4983,
+    "longitude": -106.0482,
+    "geohash": "9xh8dy6nd",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Trinchera Ranch",
+    "latitude": 37.4047,
+    "longitude": -105.3695,
+    "geohash": "9wthf323c",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Tubac, Arizona",
+    "latitude": 31.6126,
+    "longitude": -111.0459,
+    "geohash": "9t95c4fud",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Tumacácori National Historical Park",
+    "latitude": 31.5723,
+    "longitude": -111.0476,
+    "geohash": "9t959599f",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Under Canvas Grand Canyon",
+    "latitude": 35.6541,
+    "longitude": -112.1533,
+    "geohash": "9w24zfskq",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Under Canvas Moab",
+    "latitude": 38.6859,
+    "longitude": -109.6913,
+    "geohash": "9wcupft1q",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Under Canvas Zion",
+    "latitude": 37.2684,
+    "longitude": -113.1146,
+    "geohash": "9qxs4082r",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Valle de Oro National Wildlife Refuge",
+    "latitude": 35.0167,
+    "longitude": -106.6833,
+    "geohash": "9whphqee4",
+    "bortle_class": 3,
+    "sqm_value": 21.5,
+    "description": "First Urban Night Sky Place in New Mexico (2019)",
+    "notes": "First Urban Night Sky Place, demonstrating best practices for protecting the night sky from light pollution near Albuquerque."
+  },
+  {
+    "name": "Valles Caldera National Preserve",
+    "latitude": 35.8833,
+    "longitude": -106.5333,
+    "geohash": "9wkhpu2g6",
+    "bortle_class": 1,
+    "sqm_value": 22.0,
+    "description": "International Dark Sky Park in New Mexico (2021)",
+    "notes": "Stunning views of the night skies over expansive mountain meadows. 13-mile wide volcanic caldera."
+  },
+  {
+    "name": "Voyageurs National Park",
+    "latitude": 48.4655,
+    "longitude": -92.8854,
+    "geohash": "cbtgwqfum",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Waterton-Glacier International Peace Park",
+    "latitude": 48.6875,
+    "longitude": -113.8051,
+    "geohash": "c2xhfr39h",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Watoga State Park",
+    "latitude": 38.1025,
+    "longitude": -80.156,
+    "geohash": "dnz0b025n",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Westcliffe & Silver Cliff",
+    "latitude": 38.1333,
+    "longitude": -105.4667,
+    "geohash": "9wv0bjcqx",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Community in Colorado",
+    "notes": "Highest-altitude International Dark Sky Communities in the world. Smokey Jack Observatory with powerful telescope."
+  },
+  {
+    "name": "Wimberley Valley, Texas",
+    "latitude": 29.9968,
+    "longitude": -98.0954,
+    "geohash": "9v64xuc05",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "Zion National Park",
+    "latitude": 37.3247,
+    "longitude": -113.0048,
+    "geohash": "9qxskdb2m",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
+  },
+  {
+    "name": "search_field",
+    "latitude": 39.2493,
+    "longitude": -76.8231,
+    "geohash": "dqcr7c55u",
+    "bortle_class": 2,
+    "sqm_value": 21.8,
+    "description": "International Dark Sky Place",
+    "notes": "International Dark Sky Place. Data from International Dark-Sky Association."
   }
 ]

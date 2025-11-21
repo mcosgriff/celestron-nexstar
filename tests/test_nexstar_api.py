@@ -626,5 +626,186 @@ class TestDataclasses(unittest.TestCase):
         self.assertTrue(config.verbose)
 
 
+class TestNexStarTelescopeAdditional(unittest.TestCase):
+    """Additional test suite for NexStarTelescope class"""
+
+    def setUp(self):
+        """Set up test fixtures before each test"""
+        self.telescope = NexStarTelescope("/dev/ttyUSB0")
+
+    def tearDown(self):
+        """Clean up after each test"""
+        if self.telescope.serial_conn:
+            self.telescope.serial_conn = None
+
+    def test_ensure_connected_not_connected(self):
+        """Test ensure_connected when not connected"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=False),
+            patch.object(self.telescope, "connect", return_value=True),
+        ):
+            self.telescope._ensure_connected()
+
+    def test_connect_protocol_exception(self):
+        """Test connection failure with protocol exception"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope.protocol, "open", side_effect=Exception("Protocol error")),
+        ):
+            with self.assertRaises(Exception):
+                self.telescope.connect()
+
+    def test_move_step_diagonal_up_left(self):
+        """Test move_step with diagonal UP_LEFT"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_step(Direction.UP_LEFT, rate=5)
+            self.assertTrue(result)
+
+    def test_move_step_diagonal_up_right(self):
+        """Test move_step with diagonal UP_RIGHT"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_step(Direction.UP_RIGHT, rate=5)
+            self.assertTrue(result)
+
+    def test_move_step_diagonal_down_left(self):
+        """Test move_step with diagonal DOWN_LEFT"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_step(Direction.DOWN_LEFT, rate=5)
+            self.assertTrue(result)
+
+    def test_move_step_diagonal_down_right(self):
+        """Test move_step with diagonal DOWN_RIGHT"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_step(Direction.DOWN_RIGHT, rate=5)
+            self.assertTrue(result)
+
+    def test_move_for_time_diagonal_up_left(self):
+        """Test move_for_time with diagonal UP_LEFT"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5)
+            self.assertTrue(result)
+
+    def test_move_for_time_diagonal_failure(self):
+        """Test move_for_time with diagonal movement failure"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=False),
+        ):
+            result = self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5)
+            self.assertFalse(result)
+
+    def test_move_for_time_string_direction(self):
+        """Test move_for_time with string direction"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_for_time("up", duration=1.0, rate=5)
+            self.assertTrue(result)
+
+    def test_move_for_time_invalid_string_direction(self):
+        """Test move_for_time with invalid string direction"""
+        with patch.object(self.telescope.protocol, "is_open", return_value=True):
+            with self.assertRaises(ValueError):
+                self.telescope.move_for_time("invalid", duration=1.0, rate=5)
+
+    def test_move_for_time_rate_zero(self):
+        """Test move_for_time with rate 0 (should stop)"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+        ):
+            result = self.telescope.move_for_time(Direction.UP, duration=1.0, rate=0)
+            self.assertTrue(result)
+
+    def test_move_for_time_invalid_duration(self):
+        """Test move_for_time with invalid duration"""
+        # The deal.pre decorator will raise PreContractError, not ValueError
+        from deal import PreContractError
+        with patch.object(self.telescope.protocol, "is_open", return_value=True):
+            with self.assertRaises((ValueError, PreContractError)):
+                self.telescope.move_for_time(Direction.UP, duration=0, rate=5)
+
+    def test_move_for_time_negative_duration(self):
+        """Test move_for_time with negative duration"""
+        # The deal.pre decorator will raise PreContractError, not ValueError
+        from deal import PreContractError
+        with patch.object(self.telescope.protocol, "is_open", return_value=True):
+            with self.assertRaises((ValueError, PreContractError)):
+                self.telescope.move_for_time(Direction.UP, duration=-1.0, rate=5)
+
+    def test_move_step_diagonal_failure(self):
+        """Test move_step with diagonal movement failure"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=False),
+        ):
+            result = self.telescope.move_step(Direction.UP_LEFT, rate=5)
+            self.assertFalse(result)
+
+    def test_move_step_string_direction(self):
+        """Test move_step with string direction"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "move_fixed", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+            patch("time.sleep"),
+        ):
+            result = self.telescope.move_step("up", rate=5)
+            self.assertTrue(result)
+
+    def test_move_step_invalid_string_direction(self):
+        """Test move_step with invalid string direction"""
+        with patch.object(self.telescope.protocol, "is_open", return_value=True):
+            with self.assertRaises(ValueError):
+                self.telescope.move_step("invalid", rate=5)
+
+    def test_move_step_rate_zero(self):
+        """Test move_step with rate 0 (should stop)"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope, "stop_motion", return_value=True),
+        ):
+            result = self.telescope.move_step(Direction.UP, rate=0)
+            self.assertTrue(result)
+
+
+    def test_stop_motion_failure(self):
+        """Test stop_motion when one axis fails"""
+        with (
+            patch.object(self.telescope.protocol, "is_open", return_value=True),
+            patch.object(self.telescope.protocol, "variable_rate_motion", side_effect=[True, False]),
+        ):
+            result = self.telescope.stop_motion("both")
+            self.assertFalse(result)
+
+
 if __name__ == "__main__":
     unittest.main()

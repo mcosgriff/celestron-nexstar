@@ -829,14 +829,12 @@ def _show_comprehensive_plan_content(
 
             conjunctions = get_planetary_conjunctions(location, months_ahead=months_ahead)
             oppositions = get_planetary_oppositions(location, years_ahead=years_ahead)
-            all_planetary_events_for_scoring = []
-            for event in conjunctions + oppositions:
-                if start_date and end_date:
-                    if start_dt <= event.date <= end_dt:
-                        all_planetary_events_for_scoring.append(event)
-                else:
-                    if event.date <= datetime.now(UTC) + timedelta(days=days_ahead * 30):
-                        all_planetary_events_for_scoring.append(event)
+            cutoff_date = end_dt if (start_date and end_date) else datetime.now(UTC) + timedelta(days=days_ahead * 30)
+            all_planetary_events_for_scoring = [
+                event
+                for event in conjunctions + oppositions
+                if (start_dt if (start_date and end_date) else datetime.now(UTC)) <= event.date <= cutoff_date
+            ]
         except Exception:
             all_planetary_events_for_scoring = []
 

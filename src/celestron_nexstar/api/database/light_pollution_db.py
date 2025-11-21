@@ -12,10 +12,19 @@ without requiring external spatial database extensions.
 from __future__ import annotations
 
 import logging
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib import request
+
+
+try:
+    import geopandas as gpd
+    from shapely.geometry import Point, box
+except ImportError:
+    # GeoPandas is in dependencies but handle gracefully if missing
+    gpd = None  # type: ignore[assignment, misc]
+    Point = None  # type: ignore[assignment, misc]
+    box = None  # type: ignore[assignment, misc]
 
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
@@ -82,18 +91,19 @@ def _rgb_to_sqm(r: int, g: int, b: int) -> float:
     # Map brightness to SQM (inverse relationship: brighter = lower SQM)
     # SQM ranges from ~17 (brightest/white) to ~22 (darkest/black)
     # Using a logarithmic scale for better distribution
-    if brightness < 0.01:  # Very dark (black)
-        sqm = 22.0
-    elif brightness < 0.1:  # Dark blue
-        sqm = 21.5 + (brightness / 0.1) * 0.5
-    elif brightness < 0.3:  # Blue to green
-        sqm = 20.5 + ((brightness - 0.1) / 0.2) * 1.0
-    elif brightness < 0.6:  # Green to yellow
-        sqm = 19.0 + ((brightness - 0.3) / 0.3) * 1.5
-    elif brightness < 0.9:  # Yellow to red
-        sqm = 18.0 + ((brightness - 0.6) / 0.3) * 1.0
-    else:  # Red to white
-        sqm = 17.0 + ((brightness - 0.9) / 0.1) * 0.5
+    match brightness:
+        case b if b < 0.01:  # Very dark (black)
+            sqm = 22.0
+        case b if b < 0.1:  # Dark blue
+            sqm = 21.5 + (b / 0.1) * 0.5
+        case b if b < 0.3:  # Blue to green
+            sqm = 20.5 + ((b - 0.1) / 0.2) * 1.0
+        case b if b < 0.6:  # Green to yellow
+            sqm = 19.0 + ((b - 0.3) / 0.3) * 1.5
+        case b if b < 0.9:  # Yellow to red
+            sqm = 18.0 + ((b - 0.6) / 0.3) * 1.0
+        case _:  # Red to white
+            sqm = 17.0 + ((brightness - 0.9) / 0.1) * 0.5
 
     # Clamp to reasonable range
     return max(17.0, min(22.0, sqm))
@@ -483,6 +493,9 @@ async def _process_png_to_database(
     # Use numpy for vectorized processing if available
     if numpy_available and np is not None:
         # Convert PIL image to numpy array
+        # Note: For very large images (>10,000x10,000 pixels), this may use significant memory.
+        # The vectorized numpy approach is already quite efficient, but for extremely large images,
+        # consider processing in chunks to reduce peak memory usage.
         img_array = np.array(img)
         if len(img_array.shape) == 2:
             # Grayscale - convert to RGB
@@ -549,34 +562,114 @@ async def _process_png_to_database(
         lat_rounded = np.round(lats / grid_resolution) * grid_resolution
         lon_rounded = np.round(lons / grid_resolution) * grid_resolution
 
-        # Flatten arrays for iteration
-        processed = 0
-        for i in range(len(y_indices)):
-            for j in range(len(x_indices)):
-                lat = float(lat_rounded[i, j])
-                lon = float(lon_rounded[i, j])
-                sqm = float(sqm_values[i, j])
+        # Use GeoPandas for efficient spatial filtering if boundaries are specified
+        if boundary_filter and gpd is not None and box is not None:
+            # Create GeoDataFrame from all points (vectorized)
+            # Flatten arrays for GeoDataFrame creation
+            lats_flat = lat_rounded.flatten()
+            lons_flat = lon_rounded.flatten()
+            sqm_flat = sqm_values.flatten()
 
-                # Apply state/province filter if specified
-                if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
-                    processed += 1
+            # Create point geometries
+            points_gdf = gpd.GeoDataFrame(  # type: ignore[arg-type]
+                {
+                    "latitude": lats_flat,
+                    "longitude": lons_flat,
+                    "sqm_value": sqm_flat,
+                },
+                geometry=gpd.points_from_xy(lons_flat, lats_flat),  # type: ignore[arg-type]
+                crs="EPSG:4326",
+            )
+
+            # Convert bounding boxes to Shapely polygons for spatial join
+            boundary_polygons = []
+            for boundary in boundary_filter:
+                if boundary.get("type") == "bbox" and "bbox" in boundary:
+                    min_lat, max_lat, min_lon, max_lon = boundary["bbox"]
+                    # Create rectangular polygon from bounding box
+                    # box(minx, miny, maxx, maxy) - note: lon, lat order
+                    bbox_polygon = box(min_lon, min_lat, max_lon, max_lat)  # type: ignore[arg-type]
+                    boundary_polygons.append(bbox_polygon)
+
+            if boundary_polygons:
+                # Create GeoDataFrame from boundary polygons
+                boundaries_gdf = gpd.GeoDataFrame(  # type: ignore[arg-type]
+                    [1] * len(boundary_polygons), geometry=boundary_polygons, crs="EPSG:4326"
+                )
+                # Spatial join to find points within boundaries (much faster than loop)
+                points_within = gpd.sjoin(points_gdf, boundaries_gdf, how="inner", predicate="within")  # type: ignore[arg-type]
+
+                # Process filtered points using itertuples (much faster than iterrows)
+                for row in points_within.itertuples():
+                    lat = float(row.latitude)
+                    lon = float(row.longitude)
+                    sqm = float(row.sqm_value)
+
+                    batch_data.append((lat, lon, sqm, region))
+
+                    # Insert in batches
+                    if len(batch_data) >= batch_size:
+                        await _insert_batch(db, batch_data)
+                        inserted += len(batch_data)
+                        batch_data = []
+                        if progress and task_id is not None:
+                            progress.update(task_id, advance=batch_size)
+            else:
+                # No valid boundaries, process all points using vectorized operations
+                # Flatten arrays for vectorized processing
+                lats_flat = lat_rounded.flatten()
+                lons_flat = lon_rounded.flatten()
+                sqm_flat = sqm_values.flatten()
+
+                # Create batch_data using numpy (much faster than nested loops)
+                # All arrays have the same length (flattened from same shape), so strict=True is safe
+                all_data = list(
+                    zip(
+                        lats_flat.astype(float),
+                        lons_flat.astype(float),
+                        sqm_flat.astype(float),
+                        [region] * len(lats_flat),
+                        strict=True,
+                    )
+                )
+
+                # Process in batches for database insertion
+                for batch_start in range(0, len(all_data), batch_size):
+                    batch_end = min(batch_start + batch_size, len(all_data))
+                    batch_chunk = all_data[batch_start:batch_end]
+                    await _insert_batch(db, batch_chunk)
+                    inserted += len(batch_chunk)
                     if progress and task_id is not None:
-                        progress.update(task_id, advance=1)
-                    continue
+                        progress.update(task_id, advance=len(batch_chunk))
+        else:
+            # No boundary filter - process all points using vectorized operations
+            # Flatten arrays for vectorized processing
+            lats_flat = lat_rounded.flatten()
+            lons_flat = lon_rounded.flatten()
+            sqm_flat = sqm_values.flatten()
 
-                batch_data.append((lat, lon, sqm, region))
-                processed += 1
+            # Create batch_data using numpy (much faster than nested loops)
+            # All arrays have the same length (flattened from same shape), so strict=True is safe
+            all_data = list(
+                zip(
+                    lats_flat.astype(float),
+                    lons_flat.astype(float),
+                    sqm_flat.astype(float),
+                    [region] * len(lats_flat),
+                    strict=True,
+                )
+            )
 
-                # Insert in batches
-                if len(batch_data) >= batch_size:
-                    await _insert_batch(db, batch_data)
-                    inserted += len(batch_data)
-                    batch_data = []
-                    if progress and task_id is not None:
-                        progress.update(task_id, advance=batch_size)
+            # Process in batches for database insertion
+            for batch_start in range(0, len(all_data), batch_size):
+                batch_end = min(batch_start + batch_size, len(all_data))
+                batch_chunk = all_data[batch_start:batch_end]
+                await _insert_batch(db, batch_chunk)
+                inserted += len(batch_chunk)
+                if progress and task_id is not None:
+                    progress.update(task_id, advance=len(batch_chunk))
     else:
         # Fallback to original pixel-by-pixel method
-        processed = 0
         for y in range(0, height, y_step):
             for x in range(0, width, x_step):
                 # Get pixel RGB
@@ -597,7 +690,6 @@ async def _process_png_to_database(
 
                 # Apply state/province filter if specified
                 if boundary_filter and not _point_in_boundaries(lat, lon, boundary_filter):
-                    processed += 1
                     if progress and task_id is not None:
                         progress.update(task_id, advance=1)
                     continue
@@ -610,7 +702,6 @@ async def _process_png_to_database(
                 lon_rounded = round(lon / grid_resolution) * grid_resolution
 
                 batch_data.append((lat_rounded, lon_rounded, sqm, region))
-                processed += 1
 
                 # Insert in batches
                 if len(batch_data) >= batch_size:
@@ -746,22 +837,22 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
         # Build OR conditions for geohash LIKE patterns
         geohash_conditions = or_(*[LightPollutionGridModel.geohash.like(pattern) for pattern in geohash_patterns])
 
-        # Calculate distance using SQL functions
+        # Build query - get more candidates than needed, we'll filter by accurate distance
+        # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
         distance_expr = func.abs(LightPollutionGridModel.latitude - lat) + func.abs(
             LightPollutionGridModel.longitude - lon
         )
 
-        # Build query
+        # Build query - get more candidates (up to 10) for better interpolation
         query = (
             select(
                 LightPollutionGridModel.latitude,
                 LightPollutionGridModel.longitude,
                 LightPollutionGridModel.sqm_value,
-                distance_expr.label("dist"),
             )
             .where(geohash_conditions)
             .order_by(distance_expr)
-            .limit(4)
+            .limit(10)  # Get more candidates for better selection
         )
 
         query_results = session.execute(query).fetchall()
@@ -771,13 +862,55 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
             logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
             return None
 
-        if len(result) == 1:
-            sqm = float(result[0][2])
+        # Use GeoPandas for accurate distance calculation and point selection
+        if gpd is None or Point is None:
+            logger.error("GeoPandas not available for accurate distance calculation")
+            return None
+
+        # Create search point (Point and gpd are guaranteed to be not None here)
+        search_point = Point(lon, lat)  # type: ignore[arg-type]
+        search_gdf = gpd.GeoDataFrame([1], geometry=[search_point], crs="EPSG:4326")  # type: ignore[arg-type]
+
+        # Create GeoDataFrame from query results
+        grid_data = {
+            "latitude": [float(r[0]) for r in result],
+            "longitude": [float(r[1]) for r in result],
+            "sqm_value": [float(r[2]) for r in result],
+        }
+        grid_gdf = gpd.GeoDataFrame(  # type: ignore[arg-type]
+            grid_data,
+            geometry=gpd.points_from_xy([float(r[1]) for r in result], [float(r[0]) for r in result]),  # type: ignore[arg-type]
+            crs="EPSG:4326",
+        )
+
+        # Project to metric CRS for accurate distance calculation
+        search_projected = search_gdf.to_crs("EPSG:3857")
+        grid_projected = grid_gdf.to_crs("EPSG:3857")
+
+        # Calculate accurate distances in meters, convert to km
+        distances_m = grid_projected.geometry.distance(search_projected.geometry.iloc[0])
+        distances_km = distances_m / 1000.0
+
+        # Add distance column and filter by search radius
+        grid_gdf["distance_km"] = distances_km
+        grid_gdf = grid_gdf[grid_gdf["distance_km"] <= search_radius_km]
+
+        if grid_gdf.empty:
+            logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
+            return None
+
+        # Sort by distance and take closest points
+        grid_gdf = grid_gdf.sort_values("distance_km").head(4)
+
+        if len(grid_gdf) == 1:
+            sqm = float(grid_gdf.iloc[0]["sqm_value"])
             logger.debug(f"Found single grid point: SQM={sqm:.2f}")
             return sqm
 
-        # Bilinear interpolation
-        points = [(float(r[0]), float(r[1]), float(r[2])) for r in result]
+        # Bilinear interpolation using the closest points
+        points = [
+            (float(row["latitude"]), float(row["longitude"]), float(row["sqm_value"])) for _, row in grid_gdf.iterrows()
+        ]
 
         # Find the 4 closest points forming a rectangle
         lats = sorted({p[0] for p in points})
@@ -798,11 +931,16 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
         # Bilinear interpolation
         def get_value(la: float, lo: float) -> float:
-            # Find nearest point
+            # Find nearest point using accurate distance
             min_dist = float("inf")
             nearest_val = points[0][2]
             for p in points:
-                dist = math.sqrt((p[0] - la) ** 2 + (p[1] - lo) ** 2)
+                # Use GeoPandas for accurate distance calculation
+                p_point = Point(p[1], p[0])  # lon, lat
+                p_gdf = gpd.GeoDataFrame([1], geometry=[p_point], crs="EPSG:4326")
+                p_projected = p_gdf.to_crs("EPSG:3857")
+                search_proj = search_gdf.to_crs("EPSG:3857")
+                dist = float(p_projected.geometry.distance(search_proj.geometry.iloc[0]) / 1000.0)  # km
                 if dist < min_dist:
                     min_dist = dist
                     nearest_val = p[2]

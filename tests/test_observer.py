@@ -387,7 +387,16 @@ class TestGeocodeLocation(unittest.TestCase):
     @patch("aiohttp.ClientSession")
     def test_geocode_location_exception(self, mock_session_class):
         """Test geocoding when exception occurs"""
-        mock_session_class.side_effect = Exception("Connection error")
+        import aiohttp
+        # Mock the session and make session.get() raise an exception
+        mock_session = AsyncMock()
+        mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Connection error"))
+        mock_response.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session_class.return_value = mock_session
 
         with self.assertRaises(GeocodingError) as context:
             asyncio.run(geocode_location("New York"))
@@ -794,6 +803,195 @@ class TestSetObserverLocationEdgeCases(unittest.TestCase):
         location_pm = ObserverLocation(latitude=0.0, longitude=0.0, name="Prime Meridian")
         set_observer_location(location_pm, save=False)
         self.assertEqual(get_observer_location().longitude, 0.0)
+
+
+class TestLoadLocationAutoDetect(unittest.TestCase):
+    """Test suite for load_location auto-detect functionality"""
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    @patch("celestron_nexstar.api.location.observer.detect_location_automatically")
+    def test_load_location_auto_detect_yes(self, mock_detect, mock_isatty, mock_get_path):
+        """Test load_location with auto-detect when user says yes"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = True
+        mock_detect.return_value = ObserverLocation(latitude=40.0, longitude=-100.0, name="Detected")
+
+        with patch("rich.console.Console") as mock_console_class, \
+             patch("rich.prompt.Confirm") as mock_confirm_class, \
+             patch("celestron_nexstar.api.location.observer.save_location") as mock_save:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            # Confirm.ask is called as a class method with console parameter
+            mock_confirm_class.ask = MagicMock(side_effect=[True, True])  # Yes to detect, yes to use
+
+            from celestron_nexstar.api.location.observer import load_location
+            result = load_location(ask_for_auto_detect=True)
+
+            # Should return detected location
+            self.assertEqual(result.latitude, 40.0)
+            self.assertEqual(result.longitude, -100.0)
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    def test_load_location_auto_detect_no_tty(self, mock_isatty, mock_get_path):
+        """Test load_location when not in TTY (no auto-detect prompt)"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = False  # Not a TTY
+
+        from celestron_nexstar.api.location.observer import load_location
+        result = load_location(ask_for_auto_detect=True)
+
+        # Should return default location
+        from celestron_nexstar.api.location.observer import DEFAULT_LOCATION
+        self.assertEqual(result, DEFAULT_LOCATION)
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    @patch("celestron_nexstar.api.location.observer.detect_location_automatically")
+    def test_load_location_auto_detect_user_says_no(self, mock_detect, mock_isatty, mock_get_path):
+        """Test load_location with auto-detect when user says no"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = True
+
+        with patch("rich.console.Console") as mock_console_class, \
+             patch("rich.prompt.Confirm") as mock_confirm_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            # Confirm.ask is called as a class method with console parameter
+            # First ask is for "Detect location automatically?" - user says no
+            mock_confirm_class.ask = MagicMock(return_value=False)  # User says no to detection
+
+            from celestron_nexstar.api.location.observer import load_location
+            result = load_location(ask_for_auto_detect=True)
+
+            # Should return default location
+            from celestron_nexstar.api.location.observer import DEFAULT_LOCATION
+            self.assertEqual(result, DEFAULT_LOCATION)
+            # detect_location_automatically should not be called if user says no
+            mock_detect.assert_not_called()
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    @patch("celestron_nexstar.api.location.observer.detect_location_automatically")
+    def test_load_location_auto_detect_user_rejects_location(self, mock_detect, mock_isatty, mock_get_path):
+        """Test load_location when user rejects detected location"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = True
+        mock_detect.return_value = ObserverLocation(latitude=40.0, longitude=-100.0, name="Detected")
+
+        with patch("rich.console.Console") as mock_console_class, \
+             patch("rich.prompt.Confirm") as mock_confirm_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            # Confirm.ask is called as a class method with console parameter
+            mock_confirm_class.ask = MagicMock(side_effect=[True, False])  # Yes to detect, no to use
+
+            from celestron_nexstar.api.location.observer import load_location
+            result = load_location(ask_for_auto_detect=True)
+
+            # Should return default location
+            from celestron_nexstar.api.location.observer import DEFAULT_LOCATION
+            self.assertEqual(result, DEFAULT_LOCATION)
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    @patch("celestron_nexstar.api.location.observer.detect_location_automatically")
+    def test_load_location_auto_detect_exception(self, mock_detect, mock_isatty, mock_get_path):
+        """Test load_location when auto-detect raises exception"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = True
+        mock_detect.side_effect = RuntimeError("Detection failed")
+
+        with patch("rich.console.Console") as mock_console_class, \
+             patch("rich.prompt.Confirm") as mock_confirm_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            mock_confirm = MagicMock()
+            mock_confirm.ask.return_value = True  # Yes to detect
+            mock_confirm_class.return_value = mock_confirm
+
+            from celestron_nexstar.api.location.observer import load_location
+            result = load_location(ask_for_auto_detect=True)
+
+            # Should return default location on error
+            from celestron_nexstar.api.location.observer import DEFAULT_LOCATION
+            self.assertEqual(result, DEFAULT_LOCATION)
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @patch("celestron_nexstar.api.location.observer.get_config_path")
+    @patch("sys.stdin.isatty")
+    @patch("celestron_nexstar.api.location.observer.detect_location_automatically")
+    def test_load_location_auto_detect_value_error(self, mock_detect, mock_isatty, mock_get_path):
+        """Test load_location when auto-detect raises ValueError"""
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = tempfile.mkdtemp()
+        temp_config_file = Path(temp_dir) / "observer_location.json"
+        mock_get_path.return_value = temp_config_file
+        mock_isatty.return_value = True
+        mock_detect.side_effect = ValueError("Location not found")
+
+        with patch("rich.console.Console") as mock_console_class, \
+             patch("rich.prompt.Confirm") as mock_confirm_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            mock_confirm = MagicMock()
+            mock_confirm.ask.return_value = True  # Yes to detect
+            mock_confirm_class.return_value = mock_confirm
+
+            from celestron_nexstar.api.location.observer import load_location
+            result = load_location(ask_for_auto_detect=True)
+
+            # Should return default location on error
+            from celestron_nexstar.api.location.observer import DEFAULT_LOCATION
+            self.assertEqual(result, DEFAULT_LOCATION)
+
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+
 
 
 if __name__ == "__main__":

@@ -248,7 +248,7 @@ def show(
             if term in terms:
                 console.print(f"\n[bold cyan]{term}[/bold cyan]")
                 console.print(f"[dim]{cat}[/dim]\n")
-                console.print(Panel(terms[term], border_style="blue"))
+                console.print(Panel.fit(terms[term], border_style="blue"))
                 found = True
                 break
 

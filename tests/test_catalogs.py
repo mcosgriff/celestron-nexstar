@@ -227,7 +227,7 @@ class TestGetObjectByName(unittest.TestCase):
     def test_get_object_by_name_database_exception(self, mock_get_db):
         """Test get_object_by_name handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
-        self.mock_db.get_by_name.side_effect = Exception("Database error")
+        self.mock_db.get_by_name.side_effect = RuntimeError("Database error")
 
         result = asyncio.run(get_object_by_name("Test"))
 
@@ -449,7 +449,7 @@ class TestSearchObjects(unittest.TestCase):
     def test_search_objects_database_exception(self, mock_get_db):
         """Test search_objects handles database exceptions gracefully"""
         mock_get_db.return_value = self.mock_db
-        self.mock_db._AsyncSession.side_effect = Exception("Database error")
+        self.mock_db._AsyncSession.side_effect = RuntimeError("Database error")
 
         result = asyncio.run(search_objects("M31"))
 
@@ -466,22 +466,33 @@ class TestSearchObjects(unittest.TestCase):
         mock_model.id = 1
         mock_model.name = "M31"
         self.mock_db._model_to_object.return_value = self.mock_obj
-        self.mock_db.ensure_fts_table.return_value = None
+        self.mock_db.ensure_fts_table = AsyncMock(return_value=None)
 
-        # No exact or name match
-        self.mock_session.execute.return_value.scalar_one_or_none.return_value = None
-        self.mock_session.execute.return_value.scalars.return_value.all.return_value = []
-
-        # FTS search returns a result - need to mock multiple execute calls
-        # First: exact match (empty), second: name match (empty), third: FTS
+        # Mock execute calls: exact match (None), name match (empty list), FTS (has result)
         mock_scalars_empty = MagicMock()
         mock_scalars_empty.all.return_value = []
         mock_result_empty = MagicMock()
+        mock_result_empty.scalar_one_or_none.return_value = None
         mock_result_empty.scalars.return_value = mock_scalars_empty
+
         # FTS returns rows with id
         mock_result_fts = MagicMock()
         mock_result_fts.fetchall.return_value = [(1,)]
-        self.mock_session.execute = AsyncMock(side_effect=[mock_result_empty, mock_result_empty, mock_result_fts])
+
+        # Set up execute to return different results for different calls
+        async def execute_side_effect(query, params=None):
+            # First call: exact match query
+            if "SELECT" in str(query) and "objects.name" in str(query) and "LIMIT 1" in str(query):
+                return mock_result_empty
+            # Second call: name match query
+            elif "SELECT" in str(query) and "objects.name" in str(query):
+                return mock_result_empty
+            # Third call: FTS query
+            elif "MATCH" in str(query):
+                return mock_result_fts
+            return mock_result_empty
+
+        self.mock_session.execute = AsyncMock(side_effect=execute_side_effect)
         self.mock_session.get = AsyncMock(return_value=mock_model)
 
         result = asyncio.run(search_objects("spiral"))

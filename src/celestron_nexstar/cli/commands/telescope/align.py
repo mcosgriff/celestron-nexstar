@@ -185,7 +185,7 @@ def skyalign_suggest(
                     conditions_desc = "Excellent"
                 stats_text += f"[dim]Conditions score:[/dim] {group.conditions_score:.2f} ({conditions_desc})\n"
 
-            console.print(Panel(stats_text.strip(), border_style="dim"))
+            console.print(Panel.fit(stats_text.strip(), border_style="dim"))
             console.print()
 
         console.print(f"[green]✓[/green] Found [bold]{len(groups)}[/bold] suitable SkyAlign group(s)\n")
@@ -256,7 +256,7 @@ Requirements:
   • Use stars, planets, or Moon (magnitude 2.5 or brighter)
   • Center objects with same final movements as GoTo approach direction
 """
-        console.print(Panel(instructions.strip(), border_style="cyan"))
+        console.print(Panel.fit(instructions.strip(), border_style="cyan"))
         console.print()
 
         # Step 3-5: Get objects and perform alignment
@@ -453,7 +453,7 @@ def two_star_align_suggest(
                     conditions_desc = "Excellent"
                 stats_text += f"[dim]Conditions score:[/dim] {pair.conditions_score:.2f} ({conditions_desc})\n"
 
-            console.print(Panel(stats_text.strip(), border_style="dim"))
+            console.print(Panel.fit(stats_text.strip(), border_style="dim"))
             console.print()
 
         console.print(f"[green]✓[/green] Found [bold]{len(pairs)}[/bold] suitable Two-Star alignment pair(s)\n")
@@ -527,7 +527,7 @@ Requirements:
   • Use bright stars (magnitude ≤ 2.5)
   • Center objects with same final movements as GoTo approach direction
 """
-        console.print(Panel(instructions.strip(), border_style="cyan"))
+        console.print(Panel.fit(instructions.strip(), border_style="cyan"))
         console.print()
 
         # Step 3: Get star pair

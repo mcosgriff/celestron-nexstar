@@ -96,7 +96,15 @@ def sync_ephemeris_files(
             console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]")
             count = asyncio.run(sync_ephemeris_files_from_naif(force=force))
             console.print(f"[green]✓[/green] Synced {count} ephemeris files to database")
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
+        # RuntimeError: async/await errors, event loop errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: network/file I/O errors
+        # TimeoutError: request timeout
         console.print(f"[red]Error:[/red] Failed to sync ephemeris files: {e}")
         raise typer.Exit(code=1) from e
 
@@ -169,7 +177,26 @@ def update_star_names() -> None:
         asyncio.run(_update_star_names())
 
         console.print("\n[bold green]✓ Star names updated![/bold green]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error updating star names: {e}\n")
         import traceback
 
@@ -224,7 +251,13 @@ def rebuild_fts() -> None:
             )
             console.print("[dim]Some objects may not be searchable. Check for NULL names or descriptions.[/dim]\n")
 
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         console.print(f"[red]✗[/red] Failed to rebuild FTS index: {e}")
         import traceback
 
@@ -381,7 +414,26 @@ def setup(
                     else:
                         console.print("[yellow]⚠[/yellow] Database exists but is empty")
                         should_rebuild = True
-        except Exception as e:
+        except (
+            AttributeError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # AttributeError: missing database attributes
+            # RuntimeError: database connection errors
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing database file
+            # PermissionError: file permission errors
             console.print(f"[yellow]⚠[/yellow] Error checking database: {e}")
             console.print("[dim]Will rebuild database[/dim]")
             should_rebuild = True
@@ -520,7 +572,28 @@ def setup(
                     console.print(static_table)
                     console.print()
 
-        except Exception as e:
+        except (
+            DatabaseRebuildError,
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # DatabaseRebuildError: database rebuild errors
+            # RuntimeError: async/await errors, import errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
             console.print(f"[red]✗[/red] Failed to rebuild database: {e}")
             import traceback
 
@@ -535,7 +608,14 @@ def setup(
 
             alembic_cfg = Config("alembic.ini")
             command.upgrade(alembic_cfg, "head")
-        except Exception:
+        except (AttributeError, RuntimeError, ValueError, TypeError, FileNotFoundError, OSError):
+            # AttributeError: missing Alembic attributes
+            # RuntimeError: migration errors
+            # ValueError: invalid configuration
+            # TypeError: wrong argument types
+            # FileNotFoundError: missing alembic.ini
+            # OSError: file I/O errors
+            # Silently skip migration errors (non-critical)
             pass
 
     # Ensure static data is populated (rebuild_database should have done this, but double-check)
@@ -572,7 +652,26 @@ def setup(
 
         # Run async function - asyncio is imported at module level
         asyncio.run(_check_and_seed_static_data())
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"[yellow]⚠[/yellow] Error checking static data: {e}")
         # Try to populate anyway
         try:
@@ -580,7 +679,11 @@ def setup(
             # This fallback is skipped as it requires sync sessions which are no longer available
             # The main seeding path above should handle this
             console.print("[yellow]⚠[/yellow] Fallback population skipped (requires sync sessions)")
-        except Exception as e2:
+        except (RuntimeError, AttributeError, ValueError, TypeError) as e2:
+            # RuntimeError: async/await errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
             console.print(f"[yellow]⚠[/yellow] Failed to populate static data (non-critical): {e2}")
 
     # Sync ephemeris metadata (optional)
@@ -592,7 +695,15 @@ def setup(
             # asyncio is imported at module level
             count = asyncio.run(sync_ephemeris_files_from_naif(force=False))
             console.print(f"[green]✓[/green] Synced {count} ephemeris files")
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
+            # RuntimeError: async/await errors, event loop errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: network/file I/O errors
+            # TimeoutError: request timeout
             console.print(f"[yellow]⚠[/yellow] Ephemeris sync failed (non-critical): {e}")
             console.print("[dim]You can sync later with: nexstar data sync-ephemeris[/dim]")
 
@@ -604,7 +715,14 @@ def setup(
         stats = asyncio.run(db.get_stats())
         console.print(f"[dim]Total objects: {stats.total_objects:,}[/dim]")
         console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing database file
+        # Silently skip stats errors (non-critical)
         pass
 
 
@@ -676,7 +794,14 @@ def seed_database(
                     if json_path.exists():
                         data = load_seed_json(filename)
                         expected_counts[data_type] = len(data)
-                except Exception:
+                except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                    # FileNotFoundError: missing seed file
+                    # PermissionError: can't read file
+                    # ValueError: invalid JSON format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in JSON
+                    # IndexError: missing array indices
+                    # Silently skip individual seed file errors
                     pass
 
             table = Table(show_header=True, header_style="bold", show_lines=False)
@@ -712,7 +837,26 @@ def seed_database(
             console.print(f"\n[bold]Expected seed records:[/bold] {expected_total_str}")
             console.print(f"[bold]Total seed records:[/bold] {total_records}")
             console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # RuntimeError: async/await errors, database errors
+            # AttributeError: missing database/model attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
             console.print(f"\n[red]✗[/red] Error checking seed status: {e}\n")
             import traceback
 
@@ -753,7 +897,26 @@ def seed_database(
         console.print(f"\n[red]✗[/red] Seed data file not found: {e}\n")
         console.print("[dim]Make sure seed data files exist in the seed directory.[/dim]\n")
         raise typer.Exit(code=1) from e
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error seeding database: {e}\n")
         import traceback
 
@@ -790,7 +953,26 @@ def init_static() -> None:
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error initializing static data: {e}\n")
         import traceback
 
@@ -932,7 +1114,13 @@ def stats() -> None:
                 console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
         else:
             console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
-    except Exception:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError):
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (table might not exist)
         pass
 
@@ -971,7 +1159,14 @@ def stats() -> None:
                 if json_path.exists():
                     data = load_seed_json(filename)
                     expected_counts[data_type] = len(data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip individual seed file errors
                 pass
 
         seed_table = Table(title="\nSeed Data (Static Reference Data)")
@@ -1008,7 +1203,13 @@ def stats() -> None:
             seed_table.add_row("[bold]Total[/bold]", expected_total_str, f"[bold]{total_seed_records:,}[/bold]", "")
 
         console.print(seed_table)
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (tables might not exist)
         pass
 
@@ -1054,7 +1255,13 @@ def stats() -> None:
                 console.print("\n[dim]TLE data: [yellow]No data imported[/yellow][/dim]")
         else:
             console.print("\n[dim]TLE data: [yellow]Table not created[/yellow][/dim]")
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (table might not exist)
         pass
 
@@ -1105,7 +1312,14 @@ def vacuum() -> None:
             console.print(f"  Space reclaimed: [green]{size_reclaimed / (1024 * 1024):.2f} MB[/green]\n")
         else:
             console.print("  No space to reclaim\n")
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError, PermissionError) as e:
+        # RuntimeError: database errors
+        # AttributeError: missing database attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing database file
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error running VACUUM: {e}\n")
         import traceback
 
@@ -1159,7 +1373,13 @@ def clear_light_pollution(
 
             result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
             row_count = result[0] if result else 0
-    except Exception:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError):
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors, table doesn't exist
+        # ValueError: invalid SQL
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         console.print("\n[yellow]⚠[/yellow] Light pollution table does not exist or is empty.\n")
         raise typer.Exit(code=0) from None
 
@@ -1211,7 +1431,26 @@ def clear_light_pollution(
                 console.print("  No space to reclaim\n")
 
         console.print("[dim]You can now re-download data with different filters if needed.[/dim]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error clearing data: {e}\n")
         import traceback
 
@@ -1356,7 +1595,28 @@ def download_light_pollution(
         else:
             console.print(f"\n[red]✗[/red] Error: {e}\n")
         raise typer.Exit(code=1) from None
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+        TimeoutError,
+    ) as e:
+        # RuntimeError: async/await errors, download/processing errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors, network errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
+        # TimeoutError: download timeout
         console.print(f"\n[red]✗[/red] Error downloading data: {e}\n")
         import traceback
 
@@ -1550,7 +1810,26 @@ def rebuild(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Unexpected error: {e}\n")
         import traceback
 
@@ -1608,7 +1887,10 @@ def run_migrations(
             current_rev: str | None | list[str] = None
             try:
                 current_rev = context.get_current_revision()
-            except Exception:
+            except (AttributeError, RuntimeError, ValueError):
+                # AttributeError: missing Alembic context attributes
+                # RuntimeError: multiple heads or migration errors
+                # ValueError: invalid revision format
                 # Multiple heads in database - use get_current_heads() instead
                 current_heads = context.get_current_heads()
                 if len(current_heads) == 1:
@@ -1626,7 +1908,10 @@ def run_migrations(
         try:
             # Try to get single head first (works when there's no branching)
             head_rev = script.get_current_head()
-        except Exception:
+        except (AttributeError, RuntimeError, ValueError):
+            # AttributeError: missing script attributes
+            # RuntimeError: multiple heads or script errors
+            # ValueError: invalid configuration
             # Multiple heads detected - use get_heads() instead
             try:
                 heads_list = script.get_heads()
@@ -1659,7 +1944,11 @@ def run_migrations(
                         head_rev = "heads"
                 else:
                     head_rev = None
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                # AttributeError: missing script attributes
+                # RuntimeError: script errors
+                # ValueError: invalid configuration
+                # TypeError: wrong argument types
                 console.print(f"[red]✗[/red] Error checking migrations: {e}")
                 raise typer.Exit(code=1) from e
 
@@ -1706,7 +1995,11 @@ def run_migrations(
                     console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
                 else:
                     migrations_to_apply = "unknown"
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                # AttributeError: missing Alembic attributes
+                # RuntimeError: migration comparison errors
+                # ValueError: invalid revision format
+                # TypeError: wrong argument types
                 console.print(f"[yellow]⚠[/yellow] Could not determine upgrade path: {e}")
                 console.print(f"[dim]Current revision: {current_rev}[/dim]")
                 console.print(f"[dim]Head revision: {head_rev}[/dim]")
@@ -1755,13 +2048,19 @@ def run_migrations(
                 context = MigrationContext.configure(connection)
                 try:
                     new_rev = context.get_current_revision()
-                except Exception:
+                except (AttributeError, RuntimeError, ValueError):
+                    # AttributeError: missing Alembic context attributes
+                    # RuntimeError: multiple heads or migration errors
+                    # ValueError: invalid revision format
                     # Multiple heads - use get_current_heads()
                     new_heads = context.get_current_heads()
                     new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
                 try:
                     head_rev_after = script.get_current_head()
-                except Exception:
+                except (AttributeError, RuntimeError, ValueError):
+                    # AttributeError: missing script attributes
+                    # RuntimeError: multiple heads or script errors
+                    # ValueError: invalid configuration
                     # Multiple heads - get the merge migration if it exists
                     heads_list = script.get_heads()
                     if len(heads_list) == 1:
@@ -1787,14 +2086,26 @@ def run_migrations(
                     console.print(f"[yellow]⚠[/yellow] Database revision: {new_rev}")
                     console.print(f"[yellow]⚠[/yellow] Head revision: {head_rev_after}")
                     console.print("[yellow]⚠[/yellow] Database may not be fully up to date. Run migrate again.\n")
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+            # AttributeError: missing Alembic attributes
+            # RuntimeError: migration errors
+            # ValueError: invalid configuration or revision format
+            # TypeError: wrong argument types
+            # OSError: file I/O errors
+            # FileNotFoundError: missing alembic.ini or migration files
             console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             raise typer.Exit(code=1) from e
 
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+        # AttributeError: missing Alembic attributes
+        # RuntimeError: migration errors
+        # ValueError: invalid configuration
+        # TypeError: wrong argument types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing alembic.ini
         console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
         import traceback
 
@@ -1806,7 +2117,12 @@ def run_migrations(
 def rebuild_seed_files(
     data_type: str = typer.Argument(
         ...,
-        help="Type of seed data to rebuild: 'comets', 'variable_stars', or 'all'",
+        help="Type of seed data to rebuild: 'comets', 'variable_stars', 'dark_sky_sites', or 'all'",
+    ),
+    skip_scraping: bool = typer.Option(
+        False,
+        "--skip-scraping",
+        help="Skip web scraping for dark_sky_sites (use existing seed file only). Recommended if you have ethical concerns about scraping.",
     ),
     max_magnitude: float = typer.Option(
         10.0,
@@ -1830,10 +2146,12 @@ def rebuild_seed_files(
     Data Sources:
     - Comets: Minor Planet Center (MPC) and COBS (Comet Observation Database)
     - Variable Stars: AAVSO VSX (Variable Star Index) and GCVS (General Catalog of Variable Stars)
+    - Dark Sky Sites: International Dark-Sky Association (IDA) official list
 
     Examples:
         nexstar data rebuild-seed comets
         nexstar data rebuild-seed variable_stars --max-mag 8.0
+        nexstar data rebuild-seed dark_sky_sites
         nexstar data rebuild-seed all --limit 100
     """
     from celestron_nexstar.api.database.database_seeder import get_seed_data_path
@@ -1853,7 +2171,28 @@ def rebuild_seed_files(
 
                 json.dump(comets_data, f, indent=2, ensure_ascii=False)
             console.print(f"[green]✓[/green] Wrote {len(comets_data)} comets to {comets_path}")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+            TimeoutError,
+        ) as e:
+            # RuntimeError: async/await errors, API errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors, network errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
+            # TimeoutError: request timeout
             console.print(f"[red]✗[/red] Error fetching comet data: {e}")
             import traceback
 
@@ -1872,11 +2211,114 @@ def rebuild_seed_files(
 
                 json.dump(variable_stars_data, f, indent=2, ensure_ascii=False)
             console.print(f"[green]✓[/green] Wrote {len(variable_stars_data)} variable stars to {variable_stars_path}")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+            TimeoutError,
+        ) as e:
+            # RuntimeError: async/await errors, API errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors, network errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
+            # TimeoutError: request timeout
             console.print(f"[red]✗[/red] Error fetching variable star data: {e}")
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+    if data_type in ("dark_sky_sites", "all"):
+        console.print("\n[bold]Fetching dark sky sites data...[/bold]")
+        if skip_scraping:
+            console.print("[yellow]⚠[/yellow] Skipping web scraping (--skip-scraping flag set)")
+            console.print("[dim]Using existing seed file only. To update data, remove --skip-scraping flag.[/dim]")
+            console.print(
+                "[dim]Note: Consider contacting IDA to request official data access: https://www.darksky.org/contact/[/dim]"
+            )
+            dark_sites_path = seed_dir / "dark_sky_sites.json"
+            if dark_sites_path.exists():
+                from celestron_nexstar.api.database.database_seeder import load_seed_json
+
+                existing_data = load_seed_json("dark_sky_sites.json")
+                count = len(
+                    [
+                        item
+                        for item in existing_data
+                        if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+                    ]
+                )
+                console.print(f"[green]✓[/green] Using existing seed file with {count} dark sky sites")
+            else:
+                console.print(
+                    "[yellow]⚠[/yellow] No existing seed file found. Run without --skip-scraping to create one."
+                )
+        else:
+            console.print("[yellow]⚠[/yellow] [bold]Ethical Notice:[/bold] This will scrape the IDA website.")
+            console.print(
+                "[dim]The IDA website uses Cloudflare protection. Scraping may violate their terms of service.[/dim]"
+            )
+            console.print("[dim]Consider:[/dim]")
+            console.print("[dim]  • Contacting IDA for official data access: https://www.darksky.org/contact/[/dim]")
+            console.print("[dim]  • Using --skip-scraping to use existing data only[/dim]")
+            console.print("[dim]  • Manually updating the seed file from official sources[/dim]")
+            console.print()
+            proceed = typer.confirm("Do you want to proceed with scraping?", default=False)
+            if not proceed:
+                console.print("[yellow]Skipping dark sky sites scraping.[/yellow]")
+                console.print("[dim]Use --skip-scraping flag to skip this prompt in the future.[/dim]")
+            else:
+                try:
+                    dark_sites_data = asyncio.run(_fetch_dark_sky_sites_data())
+                    dark_sites_path = seed_dir / "dark_sky_sites.json"
+                    with open(dark_sites_path, "w", encoding="utf-8") as f:
+                        import json
+
+                        json.dump(dark_sites_data, f, indent=2, ensure_ascii=False)
+                    count = len(
+                        [
+                            item
+                            for item in dark_sites_data
+                            if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+                        ]
+                    )
+                    console.print(f"[green]✓[/green] Wrote {count} dark sky sites to {dark_sites_path}")
+                except (
+                    RuntimeError,
+                    AttributeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    OSError,
+                    FileNotFoundError,
+                    PermissionError,
+                    TimeoutError,
+                ) as e:
+                    # RuntimeError: async/await errors, API errors, browser automation errors
+                    # AttributeError: missing attributes
+                    # ValueError: invalid data format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in data
+                    # IndexError: missing array indices
+                    # OSError: file I/O errors, network errors
+                    # FileNotFoundError: missing files
+                    # PermissionError: file permission errors
+                    # TimeoutError: request timeout
+                    console.print(f"[red]✗[/red] Error fetching dark sky sites data: {e}")
+                    import traceback
+
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
 
     console.print("\n[bold green]✓ Seed file rebuild complete![/bold green]")
     console.print("[dim]Run 'nexstar data seed --force' to update the database with new data.[/dim]\n")
@@ -1921,7 +2363,13 @@ def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) ->
                         console.print(f"[yellow]⚠[/yellow] MPC returned status {response.status}")
             except aiohttp.ClientError as e:
                 console.print(f"[yellow]⚠[/yellow] Network error fetching from MPC: {e}")
-            except Exception as e:
+            except (TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
+                # TimeoutError: request timeout
+                # ValueError: invalid JSON or data format
+                # TypeError: wrong data types
+                # KeyError: missing keys in response
+                # IndexError: missing array indices
+                # AttributeError: missing attributes in response
                 console.print(f"[yellow]⚠[/yellow] Error fetching from MPC: {e}")
                 console.print(f"[dim]Error type: {type(e).__name__}[/dim]")
 
@@ -1958,7 +2406,14 @@ def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) ->
                 existing_data = load_seed_json("comets.json")
                 console.print(f"[dim]Found existing seed file with {len(existing_data)} comets.[/dim]")
                 return cast(list[dict[str, Any]], existing_data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip if seed file doesn't exist or is invalid
                 pass
         return []
 
@@ -2132,7 +2587,7 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                                     console.print(
                                         f"[dim]✗ {name}: Parsed but filtered out (magnitude or missing data)[/dim]"
                                     )
-                            except Exception as parse_error:
+                            except (ValueError, TypeError, KeyError, IndexError, AttributeError) as parse_error:
                                 # Check if response is HTML (error page) instead of JSON
                                 text = await response.text()
                                 if text.strip().startswith("<"):
@@ -2145,7 +2600,24 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                         import asyncio
 
                         await asyncio.sleep(0.5)
-                except Exception as e:
+                except (
+                    aiohttp.ClientError,
+                    TimeoutError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    AttributeError,
+                    RuntimeError,
+                ) as e:
+                    # aiohttp.ClientError: HTTP/network errors
+                    # TimeoutError: request timeout
+                    # ValueError: invalid data format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in response
+                    # IndexError: missing array indices
+                    # AttributeError: missing attributes in response
+                    # RuntimeError: async/await errors
                     console.print(f"[dim]✗ {name}: Error: {e}[/dim]")
                     continue
 
@@ -2193,7 +2665,14 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                 existing_data = load_seed_json("variable_stars.json")
                 console.print(f"[dim]Found existing seed file with {len(existing_data)} variable stars.[/dim]")
                 return cast(list[dict[str, Any]], existing_data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip if seed file doesn't exist or is invalid
                 pass
         return []
 
@@ -2202,6 +2681,876 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
         stars = stars[:limit]
 
     return stars
+
+
+async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
+    """
+    Fetch dark sky sites data from the International Dark-Sky Association (IDA).
+
+    This function fetches the latest list of International Dark Sky Places from the IDA website,
+    geocodes their locations, estimates Bortle class and SQM values, and merges with existing data.
+
+    Note: The IDA website uses Cloudflare protection which may prevent automated scraping.
+    If scraping fails, consider:
+    - Manually updating the seed file
+    - Checking if IDA provides an official API or data export
+    - Using alternative data sources
+
+    Data Source: International Dark-Sky Association (IDA)
+    URL: https://darksky.org/what-we-do/international-dark-sky-places/all-places/
+
+    Returns:
+        List of dark sky site dictionaries in seed file format
+    """
+    import re
+    from datetime import datetime
+
+    import aiohttp
+
+    from celestron_nexstar.api.database.database_seeder import get_seed_data_path, load_seed_json
+
+    ida_base_url = "https://darksky.org"
+    ida_places_url = f"{ida_base_url}/what-we-do/international-dark-sky-places/all-places/?_location_dropdown=usa"
+    geocode_url = "https://nominatim.openstreetmap.org/search"
+
+    def estimate_bortle_from_description(description: str, designation: str) -> int:
+        """Estimate Bortle class from description and designation type."""
+        desc_lower = description.lower()
+        desig_lower = designation.lower()
+
+        if "sanctuary" in desig_lower:
+            return 1
+        if "park" in desig_lower or "reserve" in desig_lower:
+            if any(word in desc_lower for word in ["darkest", "pristine", "exceptional", "excellent"]):
+                return 1
+            return 2
+        if "community" in desig_lower:
+            return 2
+        if "urban" in desig_lower:
+            return 3
+        return 2
+
+    def estimate_sqm_from_bortle(bortle: int) -> float:
+        """Estimate SQM value from Bortle class."""
+        sqm_map = {1: 22.0, 2: 21.8, 3: 21.3, 4: 20.4, 5: 19.1, 6: 18.0, 7: 17.0, 8: 16.0, 9: 15.0}
+        return sqm_map.get(bortle, 21.0)
+
+    async def geocode_location(name: str, country: str = "") -> tuple[float, float] | None:
+        """Geocode a location name to get latitude and longitude."""
+        query = f"{name}, {country}" if country else name
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                params: dict[str, str | int] = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
+                headers = {"User-Agent": "Celestron-NexStar/1.0 (Dark Sky Sites Data Compilation)"}
+
+                async with session.get(geocode_url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        data: list[dict[str, Any]] = await response.json()
+                        if data:
+                            return (float(data[0]["lat"]), float(data[0]["lon"]))
+        except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+            # aiohttp.ClientError: HTTP/network errors
+            # TimeoutError: request timeout
+            # ValueError: invalid JSON or coordinates
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # AttributeError: missing attributes in response
+            # Silently skip geocoding errors
+            pass
+
+        return None
+
+    def generate_geohash(lat: float, lon: float) -> str:
+        """Generate a geohash for a location."""
+        try:
+            from celestron_nexstar.api.location.geohash_utils import encode
+
+            return encode(lat, lon, precision=9)
+        except ImportError:
+            return ""
+
+    # Try to load existing data to merge with
+    seed_dir = get_seed_data_path()
+    existing_file = seed_dir / "dark_sky_sites.json"
+    existing_places: list[dict[str, Any]] = []
+    existing_names: set[str] = set()
+
+    if existing_file.exists():
+        try:
+            existing_data = load_seed_json("dark_sky_sites.json")
+            # Filter out metadata objects
+            existing_places = [
+                item
+                for item in existing_data
+                if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+            ]
+            existing_names = {place["name"].lower() for place in existing_places}
+            console.print(f"[dim]Found {len(existing_places)} existing dark sky sites[/dim]")
+        except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+            # FileNotFoundError: missing seed file
+            # PermissionError: can't read file
+            # ValueError: invalid JSON format
+            # TypeError: wrong data types
+            # KeyError: missing keys in JSON
+            # IndexError: missing array indices
+            # Silently skip if seed file doesn't exist or is invalid
+            pass
+
+    # Fetch places from IDA website
+    # Note: The IDA website may use JavaScript to load content dynamically, which means
+    # BeautifulSoup (which only parses static HTML) may not see all places. The IDA has
+    # over 200 certified places, so if we find fewer than that, the website structure
+    # may have changed or requires JavaScript rendering.
+    places: list[dict[str, Any]] = []
+
+    try:
+        # Try to import BeautifulSoup
+        try:
+            from bs4 import BeautifulSoup
+
+        except ImportError:
+            console.print("[yellow]⚠[/yellow] BeautifulSoup4 not installed. Install with: pip install beautifulsoup4")
+            console.print("[dim]Falling back to existing seed file.[/dim]")
+            return existing_places
+
+        # Try to use Playwright or Selenium for JavaScript rendering
+        # The IDA website has a "Load More" button that needs to be clicked to see all places
+        use_browser_automation = False
+        browser_html = None
+
+        # Try Playwright first (faster and more modern)
+        try:
+            from playwright.async_api import async_playwright
+
+            console.print("[dim]Using Playwright to render JavaScript and click 'Load More' button...[/dim]")
+            console.print("[dim]Loading page (this may take a moment - Cloudflare challenge may appear)...[/dim]")
+            async with async_playwright() as p:
+                try:
+                    # Launch browser with more realistic settings to avoid Cloudflare detection
+                    # Non-headless mode is less likely to be detected by Cloudflare
+                    # Set headless=False if you want to see the browser (useful for debugging)
+                    # For production, you might want to try headless=True first, then fall back to False
+                    browser = await p.chromium.launch(
+                        headless=False,  # Non-headless is less likely to trigger Cloudflare
+                        timeout=30000,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-dev-shm-usage",
+                            "--no-sandbox",
+                        ],
+                    )
+                except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+                    # RuntimeError: browser launch errors
+                    # AttributeError: missing Playwright attributes
+                    # ValueError: invalid browser options
+                    # TypeError: wrong argument types
+                    # OSError: system errors
+                    # FileNotFoundError: Chromium not found
+                    console.print(f"[yellow]⚠[/yellow] Failed to launch browser: {e}")
+                    console.print("[dim]Make sure Chromium is installed: uv run playwright install chromium[/dim]")
+                    raise
+
+                # Create a context with realistic browser settings
+                context = await browser.new_context(
+                    viewport={"width": 1920, "height": 1080},
+                    user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    locale="en-US",
+                    timezone_id="America/New_York",
+                )
+
+                page = await context.new_page()
+
+                # Remove webdriver property to avoid detection
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                """)
+                try:
+                    console.print(f"[dim]Navigating to {ida_places_url}...[/dim]")
+                    # Try 'load' first, which waits for all resources
+                    await page.goto(ida_places_url, wait_until="load", timeout=60000)
+                    console.print("[dim]Page loaded, waiting for Cloudflare challenge (if present)...[/dim]")
+
+                    # Wait for Cloudflare challenge to complete
+                    # Cloudflare usually shows a challenge page, then redirects
+                    await page.wait_for_timeout(10000)  # Give Cloudflare time to process
+
+                    # Check if we're on a Cloudflare challenge page
+                    page_title = await page.title()
+                    page_url = page.url
+                    if (
+                        "just a moment" in page_title.lower()
+                        or "checking your browser" in page_title.lower()
+                        or "challenge" in page_url.lower()
+                    ):
+                        console.print("[dim]Cloudflare challenge detected, waiting for it to complete...[/dim]")
+                        # Wait for redirect away from challenge page
+                        try:
+                            await page.wait_for_function(
+                                "window.location.href.indexOf('challenge') === -1 && document.title.toLowerCase().indexOf('just a moment') === -1",
+                                timeout=30000,
+                            )
+                            console.print("[dim]Cloudflare challenge completed[/dim]")
+                        except (TimeoutError, RuntimeError, AttributeError):
+                            # TimeoutError: challenge timeout
+                            # RuntimeError: Playwright errors
+                            # AttributeError: missing page attributes
+                            console.print(
+                                "[yellow]⚠[/yellow] Cloudflare challenge may still be active, continuing anyway..."
+                            )
+
+                    console.print("[dim]Waiting for JavaScript to render content...[/dim]")
+                    await page.wait_for_timeout(5000)  # Give JavaScript more time to render
+
+                    # Wait for content to appear - look for common elements
+                    try:
+                        # Wait for either the load more button or some content to appear
+                        await page.wait_for_selector(
+                            "button.facetwp-load-more, .facetwp-template, [class*='place'], [class*='card'], .facetwp-results",
+                            timeout=15000,
+                            state="visible",
+                        )
+                        console.print("[dim]Content elements detected[/dim]")
+                    except (TimeoutError, RuntimeError, AttributeError):
+                        # TimeoutError: selector timeout
+                        # RuntimeError: Playwright errors
+                        # AttributeError: missing page attributes
+                        console.print("[yellow]⚠[/yellow] No expected content elements found, but continuing...")
+
+                    # Scroll to trigger lazy loading
+                    console.print("[dim]Scrolling to trigger content loading...[/dim]")
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(3000)
+                    await page.evaluate("window.scrollTo(0, 0)")
+                    await page.wait_for_timeout(2000)
+
+                    # Check page content length
+                    content_length = len(await page.content())
+                    console.print(f"[dim]Page HTML length: {content_length} characters[/dim]")
+                except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError) as e:
+                    # RuntimeError: Playwright errors, page load errors
+                    # AttributeError: missing page attributes
+                    # ValueError: invalid page content
+                    # TypeError: wrong data types
+                    # TimeoutError: page load timeout
+                    console.print(f"[yellow]⚠[/yellow] Failed to load page: {e}")
+                    await browser.close()
+                    raise
+
+                # Click "Load More" button repeatedly until all places are loaded
+                console.print("[dim]Looking for 'Load More' button...[/dim]")
+                max_clicks = 20  # Safety limit
+                clicks = 0
+
+                while clicks < max_clicks:
+                    try:
+                        # Check current content length to see if clicking is adding content
+                        current_content = await page.content()
+                        current_length = len(current_content)
+
+                        # Look for "Load More" button with various possible selectors
+                        # Note: The IDA site uses FacetWP with class "facetwp-load-more"
+                        load_more_selectors = [
+                            "button.facetwp-load-more",  # Specific to IDA site
+                            "[class*='facetwp-load-more']",  # More flexible
+                            "button:has-text('Load More')",
+                            "button:has-text('Load more')",
+                            "button:has-text('Show More')",
+                            "button:has-text('Show more')",
+                            "a:has-text('Load More')",
+                            "a:has-text('Load more')",
+                            "a:has-text('Show More')",
+                            "a:has-text('Show more')",
+                            "text='Load More'",
+                            "text='Load more'",
+                            "[class*='load-more']",
+                            "[class*='loadMore']",
+                            "[class*='show-more']",
+                            "[class*='showMore']",
+                            "[id*='load-more']",
+                            "[id*='loadMore']",
+                            "[id*='show-more']",
+                            "[id*='showMore']",
+                            "[aria-label*='Load More']",
+                            "[aria-label*='Load more']",
+                        ]
+
+                        button_found = False
+                        for selector in load_more_selectors:
+                            try:
+                                button = page.locator(selector).first
+                                if await button.is_visible(timeout=2000):
+                                    await button.click(timeout=5000)
+                                    # FacetWP uses AJAX, so wait a bit longer for content to load
+                                    await page.wait_for_timeout(4000)  # Wait for AJAX content to load
+
+                                    # Wait for the button to become visible again (if more content is available)
+                                    # or wait for loading indicator to disappear
+                                    from contextlib import suppress
+
+                                    with suppress(Exception):
+                                        await page.wait_for_selector(
+                                            "button.facetwp-load-more:not([disabled])", timeout=3000, state="visible"
+                                        )  # Button might not reappear if all content is loaded
+
+                                    # Scroll down to trigger any lazy loading
+                                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                    await page.wait_for_timeout(2000)
+
+                                    clicks += 1
+                                    button_found = True
+                                    console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]")
+                                    break
+                            except (TimeoutError, RuntimeError, AttributeError):
+                                # TimeoutError: selector timeout
+                                # RuntimeError: Playwright errors
+                                # AttributeError: missing page/button attributes
+                                # Continue to next iteration
+                                continue
+
+                        if not button_found:
+                            # No more button found, we've loaded everything
+                            if clicks == 0:
+                                console.print(
+                                    "[dim]No 'Load More' button found - checking if content is already loaded...[/dim]"
+                                )
+                                # Try scrolling to see if more content loads
+                                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                await page.wait_for_timeout(3000)
+                                new_content = await page.content()
+                                if len(new_content) > current_length:
+                                    console.print("[dim]Scrolling loaded more content, continuing...[/dim]")
+                                    continue
+                            else:
+                                console.print(f"[dim]No more 'Load More' button found after {clicks} clicks[/dim]")
+                            break
+                    except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError) as e:
+                        # RuntimeError: Playwright errors
+                        # AttributeError: missing page attributes
+                        # ValueError: invalid page content
+                        # TypeError: wrong data types
+                        # TimeoutError: operation timeout
+                        console.print(f"[dim]Error during button click loop: {e}[/dim]")
+                        break
+
+                # Get the fully rendered HTML
+                console.print("[dim]Extracting page content...[/dim]")
+                browser_html = await page.content()
+
+                # Debug: Save HTML to file for inspection
+                import os
+
+                debug_file = os.path.join(os.path.expanduser("~"), "ida_page_debug.html")
+                with open(debug_file, "w", encoding="utf-8") as f:
+                    f.write(browser_html)
+                console.print(f"[dim]Saved page HTML to {debug_file} for debugging[/dim]")
+
+                await context.close()
+                await browser.close()
+                use_browser_automation = True
+                console.print(f"[green]✓[/green] Loaded page with browser automation ({clicks} 'Load More' clicks)")
+
+        except ImportError:
+            # Playwright not installed, try Selenium
+            pass
+        except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError, OSError) as e:
+            # RuntimeError: Playwright errors, browser automation errors
+            # AttributeError: missing Playwright attributes
+            # ValueError: invalid browser options
+            # TypeError: wrong argument types
+            # TimeoutError: operation timeout
+            # OSError: system errors
+            # Browser automation failed, fall back to static HTML
+            console.print(f"[yellow]⚠[/yellow] Browser automation failed: {e}")
+            console.print("[dim]Falling back to static HTML parsing (may miss many places)...[/dim]")
+            use_browser_automation = False
+            browser_html = None
+
+        # If Playwright failed or wasn't available, try Selenium
+        if not use_browser_automation:
+            try:
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support import expected_conditions
+                from selenium.webdriver.support.ui import WebDriverWait
+
+                console.print("[dim]Using Selenium to render JavaScript and click 'Load More' button...[/dim]")
+                options = Options()
+                options.add_argument("--headless")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+
+                driver = webdriver.Chrome(options=options)
+                driver.get(ida_places_url)
+
+                # Click "Load More" button repeatedly
+                max_clicks = 20
+                clicks = 0
+                while clicks < max_clicks:
+                    try:
+                        # Try various selectors for the Load More button
+                        # Note: The IDA site uses FacetWP with class "facetwp-load-more"
+                        load_more_selectors = [
+                            "//button[contains(@class, 'facetwp-load-more')]",  # Specific to IDA site
+                            "//button[contains(text(), 'Load More')]",
+                            "//button[contains(text(), 'Load more')]",
+                            "//a[contains(text(), 'Load More')]",
+                            "//a[contains(text(), 'Load more')]",
+                            "//*[contains(@class, 'load-more')]",
+                            "//*[contains(@class, 'loadMore')]",
+                        ]
+
+                        button_found = False
+                        for xpath in load_more_selectors:
+                            try:
+                                button = WebDriverWait(driver, 2).until(
+                                    expected_conditions.element_to_be_clickable((By.XPATH, xpath))
+                                )
+                                button.click()
+                                import time
+
+                                time.sleep(4)  # FacetWP uses AJAX, wait longer for content to load
+                                clicks += 1
+                                button_found = True
+                                console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]", end="\r")
+                                break
+                            except (TimeoutError, RuntimeError, AttributeError):
+                                # TimeoutError: selector timeout
+                                # RuntimeError: Selenium errors
+                                # AttributeError: missing driver/button attributes
+                                # Continue to next iteration
+                                continue
+
+                        if not button_found:
+                            break
+                    except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError):
+                        # RuntimeError: Selenium errors
+                        # AttributeError: missing driver attributes
+                        # ValueError: invalid page content
+                        # TypeError: wrong data types
+                        # TimeoutError: operation timeout
+                        break
+
+                console.print()  # New line after progress
+                browser_html = driver.page_source
+                driver.quit()
+                use_browser_automation = True
+                console.print("[green]✓[/green] Loaded page with browser automation")
+
+            except ImportError:
+                console.print(
+                    "[yellow]⚠[/yellow] Neither Playwright nor Selenium is installed. "
+                    "Install one to extract all places:"
+                )
+                console.print("[dim]  pip install playwright  # Recommended (faster)[/dim]")
+                console.print("[dim]  playwright install chromium[/dim]")
+                console.print("[dim]  OR[/dim]")
+                console.print("[dim]  pip install selenium  # Alternative[/dim]")
+                console.print("[dim]Falling back to static HTML parsing (may miss many places)...[/dim]")
+
+        # Use browser-rendered HTML if available, otherwise use static HTML
+        if use_browser_automation and browser_html:
+            html = browser_html
+        else:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (compatible; Celestron-NexStar/1.0; +https://github.com/mcosgriff/celestron-nexstar)",
+                }
+
+                console.print(f"[dim]Fetching from {ida_places_url}...[/dim]")
+
+                async with session.get(
+                    ida_places_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status != 200:
+                        console.print(f"[yellow]⚠[/yellow] IDA website returned status {response.status}")
+                        console.print("[dim]Falling back to existing seed file.[/dim]")
+                        return existing_places
+
+                    html = await response.text()
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Debug: Check what's actually on the page
+        page_text = soup.get_text()
+        console.print(f"[dim]Page text length: {len(page_text)} characters[/dim]")
+
+        # Look for common patterns that might indicate places
+        if "International Dark Sky" in page_text or "Dark Sky Park" in page_text:
+            console.print("[dim]Found dark sky place keywords in page text[/dim]")
+        else:
+            console.print("[yellow]⚠[/yellow] No dark sky place keywords found - page may not have loaded correctly")
+
+        # The IDA website might have different structures - try multiple approaches
+        # Approach 1: Look for links to individual place pages (various URL patterns)
+        place_links = soup.find_all("a", href=re.compile(r"/places/|/idsp/|/find/|/conservation/", re.I))
+
+        # Also try looking for any links that might contain place names
+        # The IDA website might list places in various formats
+        all_links = soup.find_all("a", href=True)
+        for link in all_links:
+            href_attr = link.get("href", "")
+            href = str(href_attr) if href_attr else ""
+            # Look for patterns like /places/name or /idsp/name
+            if href and re.search(r"/(places|idsp|find)/[^/]+", href, re.I) and link not in place_links:
+                place_links.append(link)
+
+        # Initialize seen_names early to avoid "used before definition" error
+        seen_names: set[str] = set()
+
+        # Also look for place names in the text content - they might be in divs, spans, or other elements
+        # Look for elements that might contain place information
+        if not place_links:
+            console.print("[dim]No links found, trying to find place names in text content...[/dim]")
+            # Look for common patterns like "Park Name" or "Name National Park"
+            place_name_patterns = soup.find_all(
+                string=re.compile(
+                    r"(National Park|State Park|International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary)",
+                    re.I,
+                )
+            )
+            if place_name_patterns:
+                console.print(f"[dim]Found {len(place_name_patterns)} potential place name patterns in text[/dim]")
+
+            # Try to find place cards or list items that might contain place information
+            # Look for common card/list patterns
+            cards = soup.find_all(["div", "article", "li"], class_=re.compile(r"card|item|place|location|park", re.I))
+            if cards:
+                console.print(f"[dim]Found {len(cards)} potential place cards/items[/dim]")
+                # Try to extract place names from cards
+                for card in cards[:50]:  # Limit to first 50 to avoid too much processing
+                    text = card.get_text(strip=True)
+                    # Look for place name patterns in card text
+                    name_match = re.search(
+                        r"^([A-Z][a-zA-Z\s&]+?)(?:\s+(?:National|State|International Dark Sky|Dark Sky))", text
+                    )
+                    if name_match:
+                        name = name_match.group(1).strip()
+                        if len(name) > 3 and name.lower() not in seen_names:
+                            # Try to find a link within the card
+                            card_link = card.find("a", href=True)
+                            if card_link:
+                                href_attr = card_link.get("href", "")
+                                href = str(href_attr) if href_attr else ""
+                                if href and href not in [str(link.get("href", "") or "") for link in place_links]:
+                                    place_links.append(card_link)
+
+        console.print(f"[dim]Found {len(place_links)} place links[/dim]")
+
+        # Extract unique place names from links
+        for link in place_links:
+            try:
+                # Get text from link or from parent elements
+                name_text = link.get_text(strip=True)
+                name = str(name_text) if name_text else ""
+                if not name:
+                    # Try getting from title attribute or data attributes
+                    title_attr = link.get("title", "") or link.get("data-name", "")
+                    name = str(title_attr) if title_attr else ""
+
+                if not name or len(name) < 3:
+                    continue
+
+                # Clean up the name (remove extra whitespace, common prefixes)
+                name = re.sub(r"\s+", " ", name).strip()
+                name = re.sub(r"^(International Dark Sky |Dark Sky )", "", name, flags=re.I)
+
+                if name.lower() in seen_names or name.lower() in existing_names:
+                    continue
+
+                seen_names.add(name.lower())
+
+                # Try to extract designation from link text or nearby elements
+                designation = "International Dark Sky Place"
+                link_text = link.get_text(strip=True)
+                parent = link.parent
+
+                # Look for designation keywords
+                if re.search(r"Park", link_text, re.I):
+                    designation = "International Dark Sky Park"
+                elif re.search(r"Reserve", link_text, re.I):
+                    designation = "International Dark Sky Reserve"
+                elif re.search(r"Sanctuary", link_text, re.I):
+                    designation = "International Dark Sky Sanctuary"
+                elif re.search(r"Community", link_text, re.I):
+                    designation = "International Dark Sky Community"
+                elif re.search(r"Urban", link_text, re.I):
+                    designation = "Urban Night Sky Place"
+
+                # Try to get description from nearby elements
+                description = designation
+                if parent:
+                    desc_elem = parent.find(
+                        ["p", "div", "span"], class_=re.compile(r"description|summary|excerpt|text", re.I)
+                    )
+                    if desc_elem:
+                        description = desc_elem.get_text(strip=True)
+
+                # Try to extract location from link or nearby text
+                country = ""
+                location_text = link_text + " " + (parent.get_text() if parent else "")
+                location_match = re.search(
+                    r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", location_text
+                )
+                if location_match:
+                    country = location_match.group(2)
+
+                places.append(
+                    {"name": name, "designation": designation, "description": description, "country": country}
+                )
+
+            except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+                # ValueError: invalid regex match or data format
+                # TypeError: wrong data types
+                # AttributeError: missing BeautifulSoup attributes
+                # KeyError: missing keys in data
+                # IndexError: missing array indices
+                # Continue to next place
+                continue
+
+        # Approach 2: Look for text content that might contain place names
+        # Sometimes places are listed in plain text or in lists
+        if len(places) < 100:
+            console.print("[dim]Trying alternative extraction methods...[/dim]")
+
+            # Look for list items or divs that might contain place information
+            # Find all tags first, then filter by text content
+            name_pattern = re.compile(
+                r"(National Park|State Park|National Monument|National Preserve|National Recreation Area|"
+                r"International Dark Sky|Dark Sky Park|Dark Sky Reserve|Dark Sky Sanctuary|"
+                r"Dark Sky Community|Urban Night Sky)",
+                re.I,
+            )
+            list_items = []
+            for tag_name in ["li", "div", "p"]:
+                items = soup.find_all(tag_name)
+                # Filter items by text content matching the pattern
+                for item in items:
+                    text = item.get_text(strip=True)
+                    if text and name_pattern.search(text):
+                        list_items.append(item)
+
+            for item in list_items:
+                text = item.get_text(strip=True)
+                # Try to extract place name (usually before the designation)
+                match = re.search(
+                    r"^([^,]+?)\s*(?:National Park|State Park|National Monument|International Dark Sky)", text, re.I
+                )
+                if match:
+                    name = match.group(1).strip()
+                    if name and len(name) > 3 and name.lower() not in seen_names and name.lower() not in existing_names:
+                        seen_names.add(name.lower())
+                        # Determine designation
+                        designation = "International Dark Sky Place"
+                        if "Park" in text:
+                            designation = "International Dark Sky Park"
+                        elif "Reserve" in text:
+                            designation = "International Dark Sky Reserve"
+                        elif "Sanctuary" in text:
+                            designation = "International Dark Sky Sanctuary"
+                        elif "Community" in text:
+                            designation = "International Dark Sky Community"
+                        elif "Urban" in text:
+                            designation = "Urban Night Sky Place"
+
+                        places.append(
+                            {
+                                "name": name,
+                                "designation": designation,
+                                "description": text,
+                                "country": "",
+                            }
+                        )
+
+        # Approach 3: If we still didn't find many places, try looking for structured data (JSON-LD, data attributes)
+        if len(places) < 100:
+            # Look for JSON-LD structured data
+            json_ld_scripts = soup.find_all("script", type="application/ld+json")
+            for script in json_ld_scripts:
+                try:
+                    import json
+
+                    script_string = script.string
+                    if script_string is None:
+                        continue
+                    data: dict[str, Any] | list[dict[str, Any]] = json.loads(script_string)
+                    # Process structured data if found
+                    if isinstance(data, dict) and "name" in data:
+                        place_name: str = str(data.get("name", ""))
+                        if (
+                            place_name
+                            and place_name.lower() not in seen_names
+                            and place_name.lower() not in existing_names
+                        ):
+                            places.append(
+                                {
+                                    "name": place_name,
+                                    "designation": data.get("description", "International Dark Sky Place"),
+                                    "description": data.get("description", ""),
+                                    "country": data.get("address", {}).get("addressCountry", "")
+                                    if isinstance(data.get("address"), dict)
+                                    else "",
+                                }
+                            )
+                except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+                    # ValueError: invalid JSON-LD or data format
+                    # TypeError: wrong data types
+                    # AttributeError: missing BeautifulSoup attributes
+                    # KeyError: missing keys in JSON-LD
+                    # IndexError: missing array indices
+                    # Continue to next element
+                    continue
+
+            # Look for data attributes or map markers
+            data_places = soup.find_all(attrs={"data-name": True}) or soup.find_all(attrs={"data-place": True})
+            for elem in data_places:
+                try:
+                    name_attr = elem.get("data-name") or elem.get("data-place")
+                    name = str(name_attr) if name_attr else ""
+                    if name and name.lower() not in seen_names and name.lower() not in existing_names:
+                        seen_names.add(name.lower())
+                        places.append(
+                            {
+                                "name": name,
+                                "designation": "International Dark Sky Place",
+                                "description": elem.get_text(strip=True) or "International Dark Sky Place",
+                                "country": "",
+                            }
+                        )
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    # ValueError: invalid data attribute format
+                    # TypeError: wrong data types
+                    # AttributeError: missing BeautifulSoup attributes
+                    # KeyError: missing data attributes
+                    # Continue to next element
+                    continue
+
+        console.print(f"[dim]Extracted {len(places)} unique places from IDA website[/dim]")
+
+        # Warn if we found very few places (IDA has 200+ certified places)
+        if len(places) < 100:
+            console.print(
+                f"[yellow]⚠[/yellow] Only found {len(places)} places, but IDA has 200+ certified places. "
+                "The website may use JavaScript to load content dynamically."
+            )
+            console.print(
+                "[dim]You may need to manually add more places to the seed file, or the website structure may have changed.[/dim]"
+            )
+
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        TimeoutError,
+        ImportError,
+    ) as e:
+        # RuntimeError: async/await errors, browser automation errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors, network errors
+        # TimeoutError: request timeout
+        # ImportError: missing dependencies (Playwright, Selenium, BeautifulSoup)
+        console.print(f"[yellow]⚠[/yellow] Error fetching from IDA website: {e}")
+        console.print("[dim]Falling back to existing seed file.[/dim]")
+        return existing_places
+
+    if not places:
+        console.print("[yellow]⚠[/yellow] No new places found from IDA website.")
+        console.print("[dim]The existing seed file will be preserved.[/dim]")
+        console.print(
+            "[dim]The IDA website may use JavaScript to load content. Consider manually adding places or using "
+            "browser automation tools for a complete list.[/dim]"
+        )
+        return existing_places
+
+    # Process places: geocode, estimate values
+    console.print(f"[dim]Processing {len(places)} new places...[/dim]")
+    processed: list[dict[str, Any]] = []
+
+    # Use semaphore to limit concurrent geocoding requests (5 at a time)
+    # This significantly speeds up processing while respecting rate limits
+    semaphore = asyncio.Semaphore(5)
+
+    async def geocode_with_rate_limit(place: dict[str, Any]) -> dict[str, Any] | None:
+        """Geocode a place with rate limiting via semaphore."""
+        async with semaphore:
+            coords = await geocode_location(place["name"], place.get("country", ""))
+            if not coords:
+                return None
+
+            lat, lon = coords
+            bortle = estimate_bortle_from_description(place["description"], place["designation"])
+            sqm = estimate_sqm_from_bortle(bortle)
+            geohash = generate_geohash(lat, lon)
+
+            return {
+                "name": place["name"],
+                "latitude": round(lat, 4),
+                "longitude": round(lon, 4),
+                "geohash": geohash,
+                "bortle_class": bortle,
+                "sqm_value": sqm,
+                "description": place["description"],
+                "notes": f"{place['designation']}. Data from International Dark-Sky Association.",
+            }
+
+    # Process all places concurrently with rate limiting
+    console.print(f"[dim]Geocoding {len(places)} places (5 concurrent requests)...[/dim]")
+    tasks = [geocode_with_rate_limit(place) for place in places]
+    # asyncio.gather returns a tuple, convert to list
+    results_tuple = await asyncio.gather(*tasks, return_exceptions=True)
+    results: list[dict[str, Any] | BaseException | None] = list(results_tuple)
+
+    # Process results - filter out exceptions and None values
+    for i, result_item in enumerate(results, 1):
+        # Skip exceptions
+        if isinstance(result_item, Exception):
+            continue
+        # Skip None values
+        if result_item is None:
+            continue
+        # At this point, result_item must be dict[str, Any]
+        # Use explicit type check to help mypy
+        if isinstance(result_item, dict):
+            processed.append(result_item)
+        if i % 10 == 0:
+            console.print(f"[dim]Processed {i}/{len(places)} places...[/dim]", end="\r")
+
+    console.print()  # New line after progress
+
+    # Merge with existing - ensure both are lists of dicts
+    # Filter out any metadata objects from existing_places
+    existing_dicts: list[dict[str, Any]] = [
+        item for item in existing_places if isinstance(item, dict) and "name" in item
+    ]
+    merged: list[dict[str, Any]] = existing_dicts + processed
+    merged.sort(key=lambda x: x["name"])
+
+    # Add attribution metadata at the beginning
+    result: list[dict[str, Any]] = [
+        {
+            "_comment": "Data sourced from the International Dark-Sky Association (IDA) official list of International Dark Sky Places. URL: https://www.darksky.org/our-work/conservation/idsp/",
+            "_attribution": "International Dark-Sky Association (IDA) - https://www.darksky.org/",
+            "_note": f"Bortle class and SQM values are estimates based on designation type and site descriptions. Last updated: {datetime.now().strftime('%Y-%m-%d')}. For the most up-to-date information and official designations, visit the IDA website.",
+        },
+        *merged,
+    ]
+
+    console.print(f"[green]✓[/green] Processed {len(processed)} new places, {len(existing_dicts)} existing places kept")
+    console.print(f"[dim]Total: {len(merged)} dark sky sites[/dim]")
+
+    return result
 
 
 def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
@@ -2233,7 +3582,7 @@ def _parse_vsx_data(data: Any, max_magnitude: float) -> dict[str, Any] | None:
             # Or it might be a dict with Name directly
             elif "Name" in data:
                 star_data = data
-        elif isinstance(data, list) and len(data) > 0:
+        elif isinstance(data, list) and data:
             # If it's a list, take the first element
             first_item = data[0]
             if isinstance(first_item, dict):

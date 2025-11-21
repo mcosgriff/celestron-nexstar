@@ -16,6 +16,8 @@ from celestron_nexstar.api.core.exceptions import (
     LocationNotFoundError,
     LocationNotSetError,
 )
+from celestron_nexstar.api.events.vacation_planning import find_dark_sites_near
+from celestron_nexstar.api.location.light_pollution import BortleClass
 from celestron_nexstar.api.location.observer import (
     ObserverLocation,
     detect_location_automatically,
@@ -332,4 +334,122 @@ def detect_location(
         raise typer.Exit(code=1) from e
     except Exception as e:
         print_error(f"Failed to detect location: {e}")
+        raise typer.Exit(code=1) from e
+
+
+@app.command("dark-sites", rich_help_panel="Observer Location")
+def show_dark_sites(
+    max_distance: float = typer.Option(300.0, "--max-distance", help="Maximum search distance in miles"),
+    min_bortle: int = typer.Option(4, "--min-bortle", help="Maximum Bortle class to include (1-9, lower is darker)"),
+    limit: int = typer.Option(5, "--limit", help="Number of sites to display"),
+) -> None:
+    """
+    Show the closest dark sky sites to your current observer location.
+
+    Finds International Dark Sky Parks and other notable observing sites
+    near your configured observer location.
+
+    Examples:
+        nexstar location dark-sites
+        nexstar location dark-sites --max-distance 200 --limit 10
+        nexstar location dark-sites --min-bortle 3  # Only show Bortle 1-3 sites
+    """
+    try:
+        # Get current observer location
+        observer_loc = get_observer_location()
+
+        # Validate min_bortle
+        if not 1 <= min_bortle <= 9:
+            print_error("min-bortle must be between 1 and 9")
+            raise typer.Exit(code=1) from None
+
+        min_bortle_class = BortleClass(min_bortle)
+
+        # Convert miles to kilometers for the API call
+        max_distance_km = max_distance * 1.60934
+
+        # Find dark sites
+        print_info(f"Finding dark sky sites near {observer_loc.name or 'your location'}...")
+        dark_sites = find_dark_sites_near(observer_loc, max_distance_km=max_distance_km, min_bortle=min_bortle_class)
+
+        if not dark_sites:
+            print_error(f"No dark sky sites found within {max_distance:.0f} miles")
+            print_info("Try increasing --max-distance or check for International Dark Sky Parks in the area.")
+            raise typer.Exit(code=1) from None
+
+        # Limit to requested number
+        sites_to_show = dark_sites[:limit]
+
+        # Display results
+        location_name = observer_loc.name or f"{observer_loc.latitude:.2f}°N, {observer_loc.longitude:.2f}°E"
+        console.print(f"\n[bold cyan]Closest Dark Sky Sites to {location_name}[/bold cyan]")
+        console.print(
+            f"[dim]Showing {len(sites_to_show)} of {len(dark_sites)} sites found within {max_distance:.0f} miles[/dim]\n"
+        )
+
+        # Create table
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("#", justify="right", style="dim")
+        table.add_column("Site Name", style="bold")
+        table.add_column("Distance", justify="right")
+        table.add_column("Bortle", justify="center")
+        table.add_column("SQM", justify="right")
+        table.add_column("Description", style="dim")
+
+        # Format Bortle class colors
+        bortle_colors = {
+            BortleClass.CLASS_1: "[bold bright_green]1[/bold bright_green]",
+            BortleClass.CLASS_2: "[bright_green]2[/bright_green]",
+            BortleClass.CLASS_3: "[green]3[/green]",
+            BortleClass.CLASS_4: "[yellow]4[/yellow]",
+        }
+
+        for i, site in enumerate(sites_to_show, 1):
+            # Format distance
+            distance_miles = site.distance_km / 1.60934
+            if distance_miles < 1:
+                distance_str = f"{site.distance_km * 1000:.0f} m"
+            elif distance_miles < 10:
+                distance_str = f"{distance_miles:.1f} mi"
+            else:
+                distance_str = f"{distance_miles:.0f} mi"
+
+            # Format Bortle class
+            bortle_str = bortle_colors.get(site.bortle_class, str(site.bortle_class.value))
+
+            table.add_row(
+                str(i),
+                site.name,
+                distance_str,
+                bortle_str,
+                f"{site.sqm_value:.2f}",
+                site.description,
+            )
+
+        console.print(table)
+
+        # Show additional details for the closest sites
+        if sites_to_show:
+            console.print("\n[bold]Site Details:[/bold]")
+            for site in sites_to_show:
+                distance_miles = site.distance_km / 1.60934
+                console.print(f"\n  [bold]{site.name}[/bold]")
+                console.print(f"    Distance: {distance_miles:.1f} miles ({site.distance_km:.1f} km)")
+                console.print(f"    Bortle Class: {site.bortle_class.value} ({site.bortle_class.name})")
+                console.print(f"    SQM: {site.sqm_value:.2f} mag/arcsec²")
+                console.print(f"    {site.description}")
+                if site.notes:
+                    console.print(f"    [dim]{site.notes}[/dim]")
+
+        if len(dark_sites) > limit:
+            console.print(f"\n[dim]... and {len(dark_sites) - limit} more sites. Use --limit to see more.[/dim]")
+
+    except LocationNotSetError:
+        print_error("Observer location not set")
+        print_info("Set your location first:")
+        print_info('  nexstar location set-observer "City, State"')
+        print_info("  nexstar location detect")
+        raise typer.Exit(code=1) from None
+    except Exception as e:
+        print_error(f"Failed to find dark sky sites: {e}")
         raise typer.Exit(code=1) from e

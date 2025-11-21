@@ -87,11 +87,20 @@ async def _fetch_from_simbad(hr_numbers: list[int]) -> dict[int, tuple[str | Non
                     # Be polite to SIMBAD server
                     await asyncio.sleep(0.5)  # Rate limiting
 
-                except Exception as e:
+                except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, AttributeError, KeyError) as e:
+                    # aiohttp.ClientError: HTTP/network errors
+                    # TimeoutError: request timeout
+                    # ValueError: invalid response format
+                    # TypeError: wrong data types
+                    # AttributeError: missing attributes in response
+                    # KeyError: missing keys in response data
                     logger.warning(f"Failed to query SIMBAD for batch {batch}: {e}")
                     continue
 
-    except Exception as e:
+    except (aiohttp.ClientError, TimeoutError, RuntimeError) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # RuntimeError: async/await errors
         logger.warning(f"Failed to fetch from SIMBAD: {e}")
 
     return results
@@ -148,7 +157,13 @@ async def _fetch_from_yale_bsc() -> dict[int, tuple[str | None, str | None]]:
             if common_name or bayer:
                 results[hr_number] = (common_name, bayer)
 
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
+        # FileNotFoundError: cache file doesn't exist
+        # PermissionError: can't read file
+        # json.JSONDecodeError: invalid JSON format
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in JSON data
         logger.debug(f"Could not extract names from Yale BSC: {e}")
 
     return results
@@ -239,7 +254,14 @@ async def populate_star_name_mappings_database(
                 logger.info(f"Enhanced with {added} additional mappings from external sources")
             else:
                 logger.info("External sources returned no additional mappings")
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, aiohttp.ClientError, TimeoutError) as e:
+        # RuntimeError: async/await errors, database connection errors
+        # AttributeError: missing database attributes or methods
+        # ValueError: invalid HR numbers or data format
+        # TypeError: wrong argument types
+        # KeyError: missing keys in external data
+        # aiohttp.ClientError: HTTP/network errors from external APIs
+        # TimeoutError: request timeout
         logger.warning(f"Could not fetch additional mappings from external sources: {e}")
         logger.info("Continuing with seed data only")
 
@@ -269,7 +291,13 @@ def _get_comprehensive_star_mappings() -> dict[int, tuple[str | None, str | None
             mappings[hr_number] = (common_name, bayer_designation)
 
         return mappings
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
+        # FileNotFoundError: seed JSON file doesn't exist
+        # PermissionError: can't read file
+        # json.JSONDecodeError: invalid JSON format
+        # ValueError: invalid data format or missing required fields
+        # TypeError: wrong data types
+        # KeyError: missing keys in JSON data
         logger.error(f"Failed to load star name mappings from seed data: {e}")
         logger.warning("Falling back to empty mappings - star name search may be limited")
         return {}

@@ -15,7 +15,23 @@ from rich.table import Table
 from timezonefinder import TimezoneFinder
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_by_name
+from celestron_nexstar.api.database.database import get_database
+from celestron_nexstar.api.location.observer import ObserverLocation, get_observer_location
 from celestron_nexstar.api.observation.observation_planner import ObservationPlanner, ObservingTarget
+from celestron_nexstar.api.observation.planning_utils import (
+    DifficultyLevel,
+    compare_equipment,
+    generate_observation_checklist,
+    generate_quick_reference,
+    generate_session_log_template,
+    get_moon_phase_impact,
+    get_object_difficulty,
+    get_object_visibility_timeline,
+    get_time_based_recommendations,
+    get_transit_times,
+)
+from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
 from celestron_nexstar.cli.utils.export import FileConsole
 from celestron_nexstar.cli.utils.selection import select_from_list
 
@@ -1208,3 +1224,372 @@ def _select_object_type_interactive() -> str | None:
         return None  # Separator selected, shouldn't happen but handle it
 
     return selected.value
+
+
+@app.command("timeline", rich_help_panel="Planning Tools")
+def show_timeline(
+    object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
+    days: int = typer.Option(1, "--days", "-d", help="Number of days to show (default: 1)"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export output to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Show object visibility timeline (rise, transit, set times)."""
+    from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
+
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "timeline")
+        file_console = create_file_console()
+        _show_timeline_content(file_console, object_name, days)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_timeline_content(console, object_name, days)
+
+
+def _show_timeline_content(output_console: Console | FileConsole, object_name: str, days: int) -> None:
+    """Display timeline content."""
+    import asyncio
+
+    async def get_obj() -> CelestialObject | None:
+        objects = await get_object_by_name(object_name)
+        return objects[0] if objects else None
+
+    obj = asyncio.run(get_obj())
+    if not obj:
+        output_console.print(f"[red]Error: Object '{object_name}' not found.[/red]")
+        return
+
+    location = get_observer_location()
+    if not location:
+        output_console.print("[red]Error: No observer location set.[/red]")
+        return
+
+    timeline = get_object_visibility_timeline(obj, location.latitude, location.longitude, days=days)
+
+    output_console.print(f"\n[bold cyan]Visibility Timeline: {obj.name}[/bold cyan]\n")
+
+    if timeline.is_never_visible:
+        output_console.print("[yellow]This object is never visible from your location.[/yellow]")
+        return
+
+    if timeline.is_always_visible:
+        output_console.print("[green]This object is always visible (circumpolar).[/green]")
+        if timeline.transit_time:
+            time_str = _format_local_time(timeline.transit_time, location.latitude, location.longitude)
+            output_console.print(f"Transit (highest): {time_str}")
+            output_console.print(f"Maximum altitude: {timeline.max_altitude:.1f}°")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Event", style="cyan")
+    table.add_column("Time", style="green")
+    table.add_column("Altitude", justify="right")
+
+    if timeline.rise_time:
+        time_str = _format_local_time(timeline.rise_time, location.latitude, location.longitude)
+        alt, _ = get_object_altitude_azimuth(obj, location.latitude, location.longitude, timeline.rise_time)
+        table.add_row("Rise", time_str, f"{alt:.1f}°")
+
+    if timeline.transit_time:
+        time_str = _format_local_time(timeline.transit_time, location.latitude, location.longitude)
+        table.add_row("Transit (Highest)", time_str, f"{timeline.max_altitude:.1f}°")
+
+    if timeline.set_time:
+        time_str = _format_local_time(timeline.set_time, location.latitude, location.longitude)
+        alt, _ = get_object_altitude_azimuth(obj, location.latitude, location.longitude, timeline.set_time)
+        table.add_row("Set", time_str, f"{alt:.1f}°")
+
+    output_console.print(table)
+
+
+@app.command("checklist", rich_help_panel="Planning Tools")
+def show_checklist(
+    export: bool = typer.Option(False, "--export", "-e", help="Export checklist to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Generate pre-observation checklist."""
+    from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
+
+    checklist = generate_observation_checklist(equipment_type="telescope")
+
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "checklist")
+        file_console = create_file_console()
+        _show_checklist_content(file_console, checklist)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_checklist_content(console, checklist)
+
+
+def _show_checklist_content(output_console: Console | FileConsole, checklist: list[str]) -> None:
+    """Display checklist content."""
+    output_console.print("\n[bold cyan]Pre-Observation Checklist[/bold cyan]\n")
+    for i, item in enumerate(checklist, 1):
+        output_console.print(f"  {i}. [ ] {item}")
+    output_console.print()
+
+
+@app.command("difficulty", rich_help_panel="Planning Tools")
+def show_difficulty(
+    object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
+) -> None:
+    """Show object difficulty rating."""
+    import asyncio
+
+    async def get_obj() -> CelestialObject | None:
+        objects = await get_object_by_name(object_name)
+        return objects[0] if objects else None
+
+    obj = asyncio.run(get_obj())
+    if not obj:
+        console.print(f"[red]Error: Object '{object_name}' not found.[/red]")
+        return
+
+    difficulty = get_object_difficulty(obj)
+    difficulty_colors = {
+        DifficultyLevel.BEGINNER: "green",
+        DifficultyLevel.INTERMEDIATE: "yellow",
+        DifficultyLevel.ADVANCED: "orange1",
+        DifficultyLevel.EXPERT: "red",
+    }
+    color = difficulty_colors.get(difficulty, "white")
+
+    console.print(f"\n[bold cyan]Difficulty Rating: {obj.name}[/bold cyan]\n")
+    console.print(f"Difficulty: [{color}]{difficulty.value.upper()}[/{color}]")
+    if obj.magnitude:
+        console.print(f"Magnitude: {obj.magnitude:.1f}")
+    if obj.object_type:
+        console.print(f"Type: {obj.object_type.value}")
+    console.print()
+
+
+@app.command("moon-impact", rich_help_panel="Planning Tools")
+def show_moon_impact(
+    object_type: str = typer.Argument(..., help="Object type (e.g., galaxy, planet, nebula)"),
+) -> None:
+    """Show how moon phase affects observing different object types."""
+    from celestron_nexstar.api.astronomy.solar_system import get_moon_info
+    from celestron_nexstar.api.location.observer import get_observer_location
+
+    location = get_observer_location()
+    if not location:
+        console.print("[red]Error: No observer location set.[/red]")
+        return
+
+    moon_info = get_moon_info(location.latitude, location.longitude)
+    moon_phase = moon_info.phase_name if moon_info else None
+    moon_illum = moon_info.illumination if moon_info else None
+
+    impact = get_moon_phase_impact(object_type, moon_phase, moon_illum)
+
+    console.print(f"\n[bold cyan]Moon Phase Impact: {object_type}[/bold cyan]\n")
+    if moon_info:
+        console.print(f"Current moon phase: {moon_info.phase_name.value if moon_info.phase_name else 'Unknown'}")
+        console.print(f"Moon illumination: {moon_info.illumination * 100:.0f}%")
+    console.print(f"\nImpact level: {impact['impact_level']}")
+    console.print(f"Recommended: {'Yes' if impact['recommended'] else 'No'}")
+    notes = impact.get("notes", [])
+    if notes and isinstance(notes, list):
+        console.print("\nNotes:")
+        for note in notes:
+            console.print(f"  • {note}")
+    console.print()
+
+
+@app.command("quick-reference", rich_help_panel="Planning Tools")
+def show_quick_reference(
+    limit: int = typer.Option(20, "--limit", "-l", help="Number of objects to include (default: 20)"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Generate quick reference card for common objects."""
+    from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
+
+    # Get popular objects from database
+    async def get_objects() -> list[CelestialObject]:
+        db = get_database()
+        # Use filter_objects to get a variety of objects
+        objects = await db.filter_objects(limit=limit)
+        return objects
+
+    import asyncio
+
+    objects = asyncio.run(get_objects())
+
+    reference = generate_quick_reference(objects)
+
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "quickref")
+        file_console = create_file_console()
+        file_console.print(reference)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    console.print(f"\n[pre]{reference}[/pre]\n")
+
+
+@app.command("log-template", rich_help_panel="Planning Tools")
+def show_log_template(
+    export: bool = typer.Option(False, "--export", "-e", help="Export template to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Generate observation session log template."""
+    from celestron_nexstar.api.location.observer import get_observer_location
+    from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
+
+    location = get_observer_location()
+    location_name = location.name if location else None
+
+    template = generate_session_log_template(location=location_name)
+
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "log")
+        file_console = create_file_console()
+        file_console.print(template)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    console.print(template)
+
+
+@app.command("transit-times", rich_help_panel="Planning Tools")
+def show_transit_times(
+    limit: int = typer.Option(10, "--limit", "-l", help="Number of objects to show (default: 10)"),
+    export: bool = typer.Option(False, "--export", "-e", help="Export to text file"),
+    export_path: str | None = typer.Option(None, "--export-path", help="Custom export file path"),
+) -> None:
+    """Show transit times (when objects are highest) for tonight."""
+    from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
+
+    location = get_observer_location()
+    if not location:
+        console.print("[red]Error: No observer location set.[/red]")
+        return
+
+    async def get_objects() -> list[CelestialObject]:
+        db = get_database()
+        # Use filter_objects to get a variety of objects
+        objects = await db.filter_objects(limit=limit * 2)  # Get more to filter
+        return objects
+
+    import asyncio
+
+    all_objects = asyncio.run(get_objects())
+
+    transit_times = get_transit_times(all_objects[:limit], location.latitude, location.longitude)
+
+    if export:
+        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "transits")
+        file_console = create_file_console()
+        _show_transit_times_content(file_console, transit_times, location)
+        content = file_console.file.getvalue()
+        file_console.file.close()
+        export_to_text(content, export_path_obj)
+        console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
+        return
+
+    _show_transit_times_content(console, transit_times, location)
+
+
+def _show_transit_times_content(
+    output_console: Console | FileConsole, transit_times: dict[str, datetime], location: ObserverLocation
+) -> None:
+    """Display transit times content."""
+    output_console.print("\n[bold cyan]Transit Times (Objects at Highest Point)[/bold cyan]\n")
+
+    if not transit_times:
+        output_console.print("[yellow]No objects found with transit times.[/yellow]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Object", style="cyan")
+    table.add_column("Transit Time", style="green")
+
+    for obj_name, transit_time in sorted(transit_times.items(), key=lambda x: x[1]):
+        time_str = _format_local_time(transit_time, location.latitude, location.longitude)
+        table.add_row(obj_name, time_str)
+
+    output_console.print(table)
+    output_console.print()
+
+
+@app.command("compare-equipment", rich_help_panel="Planning Tools")
+def show_equipment_comparison(
+    object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
+) -> None:
+    """Compare what you can see with different equipment."""
+    comparison = compare_equipment(object_name)
+
+    console.print(f"\n[bold cyan]Equipment Comparison: {object_name}[/bold cyan]\n")
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Equipment", style="cyan")
+    table.add_column("Visible", justify="center")
+    table.add_column("Notes")
+
+    for equipment, data in comparison.items():
+        visible_str = "[green]✓ Yes[/green]" if data.get("visible") else "[red]✗ No[/red]"
+        notes = data.get("notes", "N/A")
+        table.add_row(equipment.replace("_", " ").title(), visible_str, notes)
+
+    console.print(table)
+    console.print()
+
+
+@app.command("time-slots", rich_help_panel="Planning Tools")
+def show_time_slots(
+    start_hour: int = typer.Option(20, "--start", "-s", help="Start hour (24-hour format, default: 20)"),
+    end_hour: int = typer.Option(23, "--end", "-e", help="End hour (24-hour format, default: 23)"),
+    interval: int = typer.Option(1, "--interval", "-i", help="Interval in hours (default: 1)"),
+) -> None:
+    """Show what to observe at different times during the night."""
+    from celestron_nexstar.api.astronomy.solar_system import get_sun_info
+    from celestron_nexstar.api.location.observer import get_observer_location
+
+    location = get_observer_location()
+    if not location:
+        console.print("[red]Error: No observer location set.[/red]")
+        return
+
+    sun_info = get_sun_info(location.latitude, location.longitude)
+    if not sun_info or not sun_info.sunset_time:
+        console.print("[red]Error: Could not determine sunset time.[/red]")
+        return
+
+    # Create time slots
+    sunset = sun_info.sunset_time
+    if sunset.tzinfo is None:
+        sunset = sunset.replace(tzinfo=UTC)
+
+    time_slots = []
+    current = sunset.replace(hour=start_hour, minute=0, second=0)
+    while current.hour <= end_hour:
+        time_slots.append(current)
+        current += timedelta(hours=interval)
+
+    recommendations = get_time_based_recommendations(time_slots, location.latitude, location.longitude, "telescope")
+
+    console.print("\n[bold cyan]Time-Based Recommendations[/bold cyan]\n")
+
+    for time_slot, objects in recommendations.items():
+        time_str = _format_local_time(time_slot, location.latitude, location.longitude)
+        console.print(f"[bold]{time_str}[/bold]")
+        if objects:
+            for obj in objects[:5]:  # Limit to 5 per time slot
+                console.print(f"  • {obj.name}")
+        else:
+            console.print("  [dim]No specific recommendations[/dim]")
+        console.print()

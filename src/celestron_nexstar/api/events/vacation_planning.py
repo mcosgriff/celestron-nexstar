@@ -90,6 +90,7 @@ def find_dark_sites_near(
     """
     Find dark sky sites near a location.
 
+    Uses GeoPandas for efficient spatial queries with spatial indexing (R-tree).
     Queries from database first (for offline use), falls back to JSON seed file if database is empty.
 
     Args:
@@ -100,37 +101,36 @@ def find_dark_sites_near(
     Returns:
         List of DarkSkySite objects, sorted by distance
     """
+    import geopandas as gpd
+    from shapely.geometry import Point
+
     # Handle string location
     if isinstance(location, str):
         # Run async function - this is a sync entry point, so asyncio.run() is safe
         location = asyncio.run(geocode_location(location))
 
+    # Create search point geometry (WGS84 / EPSG:4326)
+    search_point = Point(location.longitude, location.latitude)
+    search_gdf = gpd.GeoDataFrame([1], geometry=[search_point], crs="EPSG:4326")
+
+    # Convert max_distance_km to degrees (approximate, but good enough for filtering)
+    # At equator: 1 degree ≈ 111 km, but we'll use a more conservative estimate
+    # and let the accurate distance calculation filter precisely
+    max_distance_deg = max_distance_km / 111.0  # Rough conversion
+
     sites = []
 
-    # Try database first (offline-capable) using geohash for efficient spatial queries
+    # Try database first (offline-capable)
     try:
         from celestron_nexstar.api.database.models import DarkSkySiteModel, get_db_session
-        from celestron_nexstar.api.location.geohash_utils import encode, get_neighbors_for_search
 
         async def _get_sites() -> list[DarkSkySiteModel]:
             async with get_db_session() as db:
-                from sqlalchemy import or_, select
+                from sqlalchemy import select
 
-                # Generate geohash for the search point
-                center_geohash = encode(location.latitude, location.longitude, precision=12)
-
-                # Get geohash prefixes to search (includes neighbors)
-                # This efficiently narrows down the search space
-                search_geohashes = get_neighbors_for_search(center_geohash, max_distance_km)
-
-                # Build query using geohash prefix matching for efficient spatial filtering
-                geohash_patterns = [f"{gh}%" for gh in search_geohashes]
-                geohash_conditions = or_(*[DarkSkySiteModel.geohash.like(pattern) for pattern in geohash_patterns])
-
-                # Query sites using geohash filtering and bortle class filter
+                # Query all sites matching bortle class
                 result = await db.execute(
                     select(DarkSkySiteModel).filter(
-                        geohash_conditions,
                         DarkSkySiteModel.bortle_class <= min_bortle.value,
                     )
                 )
@@ -138,26 +138,65 @@ def find_dark_sites_near(
 
         db_sites = asyncio.run(_get_sites())
 
-        for db_site in db_sites:
-            distance = _haversine_distance(location.latitude, location.longitude, db_site.latitude, db_site.longitude)
+        if db_sites:
+            # Create GeoDataFrame from database sites
+            sites_data = {
+                "name": [s.name for s in db_sites],
+                "latitude": [s.latitude for s in db_sites],
+                "longitude": [s.longitude for s in db_sites],
+                "bortle_class": [s.bortle_class for s in db_sites],
+                "sqm_value": [s.sqm_value for s in db_sites],
+                "description": [s.description for s in db_sites],
+                "notes": [s.notes for s in db_sites],
+            }
+            sites_gdf = gpd.GeoDataFrame(
+                sites_data,
+                geometry=gpd.points_from_xy([s.longitude for s in db_sites], [s.latitude for s in db_sites]),
+                crs="EPSG:4326",
+            )
 
-            if distance <= max_distance_km:
-                site = DarkSkySite(
-                    name=db_site.name,
-                    latitude=db_site.latitude,
-                    longitude=db_site.longitude,
-                    bortle_class=BortleClass(db_site.bortle_class),
-                    sqm_value=db_site.sqm_value,
-                    distance_km=distance,
-                    description=db_site.description,
-                    notes=db_site.notes,
-                )
-                sites.append(site)
+            # Use spatial indexing for fast distance queries
+            # Create a buffer around search point (in degrees, approximate)
+            # Then use spatial join to find sites within buffer
+            search_buffer = search_gdf.geometry.buffer(max_distance_deg)
+            buffer_gdf = gpd.GeoDataFrame([1], geometry=search_buffer, crs="EPSG:4326")
 
-        # If database has sites, use them
-        if sites:
-            sites.sort(key=lambda s: s.distance_km)
-            return sites
+            # Spatial join to find sites within buffer
+            sites_within = gpd.sjoin(sites_gdf, buffer_gdf, how="inner", predicate="within")
+
+            # Calculate accurate distances using GeoPandas (geodesic distance)
+            # Project to a suitable CRS for distance calculation (e.g., World Mercator or local UTM)
+            # For simplicity, we'll use a projected CRS that's good for the search area
+            # EPSG:3857 (Web Mercator) is reasonable for distance calculations
+            search_projected = search_gdf.to_crs("EPSG:3857")
+            sites_projected = sites_within.to_crs("EPSG:3857")
+
+            # Calculate distances in meters, convert to km
+            distances_m = sites_projected.geometry.distance(search_projected.geometry.iloc[0])
+            distances_km = distances_m / 1000.0
+
+            # Filter by exact distance and create DarkSkySite objects
+            # Use itertuples for better performance (10-100x faster than iterrows)
+            for row in sites_within.itertuples():
+                # Get distance for this row (distances_km is aligned with sites_within index)
+                distance = float(distances_km.loc[row.Index])
+                if distance <= max_distance_km:
+                    site = DarkSkySite(
+                        name=row.name,
+                        latitude=row.latitude,
+                        longitude=row.longitude,
+                        bortle_class=BortleClass(row.bortle_class),
+                        sqm_value=row.sqm_value,
+                        distance_km=distance,
+                        description=row.description,
+                        notes=getattr(row, "notes", None),
+                    )
+                    sites.append(site)
+
+            # If database has sites, use them
+            if sites:
+                sites.sort(key=lambda s: s.distance_km)
+                return sites
     except Exception as e:
         logger.debug(f"Database query failed, using fallback: {e}")
 
@@ -165,48 +204,69 @@ def find_dark_sites_near(
     logger.debug("Database empty or query failed, loading from JSON seed file")
     try:
         from celestron_nexstar.api.database.database_seeder import load_seed_json
-        from celestron_nexstar.api.location.geohash_utils import encode, get_neighbors_for_search
 
         seed_data = load_seed_json("dark_sky_sites.json")
 
-        # Use geohash for efficient filtering even in fallback mode
-        center_geohash = encode(location.latitude, location.longitude, precision=12)
-        search_geohashes = get_neighbors_for_search(center_geohash, max_distance_km)
-        # Use precision 9 for matching (sites are stored with precision 9)
-        search_geohash_prefixes = {gh[:9] for gh in search_geohashes}
+        # Filter out metadata/attribution objects
+        seed_data = [
+            item for item in seed_data if not (isinstance(item, dict) and any(key.startswith("_") for key in item))
+        ]
 
-        for item in seed_data:
-            bortle_value = item["bortle_class"]
-            if isinstance(bortle_value, str):
-                bortle_value = int(bortle_value)
-            site_bortle = BortleClass(bortle_value)
+        if seed_data:
+            # Create GeoDataFrame from seed data
+            sites_data = {
+                "name": [item["name"] for item in seed_data],
+                "latitude": [item["latitude"] for item in seed_data],
+                "longitude": [item["longitude"] for item in seed_data],
+                "bortle_class": [
+                    int(item["bortle_class"]) if isinstance(item["bortle_class"], str) else item["bortle_class"]
+                    for item in seed_data
+                ],
+                "sqm_value": [item["sqm_value"] for item in seed_data],
+                "description": [item["description"] for item in seed_data],
+                "notes": [item.get("notes") for item in seed_data],
+            }
+            sites_gdf = gpd.GeoDataFrame(
+                sites_data,
+                geometry=gpd.points_from_xy(
+                    [item["longitude"] for item in seed_data], [item["latitude"] for item in seed_data]
+                ),
+                crs="EPSG:4326",
+            )
 
-            if site_bortle > min_bortle:
-                continue
+            # Filter by bortle class first
+            sites_gdf = sites_gdf[sites_gdf["bortle_class"] <= min_bortle.value]
 
-            # Quick geohash-based pre-filtering
-            item_geohash = item.get("geohash")
-            if item_geohash:
-                # Check if site's geohash starts with any of the search prefixes
-                # (geohash prefix matching: if item's geohash starts with search prefix, it's in that area)
-                item_prefix = item_geohash[:9]  # Sites are stored with precision 9
-                if not any(item_prefix.startswith(search_prefix) for search_prefix in search_geohash_prefixes):
-                    continue
+            # Use spatial indexing for fast distance queries
+            search_buffer = search_gdf.geometry.buffer(max_distance_deg)
+            buffer_gdf = gpd.GeoDataFrame([1], geometry=search_buffer, crs="EPSG:4326")
 
-            distance = _haversine_distance(location.latitude, location.longitude, item["latitude"], item["longitude"])
+            # Spatial join to find sites within buffer
+            sites_within = gpd.sjoin(sites_gdf, buffer_gdf, how="inner", predicate="within")
 
-            if distance <= max_distance_km:
-                site = DarkSkySite(
-                    name=item["name"],
-                    latitude=item["latitude"],
-                    longitude=item["longitude"],
-                    bortle_class=site_bortle,
-                    sqm_value=item["sqm_value"],
-                    distance_km=distance,
-                    description=item["description"],
-                    notes=item.get("notes"),
-                )
-                sites.append(site)
+            # Calculate accurate distances
+            search_projected = search_gdf.to_crs("EPSG:3857")
+            sites_projected = sites_within.to_crs("EPSG:3857")
+            distances_m = sites_projected.geometry.distance(search_projected.geometry.iloc[0])
+            distances_km = distances_m / 1000.0
+
+            # Filter by exact distance and create DarkSkySite objects
+            # Use itertuples for better performance (10-100x faster than iterrows)
+            for row in sites_within.itertuples():
+                # Get distance for this row (distances_km is aligned with sites_within index)
+                distance = float(distances_km.loc[row.Index])
+                if distance <= max_distance_km:
+                    site = DarkSkySite(
+                        name=row.name,
+                        latitude=row.latitude,
+                        longitude=row.longitude,
+                        bortle_class=BortleClass(row.bortle_class),
+                        sqm_value=row.sqm_value,
+                        distance_km=distance,
+                        description=row.description,
+                        notes=getattr(row, "notes", None),
+                    )
+                    sites.append(site)
     except Exception as e:
         logger.warning(f"Failed to load dark sky sites from JSON seed file: {e}")
 

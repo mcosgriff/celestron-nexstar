@@ -477,7 +477,7 @@ def import_celestial_data_geojson(
                     if size_field in properties:
                         try:
                             size_val = properties[size_field]
-                            if size_val is not None and size_val != "":
+                            if size_val:
                                 size_arcmin = float(size_val)
                                 break
                         except (ValueError, TypeError):
@@ -1054,7 +1054,7 @@ def import_celestial_constellations(
                                 # MultiPolygon: [[[[lon, lat], ...], ...], ...] - flatten all polygons
                                 coords_list = []
                                 for poly in coords:
-                                    if poly and len(poly) > 0:
+                                    if poly:
                                         coords_list.extend(poly[0])
 
                             # Calculate min/max from all coordinates

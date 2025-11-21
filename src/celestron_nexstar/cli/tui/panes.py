@@ -65,14 +65,15 @@ def _get_indicator_color(score: float) -> str:
     Returns:
         Color name for Rich markup styling
     """
-    if score >= 90:
-        return "ansigreen"  # Great conditions (green)
-    elif score >= 80:
-        return "ansicyan"  # Good conditions (light green/cyan)
-    elif score >= 50:
-        return "ansiyellow"  # Marginal conditions (yellow)
-    else:
-        return "ansired"  # Poor conditions (red)
+    match score:
+        case s if s >= 90:
+            return "ansigreen"  # Great conditions (green)
+        case s if s >= 80:
+            return "ansicyan"  # Good conditions (light green/cyan)
+        case s if s >= 50:
+            return "ansiyellow"  # Marginal conditions (yellow)
+        case _:
+            return "ansired"  # Poor conditions (red)
 
 
 def _calculate_cloud_cover_score(cloud_cover_percent: float) -> float:
@@ -102,19 +103,20 @@ def _calculate_wind_score(wind_mph: float) -> float:
     # Optimal: 5-10 mph = 100
     # Below 5 mph: insufficient mixing (reduced score)
     # Above 10 mph: turbulence increases (reduced score)
-    if 5.0 <= wind_mph <= 10.0:
-        return 100.0
-    elif wind_mph < 5.0:
-        # Below 5 mph: score reduces linearly
-        return wind_mph * 20.0  # 0-100 points
-    elif wind_mph <= 15.0:
-        # 10-15 mph: score reduces gradually
-        return 100.0 - (wind_mph - 10.0) * 10.0  # 100-50 points
-    elif wind_mph <= 20.0:
-        # 15-20 mph: score reduces more sharply
-        return 50.0 - (wind_mph - 15.0) * 10.0  # 50-0 points
-    else:
-        return 0.0
+    match wind_mph:
+        case w if 5.0 <= w <= 10.0:
+            return 100.0
+        case w if w < 5.0:
+            # Below 5 mph: score reduces linearly
+            return w * 20.0  # 0-100 points
+        case w if w <= 15.0:
+            # 10-15 mph: score reduces gradually
+            return 100.0 - (w - 10.0) * 10.0  # 100-50 points
+        case w if w <= 20.0:
+            # 15-20 mph: score reduces more sharply
+            return 50.0 - (w - 15.0) * 10.0  # 50-0 points
+        case _:
+            return 0.0
 
 
 def _calculate_humidity_score(humidity_percent: float) -> float:

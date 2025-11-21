@@ -630,7 +630,7 @@ class ObservationPlanner:
         obj: CelestialObject,
         conditions: ObservingConditions,
         vis_info: VisibilityInfo,
-    ) -> float:
+    ) -> float | tuple[float, list[str]]:
         """
         Calculate the probability (0.0-1.0) of actually seeing an object given current conditions.
 
@@ -715,8 +715,73 @@ class ObservationPlanner:
         # Combine all factors
         final_prob = prob * seeing_factor * cloud_factor * quality_factor * type_factor
 
+        # Build explanations for why probability might be low
+        explanations: list[str] = []
+
+        # Seeing explanations
+        if seeing < 20:
+            if obj.magnitude and obj.magnitude > 4.0:
+                explanations.append(
+                    f"Very poor seeing ({seeing:.0f}/100) makes faint objects (mag >4) nearly impossible"
+                )
+            elif obj.magnitude and obj.magnitude > 2.0:
+                explanations.append(
+                    f"Very poor seeing ({seeing:.0f}/100) makes moderate objects (mag 2-4) very difficult"
+                )
+            else:
+                explanations.append(f"Very poor seeing ({seeing:.0f}/100) limits visibility even for bright objects")
+        elif seeing < 50:
+            if obj.object_type.value in ("galaxy", "nebula"):
+                explanations.append(
+                    f"Poor seeing conditions ({seeing:.0f}/100) - galaxies/nebulae are extended objects "
+                    f"that require good seeing for clear views"
+                )
+            elif obj.magnitude and obj.magnitude > 4.0:
+                explanations.append(
+                    f"Poor seeing conditions ({seeing:.0f}/100) make faint objects (mag {obj.magnitude:.1f}) difficult to see"
+                )
+            else:
+                explanations.append(f"Poor seeing conditions ({seeing:.0f}/100) reduce visibility")
+        elif seeing < 70:
+            explanations.append(f"Fair seeing conditions ({seeing:.0f}/100) - acceptable but not ideal")
+
+        # Cloud cover explanations
+        if conditions.weather.cloud_cover_percent is not None:
+            cloud_cover = conditions.weather.cloud_cover_percent
+            if cloud_cover > 80:
+                explanations.append(f"Heavy cloud cover ({cloud_cover:.0f}%) blocks most observations")
+            elif cloud_cover > 60:
+                explanations.append(f"Mostly cloudy ({cloud_cover:.0f}%) makes observation very difficult")
+            elif cloud_cover > 40:
+                explanations.append(f"Partly cloudy ({cloud_cover:.0f}%) may obscure the object")
+
+        # Quality score explanations
+        if conditions.observing_quality_score < 0.5:
+            explanations.append(
+                f"Poor overall conditions (quality score: {conditions.observing_quality_score:.0%}) "
+                f"due to weather, light pollution, or moon brightness"
+            )
+
+        # Object type sensitivity
+        if obj.object_type.value in ("galaxy", "nebula") and seeing < 70:
+            explanations.append(
+                "Extended objects (galaxies/nebulae) are more sensitive to seeing conditions than point sources"
+            )
+
+        # Add summary if probability is much lower than observability
+        if vis_info.observability_score > 0.8 and final_prob < 0.3:
+            explanations.append(
+                f"While the object is well-positioned (observability: {vis_info.observability_score:.0%}), "
+                f"current conditions reduce the chance of actually seeing it to {final_prob:.0%}"
+            )
+
         # Clamp to 0.0-1.0
-        return max(0.0, min(1.0, final_prob))
+        final_prob_clamped = max(0.0, min(1.0, final_prob))
+
+        # Return tuple with explanations if probability is low, otherwise just the probability
+        if final_prob_clamped < 0.5 and explanations:
+            return (final_prob_clamped, explanations)
+        return final_prob_clamped
 
     def _calculate_quality_score(
         self,
@@ -822,7 +887,12 @@ class ObservationPlanner:
         moon_separation = self._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
 
         # Calculate visibility probability based on current conditions
-        visibility_prob = self._calculate_visibility_probability(obj, conditions, vis_info)
+        visibility_prob_result = self._calculate_visibility_probability(obj, conditions, vis_info)
+        # Handle both tuple (prob, explanations) and float return types
+        if isinstance(visibility_prob_result, tuple):
+            visibility_prob, _ = visibility_prob_result
+        else:
+            visibility_prob = visibility_prob_result
 
         return RecommendedObject(
             obj=obj,

@@ -93,7 +93,9 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
             catalog="planets",
         )
 
-        prob = self.planner._calculate_visibility_probability(planet, self.conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(planet, self.conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertGreaterEqual(prob, 0.0)
         self.assertLessEqual(prob, 1.0)
 
@@ -103,7 +105,9 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
             **{**self.conditions.__dict__, "seeing_score": 30.0}
         )
 
-        prob = self.planner._calculate_visibility_probability(self.obj, poor_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(self.obj, poor_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertLess(prob, 1.0)  # Should be reduced by poor seeing
 
     def test_calculate_visibility_probability_cloudy(self):
@@ -113,7 +117,9 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
             **{**self.conditions.__dict__, "weather": cloudy_weather}
         )
 
-        prob = self.planner._calculate_visibility_probability(self.obj, cloudy_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(self.obj, cloudy_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertLess(prob, 1.0)  # Should be reduced by clouds
 
     def test_calculate_quality_score_excellent_weather(self):
@@ -1028,7 +1034,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
             name="Bright Star", common_name="Bright", ra_hours=10.0, dec_degrees=20.0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="test"
         )
 
-        prob = self.planner._calculate_visibility_probability(bright_obj, very_poor_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(bright_obj, very_poor_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertGreater(prob, 0.0)
         self.assertLessEqual(prob, 1.0)
 
@@ -1039,7 +1047,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
             name="Faint Galaxy", common_name=None, ra_hours=10.0, dec_degrees=20.0, magnitude=12.0, object_type=CelestialObjectType.GALAXY, catalog="test"
         )
 
-        prob = self.planner._calculate_visibility_probability(faint_obj, very_poor_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(faint_obj, very_poor_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertLess(prob, 0.5)  # Should be significantly reduced
 
     def test_calculate_visibility_probability_cloud_cover_heavy(self):
@@ -1047,7 +1057,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         cloudy_weather = WeatherData(temperature_c=20.0, cloud_cover_percent=85.0)
         cloudy_conditions = ObservingConditions(**{**self.conditions.__dict__, "weather": cloudy_weather})
 
-        prob = self.planner._calculate_visibility_probability(self.obj, cloudy_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(self.obj, cloudy_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertLess(prob, 0.5)  # Should be significantly reduced
 
     def test_calculate_visibility_probability_cloud_cover_partly_cloudy(self):
@@ -1055,7 +1067,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         partly_cloudy_weather = WeatherData(temperature_c=20.0, cloud_cover_percent=45.0)
         partly_cloudy_conditions = ObservingConditions(**{**self.conditions.__dict__, "weather": partly_cloudy_weather})
 
-        prob = self.planner._calculate_visibility_probability(self.obj, partly_cloudy_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(self.obj, partly_cloudy_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertGreater(prob, 0.0)
         self.assertLessEqual(prob, 1.0)
 
@@ -1066,7 +1080,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         )
         poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
-        prob = self.planner._calculate_visibility_probability(planet, poor_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(planet, poor_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         # Planets should still have reasonable probability even in poor seeing
         self.assertGreater(prob, 0.5)
 
@@ -1076,7 +1092,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
             name="M13", common_name="Hercules Cluster", ra_hours=16.691, dec_degrees=36.460, magnitude=5.8, object_type=CelestialObjectType.CLUSTER, catalog="messier"
         )
 
-        prob = self.planner._calculate_visibility_probability(cluster, self.conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(cluster, self.conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertGreater(prob, 0.0)
         self.assertLessEqual(prob, 1.0)
 
@@ -1084,7 +1102,9 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         """Test visibility probability with fair seeing (50-70)"""
         fair_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 60.0})
 
-        prob = self.planner._calculate_visibility_probability(self.obj, fair_conditions, self.vis_info)
+        result = self.planner._calculate_visibility_probability(self.obj, fair_conditions, self.vis_info)
+        # Handle both float and tuple return types
+        prob = result[0] if isinstance(result, tuple) else result
         self.assertGreater(prob, 0.0)
         self.assertLessEqual(prob, 1.0)
 

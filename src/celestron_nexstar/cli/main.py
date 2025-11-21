@@ -5,8 +5,10 @@ This is the main entry point for the Celestron NexStar command-line interface.
 """
 
 import typer
+from click import Context
 from dotenv import load_dotenv
 from rich.console import Console
+from typer.core import TyperGroup
 
 from celestron_nexstar.cli.commands import glossary
 
@@ -19,6 +21,7 @@ from celestron_nexstar.cli.commands.astronomy import (
     events,
     iss,
     meteors,
+    milky_way,
     naked_eye,
     occultations,
     planets,
@@ -36,12 +39,22 @@ from celestron_nexstar.cli.commands.telescope import align, connect, goto, mount
 from celestron_nexstar.cli.commands.vacation import vacation
 
 
+class SortedCommandsGroup(TyperGroup):
+    """Custom Typer group that sorts commands alphabetically within each help panel."""
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        """Return commands sorted alphabetically."""
+        commands = super().list_commands(ctx)
+        return sorted(commands)
+
+
 # Create main app
 app = typer.Typer(
     name="nexstar",
     help="Celestron NexStar Telescope Control CLI",
     add_completion=True,
     rich_markup_mode="rich",
+    cls=SortedCommandsGroup,
 )
 
 # Console for rich output
@@ -358,6 +371,12 @@ app.add_typer(
     aurora.app,
     name="aurora",
     help="Aurora borealis (Northern Lights) visibility",
+    rich_help_panel="Celestial Events",
+)
+app.add_typer(
+    milky_way.app,
+    name="milky-way",
+    help="Milky Way visibility",
     rich_help_panel="Celestial Events",
 )
 app.add_typer(

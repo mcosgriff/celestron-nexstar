@@ -123,6 +123,8 @@ Browse and search extensive catalogs from the [celestial_data](https://github.co
 - **Dynamic ephemeris sync**: Automatically fetch and sync ephemeris file metadata from NASA JPL's NAIF servers
 - **Optical calculations**: Magnification, FOV, limiting magnitude, resolution
 - **Celestial events tracking**: Aurora, eclipses, meteor showers, comets, ISS, and more
+- **Milky Way visibility**: Advanced predictions with historical weather data and weather forecasts
+- **Weather integration**: Current conditions, forecasts, and historical climatology data
 - **Space events calendar**: Planetary Society calendar with viewing location recommendations
 - **Vacation planning**: Plan astronomy viewing for any destination
 - **Backlash control**: Comprehensive tools for optimizing mount backlash and GoTo approach settings
@@ -150,6 +152,14 @@ Production-ready observation planning with intelligent, object-type specific rec
 Comprehensive tracking and prediction of celestial events:
 
 - **Aurora Borealis**: Real-time visibility, short-term forecasts, and long-term probabilistic predictions
+- **Milky Way Visibility**: Advanced visibility predictions with historical weather data integration
+  - **Tonight**: Check current visibility conditions
+  - **When**: Find visibility windows in the next 7-14 days
+  - **Next**: Discover best viewing opportunities months ahead
+  - **How**: Learn how visibility is calculated
+  - Uses location-specific historical cloud cover data (2000-present) for accurate predictions
+  - Automatically uses weather forecasts for opportunities within 14 days
+  - Tighter percentile ranges (p40-p60) for more confident predictions
 - **Eclipses**: Lunar and solar eclipse predictions with visibility calculations
 - **Planetary Events**: Conjunctions and oppositions with optimal viewing times
 - **Meteor Showers**: Enhanced predictions with moon phase impact analysis
@@ -163,11 +173,16 @@ Comprehensive tracking and prediction of celestial events:
 
 ```bash
 nexstar aurora tonight                    # Check aurora visibility
+nexstar milky-way tonight                 # Check Milky Way visibility tonight
+nexstar milky-way when "Taos, NM" --days 14  # Find visibility windows
+nexstar milky-way next "Crested Butte, CO" --months 12  # Best opportunities
+nexstar milky-way how                     # Learn how visibility is calculated
 nexstar eclipse next                     # Find next eclipse
 nexstar meteors best                     # Best meteor viewing windows
 nexstar iss passes                       # ISS pass predictions
 nexstar events upcoming                  # Space events calendar
 nexstar events viewing "Geminid"         # Find best viewing location
+nexstar weather historical                # View historical cloud cover data
 ```
 
 ### Vacation Planning
@@ -200,9 +215,10 @@ Export viewing guides and plans to text files for printing or offline reference:
   - Multi-night: `week`, `best-night`
   - Binocular viewing: `tonight`
   - Naked-eye viewing: `tonight`
-  - Celestial events: `aurora`, `eclipse`, `planets`, `meteors`, `comets`, `iss`, etc.
+  - Celestial events: `aurora`, `milky-way`, `eclipse`, `planets`, `meteors`, `comets`, `iss`, etc.
   - Space events: `events upcoming`, `events viewing`
   - Vacation planning: `vacation view`, `vacation dark-sites`, `vacation plan`
+  - Weather: `weather current`, `weather today`, `weather next-3-days`, `weather historical`
 - **Print-Ready**: Plain text with ASCII tables, perfect for printing
 
 **Usage:**
@@ -329,6 +345,10 @@ nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # A
 ```bash
 nexstar aurora tonight                                          # Check aurora visibility
 nexstar aurora when --days 14                                   # When will aurora be visible
+nexstar milky-way tonight                                       # Check Milky Way visibility tonight
+nexstar milky-way when "Crested Butte, CO" --days 14           # Find visibility windows
+nexstar milky-way next "Crested Butte, CO" --months 12         # Find best opportunities
+nexstar milky-way how                                           # Learn how visibility is calculated
 nexstar eclipse next                                            # Find next eclipse
 nexstar planets conjunctions                                    # Planetary conjunctions
 nexstar meteors best                                            # Best meteor viewing windows
@@ -336,6 +356,16 @@ nexstar comets visible                                          # Visible comets
 nexstar iss passes                                              # ISS pass predictions
 nexstar events upcoming --days 120                              # Space events calendar
 nexstar events viewing "Geminid"                                # Best viewing location
+```
+
+**Weather & Historical Data** (outside shell)
+
+```bash
+nexstar weather current                                         # Current weather conditions
+nexstar weather today                                           # Hourly forecast for today
+nexstar weather next-3-days                                     # 3-day forecast summary
+nexstar weather historical --months 12                          # Historical cloud cover climatology
+nexstar weather historical --months 6                           # Last 6 months of historical data
 ```
 
 **Vacation Planning** (outside shell)
@@ -357,6 +387,7 @@ nexstar naked-eye tonight --export                             # Naked-eye starg
 nexstar multi-night week --export                              # Week comparison
 nexstar multi-night best-night M31 --export                    # Best night analysis
 nexstar aurora tonight --export                                # Aurora forecast
+nexstar milky-way next "Crested Butte, CO" --export           # Milky Way opportunities
 nexstar vacation plan "Denver, CO" --export                   # Vacation plan
 ```
 
@@ -789,6 +820,17 @@ This project uses comprehensive celestial data from the [celestial_data](https:/
 - **Local Group**: Local Group galaxies and Milky Way halo objects
 
 Data files are automatically downloaded from the repository and cached locally in `~/.cache/celestron-nexstar/celestial-data/` for faster subsequent imports. Use `nexstar data clear-cache` to clear cached files or `nexstar data setup --refresh-cache` to force re-download.
+
+**Weather Data:**
+
+- **Open-Meteo API**: Current weather, hourly forecasts, and historical climatology data
+  - Historical weather data (2000-present) is cached in the database for long-term predictions
+  - Automatically fetched when needed for Milky Way visibility and other predictions
+  - Respects API rate limits by checking database first and only fetching missing data
+- **Historical Cloud Cover**: Monthly statistics (p25, p40, p60, p75 percentiles, standard deviation)
+  - Used for accurate long-term Milky Way visibility predictions
+  - Location-specific climatology for better accuracy than seasonal estimates
+  - Tighter percentile ranges (p40-p60) provide more confident predictions
 
 **Citation:**
 

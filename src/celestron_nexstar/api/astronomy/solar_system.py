@@ -78,7 +78,12 @@ def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None]:
             moon = None
 
         return ts, earth, sun, moon
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
+        # ImportError: missing Skyfield modules
+        # AttributeError: missing methods/attributes on loader
+        # ValueError: invalid ephemeris data
+        # TypeError: wrong argument types
+        # KeyError: missing ephemeris objects (beyond moon)
         logger.error(f"Failed to load Skyfield objects: {e}")
         return None, None, None, None
 
@@ -284,7 +289,12 @@ def get_moon_info(
                         continue
                     if moonset_time is not None:
                         break
-        except Exception:
+        except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+            # ValueError: invalid datetime or coordinates
+            # TypeError: wrong argument types
+            # AttributeError: missing attributes on Skyfield objects
+            # ZeroDivisionError: division by zero in calculations
+            logger.debug(f"Error calculating moonrise/moonset: {e}")
             # If calculation fails, leave as None
             pass
 
@@ -298,7 +308,12 @@ def get_moon_info(
             moonrise_time=moonrise_time,
             moonset_time=moonset_time,
         )
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError, IndexError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
+        # IndexError: position arrays have wrong size
         logger.error(f"Failed to calculate moon info: {e}")
         return None
 
@@ -385,7 +400,12 @@ def get_sun_info(
                         sunrise_time = sunrise_time.replace(tzinfo=UTC)
                     if sunset_time is not None:
                         break
-        except Exception:
+        except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+            # ValueError: invalid datetime or coordinates
+            # TypeError: wrong argument types
+            # AttributeError: missing attributes on Skyfield objects
+            # ZeroDivisionError: division by zero in calculations
+            logger.debug(f"Error calculating sunrise/sunset: {e}")
             # If calculation fails, leave as None
             pass
 
@@ -398,7 +418,11 @@ def get_sun_info(
             sunrise_time=sunrise_time,
             is_daytime=is_daytime,
         )
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Failed to calculate sun info: {e}")
         return None
 
@@ -497,7 +521,11 @@ def calculate_golden_hour(
             prev_alt = sun_alt_check
 
         return (evening_start, evening_end, morning_start, morning_end)
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Failed to calculate golden hour: {e}")
         return (None, None, None, None)
 
@@ -595,7 +623,11 @@ def calculate_blue_hour(
             prev_alt = sun_alt_check
 
         return (evening_start, evening_end, morning_start, morning_end)
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Failed to calculate blue hour: {e}")
         return (None, None, None, None)
 
@@ -695,6 +727,10 @@ def calculate_astronomical_twilight(
             prev_alt = sun_alt_check
 
         return (evening_start, evening_end, morning_start, morning_end)
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Failed to calculate astronomical twilight: {e}")
         return (None, None, None, None)
