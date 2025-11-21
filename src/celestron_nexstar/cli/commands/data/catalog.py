@@ -440,7 +440,12 @@ def info(
 
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
-            visibility_probability = planner._calculate_visibility_probability(obj, conditions, visibility_info)
+            result = planner._calculate_visibility_probability(obj, conditions, visibility_info)
+            # Extract explanations if available (function may return tuple or just float)
+            if isinstance(result, tuple):
+                visibility_probability, _ = result
+            else:
+                visibility_probability = result
         except Exception:
             # If we can't get conditions, just use observability_score
             visibility_probability = visibility_info.observability_score
@@ -562,6 +567,28 @@ def info(
                         prob_style = "dim red"
                 info_text.append("  Chance of Seeing: ", style="white")
                 info_text.append(f"{visibility_probability:.0%}\n", style=prob_style)
+
+                # Add explanations if probability is low despite good observability
+                if visibility_probability < 0.3 and visibility_info.observability_score > 0.8:
+                    info_text.append("\n  Why chance is low:\n", style="dim yellow")
+                    # Get detailed explanations from the calculation
+                    try:
+                        from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+                        planner = ObservationPlanner()
+                        conditions = planner.get_tonight_conditions()
+                        # Recalculate to get explanations
+                        result = planner._calculate_visibility_probability(obj, conditions, visibility_info)
+                        if isinstance(result, tuple):
+                            _, explanations = result
+                            for explanation in explanations:
+                                info_text.append(f"    • {explanation}\n", style="dim")
+                    except Exception:
+                        # Fallback explanation
+                        info_text.append(
+                            "    • Current weather/seeing conditions reduce visibility despite good object position\n",
+                            style="dim",
+                        )
 
             # Reasons
             if visibility_info.reasons:
