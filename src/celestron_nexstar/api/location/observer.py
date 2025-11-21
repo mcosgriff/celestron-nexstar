@@ -146,13 +146,33 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
                         except ValueError as e:
                             console.print(f"[yellow]⚠[/yellow] {e}\n")
                             console.print("[dim]Using default location. You can set it manually later.[/dim]\n")
-                        except Exception as e:
+                        except (
+                            RuntimeError,
+                            AttributeError,
+                            TypeError,
+                            KeyError,
+                            IndexError,
+                            OSError,
+                            TimeoutError,
+                        ) as e:
+                            # RuntimeError: async/await errors, event loop errors
+                            # AttributeError: missing attributes
+                            # TypeError: wrong data types
+                            # KeyError: missing keys in response data
+                            # IndexError: missing array indices
+                            # OSError: network/system errors
+                            # TimeoutError: request timeout
                             logger.debug(f"Error during location detection: {e}", exc_info=True)
                             console.print(f"[yellow]⚠[/yellow] Failed to detect location: {e}\n")
                             console.print("[dim]Using default location. You can set it manually later.[/dim]\n")
                     else:
                         console.print("[dim]Using default location. You can set it manually later.[/dim]\n")
-            except Exception as e:
+            except (OSError, RuntimeError, AttributeError, ImportError, TypeError) as e:
+                # OSError: I/O errors (stdin/stdout), not a TTY
+                # RuntimeError: console/prompt errors
+                # AttributeError: missing console attributes
+                # ImportError: missing rich imports
+                # TypeError: wrong argument types
                 # If we can't prompt (e.g., imports fail, not a TTY), just log and continue
                 logger.debug(f"Could not prompt for auto-detection: {e}", exc_info=True)
         return DEFAULT_LOCATION
@@ -193,7 +213,12 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
         # If config is corrupted or invalid, return default
         logger.warning(f"Failed to load location from {config_path}: {e}. Using default location.")
         return DEFAULT_LOCATION
-    except Exception as e:
+    except (OSError, FileNotFoundError, PermissionError, AttributeError, IndexError) as e:
+        # OSError: file I/O errors
+        # FileNotFoundError: config file doesn't exist (shouldn't happen, but safe)
+        # PermissionError: can't read file
+        # AttributeError: missing attributes in data
+        # IndexError: missing array indices
         # Catch any other unexpected errors
         logger.error(f"Unexpected error loading location from {config_path}: {e}", exc_info=True)
         return DEFAULT_LOCATION
@@ -314,9 +339,16 @@ async def geocode_location(query: str) -> ObserverLocation:
             name=address,
         )
 
-    except Exception as e:
-        if isinstance(e, (GeocodingError, LocationNotFoundError)):
-            raise
+    except (GeocodingError, LocationNotFoundError):
+        raise
+    except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid coordinates or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # AttributeError: missing attributes in response
         raise GeocodingError(f"Failed to geocode location: {e}") from None
 
 
@@ -401,7 +433,24 @@ async def _get_location_from_ip() -> ObserverLocation | None:
             name=name,
         )
 
-    except Exception as e:
+    except (
+        aiohttp.ClientError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        RuntimeError,
+    ) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid coordinates or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # AttributeError: missing attributes in response
+        # RuntimeError: async/await errors
         logger.debug(f"Failed to get location from IP: {e}")
         return None
 
@@ -461,7 +510,13 @@ async def _get_location_from_system() -> ObserverLocation | None:
                 return None
         except ImportError:
             logger.debug("dbus-python not available for system location services")
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+            # AttributeError: missing dbus attributes
+            # RuntimeError: dbus service errors
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in dbus response
+            # IndexError: missing array indices
             logger.debug(f"Failed to get location from system services: {e}")
 
     # macOS: Try CoreLocation (requires PyObjC)
@@ -482,7 +537,14 @@ async def _get_location_from_system() -> ObserverLocation | None:
                 )
         except ImportError:
             logger.debug("PyObjC not available for system location services")
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError, OSError) as e:
+            # AttributeError: missing CoreLocation attributes
+            # RuntimeError: CoreLocation service errors
+            # ValueError: invalid coordinates or data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # OSError: system/permission errors
             logger.debug(f"Failed to get location from macOS CoreLocation: {e}")
 
     # Windows: Try Windows Location API (requires winrt)
@@ -501,7 +563,15 @@ async def _get_location_from_system() -> ObserverLocation | None:
             )
         except ImportError:
             logger.debug("winrt not available for Windows location services")
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
+            # AttributeError: missing winrt attributes
+            # RuntimeError: async/await errors, Location API errors
+            # ValueError: invalid coordinates or data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # OSError: system/permission errors
+            # TimeoutError: location request timeout
             logger.debug(f"Failed to get location from Windows Location API: {e}")
 
     return None

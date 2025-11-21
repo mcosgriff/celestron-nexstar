@@ -113,7 +113,10 @@ def _estimate_cloud_cover_for_season(
                     f"best={historical_data[0]:.1f}%, worst={historical_data[1]:.1f}%, std_dev={historical_data[2]}"
                 )
                 return (historical_data[0], historical_data[1], True, historical_data[2])
-        except Exception as e:
+        except (ValueError, RuntimeError, TimeoutError) as e:
+            # ValueError: invalid month or location data
+            # RuntimeError: asyncio.run() errors
+            # asyncio.TimeoutError: API timeout
             logger.debug(f"Could not get historical weather data for month {month}: {e}")
 
     # Fall back to seasonal cloud cover estimates (simplified model)
@@ -345,7 +348,10 @@ def check_milky_way_visibility(
                 is_dark = sunset_utc <= dt_utc <= sunrise_utc
             else:  # Sunrise is next day (polar regions)
                 is_dark = dt_utc >= sunset_utc or dt_utc <= sunrise_utc
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
+        # ValueError: invalid coordinates or datetime
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes in sun_times dict
         logger.debug(f"Could not calculate sun times for is_dark check: {e}")
         # Assume dark if we can't determine
         is_dark = True
@@ -424,9 +430,15 @@ def check_milky_way_visibility(
                                 f"Using moon phase at {target_weather_time}: {moon_illumination * 100:.1f}% "
                                 f"(altitude: {moon_altitude:.1f}°)"
                             )
-                    except Exception as e:
+                    except (ValueError, TypeError, AttributeError) as e:
+                        # ValueError: invalid coordinates or datetime
+                        # TypeError: wrong argument types
+                        # AttributeError: missing attributes in moon_info
                         logger.debug(f"Could not get moon phase for target time: {e}")
-            except Exception as e:
+            except (RuntimeError, TimeoutError, ValueError) as e:
+                # RuntimeError: asyncio errors
+                # asyncio.TimeoutError: API timeout
+                # ValueError: invalid location or datetime
                 logger.debug(f"Could not get hourly weather forecast: {e}")
 
         # Fall back to current weather if we don't have forecasted data
@@ -491,7 +503,9 @@ def check_milky_way_visibility(
             galactic_center_altitude = alt
             galactic_center_visible = alt >= MIN_GALACTIC_CENTER_ALTITUDE
             logger.debug(f"Galactic center altitude: {alt:.1f}° (visible: {galactic_center_visible})")
-        except Exception as e:
+        except (ValueError, TypeError) as e:
+            # ValueError: invalid coordinates or datetime
+            # TypeError: wrong argument types
             logger.debug(f"Could not calculate galactic center altitude: {e}")
 
         # Calculate peak viewing window (when galactic center is highest and moon is down/low)
@@ -538,7 +552,8 @@ def check_milky_way_visibility(
                         if combined_score > best_score:
                             best_score = combined_score
                             best_time = check_time
-                    except Exception:
+                    except (ValueError, TypeError, AttributeError):
+                        # Silently skip errors in peak viewing window calculation
                         pass
                     check_time += timedelta(hours=1)
 
@@ -551,10 +566,17 @@ def check_milky_way_visibility(
                         peak_viewing_start = sunset_time
                     if peak_viewing_end > end_time:
                         peak_viewing_end = end_time
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError) as e:
+                # ValueError: invalid datetime calculations
+                # TypeError: wrong argument types
+                # AttributeError: missing attributes
                 logger.debug(f"Could not calculate peak viewing window: {e}")
 
-    except Exception as e:
+    except (RuntimeError, TimeoutError, ValueError, AttributeError) as e:
+        # RuntimeError: asyncio errors
+        # asyncio.TimeoutError: API timeout
+        # ValueError: invalid location or datetime
+        # AttributeError: missing attributes in data structures
         logger.warning(f"Could not fetch weather/moon/light-pollution for Milky Way check: {e}", exc_info=True)
 
     # Calculate visibility score
@@ -632,7 +654,10 @@ def get_milky_way_visibility_windows(
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
             sqm_value = lp_data.sqm_value
-    except Exception as e:
+    except (RuntimeError, TimeoutError, AttributeError) as e:
+        # RuntimeError: asyncio errors
+        # asyncio.TimeoutError: API timeout
+        # AttributeError: missing attributes in lp_data
         logger.debug(f"Could not fetch light pollution data: {e}")
 
     # Fetch hourly weather forecast for first 7 days (Open-Meteo limit)
@@ -643,7 +668,10 @@ def get_milky_way_visibility_windows(
     try:
         hourly_forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=hours_ahead))
         logger.debug(f"Fetched {len(hourly_forecasts)} hourly weather forecasts for first {forecast_days} days")
-    except Exception as e:
+    except (RuntimeError, TimeoutError, ValueError) as e:
+        # RuntimeError: asyncio errors
+        # asyncio.TimeoutError: API timeout
+        # ValueError: invalid location or hours parameter
         logger.warning(f"Could not fetch hourly weather forecast: {e}")
 
     # Create a lookup dict for weather by hour (rounded to nearest hour) for forecast data
@@ -675,7 +703,10 @@ def get_milky_way_visibility_windows(
                     historical_data_by_month[month] = (hist_data[0], hist_data[1])
                 else:
                     historical_data_by_month[month] = None
-            except Exception as e:
+            except (ValueError, RuntimeError, TimeoutError) as e:
+                # ValueError: invalid month or location data
+                # RuntimeError: asyncio.run() errors
+                # asyncio.TimeoutError: API timeout
                 logger.debug(f"Could not get historical data for month {month}: {e}")
                 historical_data_by_month[month] = None
 
@@ -797,7 +828,10 @@ def _check_milky_way_visibility_optimized(
                 is_dark = sunset_utc <= dt_utc <= sunrise_utc
             else:  # Sunrise is next day (polar regions)
                 is_dark = dt_utc >= sunset_utc or dt_utc <= sunrise_utc
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
+        # ValueError: invalid coordinates or datetime
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes in sun_times dict
         logger.debug(f"Could not calculate sun times: {e}")
         is_dark = True
 
@@ -818,7 +852,10 @@ def _check_milky_way_visibility_optimized(
             moon_altitude = moon_info.altitude_deg
             moonrise_time = moon_info.moonrise_time
             moonset_time = moon_info.moonset_time
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
+        # ValueError: invalid coordinates or datetime
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes in moon_info
         logger.debug(f"Could not get moon info: {e}")
 
     # Calculate galactic center altitude
@@ -832,7 +869,9 @@ def _check_milky_way_visibility_optimized(
         )
         galactic_center_altitude = alt
         galactic_center_visible = alt >= MIN_GALACTIC_CENTER_ALTITUDE
-    except Exception as e:
+    except (ValueError, TypeError) as e:
+        # ValueError: invalid coordinates or datetime
+        # TypeError: wrong argument types
         logger.debug(f"Could not calculate galactic center altitude: {e}")
 
     # Calculate visibility score
@@ -912,7 +951,10 @@ def get_next_milky_way_opportunity(
         lp_data = asyncio.run(fetch_lp())
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
-    except Exception as e:
+    except (RuntimeError, TimeoutError, AttributeError) as e:
+        # RuntimeError: asyncio errors
+        # asyncio.TimeoutError: API timeout
+        # AttributeError: missing attributes in lp_data
         logger.debug(f"Could not fetch light pollution data: {e}")
 
     # Pre-fetch historical weather data if needed
@@ -955,7 +997,10 @@ def get_next_milky_way_opportunity(
                     return {row[0] for row in result.all()}
 
             months_in_db = asyncio.run(check_db())
-        except Exception as e:
+        except (RuntimeError, TimeoutError, AttributeError) as e:
+            # RuntimeError: asyncio errors, database connection errors
+            # asyncio.TimeoutError: database query timeout
+            # AttributeError: missing attributes in database result
             logger.debug(f"Error checking database for historical weather: {e}")
 
         # If we're missing any months, fetch historical data
@@ -964,7 +1009,10 @@ def get_next_milky_way_opportunity(
             logger.debug(f"Missing historical data for months {missing_months}, fetching from API...")
             # Fetch all 12 months (API returns all at once, and we'll cache them)
             asyncio.run(fetch_historical_weather_climatology(location))
-    except Exception as e:
+    except (RuntimeError, TimeoutError, ValueError) as e:
+        # RuntimeError: asyncio errors, API errors
+        # asyncio.TimeoutError: API timeout
+        # ValueError: invalid location
         logger.debug(f"Could not pre-fetch historical weather data: {e}")
 
     # Check each month for the next N months
@@ -1024,7 +1072,10 @@ def get_next_milky_way_opportunity(
                     gc_alt, _ = ra_dec_to_alt_az(
                         GALACTIC_CENTER_RA, GALACTIC_CENTER_DEC, location.latitude, location.longitude, midnight_utc
                     )
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    # ValueError: invalid coordinates or datetime
+                    # TypeError: wrong argument types
+                    logger.debug(f"Could not calculate galactic center altitude for {sample_date}: {e}")
                     gc_alt = None
 
                 # Calculate expected visibility score
@@ -1066,7 +1117,11 @@ def get_next_milky_way_opportunity(
                                 logger.debug(
                                     f"Using weather forecast for {sample_date}: {cloud_cover_from_forecast:.1f}%"
                                 )
-                    except Exception as e:
+                    except (ValueError, TypeError, AttributeError, KeyError) as e:
+                        # ValueError: invalid datetime or location
+                        # TypeError: wrong argument types
+                        # AttributeError: missing attributes in forecast data
+                        # KeyError: missing keys in forecast dictionary
                         logger.debug(f"Could not get weather forecast for {sample_date}: {e}")
 
                 # Estimate cloud cover based on season (use best case for scoring)
@@ -1112,7 +1167,11 @@ def get_next_milky_way_opportunity(
                     best_moon_illumination = moon_illumination
                     best_gc_altitude = gc_alt
                     best_score_range = (worst_case_score, best_case_score)  # Store range
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError, RuntimeError) as e:
+                # ValueError: invalid date or location data
+                # TypeError: wrong argument types
+                # AttributeError: missing attributes in data structures
+                # RuntimeError: asyncio or calculation errors
                 logger.debug(f"Error checking date {sample_date}: {e}")
                 continue
 

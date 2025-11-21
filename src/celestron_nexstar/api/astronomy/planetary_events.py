@@ -146,7 +146,13 @@ def get_planetary_conjunctions(
         loader = get_skyfield_loader()
         ts = loader.timescale()
         eph = _get_ephemeris("de440s.bsp")
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError, KeyError, FileNotFoundError) as e:
+        # ImportError: missing Skyfield modules
+        # AttributeError: missing methods/attributes on loader
+        # ValueError: invalid ephemeris data
+        # TypeError: wrong argument types
+        # KeyError: missing ephemeris objects
+        # FileNotFoundError: ephemeris file not found
         logger.error(f"Error loading ephemeris: {e}")
         return []
 
@@ -202,7 +208,12 @@ def get_planetary_conjunctions(
                                 notes=notes,
                             )
                         )
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError, ZeroDivisionError, KeyError) as e:
+                # ValueError: invalid datetime or coordinates
+                # TypeError: wrong argument types
+                # AttributeError: missing attributes on Skyfield objects
+                # ZeroDivisionError: division by zero in calculations
+                # KeyError: missing planet in ephemeris
                 logger.debug(f"Error finding conjunction for {planet1}-{planet2}: {e}")
                 continue
 
@@ -234,7 +245,13 @@ def get_planetary_oppositions(
         eph = _get_ephemeris("de440s.bsp")
         sun = eph["sun"]
         earth = eph["earth"]
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError, KeyError, FileNotFoundError) as e:
+        # ImportError: missing Skyfield modules
+        # AttributeError: missing methods/attributes on loader
+        # ValueError: invalid ephemeris data
+        # TypeError: wrong argument types
+        # KeyError: missing ephemeris objects (sun, earth)
+        # FileNotFoundError: ephemeris file not found
         logger.error(f"Error loading ephemeris: {e}")
         return []
 
@@ -305,7 +322,12 @@ def get_planetary_oppositions(
                             notes=notes,
                         )
                     )
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, ZeroDivisionError, KeyError) as e:
+            # ValueError: invalid datetime or coordinates
+            # TypeError: wrong argument types
+            # AttributeError: missing attributes on Skyfield objects
+            # ZeroDivisionError: division by zero in calculations
+            # KeyError: missing planet in ephemeris
             logger.debug(f"Error finding opposition for {planet_name}: {e}")
             continue
 

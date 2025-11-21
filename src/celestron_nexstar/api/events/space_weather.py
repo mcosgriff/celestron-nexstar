@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import requests
 import requests_cache
 from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 
@@ -201,7 +202,13 @@ def get_solar_wind_data() -> dict[str, float | None]:
             "solar_wind_bz": bz,
             "solar_wind_density": density,
         }
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching solar wind data: {e}")
         return {}
 
@@ -261,7 +268,13 @@ def get_goes_xray_data() -> dict[str, float | str | None]:
             }
 
         return {}
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching GOES X-ray data: {e}")
         return {}
 
@@ -334,12 +347,19 @@ def get_radio_flux_107() -> float | None:
                         if flux_value:
                             with contextlib.suppress(ValueError, TypeError):
                                 return float(flux_value)
-        except Exception:
+        except (KeyError, IndexError, AttributeError):
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # AttributeError: missing attributes
             pass
 
         # If not found, return None
         return None
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching 10.7cm radio flux: {e}")
         return None
 
@@ -403,7 +423,13 @@ def get_proton_flux_data() -> dict[str, float | None]:
                             return {"proton_flux_10mev": float(flux_10mev)}
 
         return {}
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching proton flux data: {e}")
         return {}
 
@@ -455,7 +481,10 @@ def get_kp_ap_data() -> dict[str, float | None]:
                 pass
 
         return {"kp_index": None}
-    except Exception as e:
+    except (requests.RequestException, KeyError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # KeyError: missing keys in response
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching Kp/Ap data: {e}")
         return {}
 
@@ -705,6 +734,12 @@ def get_ovation_aurora_forecast() -> list[OvationAuroraForecast] | None:
                 pass
 
         return forecasts if forecasts else None
-    except Exception as e:
+    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # requests.RequestException: HTTP/network errors
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # TimeoutError: request timeout
         logger.debug(f"Error fetching Ovation aurora forecast: {e}")
         return None

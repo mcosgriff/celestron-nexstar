@@ -471,7 +471,14 @@ async def search_objects(
             if exact_match:
                 return [exact_match]
 
-    except Exception as e:
+    except (AttributeError, ValueError, TypeError, RuntimeError, KeyError, IndexError) as e:
+        # AttributeError: missing database attributes or methods
+        # ValueError: invalid query or database state
+        # TypeError: wrong argument types
+        # RuntimeError: async/await errors, database connection errors
+        # KeyError: missing keys in database results
+        # IndexError: missing array indices in results
+        import sys
         import traceback
 
         error_details = traceback.format_exc()
@@ -480,8 +487,6 @@ async def search_objects(
         logger.error(f"Query lower was: {query_lower!r} (type: {type(query_lower).__name__})")
         logger.error(f"Full traceback: {error_details}")
         # Also print to stderr for immediate visibility
-        import sys
-
         print(f"ERROR: Database search failed: {e}", file=sys.stderr)
         print(f"Query: {query!r} (type: {type(query).__name__})", file=sys.stderr)
         print(f"Traceback:\n{error_details}", file=sys.stderr)
@@ -514,7 +519,12 @@ async def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> 
         db = get_database()
         # Database query handles case-insensitivity
         return await db.get_names_for_completion(prefix=prefix, limit=limit)
-    except Exception:
+    except (AttributeError, ValueError, TypeError, RuntimeError) as e:
+        # AttributeError: missing database attributes or methods
+        # ValueError: invalid prefix or limit
+        # TypeError: wrong argument types
+        # RuntimeError: async/await errors, database connection errors
+        logger.debug(f"Error getting object names for completion: {e}")
         # If database is not available, return empty list
         return []
 
@@ -560,7 +570,13 @@ async def get_object_by_name(name: str, catalog_name: str | None = None) -> list
                 if obj_name_lower not in seen_names and name.lower() in obj_name_lower:
                     all_matches.append(obj)
                     seen_names.add(obj_name_lower)
-    except Exception:
-        pass  # Database might not be available
+    except (AttributeError, ValueError, TypeError, RuntimeError, KeyError) as e:
+        # AttributeError: missing database attributes or methods
+        # ValueError: invalid name parameter
+        # TypeError: wrong argument types
+        # RuntimeError: async/await errors, database connection errors
+        # KeyError: missing keys in database results
+        logger.debug(f"Error getting object by name: {e}")
+        # Database might not be available
 
     return all_matches

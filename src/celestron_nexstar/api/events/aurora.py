@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import requests
 import requests_cache
 from retry_requests import retry
 
@@ -143,7 +144,14 @@ def _get_kp_forecast(days: int = 3) -> list[tuple[datetime, float]] | None:
                 return forecast_data
 
         return None
-    except Exception as e:
+    except (requests.RequestException, TimeoutError, ValueError, TypeError, KeyError, IndexError, OSError) as e:
+        # requests.RequestException: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # OSError: file I/O errors (cache)
         logger.error(f"Error fetching Kp forecast: {e}")
         return None
 
@@ -211,7 +219,14 @@ def _get_kp_index() -> float | None:
                     return latest_observed
                 elif latest_predicted is not None:
                     return latest_predicted
-        except Exception as e:
+        except (requests.RequestException, TimeoutError, ValueError, TypeError, KeyError, IndexError, OSError) as e:
+            # requests.RequestException: HTTP/network errors
+            # TimeoutError: request timeout
+            # ValueError: invalid JSON or data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # OSError: file I/O errors (cache)
             logger.debug(f"NOAA SWPC API failed: {e}, trying alternative")
 
         # Fallback: Try alternative NOAA endpoint (current Kp)
@@ -232,13 +247,37 @@ def _get_kp_index() -> float | None:
                         return float(kp_str)
                     except (ValueError, IndexError, TypeError):
                         pass
-        except Exception as e:
+        except (requests.RequestException, TimeoutError, ValueError, TypeError, KeyError, IndexError, OSError) as e:
+            # requests.RequestException: HTTP/network errors
+            # TimeoutError: request timeout
+            # ValueError: invalid JSON or data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # OSError: file I/O errors (cache)
             logger.debug(f"NOAA current Kp API failed: {e}")
 
         logger.warning("Could not fetch Kp index from any source")
         return None
 
-    except Exception as e:
+    except (
+        requests.RequestException,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        RuntimeError,
+    ) as e:
+        # requests.RequestException: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # OSError: file I/O errors (cache)
+        # RuntimeError: async/await errors
         logger.error(f"Error fetching Kp index: {e}")
         return None
 
@@ -476,7 +515,13 @@ def get_aurora_forecast(
                         peak_viewing_start = None
                         peak_viewing_end = None
                         is_forecasted = False
-                except Exception as e:
+                except (ValueError, TypeError, AttributeError, ZeroDivisionError, KeyError, IndexError) as e:
+                    # ValueError: invalid time calculations
+                    # TypeError: wrong data types
+                    # AttributeError: missing attributes
+                    # ZeroDivisionError: division by zero in calculations
+                    # KeyError: missing keys in data
+                    # IndexError: missing array indices
                     logger.debug(f"Could not calculate nighttime Kp max: {e}")
                     peak_viewing_start = None
                     peak_viewing_end = None
@@ -541,7 +586,11 @@ def get_aurora_forecast(
                     sunrise_utc = sunrise_utc + timedelta(days=1)
                 # It will be dark tonight (after sunset, before sunrise)
                 will_be_dark_tonight = True
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, KeyError) as e:
+            # ValueError: invalid time calculations
+            # TypeError: wrong data types
+            # AttributeError: missing attributes in sun_times
+            # KeyError: missing keys in sun_times
             logger.debug(f"Could not calculate if it will be dark tonight: {e}")
             # Assume it will be dark tonight
             will_be_dark_tonight = True
@@ -618,7 +667,11 @@ def check_aurora_visibility(
                 is_dark = sunset_utc <= dt_utc <= sunrise_utc
             else:  # Sunrise is next day (polar regions)
                 is_dark = dt_utc >= sunset_utc or dt_utc <= sunrise_utc
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, KeyError) as e:
+        # ValueError: invalid time calculations
+        # TypeError: wrong data types
+        # AttributeError: missing attributes in sun_times
+        # KeyError: missing keys in sun_times
         logger.debug(f"Could not calculate sun times for is_dark check: {e}")
         # Assume dark if we can't determine
         is_dark = True
@@ -652,7 +705,11 @@ def check_aurora_visibility(
                     # Round down to the hour
                     target_weather_time = target_weather_time.replace(minute=0, second=0, microsecond=0)
                     logger.debug(f"Daytime: using weather at sunset ({target_weather_time})")
-            except Exception as e:
+            except (ValueError, TypeError, AttributeError, KeyError) as e:
+                # ValueError: invalid time calculations
+                # TypeError: wrong data types
+                # AttributeError: missing attributes in sun_times
+                # KeyError: missing keys in sun_times
                 logger.debug(f"Could not get sunset time: {e}")
         else:
             # Nighttime: use current hour weather (rounded down)
@@ -694,9 +751,21 @@ def check_aurora_visibility(
                         if moon_info:
                             moon_illumination = moon_info.illumination
                             logger.debug(f"Using moon phase at {target_weather_time}: {moon_illumination * 100:.1f}%")
-                    except Exception as e:
+                    except (ValueError, TypeError, AttributeError, ZeroDivisionError, IndexError) as e:
+                        # ValueError: invalid coordinates or time
+                        # TypeError: wrong data types
+                        # AttributeError: missing attributes
+                        # ZeroDivisionError: division by zero in calculations
+                        # IndexError: missing array indices
                         logger.debug(f"Could not get moon phase for target time: {e}")
-            except Exception as e:
+            except (RuntimeError, TimeoutError, ValueError, TypeError, AttributeError, KeyError, IndexError) as e:
+                # RuntimeError: async/await errors, API errors
+                # TimeoutError: request timeout
+                # ValueError: invalid data format
+                # TypeError: wrong data types
+                # AttributeError: missing attributes
+                # KeyError: missing keys in response
+                # IndexError: missing array indices
                 logger.debug(f"Could not get hourly weather forecast: {e}")
 
         # Fall back to current weather if we don't have forecasted data
@@ -747,7 +816,15 @@ def check_aurora_visibility(
                     bortle_class = lp_data.bortle_class.value
                     sqm_value = lp_data.sqm_value
                     logger.debug(f"Using Bortle class: {bortle_class} (SQM: {sqm_value:.2f})")
-    except Exception as e:
+    except (RuntimeError, TimeoutError, ValueError, TypeError, AttributeError, KeyError, IndexError, OSError) as e:
+        # RuntimeError: async/await errors, API errors
+        # TimeoutError: request timeout
+        # ValueError: invalid data format or coordinates
+        # TypeError: wrong data types
+        # AttributeError: missing attributes
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # OSError: file I/O errors
         logger.warning(f"Could not fetch weather/moon/light-pollution for aurora check: {e}", exc_info=True)
 
     # Note: is_dark is already calculated above for weather logic

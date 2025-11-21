@@ -96,7 +96,15 @@ def sync_ephemeris_files(
             console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]")
             count = asyncio.run(sync_ephemeris_files_from_naif(force=force))
             console.print(f"[green]✓[/green] Synced {count} ephemeris files to database")
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
+        # RuntimeError: async/await errors, event loop errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: network/file I/O errors
+        # TimeoutError: request timeout
         console.print(f"[red]Error:[/red] Failed to sync ephemeris files: {e}")
         raise typer.Exit(code=1) from e
 
@@ -169,7 +177,26 @@ def update_star_names() -> None:
         asyncio.run(_update_star_names())
 
         console.print("\n[bold green]✓ Star names updated![/bold green]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error updating star names: {e}\n")
         import traceback
 
@@ -224,7 +251,13 @@ def rebuild_fts() -> None:
             )
             console.print("[dim]Some objects may not be searchable. Check for NULL names or descriptions.[/dim]\n")
 
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         console.print(f"[red]✗[/red] Failed to rebuild FTS index: {e}")
         import traceback
 
@@ -381,7 +414,26 @@ def setup(
                     else:
                         console.print("[yellow]⚠[/yellow] Database exists but is empty")
                         should_rebuild = True
-        except Exception as e:
+        except (
+            AttributeError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # AttributeError: missing database attributes
+            # RuntimeError: database connection errors
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing database file
+            # PermissionError: file permission errors
             console.print(f"[yellow]⚠[/yellow] Error checking database: {e}")
             console.print("[dim]Will rebuild database[/dim]")
             should_rebuild = True
@@ -520,7 +572,28 @@ def setup(
                     console.print(static_table)
                     console.print()
 
-        except Exception as e:
+        except (
+            DatabaseRebuildError,
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # DatabaseRebuildError: database rebuild errors
+            # RuntimeError: async/await errors, import errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
             console.print(f"[red]✗[/red] Failed to rebuild database: {e}")
             import traceback
 
@@ -535,7 +608,14 @@ def setup(
 
             alembic_cfg = Config("alembic.ini")
             command.upgrade(alembic_cfg, "head")
-        except Exception:
+        except (AttributeError, RuntimeError, ValueError, TypeError, FileNotFoundError, OSError):
+            # AttributeError: missing Alembic attributes
+            # RuntimeError: migration errors
+            # ValueError: invalid configuration
+            # TypeError: wrong argument types
+            # FileNotFoundError: missing alembic.ini
+            # OSError: file I/O errors
+            # Silently skip migration errors (non-critical)
             pass
 
     # Ensure static data is populated (rebuild_database should have done this, but double-check)
@@ -572,7 +652,26 @@ def setup(
 
         # Run async function - asyncio is imported at module level
         asyncio.run(_check_and_seed_static_data())
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"[yellow]⚠[/yellow] Error checking static data: {e}")
         # Try to populate anyway
         try:
@@ -580,7 +679,11 @@ def setup(
             # This fallback is skipped as it requires sync sessions which are no longer available
             # The main seeding path above should handle this
             console.print("[yellow]⚠[/yellow] Fallback population skipped (requires sync sessions)")
-        except Exception as e2:
+        except (RuntimeError, AttributeError, ValueError, TypeError) as e2:
+            # RuntimeError: async/await errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
             console.print(f"[yellow]⚠[/yellow] Failed to populate static data (non-critical): {e2}")
 
     # Sync ephemeris metadata (optional)
@@ -592,7 +695,15 @@ def setup(
             # asyncio is imported at module level
             count = asyncio.run(sync_ephemeris_files_from_naif(force=False))
             console.print(f"[green]✓[/green] Synced {count} ephemeris files")
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
+            # RuntimeError: async/await errors, event loop errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: network/file I/O errors
+            # TimeoutError: request timeout
             console.print(f"[yellow]⚠[/yellow] Ephemeris sync failed (non-critical): {e}")
             console.print("[dim]You can sync later with: nexstar data sync-ephemeris[/dim]")
 
@@ -604,7 +715,14 @@ def setup(
         stats = asyncio.run(db.get_stats())
         console.print(f"[dim]Total objects: {stats.total_objects:,}[/dim]")
         console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing database file
+        # Silently skip stats errors (non-critical)
         pass
 
 
@@ -676,7 +794,14 @@ def seed_database(
                     if json_path.exists():
                         data = load_seed_json(filename)
                         expected_counts[data_type] = len(data)
-                except Exception:
+                except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                    # FileNotFoundError: missing seed file
+                    # PermissionError: can't read file
+                    # ValueError: invalid JSON format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in JSON
+                    # IndexError: missing array indices
+                    # Silently skip individual seed file errors
                     pass
 
             table = Table(show_header=True, header_style="bold", show_lines=False)
@@ -712,7 +837,26 @@ def seed_database(
             console.print(f"\n[bold]Expected seed records:[/bold] {expected_total_str}")
             console.print(f"[bold]Total seed records:[/bold] {total_records}")
             console.print("[dim]Run 'nexstar data seed' to populate missing data.[/dim]\n")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+        ) as e:
+            # RuntimeError: async/await errors, database errors
+            # AttributeError: missing database/model attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
             console.print(f"\n[red]✗[/red] Error checking seed status: {e}\n")
             import traceback
 
@@ -753,7 +897,26 @@ def seed_database(
         console.print(f"\n[red]✗[/red] Seed data file not found: {e}\n")
         console.print("[dim]Make sure seed data files exist in the seed directory.[/dim]\n")
         raise typer.Exit(code=1) from e
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error seeding database: {e}\n")
         import traceback
 
@@ -790,7 +953,26 @@ def init_static() -> None:
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error initializing static data: {e}\n")
         import traceback
 
@@ -932,7 +1114,13 @@ def stats() -> None:
                 console.print("\n[dim]Light pollution data: [yellow]No data imported[/yellow][/dim]")
         else:
             console.print("\n[dim]Light pollution data: [yellow]Table not created[/yellow][/dim]")
-    except Exception:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError):
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (table might not exist)
         pass
 
@@ -971,7 +1159,14 @@ def stats() -> None:
                 if json_path.exists():
                     data = load_seed_json(filename)
                     expected_counts[data_type] = len(data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip individual seed file errors
                 pass
 
         seed_table = Table(title="\nSeed Data (Static Reference Data)")
@@ -1008,7 +1203,13 @@ def stats() -> None:
             seed_table.add_row("[bold]Total[/bold]", expected_total_str, f"[bold]{total_seed_records:,}[/bold]", "")
 
         console.print(seed_table)
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (tables might not exist)
         pass
 
@@ -1054,7 +1255,13 @@ def stats() -> None:
                 console.print("\n[dim]TLE data: [yellow]No data imported[/yellow][/dim]")
         else:
             console.print("\n[dim]TLE data: [yellow]Table not created[/yellow][/dim]")
-    except Exception:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError):
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         # Silently skip if there's an error (table might not exist)
         pass
 
@@ -1105,7 +1312,14 @@ def vacuum() -> None:
             console.print(f"  Space reclaimed: [green]{size_reclaimed / (1024 * 1024):.2f} MB[/green]\n")
         else:
             console.print("  No space to reclaim\n")
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError, PermissionError) as e:
+        # RuntimeError: database errors
+        # AttributeError: missing database attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing database file
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error running VACUUM: {e}\n")
         import traceback
 
@@ -1159,7 +1373,13 @@ def clear_light_pollution(
 
             result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
             row_count = result[0] if result else 0
-    except Exception:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError):
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors, table doesn't exist
+        # ValueError: invalid SQL
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         console.print("\n[yellow]⚠[/yellow] Light pollution table does not exist or is empty.\n")
         raise typer.Exit(code=0) from None
 
@@ -1211,7 +1431,26 @@ def clear_light_pollution(
                 console.print("  No space to reclaim\n")
 
         console.print("[dim]You can now re-download data with different filters if needed.[/dim]\n")
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: database errors
+        # AttributeError: missing database/model attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Error clearing data: {e}\n")
         import traceback
 
@@ -1356,7 +1595,28 @@ def download_light_pollution(
         else:
             console.print(f"\n[red]✗[/red] Error: {e}\n")
         raise typer.Exit(code=1) from None
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+        TimeoutError,
+    ) as e:
+        # RuntimeError: async/await errors, download/processing errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors, network errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
+        # TimeoutError: download timeout
         console.print(f"\n[red]✗[/red] Error downloading data: {e}\n")
         import traceback
 
@@ -1550,7 +1810,26 @@ def rebuild(
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from None
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # RuntimeError: async/await errors, database errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         console.print(f"\n[red]✗[/red] Unexpected error: {e}\n")
         import traceback
 
@@ -1608,7 +1887,10 @@ def run_migrations(
             current_rev: str | None | list[str] = None
             try:
                 current_rev = context.get_current_revision()
-            except Exception:
+            except (AttributeError, RuntimeError, ValueError):
+                # AttributeError: missing Alembic context attributes
+                # RuntimeError: multiple heads or migration errors
+                # ValueError: invalid revision format
                 # Multiple heads in database - use get_current_heads() instead
                 current_heads = context.get_current_heads()
                 if len(current_heads) == 1:
@@ -1626,7 +1908,10 @@ def run_migrations(
         try:
             # Try to get single head first (works when there's no branching)
             head_rev = script.get_current_head()
-        except Exception:
+        except (AttributeError, RuntimeError, ValueError):
+            # AttributeError: missing script attributes
+            # RuntimeError: multiple heads or script errors
+            # ValueError: invalid configuration
             # Multiple heads detected - use get_heads() instead
             try:
                 heads_list = script.get_heads()
@@ -1659,7 +1944,11 @@ def run_migrations(
                         head_rev = "heads"
                 else:
                     head_rev = None
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                # AttributeError: missing script attributes
+                # RuntimeError: script errors
+                # ValueError: invalid configuration
+                # TypeError: wrong argument types
                 console.print(f"[red]✗[/red] Error checking migrations: {e}")
                 raise typer.Exit(code=1) from e
 
@@ -1706,7 +1995,11 @@ def run_migrations(
                     console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
                 else:
                     migrations_to_apply = "unknown"
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                # AttributeError: missing Alembic attributes
+                # RuntimeError: migration comparison errors
+                # ValueError: invalid revision format
+                # TypeError: wrong argument types
                 console.print(f"[yellow]⚠[/yellow] Could not determine upgrade path: {e}")
                 console.print(f"[dim]Current revision: {current_rev}[/dim]")
                 console.print(f"[dim]Head revision: {head_rev}[/dim]")
@@ -1755,13 +2048,19 @@ def run_migrations(
                 context = MigrationContext.configure(connection)
                 try:
                     new_rev = context.get_current_revision()
-                except Exception:
+                except (AttributeError, RuntimeError, ValueError):
+                    # AttributeError: missing Alembic context attributes
+                    # RuntimeError: multiple heads or migration errors
+                    # ValueError: invalid revision format
                     # Multiple heads - use get_current_heads()
                     new_heads = context.get_current_heads()
                     new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
                 try:
                     head_rev_after = script.get_current_head()
-                except Exception:
+                except (AttributeError, RuntimeError, ValueError):
+                    # AttributeError: missing script attributes
+                    # RuntimeError: multiple heads or script errors
+                    # ValueError: invalid configuration
                     # Multiple heads - get the merge migration if it exists
                     heads_list = script.get_heads()
                     if len(heads_list) == 1:
@@ -1787,14 +2086,26 @@ def run_migrations(
                     console.print(f"[yellow]⚠[/yellow] Database revision: {new_rev}")
                     console.print(f"[yellow]⚠[/yellow] Head revision: {head_rev_after}")
                     console.print("[yellow]⚠[/yellow] Database may not be fully up to date. Run migrate again.\n")
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+            # AttributeError: missing Alembic attributes
+            # RuntimeError: migration errors
+            # ValueError: invalid configuration or revision format
+            # TypeError: wrong argument types
+            # OSError: file I/O errors
+            # FileNotFoundError: missing alembic.ini or migration files
             console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             raise typer.Exit(code=1) from e
 
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+        # AttributeError: missing Alembic attributes
+        # RuntimeError: migration errors
+        # ValueError: invalid configuration
+        # TypeError: wrong argument types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing alembic.ini
         console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
         import traceback
 
@@ -1860,7 +2171,28 @@ def rebuild_seed_files(
 
                 json.dump(comets_data, f, indent=2, ensure_ascii=False)
             console.print(f"[green]✓[/green] Wrote {len(comets_data)} comets to {comets_path}")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+            TimeoutError,
+        ) as e:
+            # RuntimeError: async/await errors, API errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors, network errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
+            # TimeoutError: request timeout
             console.print(f"[red]✗[/red] Error fetching comet data: {e}")
             import traceback
 
@@ -1879,7 +2211,28 @@ def rebuild_seed_files(
 
                 json.dump(variable_stars_data, f, indent=2, ensure_ascii=False)
             console.print(f"[green]✓[/green] Wrote {len(variable_stars_data)} variable stars to {variable_stars_path}")
-        except Exception as e:
+        except (
+            RuntimeError,
+            AttributeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            IndexError,
+            OSError,
+            FileNotFoundError,
+            PermissionError,
+            TimeoutError,
+        ) as e:
+            # RuntimeError: async/await errors, API errors
+            # AttributeError: missing attributes
+            # ValueError: invalid data format
+            # TypeError: wrong data types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
+            # OSError: file I/O errors, network errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
+            # TimeoutError: request timeout
             console.print(f"[red]✗[/red] Error fetching variable star data: {e}")
             import traceback
 
@@ -1940,7 +2293,28 @@ def rebuild_seed_files(
                         ]
                     )
                     console.print(f"[green]✓[/green] Wrote {count} dark sky sites to {dark_sites_path}")
-                except Exception as e:
+                except (
+                    RuntimeError,
+                    AttributeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    OSError,
+                    FileNotFoundError,
+                    PermissionError,
+                    TimeoutError,
+                ) as e:
+                    # RuntimeError: async/await errors, API errors, browser automation errors
+                    # AttributeError: missing attributes
+                    # ValueError: invalid data format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in data
+                    # IndexError: missing array indices
+                    # OSError: file I/O errors, network errors
+                    # FileNotFoundError: missing files
+                    # PermissionError: file permission errors
+                    # TimeoutError: request timeout
                     console.print(f"[red]✗[/red] Error fetching dark sky sites data: {e}")
                     import traceback
 
@@ -1989,7 +2363,13 @@ def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) ->
                         console.print(f"[yellow]⚠[/yellow] MPC returned status {response.status}")
             except aiohttp.ClientError as e:
                 console.print(f"[yellow]⚠[/yellow] Network error fetching from MPC: {e}")
-            except Exception as e:
+            except (TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
+                # TimeoutError: request timeout
+                # ValueError: invalid JSON or data format
+                # TypeError: wrong data types
+                # KeyError: missing keys in response
+                # IndexError: missing array indices
+                # AttributeError: missing attributes in response
                 console.print(f"[yellow]⚠[/yellow] Error fetching from MPC: {e}")
                 console.print(f"[dim]Error type: {type(e).__name__}[/dim]")
 
@@ -2026,7 +2406,14 @@ def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) ->
                 existing_data = load_seed_json("comets.json")
                 console.print(f"[dim]Found existing seed file with {len(existing_data)} comets.[/dim]")
                 return cast(list[dict[str, Any]], existing_data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip if seed file doesn't exist or is invalid
                 pass
         return []
 
@@ -2200,7 +2587,7 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                                     console.print(
                                         f"[dim]✗ {name}: Parsed but filtered out (magnitude or missing data)[/dim]"
                                     )
-                            except Exception as parse_error:
+                            except (ValueError, TypeError, KeyError, IndexError, AttributeError) as parse_error:
                                 # Check if response is HTML (error page) instead of JSON
                                 text = await response.text()
                                 if text.strip().startswith("<"):
@@ -2213,7 +2600,24 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                         import asyncio
 
                         await asyncio.sleep(0.5)
-                except Exception as e:
+                except (
+                    aiohttp.ClientError,
+                    TimeoutError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    IndexError,
+                    AttributeError,
+                    RuntimeError,
+                ) as e:
+                    # aiohttp.ClientError: HTTP/network errors
+                    # TimeoutError: request timeout
+                    # ValueError: invalid data format
+                    # TypeError: wrong data types
+                    # KeyError: missing keys in response
+                    # IndexError: missing array indices
+                    # AttributeError: missing attributes in response
+                    # RuntimeError: async/await errors
                     console.print(f"[dim]✗ {name}: Error: {e}[/dim]")
                     continue
 
@@ -2261,7 +2665,14 @@ def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = N
                 existing_data = load_seed_json("variable_stars.json")
                 console.print(f"[dim]Found existing seed file with {len(existing_data)} variable stars.[/dim]")
                 return cast(list[dict[str, Any]], existing_data)
-            except Exception:
+            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+                # FileNotFoundError: missing seed file
+                # PermissionError: can't read file
+                # ValueError: invalid JSON format
+                # TypeError: wrong data types
+                # KeyError: missing keys in JSON
+                # IndexError: missing array indices
+                # Silently skip if seed file doesn't exist or is invalid
                 pass
         return []
 
@@ -2338,7 +2749,15 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                         data: list[dict[str, Any]] = await response.json()
                         if data:
                             return (float(data[0]["lat"]), float(data[0]["lon"]))
-        except Exception:
+        except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+            # aiohttp.ClientError: HTTP/network errors
+            # TimeoutError: request timeout
+            # ValueError: invalid JSON or coordinates
+            # TypeError: wrong data types
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # AttributeError: missing attributes in response
+            # Silently skip geocoding errors
             pass
 
         return None
@@ -2369,7 +2788,14 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
             ]
             existing_names = {place["name"].lower() for place in existing_places}
             console.print(f"[dim]Found {len(existing_places)} existing dark sky sites[/dim]")
-        except Exception:
+        except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+            # FileNotFoundError: missing seed file
+            # PermissionError: can't read file
+            # ValueError: invalid JSON format
+            # TypeError: wrong data types
+            # KeyError: missing keys in JSON
+            # IndexError: missing array indices
+            # Silently skip if seed file doesn't exist or is invalid
             pass
 
     # Fetch places from IDA website
@@ -2415,7 +2841,13 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                             "--no-sandbox",
                         ],
                     )
-                except Exception as e:
+                except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+                    # RuntimeError: browser launch errors
+                    # AttributeError: missing Playwright attributes
+                    # ValueError: invalid browser options
+                    # TypeError: wrong argument types
+                    # OSError: system errors
+                    # FileNotFoundError: Chromium not found
                     console.print(f"[yellow]⚠[/yellow] Failed to launch browser: {e}")
                     console.print("[dim]Make sure Chromium is installed: uv run playwright install chromium[/dim]")
                     raise
@@ -2462,7 +2894,10 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                                 timeout=30000,
                             )
                             console.print("[dim]Cloudflare challenge completed[/dim]")
-                        except Exception:
+                        except (TimeoutError, RuntimeError, AttributeError):
+                            # TimeoutError: challenge timeout
+                            # RuntimeError: Playwright errors
+                            # AttributeError: missing page attributes
                             console.print(
                                 "[yellow]⚠[/yellow] Cloudflare challenge may still be active, continuing anyway..."
                             )
@@ -2479,7 +2914,10 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                             state="visible",
                         )
                         console.print("[dim]Content elements detected[/dim]")
-                    except Exception:
+                    except (TimeoutError, RuntimeError, AttributeError):
+                        # TimeoutError: selector timeout
+                        # RuntimeError: Playwright errors
+                        # AttributeError: missing page attributes
                         console.print("[yellow]⚠[/yellow] No expected content elements found, but continuing...")
 
                     # Scroll to trigger lazy loading
@@ -2492,7 +2930,12 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                     # Check page content length
                     content_length = len(await page.content())
                     console.print(f"[dim]Page HTML length: {content_length} characters[/dim]")
-                except Exception as e:
+                except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError) as e:
+                    # RuntimeError: Playwright errors, page load errors
+                    # AttributeError: missing page attributes
+                    # ValueError: invalid page content
+                    # TypeError: wrong data types
+                    # TimeoutError: page load timeout
                     console.print(f"[yellow]⚠[/yellow] Failed to load page: {e}")
                     await browser.close()
                     raise
@@ -2561,7 +3004,11 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                                     button_found = True
                                     console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]")
                                     break
-                            except Exception:
+                            except (TimeoutError, RuntimeError, AttributeError):
+                                # TimeoutError: selector timeout
+                                # RuntimeError: Playwright errors
+                                # AttributeError: missing page/button attributes
+                                # Continue to next iteration
                                 continue
 
                         if not button_found:
@@ -2580,7 +3027,12 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                             else:
                                 console.print(f"[dim]No more 'Load More' button found after {clicks} clicks[/dim]")
                             break
-                    except Exception as e:
+                    except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError) as e:
+                        # RuntimeError: Playwright errors
+                        # AttributeError: missing page attributes
+                        # ValueError: invalid page content
+                        # TypeError: wrong data types
+                        # TimeoutError: operation timeout
                         console.print(f"[dim]Error during button click loop: {e}[/dim]")
                         break
 
@@ -2604,7 +3056,13 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
         except ImportError:
             # Playwright not installed, try Selenium
             pass
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError, OSError) as e:
+            # RuntimeError: Playwright errors, browser automation errors
+            # AttributeError: missing Playwright attributes
+            # ValueError: invalid browser options
+            # TypeError: wrong argument types
+            # TimeoutError: operation timeout
+            # OSError: system errors
             # Browser automation failed, fall back to static HTML
             console.print(f"[yellow]⚠[/yellow] Browser automation failed: {e}")
             console.print("[dim]Falling back to static HTML parsing (may miss many places)...[/dim]")
@@ -2660,12 +3118,21 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                                 button_found = True
                                 console.print(f"[dim]Clicked 'Load More' ({clicks} times)...[/dim]", end="\r")
                                 break
-                            except Exception:
+                            except (TimeoutError, RuntimeError, AttributeError):
+                                # TimeoutError: selector timeout
+                                # RuntimeError: Selenium errors
+                                # AttributeError: missing driver/button attributes
+                                # Continue to next iteration
                                 continue
 
                         if not button_found:
                             break
-                    except Exception:
+                    except (RuntimeError, AttributeError, ValueError, TypeError, TimeoutError):
+                        # RuntimeError: Selenium errors
+                        # AttributeError: missing driver attributes
+                        # ValueError: invalid page content
+                        # TypeError: wrong data types
+                        # TimeoutError: operation timeout
                         break
 
                 console.print()  # New line after progress
@@ -2836,7 +3303,13 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                     {"name": name, "designation": designation, "description": description, "country": country}
                 )
 
-            except Exception:
+            except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+                # ValueError: invalid regex match or data format
+                # TypeError: wrong data types
+                # AttributeError: missing BeautifulSoup attributes
+                # KeyError: missing keys in data
+                # IndexError: missing array indices
+                # Continue to next place
                 continue
 
         # Approach 2: Look for text content that might contain place names
@@ -2923,7 +3396,13 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                                     else "",
                                 }
                             )
-                except Exception:
+                except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+                    # ValueError: invalid JSON-LD or data format
+                    # TypeError: wrong data types
+                    # AttributeError: missing BeautifulSoup attributes
+                    # KeyError: missing keys in JSON-LD
+                    # IndexError: missing array indices
+                    # Continue to next element
                     continue
 
             # Look for data attributes or map markers
@@ -2942,7 +3421,12 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                                 "country": "",
                             }
                         )
-                except Exception:
+                except (ValueError, TypeError, AttributeError, KeyError):
+                    # ValueError: invalid data attribute format
+                    # TypeError: wrong data types
+                    # AttributeError: missing BeautifulSoup attributes
+                    # KeyError: missing data attributes
+                    # Continue to next element
                     continue
 
         console.print(f"[dim]Extracted {len(places)} unique places from IDA website[/dim]")
@@ -2957,7 +3441,26 @@ async def _fetch_dark_sky_sites_data() -> list[dict[str, Any]]:
                 "[dim]You may need to manually add more places to the seed file, or the website structure may have changed.[/dim]"
             )
 
-    except Exception as e:
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        OSError,
+        TimeoutError,
+        ImportError,
+    ) as e:
+        # RuntimeError: async/await errors, browser automation errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
+        # OSError: file I/O errors, network errors
+        # TimeoutError: request timeout
+        # ImportError: missing dependencies (Playwright, Selenium, BeautifulSoup)
         console.print(f"[yellow]⚠[/yellow] Error fetching from IDA website: {e}")
         console.print("[dim]Falling back to existing seed file.[/dim]")
         return existing_places

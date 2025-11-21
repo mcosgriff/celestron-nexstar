@@ -23,6 +23,7 @@ import deal
 from rich.console import Console
 from sqlalchemy import text
 from sqlalchemy.engine import Row
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
@@ -235,7 +236,12 @@ class CatalogDatabase:
         try:
             yield session
             session.commit()
-        except Exception:
+        except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError):
+            # SQLAlchemyError: database errors
+            # RuntimeError: session errors
+            # AttributeError: missing session attributes
+            # ValueError: invalid data
+            # TypeError: wrong argument types
             session.rollback()
             raise
         finally:
@@ -417,8 +423,13 @@ class CatalogDatabase:
             try:
                 await session.execute(text("DELETE FROM objects_fts"))
                 await session.commit()
-            except Exception:
-                pass  # Table might be empty or not exist
+            except (SQLAlchemyError, RuntimeError, AttributeError) as e:
+                # SQLAlchemyError: table doesn't exist or database errors
+                # RuntimeError: async/await errors
+                # AttributeError: missing session attributes
+                # Table might be empty or not exist - ignore
+                logger.debug(f"Could not delete from objects_fts (table may not exist): {e}")
+                pass
 
             # Repopulate from objects table
             # For external content tables, use INSERT OR REPLACE
@@ -756,7 +767,14 @@ class CatalogDatabase:
                         objects.append(self._model_to_object(model))
 
                 return objects
-            except Exception as e:
+            except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+                # SQLAlchemyError: database errors, FTS table issues
+                # RuntimeError: async/await errors
+                # AttributeError: missing session/model attributes
+                # ValueError: invalid query format
+                # TypeError: wrong argument types
+                # KeyError: missing keys in results
+                # IndexError: missing array indices
                 logger.error(f"FTS5 search failed for query '{query}': {e}")
                 # Return empty list - no fallback
                 return []
@@ -1365,7 +1383,10 @@ async def rebuild_database(
         try:
             # Try to get single head first (works when there's no branching)
             target_rev = script.get_current_head()
-        except Exception:
+        except (AttributeError, ValueError, RuntimeError):
+            # AttributeError: missing script attributes
+            # ValueError: invalid configuration
+            # RuntimeError: multiple heads or script errors
             # Multiple heads detected - use get_heads() instead
             try:
                 heads_list = script.get_heads()
@@ -1397,7 +1418,11 @@ async def rebuild_database(
                         target_rev = "heads"
                 else:
                     target_rev = "head"  # Fallback
-            except Exception as e:
+            except (AttributeError, ValueError, RuntimeError, TypeError) as e:
+                # AttributeError: missing script attributes
+                # ValueError: invalid configuration
+                # RuntimeError: script errors
+                # TypeError: wrong argument types
                 logger.warning(f"Error determining head revision: {e}, using 'head'")
                 target_rev = "head"
 
@@ -1489,7 +1514,12 @@ async def rebuild_database(
             try:
                 db_stats_before = await db.get_stats()
                 objects_before_import = db_stats_before.total_objects
-            except Exception as e:
+            except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError) as e:
+                # SQLAlchemyError: database errors
+                # RuntimeError: async/await errors
+                # AttributeError: missing database attributes
+                # ValueError: invalid stats format
+                # TypeError: wrong argument types
                 logger.warning(f"Failed to get stats before import: {e}")
                 objects_before_import = 0
 
@@ -1511,13 +1541,30 @@ async def rebuild_database(
                         logger.info(f"Successfully imported {source_id}: {imported} objects")
                         if imported == 0:
                             logger.warning(f"Import reported success but no objects were added for {source_id}")
-                    except Exception as e:
+                    except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError) as e:
                         logger.warning(f"Failed to get stats after import: {e}")
                         imported_counts[source_id] = (0, 0)
                 else:
                     imported_counts[source_id] = (0, 0)
                     logger.warning(f"import_data_source returned False for {source_id}")
-            except Exception as e:
+            except (
+                SQLAlchemyError,
+                RuntimeError,
+                AttributeError,
+                ValueError,
+                TypeError,
+                OSError,
+                FileNotFoundError,
+                PermissionError,
+            ) as e:
+                # SQLAlchemyError: database errors
+                # RuntimeError: async/await errors, import errors
+                # AttributeError: missing attributes
+                # ValueError: invalid data format
+                # TypeError: wrong argument types
+                # OSError: file I/O errors
+                # FileNotFoundError: missing files
+                # PermissionError: file permission errors
                 logger.error(f"Exception importing {source_id}: {e}", exc_info=True)
                 imported_counts[source_id] = (0, 0)
                 # Continue with other sources even if one fails
@@ -1529,7 +1576,12 @@ async def rebuild_database(
         logger.info("Repopulating FTS search index...")
         try:
             await db.repopulate_fts_table()
-        except Exception as e:
+        except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError) as e:
+            # SQLAlchemyError: database errors, FTS table issues
+            # RuntimeError: async/await errors
+            # AttributeError: missing database attributes
+            # ValueError: invalid data format
+            # TypeError: wrong argument types
             logger.warning(f"Failed to repopulate FTS table: {e}")
             # Continue - search will fall back to direct queries
 
@@ -1582,7 +1634,14 @@ async def rebuild_database(
                 logger.info(f"  {region}: {count:,} points")
                 if count > 0:
                     console.print(f"[dim]  {region}: {count:,} points[/dim]")
-        except Exception as e:
+        except (RuntimeError, OSError, FileNotFoundError, PermissionError, ValueError, TypeError, AttributeError) as e:
+            # RuntimeError: download/processing errors
+            # OSError: file I/O errors
+            # FileNotFoundError: missing files
+            # PermissionError: file permission errors
+            # ValueError: invalid data format
+            # TypeError: wrong argument types
+            # AttributeError: missing attributes
             import traceback
 
             logger.warning(f"Failed to download light pollution data: {e}")
@@ -1653,7 +1712,12 @@ async def rebuild_database(
                         logger.info("Non-interactive environment - skipping location prompt")
                         logger.info("Set your location with: nexstar location set-observer <location>")
                         location = None
-                except Exception as e:
+                except (OSError, RuntimeError, AttributeError, ValueError, TypeError) as e:
+                    # OSError: I/O errors (stdin/stdout)
+                    # RuntimeError: prompt errors
+                    # AttributeError: missing console attributes
+                    # ValueError: invalid input
+                    # TypeError: wrong argument types
                     logger.debug(f"Could not prompt for location interactively: {e}")
                     logger.info("Set your location with: nexstar location set-observer <location>")
                     location = None
@@ -1673,7 +1737,13 @@ async def rebuild_database(
                     static_data["weather_forecast_hours"] = 0
             else:
                 static_data["weather_forecast_hours"] = 0
-        except Exception as e:
+        except (RuntimeError, AttributeError, ValueError, TypeError, OSError, TimeoutError) as e:
+            # RuntimeError: async/await errors, API errors
+            # AttributeError: missing location/API attributes
+            # ValueError: invalid location data
+            # TypeError: wrong argument types
+            # OSError: network I/O errors
+            # TimeoutError: request timeout
             logger.warning(f"Failed to pre-fetch weather forecast data: {e}")
             logger.warning("Weather forecasts will be fetched on-demand when needed")
             static_data["weather_forecast_hours"] = 0
@@ -1692,14 +1762,37 @@ async def rebuild_database(
             "database_size_mb": database_size_mb,
         }
 
-    except Exception as e:
+    except (
+        SQLAlchemyError,
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        OSError,
+        FileNotFoundError,
+        PermissionError,
+    ) as e:
+        # SQLAlchemyError: database errors
+        # RuntimeError: async/await errors, import errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing files
+        # PermissionError: file permission errors
         # Restore backup if available
         if backup_path and backup_path.exists():
             logger.error(f"Rebuild failed: {e}. Restoring backup...")
             try:
                 restore_database(backup_path, db)
                 logger.info("Backup restored successfully")
-            except Exception as restore_error:
+            except (OSError, FileNotFoundError, PermissionError, RuntimeError, ValueError, TypeError) as restore_error:
+                # OSError: file I/O errors
+                # FileNotFoundError: backup file missing
+                # PermissionError: file permission errors
+                # RuntimeError: restore errors
+                # ValueError: invalid backup format
+                # TypeError: wrong argument types
                 logger.error(f"Failed to restore backup: {restore_error}")
         raise DatabaseRebuildError(f"Database rebuild failed: {e}") from e
 
@@ -1786,7 +1879,15 @@ async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
 
         return files_list
 
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, OSError, TimeoutError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, API errors
+        # AttributeError: missing attributes in summaries
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # OSError: network I/O errors
+        # TimeoutError: request timeout
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.error(f"Failed to fetch ephemeris files from NAIF: {e}")
         raise
 
@@ -1904,6 +2005,25 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
             logger.info(f"Synced {synced_count} ephemeris files to database")
             return synced_count
 
-    except Exception as e:
+    except (
+        SQLAlchemyError,
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        OSError,
+        TimeoutError,
+        KeyError,
+        IndexError,
+    ) as e:
+        # SQLAlchemyError: database errors
+        # RuntimeError: async/await errors, API errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # OSError: network I/O errors
+        # TimeoutError: request timeout
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.error(f"Failed to sync ephemeris files from NAIF: {e}")
         raise

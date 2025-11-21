@@ -8,6 +8,7 @@ Uses Skyfield for accurate satellite tracking and caches results in database.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -84,16 +85,17 @@ class ISSPass:
     @property
     def quality_rating(self) -> str:
         """Quality rating based on maximum altitude."""
-        if self.max_altitude_deg >= 70:
-            return "Excellent"
-        elif self.max_altitude_deg >= 50:
-            return "Very Good"
-        elif self.max_altitude_deg >= 30:
-            return "Good"
-        elif self.max_altitude_deg >= 15:
-            return "Fair"
-        else:
-            return "Poor"
+        match self.max_altitude_deg:
+            case alt if alt >= 70:
+                return "Excellent"
+            case alt if alt >= 50:
+                return "Very Good"
+            case alt if alt >= 30:
+                return "Good"
+            case alt if alt >= 15:
+                return "Fair"
+            case _:
+                return "Poor"
 
 
 def _ensure_cache_dir() -> None:
@@ -129,7 +131,10 @@ def _get_cached_tle() -> tuple[str, str, datetime] | None:
                 logger.debug("Using cached TLE (age: %s)", file_age)
                 return (line1, line2, fetch_time)
 
-    except Exception as e:
+    except (OSError, ValueError, IndexError) as e:
+        # OSError: file I/O errors (permission, not found, etc.)
+        # ValueError: invalid timestamp or data format
+        # IndexError: insufficient lines in file
         logger.warning(f"Error reading TLE cache: {e}")
 
     return None
@@ -154,9 +159,12 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
             aiohttp.ClientSession() as session,
             session.get(CELESTRAK_ISS_URL, timeout=aiohttp.ClientTimeout(total=10)) as response,
         ):
-            if response.status != 200:
-                msg = f"Failed to fetch ISS TLE: HTTP {response.status}"
-                raise TLEFetchError(msg) from None
+            match response.status:
+                case 200:
+                    pass  # Success
+                case status:
+                    msg = f"Failed to fetch ISS TLE: HTTP {status}"
+                    raise TLEFetchError(msg) from None
 
             data = await response.text()
             lines = data.strip().split("\n")
@@ -177,9 +185,13 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
                 msg = "Invalid TLE format from CelesTrak"
                 raise TLEFetchError(msg) from None
 
-    except Exception as e:
-        if isinstance(e, TLEFetchError):
-            raise
+    except TLEFetchError:
+        raise
+    except (aiohttp.ClientError, TimeoutError, ValueError, IndexError) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid data format
+        # IndexError: insufficient lines in response
         msg = f"Failed to fetch ISS TLE: {e}"
         raise TLEFetchError(msg) from e
 
@@ -238,12 +250,13 @@ async def get_iss_passes(
         TLEFetchError: If satellite data cannot be obtained
         ISSCalculationError: If pass calculations fail
     """
-    if start_time is None:
-        start_time = datetime.now(UTC)
-    elif start_time.tzinfo is None:
-        start_time = start_time.replace(tzinfo=UTC)
-    else:
-        start_time = start_time.astimezone(UTC)
+    match start_time:
+        case None:
+            start_time = datetime.now(UTC)
+        case dt if dt.tzinfo is None:
+            start_time = dt.replace(tzinfo=UTC)
+        case _:
+            start_time = start_time.astimezone(UTC)
 
     end_time = start_time + timedelta(days=days)
 
@@ -268,62 +281,90 @@ async def get_iss_passes(
     passes: list[ISSPass] = []
     i = 0
     while i < len(events):
-        if events[i] == 0:  # Rise event
-            rise_t = t[i]
-            rise_time = rise_t.utc_datetime()
+        match events[i]:
+            case 0:  # Rise event
+                rise_t = t[i]
+                rise_time = rise_t.utc_datetime()
 
-            # Look for culmination
-            if i + 1 < len(events) and events[i + 1] == 1:
-                max_t = t[i + 1]
-                max_time = max_t.utc_datetime()
+                # Look for culmination
+                if i + 1 < len(events) and events[i + 1] == 1:
+                    max_t = t[i + 1]
+                    max_time = max_t.utc_datetime()
 
-                # Look for set
-                if i + 2 < len(events) and events[i + 2] == 2:
-                    set_t = t[i + 2]
-                    set_time = set_t.utc_datetime()
+                    # Look for set
+                    if i + 2 < len(events) and events[i + 2] == 2:
+                        set_t = t[i + 2]
+                        set_time = set_t.utc_datetime()
 
-                    # Calculate positions
-                    difference_rise = satellite - observer
-                    topocentric_rise = difference_rise.at(rise_t)
-                    _alt_rise, az_rise, _distance = topocentric_rise.altaz()
+                        # Calculate positions
+                        difference_rise = satellite - observer
+                        topocentric_rise = difference_rise.at(rise_t)
+                        _alt_rise, az_rise, _distance_rise = topocentric_rise.altaz()
 
-                    difference_max = satellite - observer
-                    topocentric_max = difference_max.at(max_t)
-                    alt_max, az_max, _distance = topocentric_max.altaz()
+                        difference_max = satellite - observer
+                        topocentric_max = difference_max.at(max_t)
+                        alt_max, az_max, distance_max = topocentric_max.altaz()
 
-                    difference_set = satellite - observer
-                    topocentric_set = difference_set.at(set_t)
-                    _alt_set, az_set, _distance = topocentric_set.altaz()
+                        difference_set = satellite - observer
+                        topocentric_set = difference_set.at(set_t)
+                        _alt_set, az_set, _distance_set = topocentric_set.altaz()
 
-                    max_altitude = alt_max.degrees
+                        max_altitude = alt_max.degrees
 
-                    # Filter by minimum altitude
-                    if max_altitude >= min_altitude_deg:
-                        # Check if sunlit (visible)
-                        # ISS is visible when it's in sunlight and observer is in darkness
-                        loader = get_skyfield_loader()
-                        eph = loader("de421.bsp")
-                        is_sunlit = satellite.at(max_t).is_sunlit(eph)
+                        # Filter by minimum altitude
+                        if max_altitude >= min_altitude_deg:
+                            # Check if sunlit (visible)
+                            # ISS is visible when it's in sunlight and observer is in darkness
+                            loader = get_skyfield_loader()
+                            eph = loader("de421.bsp")
+                            is_sunlit = satellite.at(max_t).is_sunlit(eph)
 
-                        duration = int((set_time - rise_time).total_seconds())
+                            # Calculate magnitude at maximum altitude
+                            # ISS magnitude depends on altitude and distance
+                            # Formula: magnitude ≈ -1.3 - 2.5 * log10(altitude_km / 400)
+                            # Simplified: magnitude = -1.3 + (90 - altitude) / 20.0
+                            # At zenith (90°): ~-3.5, at horizon (0°): ~+2.0
+                            if is_sunlit:
+                                # Distance in km (Skyfield returns distance in AU, convert to km)
+                                distance_km = distance_max.km
 
-                        iss_pass = ISSPass(
-                            rise_time=rise_time,
-                            max_time=max_time,
-                            set_time=set_time,
-                            duration_seconds=duration,
-                            max_altitude_deg=max_altitude,
-                            rise_azimuth_deg=az_rise.degrees,
-                            max_azimuth_deg=az_max.degrees,
-                            set_azimuth_deg=az_set.degrees,
-                            magnitude=None,  # TODO: Calculate magnitude if needed
-                            is_visible=is_sunlit,
-                        )
+                                # ISS magnitude formula based on distance
+                                # Typical range: -3.5 (very bright) to +2.0 (dimmer)
+                                if distance_km > 0:
+                                    # More accurate: magnitude = -1.3 - 2.5 * log10(distance_km / 400)
+                                    # ISS is typically 400-450 km altitude, so we normalize to 400 km
+                                    magnitude = -1.3 - 2.5 * math.log10(distance_km / 400.0)
+                                    # Clamp to realistic range for ISS
+                                    magnitude = max(-4.0, min(3.0, magnitude))
+                                else:
+                                    # Fallback to altitude-based approximation if distance unavailable
+                                    magnitude = -1.3 + (90.0 - max_altitude) / 20.0
+                                    magnitude = max(-4.0, min(3.0, magnitude))
+                            else:
+                                # Not visible if in Earth's shadow
+                                magnitude = 10.0
 
-                        passes.append(iss_pass)
+                            duration = int((set_time - rise_time).total_seconds())
 
-                    i += 3  # Move past rise-culminate-set
-                    continue
+                            iss_pass = ISSPass(
+                                rise_time=rise_time,
+                                max_time=max_time,
+                                set_time=set_time,
+                                duration_seconds=duration,
+                                max_altitude_deg=max_altitude,
+                                rise_azimuth_deg=az_rise.degrees,
+                                max_azimuth_deg=az_max.degrees,
+                                set_azimuth_deg=az_set.degrees,
+                                magnitude=magnitude,
+                                is_visible=is_sunlit,
+                            )
+
+                            passes.append(iss_pass)
+
+                        i += 3  # Move past rise-culminate-set
+                        continue
+            case _:
+                pass  # Not a rise event, continue
 
         i += 1
 

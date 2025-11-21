@@ -392,6 +392,9 @@ class ISSPassModel(Base):
     __table_args__ = (
         Index("idx_location_rise_time", "latitude", "longitude", "rise_time"),
         Index("idx_location_fetched", "latitude", "longitude", "fetched_at"),
+        Index(
+            "idx_location_rise_fetched", "latitude", "longitude", "rise_time", "fetched_at"
+        ),  # For queries filtering on all four
     )
 
     def __repr__(self) -> str:
@@ -1127,6 +1130,6 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except BaseException:  # Catch all exceptions including KeyboardInterrupt, SystemExit
             await session.rollback()
             raise

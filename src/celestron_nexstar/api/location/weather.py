@@ -393,9 +393,13 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                     # If it doesn't exist, create it
                     try:
                         await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except Exception:
+                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                        # AttributeError: missing connection attributes
+                        # RuntimeError: database errors, table doesn't exist
+                        # ValueError: invalid SQL
+                        # TypeError: wrong argument types
                         # Table doesn't exist, create it
-                        logger.debug("weather_forecast table not found, creating it...")
+                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
                     await conn.run_sync(
                         lambda sync_conn: Base.metadata.create_all(
                             sync_conn,
@@ -404,7 +408,12 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                     )
 
             await _check_and_create_table()
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
+            # AttributeError: missing database attributes
+            # RuntimeError: database connection/creation errors
+            # ValueError: invalid table schema
+            # TypeError: wrong argument types
+            # OSError: file I/O errors
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         now = datetime.now(UTC)
@@ -431,7 +440,13 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
                 # Filter out stale forecasts using intelligent staleness check
                 existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+            # AttributeError: missing database/model attributes
+            # RuntimeError: database connection errors
+            # ValueError: invalid data format
+            # TypeError: wrong argument types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
             logger.warning(f"Error checking database for weather forecasts: {e}")
 
         return existing_forecasts, now
@@ -489,7 +504,13 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             )
         else:
             logger.debug("No valid cached forecasts found, fetching from API")
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.warning(f"Error checking database for weather forecasts: {e}")
         # Continue to fetch from API
         now = datetime.now(UTC)
@@ -671,13 +692,35 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
                     await session.commit()
                     logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+                # AttributeError: missing database/model attributes
+                # RuntimeError: database connection/commit errors
+                # ValueError: invalid data format
+                # TypeError: wrong argument types
+                # KeyError: missing keys in data
                 logger.warning(f"Error storing weather forecasts in database: {e}")
 
         if forecasts:
             await _store_forecasts_in_db(forecasts)
 
-    except Exception as e:
+    except (
+        aiohttp.ClientError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        RuntimeError,
+    ) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # AttributeError: missing attributes in response
+        # RuntimeError: async/await errors
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
         return []
 
@@ -721,9 +764,13 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     # If it doesn't exist, create it
                     try:
                         await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except Exception:
+                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                        # AttributeError: missing connection attributes
+                        # RuntimeError: database errors, table doesn't exist
+                        # ValueError: invalid SQL
+                        # TypeError: wrong argument types
                         # Table doesn't exist, create it
-                        logger.debug("weather_forecast table not found, creating it...")
+                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
                     await conn.run_sync(
                         lambda sync_conn: Base.metadata.create_all(
                             sync_conn,
@@ -732,7 +779,12 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     )
 
             await _check_and_create_table()
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
+            # AttributeError: missing database attributes
+            # RuntimeError: database connection/creation errors
+            # ValueError: invalid table schema
+            # TypeError: wrong argument types
+            # OSError: file I/O errors
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         try:
@@ -757,7 +809,13 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                 for candidate in candidates:
                     if not _is_forecast_stale(candidate, now):
                         return candidate
-        except Exception as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+            # AttributeError: missing database/model attributes
+            # RuntimeError: database connection errors
+            # ValueError: invalid data format
+            # TypeError: wrong argument types
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
             logger.debug(f"Error checking database for current weather: {e}")
 
         return None
@@ -779,7 +837,13 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                 condition=None,
                 last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
             )
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.debug(f"Error checking database for current weather: {e}")
 
     # Not in cache or stale, fetch from API
@@ -953,14 +1017,36 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
                         await session.commit()
                         logger.debug("Stored current weather in database")
-                except Exception as e:
+                except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+                    # AttributeError: missing database/model attributes
+                    # RuntimeError: database connection/commit errors
+                    # ValueError: invalid data format
+                    # TypeError: wrong argument types
+                    # KeyError: missing keys in data
                     logger.warning(f"Error storing current weather in database: {e}")
 
             await _store_weather_in_db(weather_data)
 
         return weather_data
 
-    except Exception as e:
+    except (
+        aiohttp.ClientError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        RuntimeError,
+    ) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # AttributeError: missing attributes in response
+        # RuntimeError: async/await errors
         logger.exception("Error fetching weather from Open-Meteo (async)")
         return WeatherData(error=f"Error fetching weather: {e}")
 
@@ -1077,7 +1163,13 @@ async def fetch_historical_weather_climatology(
                 f"Missing {len(missing_months)} months in database for location {location.latitude}, {location.longitude}. "
                 f"Fetching from API (will get all 12 months)."
             )
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong argument types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.debug(f"Error checking database for historical weather: {e}")
         # If database check fails, proceed to fetch from API
 
@@ -1247,13 +1339,35 @@ async def fetch_historical_weather_climatology(
                         session.add(new_record)
 
                     await session.commit()
-            except Exception as e:
+            except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+                # AttributeError: missing database/model attributes
+                # RuntimeError: database connection/commit errors
+                # ValueError: invalid data format
+                # TypeError: wrong argument types
+                # KeyError: missing keys in data
                 logger.warning(f"Error storing historical weather data for month {month}: {e}")
 
         logger.debug(f"Fetched and stored historical weather data for {years_of_data} years")
         return monthly_stats
 
-    except Exception as e:
+    except (
+        aiohttp.ClientError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        KeyError,
+        IndexError,
+        AttributeError,
+        RuntimeError,
+    ) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid JSON or data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in response
+        # IndexError: missing array indices
+        # AttributeError: missing attributes in response
+        # RuntimeError: async/await errors
         logger.warning(f"Error fetching historical weather from Open-Meteo: {e}")
         return None
 
@@ -1322,7 +1436,10 @@ async def get_historical_cloud_cover_for_month(
                     if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
                         std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
                         return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
-    except Exception as e:
+    except (AttributeError, ValueError, TypeError) as e:
+        # AttributeError: missing database attributes
+        # ValueError: invalid month or location data
+        # TypeError: wrong argument types
         logger.debug(f"Error checking database for historical weather month {month}: {e}")
 
     # If not in database, try to fetch all months (more efficient than fetching one at a time)

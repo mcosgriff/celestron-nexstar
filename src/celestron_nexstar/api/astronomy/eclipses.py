@@ -85,7 +85,12 @@ def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[Non
             moon = None
 
         return ts, earth, sun, moon, eph
-    except Exception as e:
+    except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
+        # ImportError: missing Skyfield modules
+        # AttributeError: missing methods/attributes on loader
+        # ValueError: invalid ephemeris data
+        # TypeError: wrong argument types
+        # KeyError: missing ephemeris objects (beyond moon)
         logger.error(f"Error loading Skyfield data: {e}")
         return None, None, None, None, None
 
@@ -130,15 +135,16 @@ def _calculate_lunar_eclipse(
         is_visible = moon_alt.degrees > 0
 
         # Determine duration and notes based on type
-        if eclipse_type == "lunar_total":
-            duration_minutes = 180.0  # Typical total lunar eclipse duration
-            notes = "Total lunar eclipse - moon fully in Earth's shadow"
-        elif eclipse_type == "lunar_partial":
-            duration_minutes = 200.0  # Partial eclipses last longer
-            notes = f"Partial lunar eclipse - {magnitude:.0%} of moon in shadow"
-        else:  # penumbral
-            duration_minutes = 240.0
-            notes = "Penumbral lunar eclipse - subtle darkening"
+        match eclipse_type:
+            case "lunar_total":
+                duration_minutes = 180.0  # Typical total lunar eclipse duration
+                notes = "Total lunar eclipse - moon fully in Earth's shadow"
+            case "lunar_partial":
+                duration_minutes = 200.0  # Partial eclipses last longer
+                notes = f"Partial lunar eclipse - {magnitude:.0%} of moon in shadow"
+            case _:  # penumbral
+                duration_minutes = 240.0
+                notes = "Penumbral lunar eclipse - subtle darkening"
 
         return Eclipse(
             eclipse_type=eclipse_type,
@@ -152,7 +158,11 @@ def _calculate_lunar_eclipse(
             altitude_at_maximum=moon_alt.degrees,
             notes=notes,
         )
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Error calculating lunar eclipse: {e}")
         return None
 
@@ -173,7 +183,13 @@ def _get_moon_phase_at_time(ts: Any, earth: Any, sun: Any, moon: Any | None, t: 
         phase_angle = math.acos(cos_angle)
         illumination = (1.0 - math.cos(phase_angle)) / 2.0
         return illumination
-    except Exception:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError, IndexError) as e:
+        # ValueError: invalid math operations (e.g., acos out of range)
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero
+        # IndexError: position arrays have wrong size
+        logger.debug(f"Error calculating moon phase: {e}")
         return 0.5
 
 
@@ -366,15 +382,16 @@ def _calculate_solar_eclipse(
         is_visible = sun_alt.degrees > 0
 
         # Determine duration (varies by type and location)
-        if eclipse_type == "solar_total":
-            duration_minutes = 2.0  # Typical total eclipse duration (varies by location)
-            notes = "Total solar eclipse - requires special eye protection"
-        elif eclipse_type == "solar_annular":
-            duration_minutes = 3.0  # Typical annular eclipse duration
-            notes = "Annular solar eclipse - requires special eye protection"
-        else:  # partial
-            duration_minutes = 120.0  # Partial eclipses last longer
-            notes = f"Partial solar eclipse ({magnitude:.0%} coverage) - requires special eye protection"
+        match eclipse_type:
+            case "solar_total":
+                duration_minutes = 2.0  # Typical total eclipse duration (varies by location)
+                notes = "Total solar eclipse - requires special eye protection"
+            case "solar_annular":
+                duration_minutes = 3.0  # Typical annular eclipse duration
+                notes = "Annular solar eclipse - requires special eye protection"
+            case _:  # partial
+                duration_minutes = 120.0  # Partial eclipses last longer
+                notes = f"Partial solar eclipse ({magnitude:.0%} coverage) - requires special eye protection"
 
         return Eclipse(
             eclipse_type=eclipse_type,
@@ -388,7 +405,11 @@ def _calculate_solar_eclipse(
             altitude_at_maximum=sun_alt.degrees,
             notes=notes,
         )
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        # ValueError: invalid datetime or coordinates
+        # TypeError: wrong argument types
+        # AttributeError: missing attributes on Skyfield objects
+        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Error calculating solar eclipse: {e}")
         return None
 

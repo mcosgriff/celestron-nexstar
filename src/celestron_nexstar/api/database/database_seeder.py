@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
@@ -765,7 +766,24 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Star name mappings seed file not found, skipping")
         results["star_name_mappings"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
+        # json.JSONDecodeError: invalid JSON format
+        # PermissionError: can't read file
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in JSON data
+        # AttributeError: missing database attributes
+        # RuntimeError: async/await errors
+        # SQLAlchemyError: database errors
         logger.error(f"Failed to seed star name mappings: {e}")
         results["star_name_mappings"] = 0
 
@@ -774,7 +792,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Meteor showers seed file not found, skipping")
         results["meteor_showers"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed meteor showers: {e}")
         results["meteor_showers"] = 0
 
@@ -783,7 +810,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Constellations seed file not found, skipping")
         results["constellations"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed constellations: {e}")
         results["constellations"] = 0
 
@@ -792,7 +828,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Asterisms seed file not found, skipping")
         results["asterisms"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed asterisms: {e}")
         results["asterisms"] = 0
 
@@ -801,7 +846,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Dark sky sites seed file not found, skipping")
         results["dark_sky_sites"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed dark sky sites: {e}")
         results["dark_sky_sites"] = 0
 
@@ -810,7 +864,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Space events seed file not found, skipping")
         results["space_events"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed space events: {e}")
         results["space_events"] = 0
 
@@ -819,7 +882,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Variable stars seed file not found, skipping")
         results["variable_stars"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed variable stars: {e}")
         results["variable_stars"] = 0
 
@@ -828,7 +900,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Comets seed file not found, skipping")
         results["comets"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed comets: {e}")
         results["comets"] = 0
 
@@ -837,7 +918,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Eclipses seed file not found, skipping")
         results["eclipses"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed eclipses: {e}")
         results["eclipses"] = 0
 
@@ -846,7 +936,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Bortle characteristics seed file not found, skipping")
         results["bortle_characteristics"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed bortle characteristics: {e}")
         results["bortle_characteristics"] = 0
 
@@ -855,7 +954,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Planets seed file not found, skipping")
         results["planets"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed planets: {e}")
         results["planets"] = 0
 
@@ -864,7 +972,16 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     except FileNotFoundError:
         logger.warning("Moons seed file not found, skipping")
         results["moons"] = 0
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
         logger.error(f"Failed to seed moons: {e}")
         results["moons"] = 0
 
@@ -887,70 +1004,84 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
     try:
         count_result = await db_session.scalar(select(func.count(StarNameMappingModel.hr_number)))
         status["star_name_mappings"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        # AttributeError: missing model attributes
+        # RuntimeError: async/await errors
+        # SQLAlchemyError: database errors
+        # TypeError: wrong argument types
+        logger.debug(f"Error getting star name mappings count: {e}")
         status["star_name_mappings"] = 0
 
     # Meteor showers
     try:
         count_result = await db_session.scalar(select(func.count(MeteorShowerModel.id)))
         status["meteor_showers"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting meteor showers count: {e}")
         status["meteor_showers"] = 0
 
     # Constellations
     try:
         count_result = await db_session.scalar(select(func.count(ConstellationModel.id)))
         status["constellations"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting constellations count: {e}")
         status["constellations"] = 0
 
     # Asterisms
     try:
         count_result = await db_session.scalar(select(func.count(AsterismModel.id)))
         status["asterisms"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting asterisms count: {e}")
         status["asterisms"] = 0
 
     # Dark sky sites
     try:
         count_result = await db_session.scalar(select(func.count(DarkSkySiteModel.id)))
         status["dark_sky_sites"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting dark sky sites count: {e}")
         status["dark_sky_sites"] = 0
 
     # Space events
     try:
         count_result = await db_session.scalar(select(func.count(SpaceEventModel.id)))
         status["space_events"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting space events count: {e}")
         status["space_events"] = 0
 
     # Variable stars
     try:
         count_result = await db_session.scalar(select(func.count(VariableStarModel.id)))
         status["variable_stars"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting variable stars count: {e}")
         status["variable_stars"] = 0
 
     # Comets
     try:
         count_result = await db_session.scalar(select(func.count(CometModel.id)))
         status["comets"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting comets count: {e}")
         status["comets"] = 0
 
     # Eclipses
     try:
         count_result = await db_session.scalar(select(func.count(EclipseModel.id)))
         status["eclipses"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting eclipses count: {e}")
         status["eclipses"] = 0
 
     # Bortle characteristics
     try:
         count_result = await db_session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
         status["bortle_characteristics"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
+        logger.debug(f"Error getting bortle characteristics count: {e}")
         status["bortle_characteristics"] = 0
 
     # Planets
@@ -963,7 +1094,9 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
             )
         )
         status["planets"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError, ImportError) as e:
+        # ImportError: can't import CelestialObjectType
+        logger.debug(f"Error getting planets count: {e}")
         status["planets"] = 0
 
     # Moons
@@ -976,7 +1109,9 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
             )
         )
         status["moons"] = count_result or 0
-    except Exception:
+    except (AttributeError, RuntimeError, SQLAlchemyError, TypeError, ImportError) as e:
+        # ImportError: can't import CelestialObjectType
+        logger.debug(f"Error getting moons count: {e}")
         status["moons"] = 0
 
     return status

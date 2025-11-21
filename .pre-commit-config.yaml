@@ -50,6 +50,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-pyserial
+          - types-requests
           - returns
           - deal
           - pyserial

@@ -93,7 +93,12 @@ def _fetch_tle_from_celestrak(norad_id: int) -> tuple[str, str] | None:
 
             if len(lines) >= 3:
                 return (lines[1].strip(), lines[2].strip())
-    except Exception as e:
+    except (OSError, TimeoutError, ValueError, IndexError, UnicodeDecodeError) as e:
+        # OSError: network/connection errors
+        # TimeoutError: request timeout
+        # ValueError: invalid data format
+        # IndexError: missing array indices
+        # UnicodeDecodeError: encoding errors
         logger.debug(f"Failed to fetch TLE for NORAD {norad_id}: {e}")
 
     return None
@@ -178,7 +183,13 @@ def get_bright_satellite_passes(
                         i += 1
                 else:
                     i += 1
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, ZeroDivisionError, KeyError, IndexError) as e:
+            # ValueError: invalid time/coordinate calculations
+            # TypeError: wrong data types
+            # AttributeError: missing satellite/position attributes
+            # ZeroDivisionError: division by zero in calculations
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
             logger.debug(f"Error calculating passes for {name}: {e}")
             continue
 
@@ -220,7 +231,12 @@ def _parse_tle_epoch(line1: str) -> datetime | None:
 
         epoch = base_date + timedelta(days=days - 1, hours=hours, minutes=minutes, seconds=seconds)
         return epoch
-    except Exception:
+    except (ValueError, TypeError, IndexError, KeyError) as e:
+        # ValueError: invalid epoch string format or date calculations
+        # TypeError: wrong data types
+        # IndexError: missing array indices in epoch string
+        # KeyError: missing keys (shouldn't happen here, but included for completeness)
+        logger.debug(f"Error parsing TLE epoch: {e}")
         return None
 
 
@@ -238,7 +254,11 @@ def _extract_norad_id(line1: str) -> int | None:
         # NORAD ID is in characters 2-7 of line1
         norad_str = line1[2:7].strip()
         return int(norad_str)
-    except Exception:
+    except (ValueError, TypeError, IndexError) as e:
+        # ValueError: invalid integer conversion
+        # TypeError: wrong data type (line1 not a string)
+        # IndexError: line1 too short
+        logger.debug(f"Error extracting NORAD ID: {e}")
         return None
 
 
@@ -297,9 +317,24 @@ async def _fetch_group_tle_from_celestrak(
             logger.info(f"Fetched {len(tle_list)} {group_name} TLE records")
             return tle_list
 
-    except Exception as e:
-        if isinstance(e, TLEFetchError):
-            raise
+    except TLEFetchError:
+        raise
+    except (
+        aiohttp.ClientError,
+        TimeoutError,
+        ValueError,
+        TypeError,
+        IndexError,
+        UnicodeDecodeError,
+        RuntimeError,
+    ) as e:
+        # aiohttp.ClientError: HTTP/network errors
+        # TimeoutError: request timeout
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # IndexError: missing array indices
+        # UnicodeDecodeError: encoding errors
+        # RuntimeError: async/await errors
         msg = f"Failed to fetch {group_name} TLE: {e}"
         raise TLEFetchError(msg) from e
 
@@ -354,7 +389,12 @@ def _get_cached_group_tle(
             logger.info(f"Using {len(cached_tles)} cached {group_name} TLE records")
             return [(tle.norad_id, tle.satellite_name, tle.line1, tle.line2, tle.fetched_at) for tle in cached_tles]
 
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection errors
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
         logger.debug(f"Error reading cached TLE: {e}")
 
     return None
@@ -414,7 +454,12 @@ async def _store_group_tle(
         db_session.commit()
         logger.info(f"Stored {len(tle_list)} {group_name} TLE records in database")
 
-    except Exception as e:
+    except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+        # AttributeError: missing database/model attributes
+        # RuntimeError: database connection/commit errors
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
         logger.warning(f"Error storing TLE data: {e}")
         db_session.rollback()
 
@@ -477,7 +522,11 @@ async def _get_group_satellites(
         try:
             satellite = EarthSatellite(line1, line2, name, ts)
             satellites.append(satellite)
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, IndexError) as e:
+            # ValueError: invalid TLE format
+            # TypeError: wrong data types
+            # AttributeError: missing Skyfield attributes
+            # IndexError: missing array indices in TLE parsing
             logger.debug(f"Error creating satellite object for {name} (NORAD {norad_id}): {e}")
             continue
 
@@ -521,7 +570,13 @@ def get_starlink_passes(
     try:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
         satellites = asyncio.run(_get_starlink_satellites(db_session))
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, event loop errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.error(f"Failed to get Starlink satellites: {e}")
         return []
 
@@ -649,7 +704,13 @@ def _calculate_passes_for_satellites(
 
                 i += 1
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, ZeroDivisionError, KeyError, IndexError) as e:
+            # ValueError: invalid time/coordinate calculations
+            # TypeError: wrong data types
+            # AttributeError: missing satellite/position attributes
+            # ZeroDivisionError: division by zero in calculations
+            # KeyError: missing keys in data
+            # IndexError: missing array indices
             logger.debug(f"Error calculating passes for satellite: {e}")
             continue
 
@@ -689,7 +750,13 @@ def get_stations_passes(
     try:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
         satellites = asyncio.run(_get_stations_satellites(db_session))
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, event loop errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.error(f"Failed to get space station satellites: {e}")
         return []
 
@@ -730,7 +797,13 @@ def get_visual_passes(
     try:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
         satellites = asyncio.run(_get_visual_satellites(db_session))
-    except Exception as e:
+    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
+        # RuntimeError: async/await errors, event loop errors
+        # AttributeError: missing attributes
+        # ValueError: invalid data format
+        # TypeError: wrong data types
+        # KeyError: missing keys in data
+        # IndexError: missing array indices
         logger.error(f"Failed to get visual satellites: {e}")
         return []
 
