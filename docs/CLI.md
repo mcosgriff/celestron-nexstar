@@ -33,7 +33,6 @@ This document provides comprehensive documentation for the `nexstar` command-lin
 - [Data Management](#data-management)
 - [Location Management](#location-management)
 - [Catalog Commands](#catalog-commands)
-- [Shell](#shell)
 
 ## Overview
 
@@ -1356,19 +1355,6 @@ nexstar catalog search "andromeda"
 nexstar catalog info M31
 ```
 
-## Shell
-
-Launch the interactive telescope control shell:
-
-```bash
-nexstar shell
-
-# Or with a specific port
-nexstar shell --port /dev/ttyUSB0
-```
-
-See the main [README](../README.md) for detailed shell documentation.
-
 ## Mount Settings and Backlash Control
 
 The `nexstar mount` commands help you configure and optimize your mount's backlash settings and GoTo approach directions. Proper backlash control improves tracking accuracy and GoTo precision, especially important for astrophotography.
@@ -1654,6 +1640,6 @@ The CLI is organized into logical groups:
 
 ## Further Reading
 
-- [Main README](../README.md) - Project overview and interactive shell
+- [Main README](../README.md) - Project overview and CLI/TUI documentation
 - [Installation Guide](INSTALL.md) - Setup instructions
 - [Python API Documentation](api/telescope_docs.md) - Programmatic usage

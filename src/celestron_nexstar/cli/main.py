@@ -528,37 +528,5 @@ def disc() -> None:
     connect.disconnect()
 
 
-@app.command(rich_help_panel="Utilities")
-def shell() -> None:
-    """
-    Enter interactive shell mode with autocomplete.
-
-    In interactive mode, you can run commands without the 'nexstar' prefix.
-
-    [bold green]Examples:[/bold green]
-
-        nexstar> position get
-        nexstar> goto radec --ra 5.5 --dec 22.5
-        nexstar> catalog search "andromeda"
-        nexstar> exit
-
-    [bold blue]Features:[/bold blue]
-
-        - Tab completion for commands and subcommands
-        - Status bar with time, weather, GPS, and telescope position
-        - Ctrl+C to cancel current input
-        - Type 'exit' or 'quit' to leave shell
-        - Type 'help' to see available commands
-    """
-    from celestron_nexstar.cli.shell_app import ShellApp, create_status_cache
-
-    # Create status cache
-    status_cache = create_status_cache()
-
-    # Create and run the Textual shell app
-    shell_app = ShellApp(app, status_cache)
-    shell_app.run()
-
-
 if __name__ == "__main__":
     app()

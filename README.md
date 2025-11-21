@@ -8,15 +8,14 @@
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](http://mypy-lang.org/)
 [![security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 
-A modern, feature-rich **interactive shell** for controlling Celestron NexStar telescopes. Control your telescope with arrow keys, monitor position in real-time, and explore the night sky through an intuitive command-line interface.
+A modern, feature-rich **command-line toolkit** for controlling Celestron NexStar telescopes. Control your telescope via CLI commands or use the full-screen TUI dashboard to monitor position in real-time and explore the night sky through an intuitive interface.
 
 ## ✨ Why This Project?
 
 This isn't just another telescope control library—it's a complete **interactive observing companion** designed for real-world stargazing sessions:
 
-- **🎮 Video-game-like control**: Use arrow keys to move your telescope in real-time
-- **📊 Live position tracking**: See your telescope's position update every 0.5 seconds in the status bar
-- **🎓 Built-in tutorial**: Interactive lessons guide you from beginner to power user
+- **🎮 Full telescope control**: Complete CLI and TUI interfaces for all telescope operations
+- **📊 Live position tracking**: Monitor your telescope's position in real-time via the TUI dashboard
 - **🗺️ Rich catalogs**: Explore thousands of stars, deep sky objects, constellations, and 28 planetary moons
 - **📈 Advanced tracking**: History logging, collision detection, velocity tracking, and CSV/JSON export
 - **⚙️ Smart configuration**: Save locations, telescope specs, and download ephemeris data offline
@@ -35,59 +34,34 @@ cd celestron-nexstar
 uv sync --all-extras
 ```
 
-### Launch the Interactive Shell
+### Launch the TUI Dashboard
 
 ```bash
-uv run nexstar shell
+uv run nexstar dashboard
 ```
 
-### Take the Tutorial
-
-New to the shell? Start with the interactive tutorial:
-
-```bash
-# In the shell, type:
-tutorial
-
-# Or run a specific lesson:
-tutorial 1
-
-# Demo mode (no telescope required):
-tutorial demo
-```
-
-The tutorial covers everything from basic navigation to advanced tracking features!
+The dashboard provides a full-screen interface with real-time telescope position, observing conditions, and visible objects.
 
 ## 🎯 Key Features
 
-### Interactive Shell Experience
+### CLI and TUI Interfaces
 
-The shell is the heart of this project, designed for real observing sessions:
+The toolkit provides two powerful interfaces for telescope control:
 
-#### Real-Time Telescope Control
+#### Command-Line Interface (CLI)
 
-- **Arrow Keys** (↑↓←→): Always move telescope in real-time (no mode switching!)
-- **Speed Control**: Press `+` to increase speed, `-` to decrease (0=slowest to 9=fastest, default 5)
-- **Emergency Stop**: Press `ESC` to immediately halt all movement
-- **Visual Feedback**: Status bar shows movement state and current speed (e.g., "Speed:5/9")
-- **Command History**: Press `Ctrl+P` (previous) or `Ctrl+N` (next) to navigate history
+- **Complete command set**: All telescope operations available via CLI commands
+- **Rich output**: Beautiful formatted output with tables, colors, and progress indicators
+- **Scriptable**: All commands can be used in scripts and automation
+- **Tab completion**: Full command and subcommand completion support
 
-#### Background Position Tracking
+#### TUI Dashboard
 
-- Live position updates in status bar (RA/Dec/Alt/Az)
-- Automatic start after alignment
-- Configurable update intervals (0.5-30s)
-- Position history with 1000-entry circular buffer
-- Real-time velocity and slew speed calculation
-- Collision detection with configurable alerts
-- CSV/JSON export for analysis
-
-#### Advanced Visualizations
-
-- ASCII star chart showing compass direction and altitude
-- Multiple status indicators (position, movement, tracking)
-- Color-coded alerts (green=stopped, red=moving)
-- Freshness indicators ([live] vs [Ns ago])
+- **Full-screen interface**: Rich terminal UI built with Textual
+- **Real-time updates**: Live telescope position, weather, and observing conditions
+- **Multiple panes**: Database statistics, conditions, and visible objects
+- **Interactive navigation**: Keyboard shortcuts for all operations
+- **Position tracking**: Monitor telescope position with configurable update intervals
 
 ### Celestial Object Catalogs
 
@@ -234,59 +208,23 @@ nexstar vacation plan "Denver, CO" --export                    # Vacation plan
 
 See the [CLI documentation](docs/CLI.md) for detailed usage and examples.
 
-## 📚 Interactive Shell Guide
+## 📚 Essential Commands
 
-### Tutorial System
-
-The shell includes 10 comprehensive lessons:
-
-1. **Shell Basics**: Navigation, tab completion, command history (Ctrl+P/Ctrl+N)
-2. **Movement Control**: Arrow keys (always active), speed adjustment, emergency stop
-3. **Position Tracking**: Start/stop, intervals, statistics
-4. **Advanced Tracking**: Export, collision detection, visualization
-5. **Celestial Catalogs**: Browse, search, object information
-6. **Configuration**: Telescope setup, location management
-7. **Telescope Control**: Connect, position queries, goto commands
-8. **Alignment**: Calibration for improved accuracy
-9. **Ephemeris**: Download planetary data for offline use
-10. **Tips & Tricks**: Power user features and shortcuts
-
-**Tutorial Commands:**
+### Movement & Control
 
 ```bash
-tutorial          # Show lesson menu
-tutorial 5        # Run lesson 5 (Celestial Catalogs)
-tutorial demo     # Run demo lessons (no telescope needed)
-tutorial all      # Run all lessons in sequence
-```
-
-### Essential Commands
-
-#### Movement & Control
-
-```bash
-# Arrow keys ↑↓←→ ALWAYS move telescope (press and hold)
-# Press +/- to adjust slew speed (0=slowest to 9=fastest, default 5)
-# Press ESC to stop all movement
-# Use Ctrl+P / Ctrl+N to navigate command history
-
-# Traditional commands also available:
 goto object --name Jupiter
 goto ra-dec --ra 5.5 --dec 22.5
 move fixed up --rate 5
 move stop
 ```
 
-#### Position Tracking
+### Position Tracking
 
 ```bash
-tracking start              # Start background tracking
-tracking interval 1.0       # Set update interval (seconds)
-tracking history --last 10  # View recent positions
-tracking stats              # Show statistics (drift, velocity)
-tracking export pos.csv     # Export to CSV
-tracking alert-threshold 5  # Set collision alert (deg/s)
-tracking chart on           # Enable ASCII star chart
+track get                   # Get current tracking mode
+track set --mode alt_az     # Set tracking mode
+position get                # Get current position
 ```
 
 ### Catalogs & Objects
@@ -329,7 +267,7 @@ mount backlash-test --axis azimuth --direction positive  # Test settings
 mount goto-approach-info         # Learn about GoTo Approach settings
 ```
 
-**Multi-Night Planning** (outside shell)
+#### Multi-Night Planning
 
 ```bash
 nexstar multi-night week                                        # Compare next 7 nights
@@ -340,7 +278,7 @@ nexstar multi-night clear-sky --nighttime-only                  # Detailed hourl
 nexstar multi-night clear-sky --highlight-good -c clouds,seeing -e data.csv  # Advanced usage
 ```
 
-**Celestial Events** (outside shell)
+#### Celestial Events
 
 ```bash
 nexstar aurora tonight                                          # Check aurora visibility
@@ -358,7 +296,7 @@ nexstar events upcoming --days 120                              # Space events c
 nexstar events viewing "Geminid"                                # Best viewing location
 ```
 
-**Weather & Historical Data** (outside shell)
+### Weather & Historical Data
 
 ```bash
 nexstar weather current                                         # Current weather conditions
@@ -368,7 +306,7 @@ nexstar weather historical --months 12                          # Historical clo
 nexstar weather historical --months 6                           # Last 6 months of historical data
 ```
 
-**Vacation Planning** (outside shell)
+### Vacation Planning
 
 ```bash
 nexstar vacation view "Fairbanks, AK"                 # Viewing conditions
@@ -437,14 +375,12 @@ nexstar data migrate --dry-run
 
 Migrations are automatically applied during `nexstar data setup`, but if you're updating an existing installation, run `nexstar data migrate` to ensure your database schema is up to date.
 
-### Shell Tips
+### CLI Tips
 
 - **Tab Completion**: Press TAB to complete commands and see options
-- **Command History**: Use ↑/↓ arrows to navigate previous commands
-- **Help System**: Type `help` for full command reference
-- **Quick Exit**: Type `exit`, `quit`, or press Ctrl+D
-- **Clear Screen**: Type `clear`
-- **Status Bar**: Bottom toolbar shows real-time telescope state
+- **Command History**: Use ↑/↓ arrows to navigate previous commands in your shell
+- **Help System**: Use `--help` flag on any command for detailed usage
+- **Rich Output**: All commands use rich formatting for beautiful terminal output
 
 ## 🔧 Hardware Setup
 
@@ -518,85 +454,48 @@ nexstar location get-observer
 ### First-Time Setup
 
 ```bash
-# Start the shell
-uv run nexstar shell
-
-# Follow the setup wizard or configure manually:
-optics config --telescope nexstar_6se --eyepiece 25
+# Configure telescope and eyepiece
+nexstar optics config --telescope nexstar_6se --eyepiece 25
 
 # Set your location (choose one method):
-location detect                                                  # Automatically detect location (recommended)
+nexstar location detect                                                  # Automatically detect location (recommended)
 # OR
-location set-observer "Your City, State"                        # Geocode from address
+nexstar location set-observer "Your City, State"                        # Geocode from address
 # OR
-location set-observer --lat 34.05 --lon -118.24                 # Manual coordinates
+nexstar location set-observer --lat 34.05 --lon -118.24                 # Manual coordinates
 
 # Initialize database and download ephemeris
 nexstar data setup                                               # First-time database setup
 nexstar data sync-ephemeris                                     # Sync ephemeris file metadata
-ephemeris download recommended                                  # Download recommended set (DE421 + Jupiter moons)
+nexstar ephemeris download recommended                          # Download recommended set (DE421 + Jupiter moons)
 
-# Take the tutorial to learn all features
-tutorial
+# Launch the TUI dashboard to explore
+nexstar dashboard
 ```
 
 ## 📖 Documentation
 
 ### Position Tracking Features
 
-The shell's background position tracking is a powerful observing companion:
+The toolkit's position tracking capabilities provide powerful observing tools:
 
 **Core Features:**
 
-- Runs in background thread (non-blocking)
-- Updates UI every 0.5s, polls telescope every 2s (configurable)
-- Automatic start after `align` commands
-- Thread-safe with proper locking
-- Smart error handling (auto-stop after 3 consecutive errors)
+- Real-time position queries via CLI commands
+- TUI dashboard shows live position updates
+- Position data available in multiple coordinate systems (RA/Dec, Alt/Az)
+- Integration with telescope alignment and tracking systems
 
-**Position History:**
+**Position Queries:**
 
-- Circular buffer stores last 1000 positions
-- Each entry: timestamp, RA, Dec, Alt, Az
-- Filter by time or count
-- Statistics: duration, drift, velocity
-
-**Velocity Tracking:**
-
-- Real-time calculation of angular velocity
-- Components: RA (hours/s), Dec, Alt, Az (deg/s), Total (deg/s)
-- Slewing detection (>0.1°/s threshold)
-- Displayed in status bar during movement
-
-**Export Capabilities:**
-
-- CSV format: timestamp, coordinates (5 columns)
-- JSON format: structured data with metadata
-- Export count, time range, drift statistics
-- Continues tracking during export
-
-**Collision Detection:**
-
-- Configurable threshold (0.1-20.0°/s, default 5.0)
-- Visual alerts: ⚠ in status bar
-- Alert cooldown (5 seconds)
-- Logs unexpected movements in history
-
-**ASCII Star Chart:**
-
-- 16-point compass rose (N, NNE, NE, ENE, E, etc.)
-- Altitude bar graph using Unicode blocks (▁▂▃▄▅▆▇█)
-- Toggle on/off: `tracking chart on`
-- Compact display in status bar
+- Get current position in RA/Dec or Alt/Az coordinates
+- Format output as JSON for scripting
+- Display formatted tables with rich output
 
 ### Movement Control
 
-**Interactive Control (Preferred):**
+**CLI Commands:**
 
-- **Arrow Keys (↑↓←→)**: Always move the telescope - no mode switching needed!
-  - Press and hold to move in any direction
-  - No Enter key needed - instant response
-  - Works anytime, even while typing (just clear text first with Ctrl+U if needed)
 - **Speed Adjustment**: `+` to increase, `-` to decrease
   - Speed range: 0 (slowest) to 9 (fastest)
   - Default: 5 (medium speed)
@@ -783,9 +682,9 @@ pre-commit run
 
 This project prioritizes the **interactive observing experience**:
 
-1. **Shell-first design**: The CLI is not an afterthought—it's the primary interface
-2. **Real-time feedback**: See everything happening as it happens
-3. **Learn by doing**: Interactive tutorial teaches through practice
+1. **CLI-first design**: The command-line interface is the primary way to interact with the toolkit
+2. **Rich TUI**: Full-screen dashboard provides real-time telescope monitoring and control
+3. **Real-time feedback**: See everything happening as it happens
 4. **Field-ready**: Offline ephemeris, saved configurations, quick commands
 5. **Safety-conscious**: Emergency stops, collision detection, clear warnings
 
@@ -846,4 +745,4 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ### Happy Observing! 🌟🔭
 
-_Start with `tutorial` and you'll be controlling your telescope like a pro in minutes!_
+_Start with `nexstar dashboard` to explore the TUI, or use `nexstar --help` to see all available commands!_

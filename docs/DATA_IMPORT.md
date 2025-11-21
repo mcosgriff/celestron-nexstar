@@ -263,12 +263,11 @@ nexstar data import openngc --mag-limit 99.0
 
 ---
 
-## Interactive Shell Usage
+## CLI Usage
 
-The data commands work seamlessly in the interactive shell:
+The data commands work seamlessly from the command line:
 
 ```bash
-$ nexstar shell
 nexstar> data sources
 [displays available sources]
 
@@ -398,8 +397,7 @@ Each will have its own `data import <source>` command.
 ### Complete Workflow
 
 ```bash
-# Start CLI
-nexstar shell
+# Use CLI commands directly
 ```
 
 # Check what's available

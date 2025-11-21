@@ -336,12 +336,12 @@ nexstar catalog info "object name"
 nexstar goto object "object name"
 ```
 
-### In Shell
+### Using CLI Commands
 
-```text
-nexstar> catalog search "m31"
-nexstar> goto object m31
-nexstar> position get
+```bash
+nexstar catalog search "m31"
+nexstar goto object m31
+nexstar position get
 ```
 
 ## Re-importing
