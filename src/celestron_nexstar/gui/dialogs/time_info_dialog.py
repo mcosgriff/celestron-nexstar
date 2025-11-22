@@ -1,0 +1,172 @@
+"""
+Time, Sun, and Moon Information Dialog
+
+Shows current time, UTC time, moon rise/set, and sun rise/set times.
+"""
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
+
+from celestron_nexstar.api.astronomy.solar_system import get_moon_info, get_sun_info
+from celestron_nexstar.api.core import format_local_time
+from celestron_nexstar.api.location.observer import get_observer_location
+
+
+if TYPE_CHECKING:
+    from celestron_nexstar import NexStarTelescope
+
+
+class TimeInfoDialog(QDialog):
+    """Dialog showing time, sun, and moon information."""
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        telescope: "NexStarTelescope | None" = None,
+    ) -> None:
+        """Initialize time info dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Time, Sun & Moon Information")
+        self.setMinimumWidth(350)
+        self.resize(350, 300)  # Set initial size smaller
+
+        self.telescope = telescope
+
+        layout = QVBoxLayout(self)
+
+        # Create form layout for information
+        form_layout = QFormLayout()
+
+        # Current time (local)
+        self.local_time_label = QLabel()
+        form_layout.addRow("Local Time:", self.local_time_label)
+
+        # UTC time
+        self.utc_time_label = QLabel()
+        form_layout.addRow("UTC Time:", self.utc_time_label)
+
+        # Add separator
+        separator = QLabel("─" * 30)
+        separator.setStyleSheet("color: gray;")
+        form_layout.addRow("", separator)
+
+        # Sun information
+        sun_header = QLabel("<b>Sun</b>")
+        form_layout.addRow("", sun_header)
+
+        self.sunrise_label = QLabel()
+        form_layout.addRow("Sunrise:", self.sunrise_label)
+
+        self.sunset_label = QLabel()
+        form_layout.addRow("Sunset:", self.sunset_label)
+
+        # Add separator
+        separator2 = QLabel("─" * 30)
+        separator2.setStyleSheet("color: gray;")
+        form_layout.addRow("", separator2)
+
+        # Moon information
+        moon_header = QLabel("<b>Moon</b>")
+        form_layout.addRow("", moon_header)
+
+        self.moonrise_label = QLabel()
+        form_layout.addRow("Moonrise:", self.moonrise_label)
+
+        self.moonset_label = QLabel()
+        form_layout.addRow("Moonset:", self.moonset_label)
+
+        self.moon_phase_label = QLabel()
+        form_layout.addRow("Phase:", self.moon_phase_label)
+
+        self.moon_illumination_label = QLabel()
+        form_layout.addRow("Illumination:", self.moon_illumination_label)
+
+        layout.addLayout(form_layout)
+
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
+
+        # Load information
+        self._load_time_info()
+
+    def _load_time_info(self) -> None:
+        """Load time, sun, and moon information."""
+        try:
+            location = get_observer_location()
+            now = datetime.now(UTC)
+
+            # Local time
+            local_time_str = format_local_time(now, location.latitude, location.longitude)
+            self.local_time_label.setText(local_time_str)
+
+            # UTC time
+            utc_time_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+            self.utc_time_label.setText(utc_time_str)
+
+            # Sun information
+            sun_info = get_sun_info(location.latitude, location.longitude, now)
+            if sun_info:
+                if sun_info.sunrise_time:
+                    sunrise_str = format_local_time(sun_info.sunrise_time, location.latitude, location.longitude)
+                    self.sunrise_label.setText(sunrise_str)
+                else:
+                    self.sunrise_label.setText("Not available")
+
+                if sun_info.sunset_time:
+                    sunset_str = format_local_time(sun_info.sunset_time, location.latitude, location.longitude)
+                    self.sunset_label.setText(sunset_str)
+                else:
+                    self.sunset_label.setText("Not available")
+            else:
+                self.sunrise_label.setText("Error calculating")
+                self.sunset_label.setText("Error calculating")
+
+            # Moon information
+            moon_info = get_moon_info(location.latitude, location.longitude, now)
+            if moon_info:
+                if moon_info.moonrise_time:
+                    moonrise_str = format_local_time(moon_info.moonrise_time, location.latitude, location.longitude)
+                    self.moonrise_label.setText(moonrise_str)
+                else:
+                    self.moonrise_label.setText("Not available")
+
+                if moon_info.moonset_time:
+                    moonset_str = format_local_time(moon_info.moonset_time, location.latitude, location.longitude)
+                    self.moonset_label.setText(moonset_str)
+                else:
+                    self.moonset_label.setText("Not available")
+
+                # Moon phase
+                phase_name = moon_info.phase_name.value
+                self.moon_phase_label.setText(phase_name)
+
+                # Moon illumination
+                illumination_pct = moon_info.illumination * 100
+                self.moon_illumination_label.setText(f"{illumination_pct:.1f}%")
+            else:
+                self.moonrise_label.setText("Error calculating")
+                self.moonset_label.setText("Error calculating")
+                self.moon_phase_label.setText("Error")
+                self.moon_illumination_label.setText("Error")
+
+        except Exception:
+            # Set error messages
+            self.local_time_label.setText("Error")
+            self.utc_time_label.setText("Error")
+            self.sunrise_label.setText("Error")
+            self.sunset_label.setText("Error")
+            self.moonrise_label.setText("Error")
+            self.moonset_label.setText("Error")
+            self.moon_phase_label.setText("Error")
+            self.moon_illumination_label.setText("Error")

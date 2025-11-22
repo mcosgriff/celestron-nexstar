@@ -56,6 +56,7 @@ dependencies = [
     "pandas>=2.3.3",
     "feedparser>=6.0.0",
     "beautifulsoup4>=4.14.2",
+    "PySide6>=6.6.0",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +74,7 @@ dev = [
 
 [project.scripts]
 nexstar = "celestron_nexstar.cli.main:app"
+nexstar-gui = "celestron_nexstar.gui.main:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/celestron-nexstar"
@@ -305,6 +307,8 @@ module = [
     "CoreLocation.*",
     "winrt",
     "winrt.*",
+    "PySide6",
+    "PySide6.*",
 ]
 ignore_missing_imports = true
 
@@ -314,6 +318,13 @@ ignore_missing_imports = true
 module = "celestron_nexstar.cli.*"
 disallow_untyped_decorators = false
 disable_error_code = ["misc"]  # Disable "Class cannot subclass" errors for TyperGroup
+
+# Allow untyped decorators and disable misc errors for GUI code (PySide6 doesn't have complete type stubs)
+[[tool.mypy.overrides]]
+module = "celestron_nexstar.gui.*"
+disallow_untyped_decorators = false
+disable_error_code = ["misc"]  # Disable "Class cannot subclass" errors for PySide6 classes
+warn_unused_ignores = false  # Type ignores needed for PySide6
 
 # Allow untyped decorators for cachetools.cached (doesn't preserve types)
 [[tool.mypy.overrides]]

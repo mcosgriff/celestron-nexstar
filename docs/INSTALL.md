@@ -5,6 +5,7 @@
 - Python 3.9 or later (tested up to Python 3.14)
 - uv (Python package manager)
 - USB connection to Celestron NexStar 6SE telescope
+- Qt libraries (for GUI functionality, optional - PySide6 bundles Qt but system libraries may be preferred)
 
 ## Installing uv
 
@@ -20,6 +21,55 @@ brew install uv
 # Or using pip
 pip install uv
 ```
+
+## Installing Qt Libraries (for GUI)
+
+The GUI application requires Qt libraries. PySide6 bundles Qt, but you may prefer to install system Qt libraries for better integration.
+
+### macOS (using Homebrew)
+
+```zsh
+# Install Qt6 using Homebrew
+brew install qt@6
+
+# Optional: Add Qt to PATH (if needed)
+echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Note:** PySide6 will work without installing Qt via Homebrew as it bundles Qt libraries. Installing via Homebrew is optional but may provide better system integration.
+
+### Linux
+
+**Ubuntu/Debian:**
+
+```bash
+# Install Qt6 development libraries
+sudo apt-get update
+sudo apt-get install qt6-base-dev qt6-tools-dev qt6-tools-dev-tools
+
+# Or for minimal installation (PySide6 bundles Qt, so this is optional)
+sudo apt-get install libqt6core6 libqt6gui6 libqt6widgets6
+```
+
+**Fedora/RHEL:**
+
+```bash
+# Install Qt6 development libraries
+sudo dnf install qt6-qtbase-devel qt6-qttools-devel
+
+# Or minimal installation
+sudo dnf install qt6-qtbase qt6-qtgui qt6-qtwidgets
+```
+
+**Arch Linux:**
+
+```bash
+# Install Qt6
+sudo pacman -S qt6-base qt6-tools
+```
+
+**Note:** On Linux, PySide6 should work with bundled Qt libraries, but installing system Qt libraries may provide better integration with desktop environments and reduce package size.
 
 ## Installation Methods
 
@@ -63,6 +113,19 @@ uv run python -c "from celestron_nexstar import NexStarTelescope; print('Success
 
 # Run an example script
 uv run python examples/simple_position_tracking.py
+
+# Test GUI (if Qt libraries are installed)
+uv run nexstar-gui
+
+# Run GUI in background (detached from terminal)
+# Option 1: Using nohup (works on macOS and Linux)
+nohup uv run nexstar-gui > /dev/null 2>&1 &
+
+# Option 2: Using the launcher script
+./scripts/nexstar-gui-launcher.sh
+
+# Option 3: On macOS, you can also use 'open' with a wrapper
+# (requires creating a .command file or app bundle)
 ```
 
 ## Running Tests
@@ -242,6 +305,35 @@ python --version  # Should be 3.9+
 # Run tests with more verbosity
 uv run pytest -vv
 ```
+
+### GUI Not Launching
+
+**macOS:**
+
+```zsh
+# If GUI fails to launch, try installing Qt via Homebrew
+brew install qt@6
+
+# Verify PySide6 is installed
+uv run python -c "from PySide6.QtWidgets import QApplication; print('PySide6 OK')"
+```
+
+**Linux:**
+
+```zsh
+# Install required system libraries
+# Ubuntu/Debian:
+sudo apt-get install libxcb-xinerama0 libxcb-cursor0
+
+# Verify PySide6 is installed
+uv run python -c "from PySide6.QtWidgets import QApplication; print('PySide6 OK')"
+```
+
+**Common Issues:**
+
+- If you see "QXcbConnection: Could not connect to display" on Linux, ensure you're running in a graphical environment (X11 or Wayland)
+- On macOS, if the app doesn't launch, check Console.app for error messages
+- PySide6 bundles Qt, so system Qt installation is optional but may help with integration
 
 ## Uninstallation
 
