@@ -57,6 +57,7 @@ dependencies = [
     "feedparser>=6.0.0",
     "beautifulsoup4>=4.14.2",
     "PySide6>=6.6.0",
+    "qt-material>=2.17",
 ]
 
 [project.optional-dependencies]
@@ -309,6 +310,8 @@ module = [
     "winrt.*",
     "PySide6",
     "PySide6.*",
+    "qt_material",
+    "qt_material.*",
 ]
 ignore_missing_imports = true
 

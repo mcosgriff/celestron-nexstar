@@ -308,6 +308,7 @@ dependencies = [
     { name = "pyside6" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
+    { name = "qt-material" },
     { name = "requests-cache" },
     { name = "retry-requests" },
     { name = "returns" },
@@ -381,6 +382,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-semantic-release", marker = "extra == 'dev'", specifier = ">=9.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "qt-material", specifier = ">=2.17" },
     { name = "requests-cache", specifier = ">=1.2.1" },
     { name = "retry-requests", specifier = ">=2.0.0" },
     { name = "returns", specifier = ">=0.23.0" },
@@ -2471,6 +2473,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/01/7b/5346225692bd4b67c22aa7580a1e331a00e8583c3ccd82a69d9e9a43adfc/qh3-1.5.5-pp311-pypy311_pp73-musllinux_1_1_i686.whl", hash = "sha256:fe56052f177d13597a61e8124a9205c2f976b861d40d3ccb520e51545b4b7191", size = 2168999, upload-time = "2025-10-05T05:28:36.594Z" },
     { url = "https://files.pythonhosted.org/packages/b8/3e/75f29607645a7454c23385ccd468f68cbc1f30f6d59025284ca93c533272/qh3-1.5.5-pp311-pypy311_pp73-musllinux_1_1_x86_64.whl", hash = "sha256:d16815d8936525f239b01470eb3bd9e2a8d7ce9a702dc9018a979d060476f591", size = 2540166, upload-time = "2025-10-05T05:28:37.94Z" },
     { url = "https://files.pythonhosted.org/packages/29/89/c83d50836556af028366f3e10a1e669f56f04e18649088059fab4aa127b2/qh3-1.5.5-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:e5ed1449db926eaa2433290b86458f6564b648dc968db78827de218020fdec41", size = 1984122, upload-time = "2025-10-05T05:28:39.594Z" },
+]
+
+[[package]]
+name = "qt-material"
+version = "2.17"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jinja2" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/57/d6473fc7f9b1a81f6bddea555119270818c54be7717f38d0977bb6161408/qt_material-2.17.tar.gz", hash = "sha256:b500a0c1f5ef8f46a8cf037d1aa5bdf9ea4eb618180b6332539dfbdd0647ad0d", size = 1668475, upload-time = "2025-04-21T17:00:25.783Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/63/e1085fd76bfea103b6c93d133d849f80a5a94b924f31897eb936cabe8459/qt_material-2.17-py3-none-any.whl", hash = "sha256:660523341ae45b79d222bf15e202ec76ba3bf5e7e82170b66759738d7bb4873d", size = 1687312, upload-time = "2025-04-21T17:00:23.761Z" },
 ]
 
 [[package]]
