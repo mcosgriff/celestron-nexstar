@@ -6,16 +6,15 @@ Shows observing conditions and recommended objects for tonight.
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import typer
 from click import Context
 from rich.console import Console
 from rich.table import Table
-from timezonefinder import TimezoneFinder
 from typer.core import TyperGroup
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_by_name
+from celestron_nexstar.api.core import format_local_time, generate_export_filename
 from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.location.observer import ObserverLocation, get_observer_location
 from celestron_nexstar.api.observation.observation_planner import ObservationPlanner, ObservingTarget
@@ -47,33 +46,6 @@ class SortedCommandsGroup(TyperGroup):
 
 app = typer.Typer(help="Telescope viewing commands", cls=SortedCommandsGroup)
 console = Console()
-_tz_finder = TimezoneFinder()
-
-
-def _get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
-    """Get timezone for a given latitude and longitude."""
-    try:
-        tz_name = _tz_finder.timezone_at(lat=lat, lng=lon)
-        if tz_name:
-            return ZoneInfo(tz_name)
-    except Exception:
-        pass
-    return None
-
-
-def _format_local_time(dt: datetime, lat: float, lon: float) -> str:
-    """Format datetime in local timezone, falling back to UTC if timezone unavailable."""
-    # Ensure datetime has timezone info
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-
-    tz = _get_local_timezone(lat, lon)
-    if tz:
-        local_dt = dt.astimezone(tz)
-        tz_name = local_dt.tzname() or (tz.key if hasattr(tz, "key") else "Local")
-        return local_dt.strftime(f"%Y-%m-%d %I:%M %p {tz_name}")
-    else:
-        return dt.strftime("%Y-%m-%d %I:%M %p UTC")
 
 
 @app.command("conditions", rich_help_panel="Conditions & Forecasts")
@@ -90,7 +62,7 @@ def show_conditions(
         if export_path:
             export_path_obj = Path(export_path)
         else:
-            export_path_obj = _generate_export_filename("telescope", command="conditions")
+            export_path_obj = generate_export_filename("conditions", viewing_type="telescope")
 
         file_console = create_file_console()
         _show_conditions_content(file_console)
@@ -113,7 +85,7 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
         # Display header
         location_name = conditions.location_name or "Current Location"
         output_console.print(f"\n[bold cyan]Observing Conditions for {location_name}[/bold cyan]")
-        time_str = _format_local_time(conditions.timestamp, conditions.latitude, conditions.longitude)
+        time_str = format_local_time(conditions.timestamp, conditions.latitude, conditions.longitude)
         output_console.print(f"[dim]{time_str}[/dim]\n")
 
         # Overall quality
@@ -186,8 +158,8 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
         if conditions.best_seeing_windows:
             window_strings = []
             for window_start, window_end in conditions.best_seeing_windows:
-                start_str = _format_local_time(window_start, conditions.latitude, conditions.longitude)
-                end_str = _format_local_time(window_end, conditions.latitude, conditions.longitude)
+                start_str = format_local_time(window_start, conditions.latitude, conditions.longitude)
+                end_str = format_local_time(window_end, conditions.latitude, conditions.longitude)
                 # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
                 parts_start = start_str.split()
                 parts_end = end_str.split()
@@ -323,7 +295,7 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
             if forecast_to_show:
                 for forecast in forecast_to_show:
-                    time_str = _format_local_time(forecast.timestamp, conditions.latitude, conditions.longitude)
+                    time_str = format_local_time(forecast.timestamp, conditions.latitude, conditions.longitude)
                     # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
                     parts = time_str.split()
                     time_only = " ".join(parts[1:3]) if len(parts) >= 3 else time_str
@@ -363,13 +335,13 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
         if conditions.moon_altitude < 0:
             output_console.print("  [dim]Below horizon[/dim]")
         if conditions.moonrise_time:
-            moonrise_str = _format_local_time(conditions.moonrise_time, conditions.latitude, conditions.longitude)
+            moonrise_str = format_local_time(conditions.moonrise_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = moonrise_str.split()
             moonrise_time = " ".join(parts[1:3]) if len(parts) >= 3 else moonrise_str
             output_console.print(f"  Moonrise: {moonrise_time}")
         if conditions.moonset_time:
-            moonset_str = _format_local_time(conditions.moonset_time, conditions.latitude, conditions.longitude)
+            moonset_str = format_local_time(conditions.moonset_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = moonset_str.split()
             moonset_time = " ".join(parts[1:3]) if len(parts) >= 3 else moonset_str
@@ -381,13 +353,13 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
         # Sunrise/Sunset
         if conditions.sunrise_time:
-            sunrise_str = _format_local_time(conditions.sunrise_time, conditions.latitude, conditions.longitude)
+            sunrise_str = format_local_time(conditions.sunrise_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = sunrise_str.split()
             sunrise_time = " ".join(parts[1:3]) if len(parts) >= 3 else sunrise_str
             output_console.print(f"  Sunrise: {sunrise_time}")
         if conditions.sunset_time:
-            sunset_str = _format_local_time(conditions.sunset_time, conditions.latitude, conditions.longitude)
+            sunset_str = format_local_time(conditions.sunset_time, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts = sunset_str.split()
             sunset_time = " ".join(parts[1:3]) if len(parts) >= 3 else sunset_str
@@ -395,10 +367,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
         # Golden Hour
         if conditions.golden_hour_evening_start and conditions.golden_hour_evening_end:
-            gh_evening_start = _format_local_time(
+            gh_evening_start = format_local_time(
                 conditions.golden_hour_evening_start, conditions.latitude, conditions.longitude
             )
-            gh_evening_end = _format_local_time(
+            gh_evening_end = format_local_time(
                 conditions.golden_hour_evening_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -408,10 +380,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
             gh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else gh_evening_end
             output_console.print(f"  Golden Hour (evening): {gh_start_time} - {gh_end_time}")
         if conditions.golden_hour_morning_start and conditions.golden_hour_morning_end:
-            gh_morning_start = _format_local_time(
+            gh_morning_start = format_local_time(
                 conditions.golden_hour_morning_start, conditions.latitude, conditions.longitude
             )
-            gh_morning_end = _format_local_time(
+            gh_morning_end = format_local_time(
                 conditions.golden_hour_morning_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -423,10 +395,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
         # Blue Hour
         if conditions.blue_hour_evening_start and conditions.blue_hour_evening_end:
-            bh_evening_start = _format_local_time(
+            bh_evening_start = format_local_time(
                 conditions.blue_hour_evening_start, conditions.latitude, conditions.longitude
             )
-            bh_evening_end = _format_local_time(
+            bh_evening_end = format_local_time(
                 conditions.blue_hour_evening_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -436,10 +408,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
             bh_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else bh_evening_end
             output_console.print(f"  Blue Hour (evening): {bh_start_time} - {bh_end_time}")
         if conditions.blue_hour_morning_start and conditions.blue_hour_morning_end:
-            bh_morning_start = _format_local_time(
+            bh_morning_start = format_local_time(
                 conditions.blue_hour_morning_start, conditions.latitude, conditions.longitude
             )
-            bh_morning_end = _format_local_time(
+            bh_morning_end = format_local_time(
                 conditions.blue_hour_morning_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -451,10 +423,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
         # Astronomical Twilight
         if conditions.astronomical_twilight_evening_start and conditions.astronomical_twilight_evening_end:
-            at_evening_start = _format_local_time(
+            at_evening_start = format_local_time(
                 conditions.astronomical_twilight_evening_start, conditions.latitude, conditions.longitude
             )
-            at_evening_end = _format_local_time(
+            at_evening_end = format_local_time(
                 conditions.astronomical_twilight_evening_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -464,10 +436,10 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
             at_end_time = " ".join(parts_end[1:3]) if len(parts_end) >= 3 else at_evening_end
             output_console.print(f"  Astronomical Twilight (evening): {at_start_time} - {at_end_time}")
         if conditions.astronomical_twilight_morning_start and conditions.astronomical_twilight_morning_end:
-            at_morning_start = _format_local_time(
+            at_morning_start = format_local_time(
                 conditions.astronomical_twilight_morning_start, conditions.latitude, conditions.longitude
             )
-            at_morning_end = _format_local_time(
+            at_morning_end = format_local_time(
                 conditions.astronomical_twilight_morning_end, conditions.latitude, conditions.longitude
             )
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
@@ -479,8 +451,8 @@ def _show_conditions_content(output_console: Console | FileConsole) -> None:
 
         # Galactic Center Visibility
         if conditions.galactic_center_start and conditions.galactic_center_end:
-            gc_start = _format_local_time(conditions.galactic_center_start, conditions.latitude, conditions.longitude)
-            gc_end = _format_local_time(conditions.galactic_center_end, conditions.latitude, conditions.longitude)
+            gc_start = format_local_time(conditions.galactic_center_start, conditions.latitude, conditions.longitude)
+            gc_end = format_local_time(conditions.galactic_center_end, conditions.latitude, conditions.longitude)
             # Extract time and AM/PM (parts[1] = time, parts[2] = AM/PM)
             parts_start = gc_start.split()
             parts_end = gc_end.split()
@@ -554,7 +526,7 @@ def show_objects(
         if export_path:
             export_path_obj = Path(export_path)
         else:
-            export_path_obj = _generate_export_filename("telescope", command="objects")
+            export_path_obj = generate_export_filename("objects", viewing_type="telescope")
 
         file_console = create_file_console()
         _show_objects_content(file_console, target_type, limit, best_for_seeing)
@@ -653,7 +625,9 @@ def _show_objects_content(
             if best_time.tzinfo is None:
                 best_time = best_time.replace(tzinfo=UTC)
 
-            tz = _get_local_timezone(conditions.latitude, conditions.longitude)
+            from celestron_nexstar.api.core import get_local_timezone
+
+            tz = get_local_timezone(conditions.latitude, conditions.longitude)
             if tz:
                 local_time = best_time.astimezone(tz)
                 time_str = local_time.strftime("%I:%M %p")
@@ -729,7 +703,7 @@ def show_imaging(
         if export_path:
             export_path_obj = Path(export_path)
         else:
-            export_path_obj = _generate_export_filename("telescope", command="imaging")
+            export_path_obj = generate_export_filename("imaging", viewing_type="telescope")
 
         file_console = create_file_console()
         _show_imaging_content(file_console)
@@ -787,7 +761,9 @@ def _show_imaging_content(output_console: Console | FileConsole) -> None:
             output_console.print("[yellow]No forecast data available for the observing window.[/yellow]")
             return
 
-        tz = _get_local_timezone(conditions.latitude, conditions.longitude)
+        from celestron_nexstar.api.core import get_local_timezone
+
+        tz = get_local_timezone(conditions.latitude, conditions.longitude)
 
         # Planetary Imaging - Seeing Forecast
         output_console.print("\n[bold cyan]Planetary Imaging - Seeing Forecast[/bold cyan]")
@@ -982,46 +958,6 @@ def _show_imaging_content(output_console: Console | FileConsole) -> None:
         raise typer.Exit(code=1) from None
 
 
-def _generate_export_filename(
-    viewing_type: str = "telescope", binocular_model: str | None = None, command: str = "tonight"
-) -> Path:
-    """Generate export filename based on viewing type, equipment, location, date, and command."""
-    from datetime import datetime
-
-    from celestron_nexstar.api.location.observer import get_observer_location
-    from celestron_nexstar.api.observation.optics import load_configuration
-
-    location = get_observer_location()
-
-    # Get location name (shortened, sanitized)
-    if location.name:
-        location_short = location.name.lower().replace(" ", "_").replace(",", "").replace(".", "")
-        # Remove common suffixes and limit length
-        location_short = location_short.replace("_(default)", "").replace("_observatory", "")
-        location_short = location_short[:20]  # Limit length
-    else:
-        location_short = "unknown"
-
-    # Get date
-    date_str = datetime.now().strftime("%Y-%m-%d")
-
-    # Generate filename based on viewing type
-    if viewing_type == "telescope":
-        config = load_configuration()
-        if config:
-            telescope_name = config.telescope.model.value.replace("nexstar_", "").replace("_", "")
-        else:
-            telescope_name = "no_telescope"
-        filename = f"nexstar_{telescope_name}_{location_short}_{date_str}_{command}.txt"
-    elif viewing_type == "binoculars":
-        model_safe = (binocular_model or "10x50").replace("x", "x").replace("/", "_").lower()
-        filename = f"binoculars_{model_safe}_{location_short}_{date_str}_{command}.txt"
-    else:  # naked-eye
-        filename = f"naked_eye_{location_short}_{date_str}_{command}.txt"
-
-    return Path(filename)
-
-
 @app.command("tonight", rich_help_panel="Viewing Guides")
 def show_tonight(
     target_type: str | None = typer.Option(
@@ -1048,7 +984,7 @@ def show_tonight(
             export_path_obj = Path(export_path)
         else:
             # Auto-generate filename
-            export_path_obj = _generate_export_filename("telescope", command="tonight")
+            export_path_obj = generate_export_filename("tonight", viewing_type="telescope")
         # Create file console for export (StringIO)
         file_console = create_file_console()
         # Use file console for output
@@ -1128,7 +1064,9 @@ def show_plan(
     from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", command="plan")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("plan", viewing_type="telescope")
+        )
 
         file_console = create_file_console()
         _show_conditions_content(file_console)
@@ -1237,7 +1175,9 @@ def show_timeline(
     from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "timeline")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("timeline", viewing_type="telescope")
+        )
         file_console = create_file_console()
         _show_timeline_content(file_console, object_name, days)
         content = file_console.file.getvalue()
@@ -1278,7 +1218,7 @@ def _show_timeline_content(output_console: Console | FileConsole, object_name: s
     if timeline.is_always_visible:
         output_console.print("[green]This object is always visible (circumpolar).[/green]")
         if timeline.transit_time:
-            time_str = _format_local_time(timeline.transit_time, location.latitude, location.longitude)
+            time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
             output_console.print(f"Transit (highest): {time_str}")
             output_console.print(f"Maximum altitude: {timeline.max_altitude:.1f}°")
         return
@@ -1289,16 +1229,16 @@ def _show_timeline_content(output_console: Console | FileConsole, object_name: s
     table.add_column("Altitude", justify="right")
 
     if timeline.rise_time:
-        time_str = _format_local_time(timeline.rise_time, location.latitude, location.longitude)
+        time_str = format_local_time(timeline.rise_time, location.latitude, location.longitude)
         alt, _ = get_object_altitude_azimuth(obj, location.latitude, location.longitude, timeline.rise_time)
         table.add_row("Rise", time_str, f"{alt:.1f}°")
 
     if timeline.transit_time:
-        time_str = _format_local_time(timeline.transit_time, location.latitude, location.longitude)
+        time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
         table.add_row("Transit (Highest)", time_str, f"{timeline.max_altitude:.1f}°")
 
     if timeline.set_time:
-        time_str = _format_local_time(timeline.set_time, location.latitude, location.longitude)
+        time_str = format_local_time(timeline.set_time, location.latitude, location.longitude)
         alt, _ = get_object_altitude_azimuth(obj, location.latitude, location.longitude, timeline.set_time)
         table.add_row("Set", time_str, f"{alt:.1f}°")
 
@@ -1316,7 +1256,9 @@ def show_checklist(
     checklist = generate_observation_checklist(equipment_type="telescope")
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "checklist")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("checklist", viewing_type="telescope")
+        )
         file_console = create_file_console()
         _show_checklist_content(file_console, checklist)
         content = file_console.file.getvalue()
@@ -1426,7 +1368,9 @@ def show_quick_reference(
     reference = generate_quick_reference(objects)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "quickref")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("quickref", viewing_type="telescope")
+        )
         file_console = create_file_console()
         file_console.print(reference)
         content = file_console.file.getvalue()
@@ -1453,7 +1397,9 @@ def show_log_template(
     template = generate_session_log_template(location=location_name)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "log")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("log", viewing_type="telescope")
+        )
         file_console = create_file_console()
         file_console.print(template)
         content = file_console.file.getvalue()
@@ -1492,7 +1438,9 @@ def show_transit_times(
     transit_times = get_transit_times(all_objects[:limit], location.latitude, location.longitude)
 
     if export:
-        export_path_obj = Path(export_path) if export_path else _generate_export_filename("telescope", "transits")
+        export_path_obj = (
+            Path(export_path) if export_path else generate_export_filename("transits", viewing_type="telescope")
+        )
         file_console = create_file_console()
         _show_transit_times_content(file_console, transit_times, location)
         content = file_console.file.getvalue()
@@ -1519,7 +1467,7 @@ def _show_transit_times_content(
     table.add_column("Transit Time", style="green")
 
     for obj_name, transit_time in sorted(transit_times.items(), key=lambda x: x[1]):
-        time_str = _format_local_time(transit_time, location.latitude, location.longitude)
+        time_str = format_local_time(transit_time, location.latitude, location.longitude)
         table.add_row(obj_name, time_str)
 
     output_console.print(table)
@@ -1585,7 +1533,7 @@ def show_time_slots(
     console.print("\n[bold cyan]Time-Based Recommendations[/bold cyan]\n")
 
     for time_slot, objects in recommendations.items():
-        time_str = _format_local_time(time_slot, location.latitude, location.longitude)
+        time_str = format_local_time(time_slot, location.latitude, location.longitude)
         console.print(f"[bold]{time_str}[/bold]")
         if objects:
             for obj in objects[:5]:  # Limit to 5 per time slot

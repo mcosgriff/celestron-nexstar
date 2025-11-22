@@ -8,11 +8,13 @@ providing a clean interface while leveraging a well-tested astronomy library.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from astropy import units as u
 from astropy.coordinates import ICRS, AltAz, Angle, EarthLocation, SkyCoord
 from astropy.time import Time
+from timezonefinder import TimezoneFinder
 
 
 __all__ = [
@@ -23,13 +25,18 @@ __all__ = [
     "dec_to_degrees",
     "degrees_to_dms",
     "format_dec",
+    "format_local_time",
     "format_position",
     "format_ra",
+    "get_local_timezone",
     "hours_to_hms",
     "ra_dec_to_alt_az",
     "ra_to_degrees",
     "ra_to_hours",
 ]
+
+# Global timezone finder instance (cached for performance)
+_tz_finder = TimezoneFinder()
 
 
 def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -287,3 +294,48 @@ def format_position(ra_hours: float, dec_degrees: float) -> str:
         Formatted position string
     """
     return f"RA: {format_ra(ra_hours)}, Dec: {format_dec(dec_degrees)}"
+
+
+def get_local_timezone(lat: float, lon: float) -> ZoneInfo | None:
+    """
+    Get timezone for a given latitude and longitude.
+
+    Args:
+        lat: Latitude in degrees
+        lon: Longitude in degrees
+
+    Returns:
+        ZoneInfo object for the timezone, or None if timezone cannot be determined
+    """
+    try:
+        tz_name = _tz_finder.timezone_at(lat=lat, lng=lon)
+        if tz_name:
+            return ZoneInfo(tz_name)
+    except Exception:
+        pass
+    return None
+
+
+def format_local_time(dt: datetime, lat: float, lon: float) -> str:
+    """
+    Format datetime in local timezone, falling back to UTC if timezone unavailable.
+
+    Args:
+        dt: Datetime to format (assumed UTC if no timezone info)
+        lat: Observer latitude in degrees
+        lon: Observer longitude in degrees
+
+    Returns:
+        Formatted time string (e.g., "2024-10-14 08:30 PM PDT" or "2024-10-14 08:30 PM UTC")
+    """
+    # Ensure datetime has timezone info
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    tz = get_local_timezone(lat, lon)
+    if tz:
+        local_dt = dt.astimezone(tz)
+        tz_name = local_dt.tzname() or (tz.key if hasattr(tz, "key") else "Local")
+        return local_dt.strftime(f"%Y-%m-%d %I:%M %p {tz_name}")
+    else:
+        return dt.strftime("%Y-%m-%d %I:%M %p UTC")
