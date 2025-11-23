@@ -6,21 +6,28 @@ import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QCursor, QGuiApplication, QIcon, QMouseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
+    QProgressDialog,
     QSizeGrip,
     QSizePolicy,
     QStatusBar,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
-from celestron_nexstar.api.core import format_local_time
+from celestron_nexstar.api.core import format_local_time, get_local_timezone
+from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.gui.dialogs.gps_info_dialog import GPSInfoDialog
 from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
@@ -30,6 +37,42 @@ from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPa
 
 if TYPE_CHECKING:
     from celestron_nexstar import NexStarTelescope
+    from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+
+
+class ObjectsLoaderThread(QThread):
+    """Worker thread to load objects data in the background."""
+
+    data_loaded = Signal(object, object)  # type: ignore[type-arg,misc]  # Emits (obj_type_str, objects_list)
+
+    def __init__(self, obj_type_str: str) -> None:
+        """Initialize the loader thread."""
+        super().__init__()
+        self.obj_type_str = obj_type_str
+
+    def run(self) -> None:
+        """Load objects data in background thread."""
+        try:
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+            obj_type = CelestialObjectType(self.obj_type_str)
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
+            # Get recommended objects for this type
+            objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
+
+            # Emit signal with loaded data
+            self.data_loaded.emit(self.obj_type_str, objects)
+
+        except Exception as e:
+            # Emit None to indicate error
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error loading objects for type {self.obj_type_str}: {e}", exc_info=True)
+            self.data_loaded.emit(self.obj_type_str, None)
 
 
 class ClickableLabel(QLabel):
@@ -85,6 +128,10 @@ class MainWindow(QMainWindow):
             # Legacy
             "event": "fa5s.calendar",
             "menu_book": "fa5s.book",
+            # Table controls
+            "refresh": "mdi.refresh",
+            "info": "mdi.information",
+            "download": "mdi.download",
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -96,7 +143,7 @@ class MainWindow(QMainWindow):
             if fa_icon_name:
                 icon = qta.icon(fa_icon_name)
                 if not icon.isNull():
-                    return icon
+                    return QIcon(icon)  # Cast to QIcon to satisfy type checker
         except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
             # Log the error for debugging
             import logging
@@ -123,6 +170,12 @@ class MainWindow(QMainWindow):
         # Telescope connection state
         self.telescope: NexStarTelescope | None = None
 
+        # Cache for loaded objects data (key: obj_type_str, value: list of objects)
+        self._objects_cache: dict[str, list[RecommendedObject]] = {}
+
+        # Track loading threads to prevent duplicate loads
+        self._loading_threads: dict[str, ObjectsLoaderThread] = {}
+
         # Initialize theme (use provided theme or create default)
         if theme is None:
             from PySide6.QtWidgets import QApplication
@@ -142,14 +195,17 @@ class MainWindow(QMainWindow):
         # Create toolbar with telescope control buttons
         self._create_toolbar()
 
+        # Create top toolbar for table controls
+        self._create_table_toolbar()
+
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
         # Create telescope control panel
-        control_panel = self._create_control_panel()
-        main_layout.addWidget(control_panel)
+        self.control_panel = self._create_control_panel()
+        main_layout.addWidget(self.control_panel)
 
         # Create collapsible log panel at bottom (header will be hidden, controlled by toolbar button)
         self.log_panel = CollapsibleLogPanel()
@@ -170,6 +226,12 @@ class MainWindow(QMainWindow):
 
         # Initial status update
         self._update_status_bar()
+
+        # Load data for the first tab
+        if hasattr(self, "tab_widget") and self.tab_widget.count() > 0:
+            first_tab = self.tab_widget.widget(0)
+            if isinstance(first_tab, QTableWidget):
+                self._load_objects_table(first_tab)
 
         # Hide any unwanted elements that might appear (like ".EA" button)
         # This could be a qt-material CSS element or toolbar overflow button
@@ -546,14 +608,472 @@ class MainWindow(QMainWindow):
             self.light_theme_action.setChecked(True)
 
     def _create_control_panel(self) -> QWidget:
-        """Create the telescope control panel with buttons."""
+        """Create the telescope control panel with tabs for celestial object types."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # Add stretch to push content to top
-        layout.addStretch()
+        # Create tab bar for celestial object types
+        self.tab_widget = QTabWidget()
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+
+        # Add a tab for each CelestialObjectType
+        for obj_type in CelestialObjectType:
+            # Create human-readable label (capitalize and replace underscores)
+            label = obj_type.value.replace("_", " ").title()
+            # Create a table widget for each tab
+            table = self._create_objects_table(obj_type)
+            self.tab_widget.addTab(table, label)
+
+        layout.addWidget(self.tab_widget)
 
         return panel
+
+    def _create_objects_table(self, obj_type: CelestialObjectType) -> QTableWidget:
+        """Create a table widget displaying objects of the specified type."""
+        table = QTableWidget()
+        table.setColumnCount(9)
+        table.setHorizontalHeaderLabels(
+            ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
+        )
+
+        # Set column widths
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Type
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Mag
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Alt
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Transit
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Chance
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)  # Tips
+
+        # Enable sorting
+        table.setSortingEnabled(True)
+
+        # Set selection behavior
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Connect selection change to update info button state
+        table.itemSelectionChanged.connect(self._on_table_selection_changed)
+
+        # Connect sort indicator change to track sorting
+        header.sortIndicatorChanged.connect(
+            lambda logical_index, order: self._on_sort_changed(table, logical_index, order)
+        )
+
+        # Connect double-click to copy cell text
+        table.itemDoubleClicked.connect(self._on_cell_double_clicked)
+
+        # Load data asynchronously (will be populated when tab is shown)
+        # Store the object type for later loading
+        table.setProperty("object_type", obj_type.value)
+
+        # Store sort state (column index, order)
+        table.setProperty("sort_column", -1)
+        table.setProperty("sort_order", Qt.SortOrder.AscendingOrder)
+
+        return table
+
+    def _load_objects_table(self, table: QTableWidget, show_progress: bool = True) -> None:
+        """Load objects data into the table (checks cache first, then loads in background)."""
+        obj_type_str = table.property("object_type")
+        if not obj_type_str:
+            return
+
+        # Check cache first
+        if obj_type_str in self._objects_cache:
+            objects = self._objects_cache[obj_type_str]
+            if objects:
+                self._populate_table(table, objects)
+            return
+
+        # Check if already loading
+        if obj_type_str in self._loading_threads:
+            return
+
+        # Show loading dialog only if requested
+        progress: QProgressDialog | None = None
+        if show_progress:
+            progress = QProgressDialog(
+                f"Loading {obj_type_str.replace('_', ' ').title()} objects...", "Cancel", 0, 0, self
+            )
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+        # Create and start worker thread
+        thread = ObjectsLoaderThread(obj_type_str)
+        thread.data_loaded.connect(lambda obj_type, objs: self._on_objects_loaded(obj_type, objs, table, progress))
+        self._loading_threads[obj_type_str] = thread
+        thread.start()
+
+    def _on_objects_loaded(
+        self,
+        obj_type_str: str,
+        objects: list[RecommendedObject] | None,
+        table: QTableWidget,
+        progress: QProgressDialog | None,
+    ) -> None:
+        """Handle objects data loaded signal from worker thread."""
+        # Close loading dialog if it was shown
+        if progress is not None and progress.isVisible():
+            progress.close()
+
+        # Remove thread from tracking
+        if obj_type_str in self._loading_threads:
+            del self._loading_threads[obj_type_str]
+
+        if objects is None:
+            # Error occurred, already logged in thread
+            return
+
+        # Cache the data
+        self._objects_cache[obj_type_str] = objects
+
+        # Populate table (must be done on main thread)
+        if objects:
+            self._populate_table(table, objects)
+
+    def _populate_table(self, table: QTableWidget, objects: list[RecommendedObject]) -> None:
+        """Populate table with objects data (must be called on main thread)."""
+        if not objects:
+            return
+
+        # Temporarily disable sorting while populating to improve performance
+        table.setSortingEnabled(False)
+
+        table.setRowCount(len(objects))
+
+        # Get conditions for timezone (use cached if available, otherwise get fresh)
+        try:
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+            tz = get_local_timezone(conditions.latitude, conditions.longitude)
+        except Exception:
+            tz = None
+
+        for row, obj_rec in enumerate(objects):
+            # Priority (stars)
+            priority_stars = "★" * (6 - obj_rec.priority)
+            table.setItem(row, 0, QTableWidgetItem(priority_stars))
+
+            # Name
+            obj = obj_rec.obj
+            display_name = obj.common_name or obj.name
+            table.setItem(row, 1, QTableWidgetItem(display_name))
+
+            # Type
+            table.setItem(row, 2, QTableWidgetItem(obj.object_type.value))
+
+            # Magnitude
+            mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"
+            table.setItem(row, 3, QTableWidgetItem(mag_text))
+
+            # Altitude
+            alt_text = f"{obj_rec.altitude:.0f}°"
+            table.setItem(row, 4, QTableWidgetItem(alt_text))
+
+            # Transit time
+            best_time = obj_rec.best_viewing_time
+            if best_time.tzinfo is None:
+                best_time = best_time.replace(tzinfo=UTC)
+            if tz:
+                local_time = best_time.astimezone(tz)
+                time_str = local_time.strftime("%I:%M %p")
+            else:
+                time_str = best_time.strftime("%I:%M %p UTC")
+            table.setItem(row, 5, QTableWidgetItem(time_str))
+
+            # Moon separation
+            moon_sep_text = "-"
+            if obj_rec.moon_separation_deg is not None:
+                moon_sep_text = f"{obj_rec.moon_separation_deg:.0f}°"
+            table.setItem(row, 6, QTableWidgetItem(moon_sep_text))
+
+            # Visibility probability
+            prob = obj_rec.visibility_probability
+            prob_text = f"{prob:.0%}"
+            table.setItem(row, 7, QTableWidgetItem(prob_text))
+
+            # Tips
+            tips_text = "; ".join(obj_rec.viewing_tips[:2]) if obj_rec.viewing_tips else ""
+            if len(tips_text) > 50:
+                tips_text = tips_text[:47] + "..."
+            table.setItem(row, 8, QTableWidgetItem(tips_text))
+
+        # Re-enable sorting after populating
+        table.setSortingEnabled(True)
+
+        # Restore previous sort state if available, otherwise default to Priority (column 0)
+        sort_column = table.property("sort_column")
+        sort_order = table.property("sort_order")
+        header = table.horizontalHeader()
+        if sort_column >= 0:
+            header.setSortIndicator(sort_column, sort_order)
+        else:
+            # Default to Priority column (0) descending on first load
+            header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
+            table.setProperty("sort_column", 0)
+            table.setProperty("sort_order", Qt.SortOrder.DescendingOrder)
+
+    def _create_table_toolbar(self) -> None:
+        """Create toolbar for table controls in the top toolbar area."""
+        toolbar = QToolBar("Table Controls")
+        toolbar.setMovable(False)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+
+        # Filter textbox (left side)
+        filter_label = QLabel()
+        toolbar.addWidget(filter_label)
+        self.filter_textbox = QLineEdit()
+        self.filter_textbox.setPlaceholderText("Filter objects...")
+        self.filter_textbox.textChanged.connect(self._on_filter_changed)
+        toolbar.addWidget(self.filter_textbox)
+
+        # Spacer
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
+
+        # Refresh button
+        refresh_icon = self._create_icon("refresh", ["view-refresh", "reload"])
+        self.refresh_action = toolbar.addAction(refresh_icon, "Refresh")
+        self.refresh_action.setToolTip("REFRESH")
+        self.refresh_action.setStatusTip("Refresh current tab")
+        self.refresh_action.triggered.connect(self._on_refresh_clicked)
+
+        # Load All button
+        load_all_icon = self._create_icon("download", ["download", "folder-download"])
+        self.load_all_action = toolbar.addAction(load_all_icon, "Load All")
+        self.load_all_action.setToolTip("LOAD ALL")
+        self.load_all_action.setStatusTip("Load all tabs")
+        self.load_all_action.triggered.connect(self._on_load_all_clicked)
+
+        # Info button (right side, initially disabled)
+        info_icon = self._create_icon("info", ["dialog-information", "help-about"])
+        self.info_action = toolbar.addAction(info_icon, "Info")
+        self.info_action.setToolTip("INFO")
+        self.info_action.setStatusTip("Show object information")
+        self.info_action.setEnabled(False)  # Disabled until selection
+        self.info_action.triggered.connect(self._on_info_clicked)
+
+    def _on_table_selection_changed(self) -> None:
+        """Handle table selection change - enable/disable info button."""
+        # Get current table
+        current_table = self._get_current_table()
+        if current_table:
+            selected_rows = current_table.selectionModel().selectedRows()
+            # Enable if exactly 1 row is selected
+            self.info_action.setEnabled(len(selected_rows) == 1)
+
+    def _get_current_table(self) -> QTableWidget | None:
+        """Get the currently visible table widget."""
+        if not hasattr(self, "tab_widget"):
+            return None
+        current_index = self.tab_widget.currentIndex()
+        if current_index < 0:
+            return None
+        widget = self.tab_widget.widget(current_index)
+        if isinstance(widget, QTableWidget):
+            return widget
+        return None
+
+    def _on_refresh_clicked(self) -> None:
+        """Handle refresh button click - reload current tab."""
+        current_table = self._get_current_table()
+        if current_table:
+            # Clear cache for this object type
+            obj_type_str = current_table.property("object_type")
+            if obj_type_str and obj_type_str in self._objects_cache:
+                del self._objects_cache[obj_type_str]
+
+            # Clear table
+            current_table.setRowCount(0)
+
+            # Reload
+            self._load_objects_table(current_table)
+
+    def _on_load_all_clicked(self) -> None:
+        """Handle load all button click - load data for all tabs."""
+        if not hasattr(self, "tab_widget"):
+            return
+
+        # Get all tabs that need loading
+        tabs_to_load = []
+        for i in range(self.tab_widget.count()):
+            tab_widget = self.tab_widget.widget(i)
+            if isinstance(tab_widget, QTableWidget):
+                obj_type_str = tab_widget.property("object_type")
+                # Load if not cached and not already loading
+                if (
+                    obj_type_str
+                    and obj_type_str not in self._objects_cache
+                    and obj_type_str not in self._loading_threads
+                ):
+                    tabs_to_load.append((i, tab_widget, obj_type_str))
+
+        if not tabs_to_load:
+            # All tabs are already loaded or loading
+            return
+
+        # Show loading dialog
+        progress = QProgressDialog(
+            f"Loading all tabs ({len(tabs_to_load)} tabs)...", "Cancel", 0, len(tabs_to_load), self
+        )
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # Disable cancel button
+        progress.show()
+
+        # Process events to show the dialog immediately
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Load each tab
+        for idx, (_tab_index, table, obj_type_str) in enumerate(tabs_to_load):
+            progress.setValue(idx)
+            progress.setLabelText(
+                f"Loading {obj_type_str.replace('_', ' ').title()} ({idx + 1}/{len(tabs_to_load)})..."
+            )
+            QApplication.processEvents()
+
+            # Load the table (suppress individual progress dialog)
+            self._load_objects_table(table, show_progress=False)
+
+            # Wait for loading to complete (check if thread is done)
+            if obj_type_str in self._loading_threads:
+                thread = self._loading_threads[obj_type_str]
+                thread.wait(5000)  # Wait up to 5 seconds for each tab
+
+        progress.setValue(len(tabs_to_load))
+        progress.close()
+
+    def _on_filter_changed(self, text: str) -> None:
+        """Handle filter text change - filter table rows."""
+        current_table = self._get_current_table()
+        if not current_table:
+            return
+
+        filter_text = text.lower().strip()
+
+        # Show all rows if filter is empty
+        if not filter_text:
+            for row in range(current_table.rowCount()):
+                current_table.showRow(row)
+            return
+
+        # Filter rows based on text matching any column
+        for row in range(current_table.rowCount()):
+            match = False
+            for col in range(current_table.columnCount()):
+                item = current_table.item(row, col)
+                if item and filter_text in item.text().lower():
+                    match = True
+                    break
+            current_table.setRowHidden(row, not match)
+
+    def _on_info_clicked(self) -> None:
+        """Handle info button click - show object information dialog."""
+        current_table = self._get_current_table()
+        if not current_table:
+            return
+
+        # Get selected row
+        selected_rows = current_table.selectionModel().selectedRows()
+        if not selected_rows or len(selected_rows) != 1:
+            return
+
+        row = selected_rows[0].row()
+        # Get object name from the Name column (column 1)
+        name_item = current_table.item(row, 1)
+        if not name_item:
+            return
+
+        object_name = name_item.text()
+
+        # Show loading dialog
+        progress = QProgressDialog(f"Loading information for {object_name}...", "Cancel", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # Disable cancel button
+        progress.show()
+
+        # Process events to show the dialog immediately
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Show info dialog (it will load data in its constructor)
+        from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+
+        dialog = ObjectInfoDialog(self, object_name)
+        progress.close()
+        dialog.exec()
+
+    def _on_sort_changed(self, table: QTableWidget, logical_index: int, order: Qt.SortOrder) -> None:
+        """Handle sort indicator change - track sort column and order."""
+        table.setProperty("sort_column", logical_index)
+        table.setProperty("sort_order", order)
+
+    def _on_cell_double_clicked(self, item: QTableWidgetItem) -> None:
+        """Handle cell double-click - copy cell text to clipboard."""
+        text = item.text()
+        if text:
+            from PySide6.QtWidgets import QApplication
+
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+
+            # Show toast notification with copied text
+            self._show_toast(f"Copied: {text}")
+
+    def _show_toast(self, message: str, duration_ms: int = 2000) -> None:
+        """Show a toast notification message."""
+        # Truncate long messages to prevent toast from being too wide
+        max_length = 50
+        display_message = message
+        if len(message) > max_length:
+            display_message = message[: max_length - 3] + "..."
+
+        # Create a label for the toast
+        toast = QLabel(display_message, self)
+        toast.setStyleSheet(
+            """
+            QLabel {
+                background-color: rgba(0, 0, 0, 200);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+        """
+        )
+        toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toast.adjustSize()
+
+        # Position toast in the center of the window
+        x = (self.width() - toast.width()) // 2
+        y = self.height() // 3  # Position in upper third
+        toast.move(x, y)
+        toast.raise_()
+        toast.show()
+
+        # Hide toast after duration
+        QTimer.singleShot(duration_ms, toast.deleteLater)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Handle tab change - load data for the selected tab if not already loaded."""
+        if index < 0:
+            return
+
+        tab_widget = self.tab_widget.widget(index)
+        if isinstance(tab_widget, QTableWidget) and tab_widget.rowCount() == 0:
+            # Check if table is empty (not yet loaded)
+            self._load_objects_table(tab_widget)
 
     def _create_status_bar(self) -> None:
         """Create the status bar with GPS, date/time, and telescope position."""

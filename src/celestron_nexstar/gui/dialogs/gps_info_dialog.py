@@ -76,13 +76,40 @@ class GPSInfoDialog(QDialog):
         # Load GPS information
         self._load_gps_info(source_label)
 
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            # Check palette brightness
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _get_status_color(self, status_type: str) -> str:
+        """Get theme-aware color for status based on status type."""
+        is_dark = self._is_dark_theme()
+
+        # Define colors for each status type
+        colors = {
+            "active": "#4caf50" if is_dark else "#2e7d32",  # Green - darker in light mode
+            "warning": "#ffc107" if is_dark else "#f57c00",  # Yellow/Orange - darker in light mode
+            "error": "#f44336" if is_dark else "#c62828",  # Red - darker in light mode
+            "info": "#2196f3" if is_dark else "#1565c0",  # Blue - darker in light mode
+        }
+
+        return colors.get(status_type, colors["info"])
+
     def _load_gps_info(self, source_label: QLabel) -> None:
         """Load GPS information from telescope or user location."""
         gps_lat: float | None = None
         gps_lon: float | None = None
         source = "User Configuration"
         status = "Using configured location"
-        status_color = "blue"
+        status_type = "info"
 
         # Try to get GPS from telescope
         if self.telescope and self.telescope.protocol.is_open():
@@ -97,15 +124,15 @@ class GPSInfoDialog(QDialog):
                         gps_lon = lon
                         source = "Telescope GPS"
                         status = "GPS Active"
-                        status_color = "green"
+                        status_type = "active"
                     else:
                         source = "Telescope GPS (No Fix)"
                         status = "GPS searching or no signal"
-                        status_color = "yellow"
+                        status_type = "warning"
             except Exception:
                 source = "Telescope GPS (Error)"
                 status = "Could not read GPS from telescope"
-                status_color = "red"
+                status_type = "error"
 
         # Fallback to user location
         if gps_lat is None or gps_lon is None:
@@ -115,14 +142,15 @@ class GPSInfoDialog(QDialog):
                 gps_lon = location.longitude
                 if source == "User Configuration":
                     status = "Using configured location"
-                    status_color = "blue"
+                    status_type = "info"
             except Exception:
                 self.lat_label.setText("--")
                 self.lon_label.setText("--")
                 self.elevation_label.setText("--")
                 self.location_name_label.setText("--")
                 self.status_label.setText("No location available")
-                self.status_label.setStyleSheet("color: red;")
+                status_color = self._get_status_color("error")
+                self.status_label.setStyleSheet(f"color: {status_color};")
                 source_label.setText("None")
                 return
 
@@ -144,9 +172,10 @@ class GPSInfoDialog(QDialog):
         location_name = self._reverse_geocode(gps_lat, gps_lon)
         self.location_name_label.setText(location_name or "Unknown location")
 
-        # Display source and status
+        # Display source and status with theme-aware color
         source_label.setText(source)
         self.status_label.setText(status)
+        status_color = self._get_status_color(status_type)
         self.status_label.setStyleSheet(f"color: {status_color};")
 
     def _reverse_geocode(self, lat: float, lon: float) -> str | None:
