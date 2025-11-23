@@ -476,8 +476,8 @@ def show_visual(
     import asyncio
 
     async def _get_passes() -> list[SatellitePass]:
-        # get_visual_passes is sync and expects a sync Session, so pass None to let it create its own
-        return get_visual_passes(
+        # get_visual_passes is now async, so await it directly
+        return await get_visual_passes(
             location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
         )
 

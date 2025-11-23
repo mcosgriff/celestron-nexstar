@@ -768,7 +768,7 @@ def get_stations_passes(
     )
 
 
-def get_visual_passes(
+async def get_visual_passes(
     location: ObserverLocation,
     days: int = 7,
     min_altitude_deg: float = 10.0,
@@ -792,11 +792,9 @@ def get_visual_passes(
         List of SatellitePass objects, sorted by rise time
     """
 
-    import asyncio
-
     try:
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        satellites = asyncio.run(_get_visual_satellites(db_session))
+        # Await async function directly
+        satellites = await _get_visual_satellites(db_session)
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
         # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes

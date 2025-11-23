@@ -128,7 +128,6 @@ class MainWindow(QMainWindow):
             "binoculars": "mdi.alpha-b-box-outline",
             "comets": "mdi.alpha-c-box-outline",
             "eclipse": "mdi.alpha-e-box-outline",
-            "events": "mdi.alpha-e-box-outline",  # Same as eclipse (both start with 'e')
             "iss": "mdi.alpha-i-box-outline",
             "meteors": "mdi.alpha-m-box-outline",
             "milky_way": "mdi.alpha-m-box-outline",  # Same as meteors (both start with 'm')
@@ -529,7 +528,6 @@ class MainWindow(QMainWindow):
             ("binoculars", "Binoculars", ["alpha-b-box-outline"]),
             ("comets", "Comets", ["alpha-c-box-outline"]),
             ("eclipse", "Eclipse", ["alpha-e-box-outline"]),
-            ("events", "Events", ["alpha-e-box-outline"]),
             ("iss", "ISS", ["alpha-i-box-outline"]),
             ("meteors", "Meteors", ["alpha-m-box-outline"]),
             ("milky_way", "Milky Way", ["alpha-m-box-outline"]),
@@ -551,6 +549,11 @@ class MainWindow(QMainWindow):
             action.setIcon(icon)
             # Store action for later reference
             setattr(self, f"{obj_name}_action", action)
+            # Disable occultations until API is implemented
+            if obj_name == "occultations":
+                action.setEnabled(False)
+                action.setToolTip("Occultations (Coming Soon)")
+                action.setStatusTip("Occultations feature is not yet implemented")
 
     def _refresh_toolbar_icons(self) -> None:
         """Refresh toolbar icons after window is shown."""
@@ -583,7 +586,6 @@ class MainWindow(QMainWindow):
             "binoculars",
             "comets",
             "eclipse",
-            "events",
             "iss",
             "meteors",
             "milky_way",
@@ -1544,6 +1546,24 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.space_weather_info_dialog import SpaceWeatherInfoDialog
 
             dialog = SpaceWeatherInfoDialog(self)
+            progress.close()
+            dialog.exec()
+        elif object_name == "satellites":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading satellite passes information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show satellites dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.satellites_info_dialog import SatellitesInfoDialog
+
+            dialog = SatellitesInfoDialog(self)
             progress.close()
             dialog.exec()
         else:
