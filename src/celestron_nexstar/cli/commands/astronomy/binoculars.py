@@ -104,7 +104,7 @@ def _get_current_season(dt: datetime) -> str:
         return "Winter"
 
 
-def _get_visible_stars(
+async def _get_visible_stars(
     lat: float,
     lon: float,
     observation_time: datetime,
@@ -134,14 +134,10 @@ def _get_visible_stars(
 
     # Query stars directly from database (not from YAML)
     # Stars must be imported first via: nexstar data import yale_bsc
-    import asyncio
-
-    stars = asyncio.run(
-        db.filter_objects(
-            object_type=CelestialObjectType.STAR,
-            max_magnitude=max_magnitude,
-            limit=500,  # Get more than we need to filter by altitude
-        )
+    stars = await db.filter_objects(
+        object_type=CelestialObjectType.STAR,
+        max_magnitude=max_magnitude,
+        limit=500,  # Get more than we need to filter by altitude
     )
 
     visible = []
@@ -279,15 +275,12 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[bold green]ISS Visible Passes[/bold green]")
         output_console.print("[dim]International Space Station passes visible from your location[/dim]\n")
 
-        from celestron_nexstar.api.events.iss_tracking import ISSPass
+        from celestron_nexstar.api.events.iss_tracking import get_iss_passes_cached
 
-        async def _get_passes() -> list[ISSPass]:
-            from celestron_nexstar.api.events.iss_tracking import get_iss_passes_cached
-
-            # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
-            return await get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=None)
-
-        iss_passes = asyncio.run(_get_passes())
+        # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
+        iss_passes = await get_iss_passes_cached(
+            lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=None
+        )
 
         if iss_passes:
             table_iss = Table()
@@ -425,7 +418,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         # Also include constellations that have visible stars, even if center is low
         # Get visible stars first to find their constellations
         limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
-        visible_stars_for_const = _get_visible_stars(
+        visible_stars_for_const = await _get_visible_stars(
             lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=100
         )
 
@@ -551,7 +544,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print(f"[dim]Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.2f})[/dim]\n")
 
         # Use binocular limiting magnitude (typically 9-10 for 10x50)
-        visible_stars = _get_visible_stars(
+        visible_stars = await _get_visible_stars(
             lat, lon, midnight, min_altitude_deg=20.0, max_magnitude=limiting_mag, limit=20
         )
 

@@ -1438,6 +1438,24 @@ class MainWindow(QMainWindow):
             dialog = ISSInfoDialog(self)
             progress.close()
             dialog.exec()
+        elif object_name == "binoculars":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading binocular viewing information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show binoculars dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.binoculars_info_dialog import BinocularsInfoDialog
+
+            dialog = BinocularsInfoDialog(self)
+            progress.close()
+            dialog.exec()
         else:
             # TODO: Open celestial object window for other objects
             pass
