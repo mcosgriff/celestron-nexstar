@@ -1510,6 +1510,24 @@ class MainWindow(QMainWindow):
             dialog = EclipseInfoDialog(self)
             progress.close()
             dialog.exec()
+        elif object_name == "planets":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading planetary events information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show planets dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.planets_info_dialog import PlanetsInfoDialog
+
+            dialog = PlanetsInfoDialog(self)
+            progress.close()
+            dialog.exec()
         else:
             # TODO: Open celestial object window for other objects
             pass

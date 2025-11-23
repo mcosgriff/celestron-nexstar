@@ -43,7 +43,7 @@ class AuroraInfoDialog(QDialog):
         from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance()
-        monospace_font = "JetBrains Mono" if app and app.property("monospace_font") else None
+        monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
         font_family = (
             f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
             if monospace_font

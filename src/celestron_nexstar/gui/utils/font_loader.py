@@ -143,6 +143,8 @@ def _find_jetbrains_mono_in_system(font_db: "QFontDatabase") -> str | None:
         "JetBrainsMono",
         "JetBrains Mono Regular",
         "JetBrainsMono-Regular",
+        "JetBrainsMono Nerd Font",
+        "JetBrainsMono Nerd Font Regular",
     ]
 
     available_families = font_db.families()
