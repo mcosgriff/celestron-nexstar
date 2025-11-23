@@ -7,7 +7,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from celestron_nexstar.gui.main_window import MainWindow
-from celestron_nexstar.gui.themes import ColorStyle, QtMaterialTheme, ThemeMode
+from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 
 
 def main() -> int:
@@ -16,8 +16,18 @@ def main() -> int:
     app.setApplicationName("Celestron NexStar")
     app.setOrganizationName("Celestron NexStar")
 
-    # Initialize and apply theme
-    theme = QtMaterialTheme(ThemeMode.SYSTEM, ColorStyle.BLUE, dense=True)
+    # Pre-import qtawesome to ensure fonts/resources are loaded
+    try:
+        import qtawesome as qta  # type: ignore[import-not-found]
+
+        # Test creating an icon to trigger font loading
+        _ = qta.icon("fa5s.link")
+    except Exception:
+        # If qtawesome fails to load, we'll fall back to theme icons
+        pass
+
+    # Initialize and apply theme (default to SYSTEM)
+    theme = FusionTheme(ThemeMode.SYSTEM)
     theme.apply(app)
 
     # Create and show main window

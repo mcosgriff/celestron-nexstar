@@ -1,6 +1,6 @@
 """Theme system for the GUI application."""
 
-from celestron_nexstar.gui.themes.qt_material_theme import ColorStyle, QtMaterialTheme, ThemeMode
+from celestron_nexstar.gui.themes.fusion_theme import FusionTheme, ThemeMode
 
 
-__all__ = ["ColorStyle", "QtMaterialTheme", "ThemeMode"]
+__all__ = ["FusionTheme", "ThemeMode"]
