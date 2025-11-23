@@ -5,7 +5,7 @@ Dialog to display time-based observation recommendations.
 import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -101,6 +101,7 @@ class TimeSlotsInfoDialog(QDialog):
                 )
                 return
 
+            # Create time slots (same logic as CLI command)
             sun_info = get_sun_info(location.latitude, location.longitude)
             if not sun_info or not sun_info.sunset_time:
                 self.info_text.setHtml(
@@ -108,7 +109,6 @@ class TimeSlotsInfoDialog(QDialog):
                 )
                 return
 
-            # Create time slots (same logic as CLI command)
             sunset = sun_info.sunset_time
             if sunset.tzinfo is None:
                 sunset = sunset.replace(tzinfo=UTC)
@@ -118,48 +118,66 @@ class TimeSlotsInfoDialog(QDialog):
             if sunset.tzinfo and now.tzinfo is None:
                 now = now.replace(tzinfo=UTC)
 
-            # Get today's date (use sunset date to ensure consistency)
-            today_date = sunset.date()
+            # Convert to local time for proper hour comparison
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
+            local_tz = get_local_timezone(location.latitude, location.longitude)
+            if not local_tz:
+                # Fallback: use UTC (cast to Any to allow timezone as fallback)
+                local_tz = cast(Any, UTC)
+
+            now_local = now.astimezone(local_tz)
+            today_date_local = now_local.date()
 
             # Determine the start time:
             # 1. If current time is past start_hour, start from current hour (rounded up)
             # 2. Otherwise, start from start_hour
             # 3. But never start before sunset
 
-            # Calculate desired start time based on start_hour
-            desired_start = datetime.combine(today_date, datetime.min.time()).replace(
-                hour=self.start_hour, minute=0, second=0, microsecond=0, tzinfo=UTC
+            # Calculate desired start time based on start_hour in local time
+            desired_start_local = datetime.combine(today_date_local, datetime.min.time()).replace(
+                hour=self.start_hour, minute=0, second=0, microsecond=0, tzinfo=local_tz
             )
+            desired_start = desired_start_local.astimezone(UTC).replace(tzinfo=UTC)
 
-            # If we're already past the desired start hour, use current hour (rounded up)
-            if now > desired_start:
-                # Round current time up to next hour
-                current_hour = now.hour
-                if now.minute > 0 or now.second > 0:
+            # Compare in local time
+            if now_local > desired_start_local:
+                # Round current time up to next hour (in local time)
+                current_hour = now_local.hour
+                if now_local.minute > 0 or now_local.second > 0:
                     current_hour += 1
                 if current_hour > 23:
                     # Move to next day at midnight
-                    today_date += timedelta(days=1)
+                    today_date_local += timedelta(days=1)
                     current_hour = 0
-                current = datetime.combine(today_date, datetime.min.time()).replace(
-                    hour=current_hour, minute=0, second=0, microsecond=0, tzinfo=UTC
+                current_local = datetime.combine(today_date_local, datetime.min.time()).replace(
+                    hour=current_hour, minute=0, second=0, microsecond=0, tzinfo=local_tz
                 )
+                current = current_local.astimezone(UTC).replace(tzinfo=UTC)
             else:
                 current = desired_start
 
             # Ensure we don't start before sunset
-            if current < sunset:
-                # Round sunset up to next hour
-                sunset_hour = sunset.hour
-                if sunset.minute > 0 or sunset.second > 0:
+            # Only adjust if sunset is today (not tomorrow) in local time
+            # If sunset is tomorrow, we're already past today's sunset, so no adjustment needed
+            sunset_local = sunset.astimezone(local_tz)
+            current_local_check = current.astimezone(local_tz)
+
+            # Only adjust if sunset is on the same local date as now, and current is before sunset
+            if sunset_local.date() == now_local.date() and current_local_check < sunset_local:
+                # Round sunset up to next hour (in local time)
+                sunset_hour = sunset_local.hour
+                if sunset_local.minute > 0 or sunset_local.second > 0:
                     sunset_hour += 1
+                sunset_date_local = sunset_local.date()
                 if sunset_hour > 23:
                     # Move to next day at midnight
-                    today_date += timedelta(days=1)
+                    sunset_date_local += timedelta(days=1)
                     sunset_hour = 0
-                current = datetime.combine(today_date, datetime.min.time()).replace(
-                    hour=min(sunset_hour, 23), minute=0, second=0, microsecond=0, tzinfo=UTC
+                current_local = datetime.combine(sunset_date_local, datetime.min.time()).replace(
+                    hour=min(sunset_hour, 23), minute=0, second=0, microsecond=0, tzinfo=local_tz
                 )
+                current = current_local.astimezone(UTC).replace(tzinfo=UTC)
 
             start_date = current.date()
             max_slots = 24  # Safety limit to prevent infinite loops
@@ -188,6 +206,18 @@ class TimeSlotsInfoDialog(QDialog):
                 "<p><span style='color: #00bcd4; font-size: 14pt; font-weight: bold;'>Time-Based Recommendations</span></p>"
             )
             html_content.append("<br>")
+
+            # Add explanatory text
+            html_content.append(
+                "<p style='color: #9e9e9e; margin-bottom: 15px; line-height: 1.5;'>"
+                "<b>What are time slots?</b><br>"
+                "Time slots show recommended objects to observe at different times throughout the night. "
+                "Each time slot displays the best objects to view during that hour, helping you plan your "
+                "observing session. Objects are selected based on their visibility, altitude, and observing "
+                "conditions at each specific time. This helps you maximize your observing time by knowing "
+                "what to look for and when."
+                "</p>"
+            )
 
             if not time_slots:
                 html_content.append(

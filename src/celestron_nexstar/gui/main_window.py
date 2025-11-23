@@ -109,7 +109,6 @@ class MainWindow(QMainWindow):
             "weather": "mdi.weather-cloudy",
             "checklist": "mdi.check-circle",
             "time_slots": "mdi.clock-outline",
-            "moon_impact": "mdi.moon-waning-crescent",
             "quick_reference": "mdi.book-open-variant",
             "transit_times": "mdi.transit-connection",
             "timeline": "mdi.timeline",
@@ -475,13 +474,6 @@ class MainWindow(QMainWindow):
         self.time_slots_action.triggered.connect(self._on_time_slots)
         self.time_slots_action.setIcon(time_slots_icon)
 
-        moon_impact_icon = self._create_icon("moon_impact", ["moon-waning-crescent", "moon-full"])
-        self.moon_impact_action = left_toolbar.addAction(moon_impact_icon, "Moon Impact")
-        self.moon_impact_action.setToolTip("MOON IMPACT")
-        self.moon_impact_action.setStatusTip("View moon impact on observations")
-        self.moon_impact_action.triggered.connect(self._on_moon_impact)
-        self.moon_impact_action.setIcon(moon_impact_icon)
-
         quick_ref_icon = self._create_icon("quick_reference", ["book-open-variant", "information"])
         self.quick_reference_action = left_toolbar.addAction(quick_ref_icon, "Quick Reference")
         self.quick_reference_action.setToolTip("QUICK REFERENCE")
@@ -557,7 +549,6 @@ class MainWindow(QMainWindow):
         )
         self.checklist_action.setIcon(self._create_icon("checklist", ["format-list-checks", "check-circle"]))
         self.time_slots_action.setIcon(self._create_icon("time_slots", ["clock-outline", "timer"]))
-        self.moon_impact_action.setIcon(self._create_icon("moon_impact", ["moon-waning-crescent", "moon-full"]))
         self.quick_reference_action.setIcon(self._create_icon("quick_reference", ["book-open-variant", "information"]))
         self.transit_times_action.setIcon(
             self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
@@ -1287,11 +1278,6 @@ class MainWindow(QMainWindow):
         progress.close()
         dialog.exec()
 
-    def _on_moon_impact(self) -> None:
-        """Handle moon impact button click."""
-        # TODO: Open moon impact window
-        pass
-
     def _on_quick_reference(self) -> None:
         """Handle quick reference button click."""
         # TODO: Open quick reference window
@@ -1299,8 +1285,23 @@ class MainWindow(QMainWindow):
 
     def _on_transit_times(self) -> None:
         """Handle transit times button click."""
-        # TODO: Open transit times window
-        pass
+        # Show progress dialog while loading
+        progress = QProgressDialog("Loading transit times...", "Cancel", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # Disable cancel button
+        progress.show()
+
+        # Process events to show the dialog immediately
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Show transit times dialog (it will load data in its constructor)
+        from celestron_nexstar.gui.dialogs.transit_times_dialog import TransitTimesInfoDialog
+
+        dialog = TransitTimesInfoDialog(self)
+        progress.close()
+        dialog.exec()
 
     def _on_timeline(self) -> None:
         """Handle timeline button click."""
