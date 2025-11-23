@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QProgressDialog,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -26,12 +27,13 @@ logger = logging.getLogger(__name__)
 class PlanetsInfoDialog(QDialog):
     """Dialog to display planetary events information with tabs."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, progress: QProgressDialog | None = None) -> None:
         """Initialize the planets info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Planetary Events")
-        self.setMinimumWidth(750)
-        self.setMinimumHeight(550)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+        self.resize(700, 500)  # Set reasonable default size
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -55,16 +57,22 @@ class PlanetsInfoDialog(QDialog):
         self._create_conjunctions_tab()
         self._create_oppositions_tab()
 
-        # Connect tab change signal to load data when tab is selected
-        self.tab_widget.currentChanged.connect(self._on_tab_changed)
-
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load data for the first tab (conjunctions)
+        # Load all tab data upfront
+        if progress:
+            progress.setLabelText("Loading planetary conjunctions...")
+            QApplication.processEvents()
         self._load_conjunctions_info()
+
+        if progress:
+            progress.setLabelText("Loading planetary oppositions...")
+            QApplication.processEvents()
+        self._load_oppositions_info()
+        self._oppositions_loaded = True
 
     def _create_conjunctions_tab(self) -> None:
         """Create the conjunctions tab."""
@@ -110,10 +118,8 @@ class PlanetsInfoDialog(QDialog):
 
     def _on_tab_changed(self, index: int) -> None:
         """Handle tab change event."""
-        if index == 1 and not hasattr(self, "_oppositions_loaded"):
-            # Load oppositions tab data when first accessed
-            self._load_oppositions_info()
-            self._oppositions_loaded = True
+        # All data is now loaded upfront, so no action needed
+        pass
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""

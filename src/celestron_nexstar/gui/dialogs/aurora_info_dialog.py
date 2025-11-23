@@ -28,8 +28,9 @@ class AuroraInfoDialog(QDialog):
         """Initialize the aurora info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Aurora Borealis Visibility")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(600)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+        self.resize(700, 600)  # Set reasonable default size
 
         # Create layout
         layout = QVBoxLayout(self)

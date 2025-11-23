@@ -549,11 +549,19 @@ class MainWindow(QMainWindow):
             action.setIcon(icon)
             # Store action for later reference
             setattr(self, f"{obj_name}_action", action)
-            # Disable occultations until API is implemented
+            # Disable buttons until API is implemented
             if obj_name == "occultations":
                 action.setEnabled(False)
                 action.setToolTip("Occultations (Coming Soon)")
                 action.setStatusTip("Occultations feature is not yet implemented")
+            elif obj_name == "variables":
+                action.setEnabled(False)
+                action.setToolTip("Variables (Coming Soon)")
+                action.setStatusTip("Variables feature is not yet implemented")
+            elif obj_name == "zodiacal":
+                action.setEnabled(False)
+                action.setToolTip("Zodiacal (Coming Soon)")
+                action.setStatusTip("Zodiacal feature is not yet implemented")
 
     def _refresh_toolbar_icons(self) -> None:
         """Refresh toolbar icons after window is shown."""
@@ -1509,7 +1517,7 @@ class MainWindow(QMainWindow):
             # Show eclipse dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.eclipse_info_dialog import EclipseInfoDialog
 
-            dialog = EclipseInfoDialog(self)
+            dialog = EclipseInfoDialog(self, progress=progress)
             progress.close()
             dialog.exec()
         elif object_name == "planets":
@@ -1527,7 +1535,7 @@ class MainWindow(QMainWindow):
             # Show planets dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.planets_info_dialog import PlanetsInfoDialog
 
-            dialog = PlanetsInfoDialog(self)
+            dialog = PlanetsInfoDialog(self, progress=progress)
             progress.close()
             dialog.exec()
         elif object_name == "space_weather":
@@ -1563,7 +1571,42 @@ class MainWindow(QMainWindow):
             # Show satellites dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.satellites_info_dialog import SatellitesInfoDialog
 
-            dialog = SatellitesInfoDialog(self)
+            dialog = SatellitesInfoDialog(self, progress=progress)
+            progress.close()
+            dialog.exec()
+        elif object_name == "meteors":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading meteor shower predictions...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show meteors dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.meteors_info_dialog import MeteorsInfoDialog
+
+            dialog = MeteorsInfoDialog(self, progress=progress)
+            progress.close()
+            dialog.exec()
+        elif object_name == "milky_way":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading Milky Way visibility information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            from celestron_nexstar.gui.dialogs.milky_way_info_dialog import MilkyWayInfoDialog
+
+            dialog = MilkyWayInfoDialog(self, progress=progress)
             progress.close()
             dialog.exec()
         else:

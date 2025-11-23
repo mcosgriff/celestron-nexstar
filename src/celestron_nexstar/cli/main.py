@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from typer.core import TyperGroup
 
+from celestron_nexstar.api.core.utils import configure_astropy_iers
 from celestron_nexstar.cli.commands import glossary
 
 # Import and register subcommands
@@ -66,6 +67,10 @@ state: dict[str, str | None | bool] = {
     "profile": None,
     "verbose": False,
 }
+
+# Configure astropy IERS data handling early to avoid warnings
+# This is called at module import time to ensure it's configured before any astropy operations
+configure_astropy_iers()
 
 
 @app.callback()

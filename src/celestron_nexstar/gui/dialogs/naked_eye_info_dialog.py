@@ -70,8 +70,9 @@ class NakedEyeInfoDialog(QDialog):
         """Initialize the naked-eye info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Naked-Eye Stargazing Tonight")
-        self.setMinimumWidth(800)
-        self.setMinimumHeight(700)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
+        self.resize(800, 700)  # Set reasonable default size
 
         # Create layout
         layout = QVBoxLayout(self)

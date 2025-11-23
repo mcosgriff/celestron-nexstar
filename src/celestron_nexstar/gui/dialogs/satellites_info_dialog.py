@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QProgressDialog,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -68,12 +69,13 @@ def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
 class SatellitesInfoDialog(QDialog):
     """Dialog to display satellite passes information with tabs."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, progress: QProgressDialog | None = None) -> None:
         """Initialize the satellites info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Satellite Passes")
-        self.setMinimumWidth(900)
-        self.setMinimumHeight(700)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(500)
+        self.resize(900, 700)  # Set reasonable default size
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -99,16 +101,34 @@ class SatellitesInfoDialog(QDialog):
         self._create_starlink_tab()
         self._create_stations_tab()
 
-        # Connect tab change signal to load data when tab is selected
-        self.tab_widget.currentChanged.connect(self._on_tab_changed)
-
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load data for the first tab (visual)
+        # Load all tab data upfront
+        if progress:
+            progress.setLabelText("Loading visual satellite passes...")
+            QApplication.processEvents()
         self._load_visual_info()
+
+        if progress:
+            progress.setLabelText("Loading bright satellite passes...")
+            QApplication.processEvents()
+        self._load_bright_info()
+        self._bright_loaded = True
+
+        if progress:
+            progress.setLabelText("Loading Starlink passes...")
+            QApplication.processEvents()
+        self._load_starlink_info()
+        self._starlink_loaded = True
+
+        if progress:
+            progress.setLabelText("Loading space station passes...")
+            QApplication.processEvents()
+        self._load_stations_info()
+        self._stations_loaded = True
 
     def _create_visual_tab(self) -> None:
         """Create the visual satellites tab."""
@@ -196,15 +216,8 @@ class SatellitesInfoDialog(QDialog):
 
     def _on_tab_changed(self, index: int) -> None:
         """Handle tab change event."""
-        if index == 1 and not hasattr(self, "_bright_loaded"):
-            self._load_bright_info()
-            self._bright_loaded = True
-        elif index == 2 and not hasattr(self, "_starlink_loaded"):
-            self._load_starlink_info()
-            self._starlink_loaded = True
-        elif index == 3 and not hasattr(self, "_stations_loaded"):
-            self._load_stations_info()
-            self._stations_loaded = True
+        # All data is now loaded upfront, so no action needed
+        pass
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""

@@ -85,6 +85,33 @@ class TimeSlotsInfoDialog(QDialog):
         # Load time slots information
         self._load_time_slots()
 
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _get_theme_colors(self) -> dict[str, str]:
+        """Get theme-aware colors."""
+        is_dark = self._is_dark_theme()
+        return {
+            "text": "#ffffff" if is_dark else "#000000",
+            "text_dim": "#9e9e9e" if is_dark else "#666666",
+            "header": "#00bcd4" if is_dark else "#00838f",  # Cyan
+            "cyan": "#00bcd4" if is_dark else "#00838f",
+            "green": "#4caf50" if is_dark else "#2e7d32",
+            "bright_green": "#81c784" if is_dark else "#66bb6a",
+            "yellow": "#ffc107" if is_dark else "#f57c00",
+            "red": "#f44336" if is_dark else "#c62828",
+            "error": "#f44336" if is_dark else "#c62828",
+        }
+
     def _load_time_slots(self) -> None:
         """Load time slots and recommendations from the API and format for display."""
         colors = self._get_theme_colors()

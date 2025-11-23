@@ -8,13 +8,19 @@ providing a clean interface while leveraging a well-tested astronomy library.
 
 from __future__ import annotations
 
+import logging
+import warnings
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from astropy import units as u
 from astropy.coordinates import ICRS, AltAz, Angle, EarthLocation, SkyCoord
 from astropy.time import Time
+from astropy.utils import iers
 from timezonefinder import TimezoneFinder
+
+
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -22,6 +28,7 @@ __all__ = [
     "angular_separation",
     "calculate_julian_date",
     "calculate_lst",
+    "configure_astropy_iers",
     "dec_to_degrees",
     "degrees_to_dms",
     "format_dec",
@@ -37,6 +44,39 @@ __all__ = [
 
 # Global timezone finder instance (cached for performance)
 _tz_finder = TimezoneFinder()
+
+
+def configure_astropy_iers() -> None:
+    """
+    Configure Astropy IERS (International Earth Rotation Service) data handling.
+
+    This function:
+    1. Enables automatic downloading of the latest IERS data when needed
+    2. Suppresses warnings about IERS data validity for dates beyond the current data range
+       (these warnings are not critical for most applications as precision is only affected
+       at the arcsec level, which is acceptable for most telescope control applications)
+
+    Should be called early in application startup, before any astropy coordinate calculations.
+    """
+    try:
+        # Enable automatic downloading of IERS data
+        # Astropy will automatically download the latest IERS data when needed
+        iers.conf.auto_download = True
+
+        # Suppress the specific warning about IERS data validity
+        # This warning appears when calculating positions for dates beyond the current IERS data range
+        # For telescope control applications, the precision loss (arcsec level) is acceptable
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Tried to get polar motions for times after IERS data is valid.*",
+            category=UserWarning,
+            module="astropy.coordinates.builtin_frames.utils",
+        )
+
+        logger.debug("Astropy IERS configuration applied successfully")
+    except Exception as e:
+        # If configuration fails, log but don't raise - astropy will still work
+        logger.warning(f"Could not configure Astropy IERS settings: {e}")
 
 
 def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float:

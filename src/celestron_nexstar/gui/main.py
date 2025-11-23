@@ -6,12 +6,16 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from celestron_nexstar.api.core.utils import configure_astropy_iers
 from celestron_nexstar.gui.main_window import MainWindow
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 
 
 def main() -> int:
     """Main entry point for the GUI application."""
+    # Configure astropy IERS data handling early to avoid warnings
+    configure_astropy_iers()
+
     app = QApplication(sys.argv)
     app.setApplicationName("Celestron NexStar")
     app.setOrganizationName("Celestron NexStar")
