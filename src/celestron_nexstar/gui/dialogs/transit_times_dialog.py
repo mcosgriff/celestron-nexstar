@@ -61,7 +61,6 @@ class TransitTimesInfoDialog(QDialog):
                 border: none;
             }}
             h2 {{
-                color: #00bcd4; /* Cyan for headers */
                 margin-top: 1em;
                 margin-bottom: 0.5em;
             }}
@@ -77,8 +76,35 @@ class TransitTimesInfoDialog(QDialog):
         # Load transit times information
         self._load_transit_times()
 
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _get_theme_colors(self) -> dict[str, str]:
+        """Get theme-aware colors."""
+        is_dark = self._is_dark_theme()
+        return {
+            "text": "#ffffff" if is_dark else "#000000",
+            "text_dim": "#9e9e9e" if is_dark else "#666666",
+            "header": "#00bcd4" if is_dark else "#00838f",
+            "cyan": "#00bcd4" if is_dark else "#00838f",
+            "green": "#4caf50" if is_dark else "#2e7d32",
+            "red": "#f44336" if is_dark else "#c62828",
+            "yellow": "#ffc107" if is_dark else "#f57c00",
+            "error": "#f44336" if is_dark else "#c62828",
+        }
+
     def _load_transit_times(self) -> None:
         """Load transit times from the API and format for display."""
+        colors = self._get_theme_colors()
         try:
             from celestron_nexstar.api.core.utils import format_local_time
             from celestron_nexstar.api.database.database import get_database
@@ -88,7 +114,7 @@ class TransitTimesInfoDialog(QDialog):
             location = get_observer_location()
             if not location:
                 self.info_text.setHtml(
-                    "<p><span style='color: #f44336;'><b>Error:</b> No observer location set.</span></p>"
+                    f"<p><span style='color: {colors['error']};'><b>Error:</b> No observer location set.</span></p>"
                 )
                 return
 
@@ -102,13 +128,13 @@ class TransitTimesInfoDialog(QDialog):
             # Build HTML content
             html_content = []
             html_content.append(
-                "<p><span style='color: #00bcd4; font-size: 14pt; font-weight: bold;'>Transit Times (Objects at Highest Point)</span></p>"
+                f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Transit Times (Objects at Highest Point)</span></p>"
             )
             html_content.append("<br>")
 
             # Add explanatory text
             html_content.append(
-                "<p style='color: #9e9e9e; margin-bottom: 15px; line-height: 1.5;'>"
+                f"<p style='color: {colors['text_dim']}; margin-bottom: 15px; line-height: 1.5;'>"
                 "<b>What are transit times?</b><br>"
                 "Transit time is when a celestial object reaches its highest point in the sky (meridian crossing). "
                 "This is the best time to observe an object because it's at maximum altitude, reducing atmospheric "
@@ -126,8 +152,8 @@ class TransitTimesInfoDialog(QDialog):
             html_content.append("<table style='width: 100%; border-collapse: collapse; margin-top: 10px;'>")
             html_content.append(
                 "<tr style='border-bottom: 1px solid #444;'>"
-                "<th style='text-align: left; padding: 8px; color: #00bcd4; font-weight: bold;'>Object</th>"
-                "<th style='text-align: left; padding: 8px; color: #00bcd4; font-weight: bold;'>Transit Time</th>"
+                f"<th style='text-align: left; padding: 8px; color: {colors['header']}; font-weight: bold;'>Object</th>"
+                f"<th style='text-align: left; padding: 8px; color: {colors['header']}; font-weight: bold;'>Transit Time</th>"
                 "</tr>"
             )
 
@@ -138,8 +164,8 @@ class TransitTimesInfoDialog(QDialog):
                 time_str = format_local_time(transit_time, location.latitude, location.longitude)
                 html_content.append(
                     f"<tr style='border-bottom: 1px solid #333;'>"
-                    f"<td style='padding: 8px; color: #00bcd4;'>{obj_name}</td>"
-                    f"<td style='padding: 8px; color: #4caf50;'>{time_str}</td>"
+                    f"<td style='padding: 8px; color: {colors['cyan']};'>{obj_name}</td>"
+                    f"<td style='padding: 8px; color: {colors['green']};'>{time_str}</td>"
                     f"</tr>"
                 )
 
@@ -150,5 +176,5 @@ class TransitTimesInfoDialog(QDialog):
         except Exception as e:
             logger.error(f"Error loading transit times: {e}", exc_info=True)
             self.info_text.setHtml(
-                f"<p><span style='color: #f44336;'><b>Error:</b> Failed to load transit times: {e}</span></p>"
+                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load transit times: {e}</span></p>"
             )

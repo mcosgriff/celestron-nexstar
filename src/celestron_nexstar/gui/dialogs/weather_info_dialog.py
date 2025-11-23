@@ -90,8 +90,35 @@ class WeatherInfoDialog(QDialog):
         # Load weather information
         self._load_weather_info()
 
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _get_theme_colors(self) -> dict[str, str]:
+        """Get theme-aware colors."""
+        is_dark = self._is_dark_theme()
+        return {
+            "text": "#ffffff" if is_dark else "#000000",
+            "text_dim": "#9e9e9e" if is_dark else "#666666",
+            "header": "#ffc107" if is_dark else "#f57c00",
+            "cyan": "#00bcd4" if is_dark else "#00838f",
+            "green": "#4caf50" if is_dark else "#2e7d32",
+            "red": "#f44336" if is_dark else "#c62828",
+            "yellow": "#ffc107" if is_dark else "#f57c00",
+            "error": "#f44336" if is_dark else "#c62828",
+        }
+
     def _load_weather_info(self) -> None:
         """Load weather information from the API and format it for display."""
+        colors = self._get_theme_colors()
         try:
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.weather import (
@@ -106,22 +133,22 @@ class WeatherInfoDialog(QDialog):
 
             # Build HTML content with inline styles for colors
             html_content = []
-            html_content.append("""
+            html_content.append(f"""
             <style>
-                h2 { color: #ffc107; margin-top: 1em; margin-bottom: 0.5em; }
+                h2 {{ color: {colors["header"]}; margin-top: 1em; margin-bottom: 0.5em; }}
             </style>
             """)
 
             # Location header (cyan)
             location_name = location.name or f"{location.latitude:.4f}°, {location.longitude:.4f}°"
             html_content.append(
-                f"<p><span style='color: #00bcd4; font-size: 14pt; font-weight: bold;'>Current Weather: {location_name}</span></p>"
+                f"<p><span style='color: {colors['cyan']}; font-size: 14pt; font-weight: bold;'>Current Weather: {location_name}</span></p>"
             )
             html_content.append("<br>")
 
             if weather.error:
                 html_content.append(
-                    f"<p><span style='color: #f44336;'><b>Error:</b> Weather data unavailable: {weather.error}</span></p>"
+                    f"<p><span style='color: {colors['error']};'><b>Error:</b> Weather data unavailable: {weather.error}</span></p>"
                 )
                 self.info_text.setHtml("\n".join(html_content))
                 return
@@ -132,73 +159,73 @@ class WeatherInfoDialog(QDialog):
             # Temperature (cyan label, green value)
             if weather.temperature_c is not None:
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Temperature:</span> <span style='color: #4caf50;'>{weather.temperature_c:.1f}°F</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Temperature:</span> <span style='color: {colors['green']};'>{weather.temperature_c:.1f}°F</span></p>"
                 )
 
             # Dew Point (cyan label, white value)
             if weather.dew_point_f is not None:
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Dew Point:</span> <span style='color: #ffffff;'>{weather.dew_point_f:.1f}°F</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Dew Point:</span> <span style='color: {colors['text']};'>{weather.dew_point_f:.1f}°F</span></p>"
                 )
 
             # Humidity (cyan label, white value)
             if weather.humidity_percent is not None:
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Humidity:</span> <span style='color: #ffffff;'>{weather.humidity_percent:.0f}%</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Humidity:</span> <span style='color: {colors['text']};'>{weather.humidity_percent:.0f}%</span></p>"
                 )
 
             # Cloud Cover (cyan label, conditional value color)
             if weather.cloud_cover_percent is not None:
                 cloud_cover = weather.cloud_cover_percent
                 if cloud_cover < 20:
-                    cloud_color = "#4caf50"  # Green
+                    cloud_color = colors["green"]
                     cloud_desc = "Clear"
                 elif cloud_cover < 50:
-                    cloud_color = "#ffc107"  # Yellow
+                    cloud_color = colors["yellow"]
                     cloud_desc = "Partly Cloudy"
                 elif cloud_cover < 80:
-                    cloud_color = "#ffc107"  # Yellow
+                    cloud_color = colors["yellow"]
                     cloud_desc = "Mostly Cloudy"
                 else:
-                    cloud_color = "#f44336"  # Red
+                    cloud_color = colors["red"]
                     cloud_desc = "Overcast"
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Cloud Cover:</span> <span style='color: {cloud_color};'>{cloud_cover:.0f}% ({cloud_desc})</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Cloud Cover:</span> <span style='color: {cloud_color};'>{cloud_cover:.0f}% ({cloud_desc})</span></p>"
                 )
 
             # Wind Speed (cyan label, conditional value color)
             if weather.wind_speed_ms is not None:
                 wind_mph = weather.wind_speed_ms  # Already in mph
                 if wind_mph < 10:
-                    wind_color = "#4caf50"  # Green
+                    wind_color = colors["green"]
                     wind_desc = "Calm"
                 elif wind_mph < 20:
-                    wind_color = "#ffc107"  # Yellow
+                    wind_color = colors["yellow"]
                     wind_desc = "Moderate"
                 else:
-                    wind_color = "#f44336"  # Red
+                    wind_color = colors["red"]
                     wind_desc = "Strong"
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Wind Speed:</span> <span style='color: {wind_color};'>{wind_mph:.1f} mph ({wind_desc})</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Wind Speed:</span> <span style='color: {wind_color};'>{wind_mph:.1f} mph ({wind_desc})</span></p>"
                 )
 
             # Visibility (cyan label, white value)
             if weather.visibility_km is not None:
                 visibility_mi = weather.visibility_km * 0.621371
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Visibility:</span> <span style='color: #ffffff;'>{visibility_mi:.1f} mi</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Visibility:</span> <span style='color: {colors['text']};'>{visibility_mi:.1f} mi</span></p>"
                 )
 
             # Condition (cyan label, white value)
             if weather.condition:
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Condition:</span> <span style='color: #ffffff;'>{weather.condition}</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Condition:</span> <span style='color: {colors['text']};'>{weather.condition}</span></p>"
                 )
 
             # Last Updated (cyan label, dim value)
             if weather.last_updated:
                 html_content.append(
-                    f"<p><span style='color: #00bcd4;'>Last Updated:</span> <span style='color: #9e9e9e;'>{weather.last_updated}</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Last Updated:</span> <span style='color: {colors['text_dim']};'>{weather.last_updated}</span></p>"
                 )
 
             # Observing Conditions Assessment
@@ -208,23 +235,23 @@ class WeatherInfoDialog(QDialog):
 
             # Status indicator (matching CLI colors)
             if status == "excellent":
-                status_color = "#4caf50"  # Green
+                status_color = colors["green"]
                 status_icon = "✓"
             elif status == "good":
-                status_color = "#00bcd4"  # Cyan
+                status_color = colors["cyan"]
                 status_icon = "○"
             elif status == "fair":
-                status_color = "#ffc107"  # Yellow
+                status_color = colors["yellow"]
                 status_icon = "⚠"
             else:  # poor
-                status_color = "#f44336"  # Red
+                status_color = colors["red"]
                 status_icon = "✗"
 
             html_content.append(
                 f"<p><b>Observing Conditions:</b> <span style='color: {status_color}; font-weight: bold;'>{status_icon} {status.title()}</span></p>"
             )
             if warning:
-                html_content.append(f"<p style='color: #9e9e9e;'>{warning}</p>")
+                html_content.append(f"<p style='color: {colors['text_dim']};'>{warning}</p>")
 
             # Seeing Conditions
             html_content.append("<br>")
@@ -232,27 +259,29 @@ class WeatherInfoDialog(QDialog):
             seeing_score = calculate_seeing_conditions(weather)
 
             if seeing_score >= 80:
-                seeing_color = "#4caf50"  # Green
+                seeing_color = colors["green"]
                 seeing_desc = "Excellent"
             elif seeing_score >= 60:
-                seeing_color = "#ffc107"  # Yellow
+                seeing_color = colors["yellow"]
                 seeing_desc = "Good"
             elif seeing_score >= 40:
-                seeing_color = "#ffc107"  # Yellow
+                seeing_color = colors["yellow"]
                 seeing_desc = "Fair"
             else:
-                seeing_color = "#f44336"  # Red
+                seeing_color = colors["red"]
                 seeing_desc = "Poor"
 
             html_content.append(
                 f"<p><b>Seeing Conditions:</b> <span style='color: {seeing_color};'>{seeing_desc}</span> ({seeing_score:.0f}/100)</p>"
             )
-            html_content.append("<p style='color: #9e9e9e;'>Atmospheric steadiness for image sharpness</p>")
+            html_content.append(
+                f"<p style='color: {colors['text_dim']};'>Atmospheric steadiness for image sharpness</p>"
+            )
 
             self.info_text.setHtml("\n".join(html_content))
 
         except Exception as e:
             logger.error(f"Error loading weather info: {e}", exc_info=True)
             self.info_text.setHtml(
-                f"<p><span style='color: #f44336;'><b>Error:</b> Failed to load weather information: {e}</span></p>"
+                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load weather information: {e}</span></p>"
             )

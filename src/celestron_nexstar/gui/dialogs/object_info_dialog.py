@@ -51,6 +51,32 @@ class ObjectInfoDialog(QDialog):
         # Load object information
         self._load_object_info()
 
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _get_theme_colors(self) -> dict[str, str]:
+        """Get theme-aware colors."""
+        is_dark = self._is_dark_theme()
+        return {
+            "text": "#ffffff" if is_dark else "#000000",
+            "text_dim": "#9e9e9e" if is_dark else "#666666",
+            "header": "#ffc107" if is_dark else "#f57c00",
+            "cyan": "#00bcd4" if is_dark else "#00838f",
+            "green": "#4caf50" if is_dark else "#2e7d32",
+            "red": "#f44336" if is_dark else "#c62828",
+            "yellow": "#ffc107" if is_dark else "#f57c00",
+            "error": "#f44336" if is_dark else "#c62828",
+        }
+
     def _explain_object_type(self, object_type: str) -> str:
         """Get human-readable explanation of object type."""
         explanations = {
@@ -87,6 +113,7 @@ class ObjectInfoDialog(QDialog):
 
     def _load_object_info(self) -> None:
         """Load object information from the API."""
+        colors = self._get_theme_colors()
         try:
             from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
             from celestron_nexstar.api.core.enums import CelestialObjectType
@@ -98,7 +125,7 @@ class ObjectInfoDialog(QDialog):
 
             if not matches:
                 self.info_text.setHtml(
-                    f"<p style='color: red;'><b>Error:</b> Object '{self.object_name}' not found</p>"
+                    f"<p style='color: {colors['error']};'><b>Error:</b> Object '{self.object_name}' not found</p>"
                 )
                 return
 
@@ -132,30 +159,28 @@ class ObjectInfoDialog(QDialog):
             html_parts = []
 
             # Name and common name (bold cyan)
-            name_html = (
-                f"<p style='font-size: 18px; font-weight: bold; color: #00bcd4; margin-bottom: 10px;'>{obj.name}"
-            )
+            name_html = f"<p style='font-size: 18px; font-weight: bold; color: {colors['cyan']}; margin-bottom: 10px;'>{obj.name}"
             if obj.common_name and obj.common_name != obj.name:
-                name_html += f" <span style='color: #00bcd4; font-weight: normal;'>({obj.common_name})</span>"
+                name_html += f" <span style='color: {colors['cyan']}; font-weight: normal;'>({obj.common_name})</span>"
             name_html += "</p>"
             html_parts.append(name_html)
 
             # Coordinates section (bold yellow header, green values)
             html_parts.append(
-                "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Coordinates:</p>"
+                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Coordinates:</p>"
             )
             ra_str = format_ra(obj.ra_hours)
             dec_str = format_dec(obj.dec_degrees)
             html_parts.append(
                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                f"<span style='color: #4caf50;'>RA:</span> {ra_str}<br>"
-                f"<span style='color: #4caf50;'>Dec:</span> {dec_str}"
+                f"<span style='color: {colors['green']};'>RA:</span> {ra_str}<br>"
+                f"<span style='color: {colors['green']};'>Dec:</span> {dec_str}"
                 f"</p>"
             )
 
             # Properties section (bold yellow header)
             html_parts.append(
-                "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Properties:</p>"
+                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Properties:</p>"
             )
             type_explanation = self._explain_object_type(obj.object_type.value)
             type_text = obj.object_type.value
@@ -174,17 +199,17 @@ class ObjectInfoDialog(QDialog):
 
             # Visibility section (bold yellow header)
             html_parts.append(
-                "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Visibility:</p>"
+                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Visibility:</p>"
             )
             if visibility_info.is_visible:
                 html_parts.append(
-                    "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    "Status: <span style='color: #4caf50; font-weight: bold;'>✓ Visible</span></p>"
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Status: <span style='color: {colors['green']}; font-weight: bold;'>✓ Visible</span></p>"
                 )
             else:
                 html_parts.append(
-                    "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    "Status: <span style='color: #f44336; font-weight: bold;'>✗ Not Visible</span></p>"
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Status: <span style='color: {colors['red']}; font-weight: bold;'>✗ Not Visible</span></p>"
                 )
 
             if visibility_info.altitude_deg is not None:
@@ -212,16 +237,16 @@ class ObjectInfoDialog(QDialog):
             # Visibility probability with color coding
             if visibility_probability is not None:
                 if visibility_probability >= 0.8:
-                    prob_color = "#4caf50"  # green
+                    prob_color = colors["green"]
                     prob_weight = "bold"
                 elif visibility_probability >= 0.5:
-                    prob_color = "#ffc107"  # yellow
+                    prob_color = colors["yellow"]
                     prob_weight = "normal"
                 elif visibility_probability >= 0.3:
-                    prob_color = "#f44336"  # red
+                    prob_color = colors["red"]
                     prob_weight = "normal"
                 else:
-                    prob_color = "#9e9e9e"  # dim red/gray
+                    prob_color = colors["text_dim"]
                     prob_weight = "normal"
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
@@ -236,25 +261,25 @@ class ObjectInfoDialog(QDialog):
                     and visibility_explanations
                 ):
                     html_parts.append(
-                        "<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
-                        "color: #9e9e9e; font-style: italic;'>Why chance is low:</p>"
+                        f"<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
+                        f"color: {colors['text_dim']}; font-style: italic;'>Why chance is low:</p>"
                     )
                     for explanation in visibility_explanations:
                         html_parts.append(
                             f"<p style='margin-left: 40px; margin-top: 2px; margin-bottom: 2px; "
-                            f"color: #9e9e9e;'>• {explanation}</p>"
+                            f"color: {colors['text_dim']};'>• {explanation}</p>"
                         )
 
             # Reasons for not being visible
             if visibility_info.reasons:
                 html_parts.append(
-                    "<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
-                    "color: #9e9e9e; font-style: italic;'>Details:</p>"
+                    f"<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
+                    f"color: {colors['text_dim']}; font-style: italic;'>Details:</p>"
                 )
                 for reason in visibility_info.reasons:
                     html_parts.append(
                         f"<p style='margin-left: 40px; margin-top: 2px; margin-bottom: 2px; "
-                        f"color: #9e9e9e;'>• {reason}</p>"
+                        f"color: {colors['text_dim']};'>• {reason}</p>"
                     )
 
             # Moons (if this is a planet)
@@ -266,7 +291,7 @@ class ObjectInfoDialog(QDialog):
                     moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
                     if moons:
                         html_parts.append(
-                            "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Moons:</p>"
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Moons:</p>"
                         )
                         for moon in moons:
                             mag_str = f" (mag {moon.magnitude:.2f})" if moon.magnitude else ""
@@ -293,7 +318,7 @@ class ObjectInfoDialog(QDialog):
                         impact = get_moon_phase_impact(obj.object_type.value, moon_phase, moon_illum)
 
                         html_parts.append(
-                            "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Moon Phase Impact:</p>"
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Moon Phase Impact:</p>"
                         )
 
                         # Current moon phase and illumination
@@ -305,24 +330,24 @@ class ObjectInfoDialog(QDialog):
                             )
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Current moon phase: <span style='color: #00bcd4;'>{phase_name}</span></p>"
+                                f"Current moon phase: <span style='color: {colors['cyan']};'>{phase_name}</span></p>"
                             )
                         if moon_info.illumination is not None:
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Moon illumination: <span style='color: #00bcd4;'>{moon_info.illumination * 100:.0f}%</span></p>"
+                                f"Moon illumination: <span style='color: {colors['cyan']};'>{moon_info.illumination * 100:.0f}%</span></p>"
                             )
 
                         # Impact level with color coding
                         impact_level = impact.get("impact_level", "unknown")
                         if impact_level == "none" or impact_level == "minimal":
-                            impact_color = "#4caf50"  # Green
+                            impact_color = colors["green"]
                         elif impact_level == "moderate":
-                            impact_color = "#ffc107"  # Yellow
+                            impact_color = colors["yellow"]
                         elif impact_level == "significant" or impact_level == "severe":
-                            impact_color = "#f44336"  # Red
+                            impact_color = colors["red"]
                         else:
-                            impact_color = "#9e9e9e"  # Gray
+                            impact_color = colors["text_dim"]
 
                         html_parts.append(
                             f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
@@ -331,7 +356,7 @@ class ObjectInfoDialog(QDialog):
 
                         # Recommended
                         recommended = impact.get("recommended", True)
-                        rec_color = "#4caf50" if recommended else "#f44336"
+                        rec_color = colors["green"] if recommended else colors["red"]
                         rec_text = "Yes" if recommended else "No"
                         html_parts.append(
                             f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
@@ -342,13 +367,13 @@ class ObjectInfoDialog(QDialog):
                         notes = impact.get("notes", [])
                         if notes and isinstance(notes, list):
                             html_parts.append(
-                                "<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
-                                "color: #9e9e9e; font-style: italic;'>Notes:</p>"
+                                f"<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
+                                f"color: {colors['text_dim']}; font-style: italic;'>Notes:</p>"
                             )
                             for note in notes:
                                 html_parts.append(
                                     f"<p style='margin-left: 40px; margin-top: 2px; margin-bottom: 2px; "
-                                    f"color: #9e9e9e;'>• {note}</p>"
+                                    f"color: {colors['text_dim']};'>• {note}</p>"
                                 )
             except Exception as e:
                 logger.debug(f"Error loading moon impact info: {e}")
@@ -365,28 +390,28 @@ class ObjectInfoDialog(QDialog):
                     timeline = get_object_visibility_timeline(obj, location.latitude, location.longitude, days=1)
 
                     html_parts.append(
-                        "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Visibility Timeline:</p>"
+                        f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Visibility Timeline:</p>"
                     )
 
                     if timeline.is_never_visible:
                         html_parts.append(
                             "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
-                            "color: #ffc107;'>This object is never visible from your location.</p>"
+                            f"color: {colors['yellow']};'>This object is never visible from your location.</p>"
                         )
                     elif timeline.is_always_visible:
                         html_parts.append(
                             "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
-                            "color: #4caf50;'>This object is always visible (circumpolar).</p>"
+                            f"color: {colors['green']};'>This object is always visible (circumpolar).</p>"
                         )
                         if timeline.transit_time:
                             time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Transit (highest): <span style='color: #00bcd4;'>{time_str}</span></p>"
+                                f"Transit (highest): <span style='color: {colors['cyan']};'>{time_str}</span></p>"
                             )
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Maximum altitude: <span style='color: #4caf50;'>{timeline.max_altitude:.1f}°</span></p>"
+                                f"Maximum altitude: <span style='color: {colors['green']};'>{timeline.max_altitude:.1f}°</span></p>"
                             )
                     else:
                         # Show rise, transit, and set times
@@ -395,8 +420,8 @@ class ObjectInfoDialog(QDialog):
                             time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"<span style='color: #00bcd4;'>Transit (Highest):</span> <span style='color: #ffffff;'>{time_str}</span> "
-                                f"<span style='color: #4caf50;'>({timeline.max_altitude:.1f}°)</span></p>"
+                                f"<span style='color: {colors['cyan']};'>Transit (Highest):</span> <span style='color: {colors['text']};'>{time_str}</span> "
+                                f"<span style='color: {colors['green']};'>({timeline.max_altitude:.1f}°)</span></p>"
                             )
 
                         if timeline.rise_time:
@@ -406,7 +431,7 @@ class ObjectInfoDialog(QDialog):
                             )
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"<span style='color: #00bcd4;'>Rise:</span> <span style='color: #ffffff;'>{time_str}</span> "
+                                f"<span style='color: {colors['cyan']};'>Rise:</span> <span style='color: {colors['text']};'>{time_str}</span> "
                                 f"<span style='color: #9e9e9e;'>({alt:.1f}°)</span></p>"
                             )
 
@@ -417,8 +442,8 @@ class ObjectInfoDialog(QDialog):
                             )
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"<span style='color: #00bcd4;'>Set:</span> <span style='color: #ffffff;'>{time_str}</span> "
-                                f"<span style='color: #9e9e9e;'>({alt:.1f}°)</span></p>"
+                                f"<span style='color: {colors['cyan']};'>Set:</span> <span style='color: {colors['text']};'>{time_str}</span> "
+                                f"<span style='color: {colors['text_dim']};'>({alt:.1f}°)</span></p>"
                             )
             except Exception as e:
                 logger.error(f"Error loading timeline info: {e}", exc_info=True)

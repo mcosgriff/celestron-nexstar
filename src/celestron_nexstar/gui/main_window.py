@@ -93,9 +93,19 @@ class ClickableLabel(QLabel):
 class MainWindow(QMainWindow):
     """Main application window for telescope control."""
 
-    @staticmethod
-    def _create_icon(icon_name: str, fallback_theme_names: list[str] | None = None) -> QIcon:
+    def _create_icon(self, icon_name: str, fallback_theme_names: list[str] | None = None) -> QIcon:
         """Create an icon using FontAwesome icons (via qtawesome) with theme icon fallbacks."""
+        # Detect theme for icon color
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        is_dark = False
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+
         # Map icon names to FontAwesome icon names
         # Using FontAwesome 5 Solid (fa5s) icons
         icon_map: dict[str, str] = {
@@ -106,6 +116,7 @@ class MainWindow(QMainWindow):
             "tune": "fa5s.cog",
             "crosshairs": "mdi.crosshairs-gps",
             # Planning tools
+            "catalog": "mdi.folder",
             "weather": "mdi.weather-cloudy",
             "checklist": "mdi.check-circle",
             "time_slots": "mdi.clock-outline",
@@ -135,6 +146,7 @@ class MainWindow(QMainWindow):
             "refresh": "mdi.refresh",
             "info": "mdi.information",
             "download": "mdi.download",
+            "close": "mdi.close",
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -144,7 +156,9 @@ class MainWindow(QMainWindow):
             # Get the FontAwesome icon name
             fa_icon_name = icon_map.get(icon_name)
             if fa_icon_name:
-                icon = qta.icon(fa_icon_name)
+                # Use theme-appropriate color for icons
+                icon_color = "#ffffff" if is_dark else "#000000"
+                icon = qta.icon(fa_icon_name, color=icon_color)
                 if not icon.isNull():
                     return QIcon(icon)  # Cast to QIcon to satisfy type checker
         except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
@@ -167,6 +181,7 @@ class MainWindow(QMainWindow):
     def __init__(self, theme: FusionTheme | None = None) -> None:
         """Initialize the main window."""
         super().__init__()
+        self._catalog_window = None  # Store reference to catalog window
         self.setWindowTitle("Celestron NexStar Telescope Control")
         self.setMinimumSize(800, 600)
 
@@ -452,6 +467,14 @@ class MainWindow(QMainWindow):
 
         # Planning Tools buttons
 
+        # Catalog button
+        catalog_icon = self._create_icon("catalog", ["folder", "folder-open", "database"])
+        self.catalog_action = left_toolbar.addAction(catalog_icon, "Catalog")
+        self.catalog_action.setToolTip("CATALOG")
+        self.catalog_action.setStatusTip("Open catalog search window")
+        self.catalog_action.triggered.connect(self._on_catalog)
+        self.catalog_action.setIcon(catalog_icon)
+
         # Weather button
         weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
         self.weather_action = left_toolbar.addAction(weather_icon, "Weather")
@@ -595,11 +618,16 @@ class MainWindow(QMainWindow):
         if qapp and isinstance(qapp, QApplication):
             self.theme.apply(qapp)
 
+        # Refresh icons to match new theme
+        self._refresh_toolbar_icons()
+
     def _on_system_theme_changed(self) -> None:
         """Handle system theme changes."""
         # Only update if user preference is SYSTEM
         if self.theme_mode_preference == ThemeMode.SYSTEM:
             self.theme.set_mode(ThemeMode.SYSTEM)
+            # Refresh icons to match new theme
+            self._refresh_toolbar_icons()
 
     def _update_theme_menu_state(self) -> None:
         """Update the checked state of theme menu actions."""
@@ -1244,9 +1272,17 @@ class MainWindow(QMainWindow):
         pass
 
     def _on_catalog(self) -> None:
-        """Handle catalog button click - opens catalog window."""
-        # TODO: Open catalog window
-        pass
+        """Handle catalog button click - open catalog search window."""
+        from celestron_nexstar.gui.windows.catalog_window import CatalogSearchWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_catalog_window") or self._catalog_window is None:
+            self._catalog_window = CatalogSearchWindow(self)
+            self._catalog_window.destroyed.connect(lambda: setattr(self, "_catalog_window", None))
+
+        self._catalog_window.show()
+        self._catalog_window.raise_()
+        self._catalog_window.activateWindow()
 
     def _on_weather(self) -> None:
         """Handle weather button click."""

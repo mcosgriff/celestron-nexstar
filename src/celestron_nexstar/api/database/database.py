@@ -1101,6 +1101,15 @@ class CatalogDatabase:
                 # Log the error but use stored coordinates as fallback
                 logger.debug(f"Could not calculate position for {ephemeris_name}: {e}")
                 pass  # Use stored coordinates as fallback
+            except Exception as e:
+                # Catch any other exceptions (e.g., UnknownEphemerisObjectError) and use stored coordinates
+                from celestron_nexstar.api.core.exceptions import UnknownEphemerisObjectError
+
+                if isinstance(e, UnknownEphemerisObjectError) or isinstance(e.__cause__, UnknownEphemerisObjectError):
+                    logger.debug(f"Unknown ephemeris object {ephemeris_name}: {e}")
+                else:
+                    logger.debug(f"Could not calculate position for {ephemeris_name}: {e}")
+                pass  # Use stored coordinates as fallback
 
         return obj
 

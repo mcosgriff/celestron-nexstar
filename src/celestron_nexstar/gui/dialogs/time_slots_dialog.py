@@ -70,7 +70,6 @@ class TimeSlotsInfoDialog(QDialog):
                 border: none;
             }}
             h2 {{
-                color: #00bcd4; /* Cyan for headers */
                 margin-top: 1em;
                 margin-bottom: 0.5em;
             }}
@@ -88,6 +87,7 @@ class TimeSlotsInfoDialog(QDialog):
 
     def _load_time_slots(self) -> None:
         """Load time slots and recommendations from the API and format for display."""
+        colors = self._get_theme_colors()
         try:
             from celestron_nexstar.api.astronomy.solar_system import get_sun_info
             from celestron_nexstar.api.core.utils import format_local_time
@@ -97,7 +97,7 @@ class TimeSlotsInfoDialog(QDialog):
             location = get_observer_location()
             if not location:
                 self.info_text.setHtml(
-                    "<p><span style='color: #f44336;'><b>Error:</b> No observer location set.</span></p>"
+                    f"<p><span style='color: {colors['error']};'><b>Error:</b> No observer location set.</span></p>"
                 )
                 return
 
@@ -105,7 +105,7 @@ class TimeSlotsInfoDialog(QDialog):
             sun_info = get_sun_info(location.latitude, location.longitude)
             if not sun_info or not sun_info.sunset_time:
                 self.info_text.setHtml(
-                    "<p><span style='color: #f44336;'><b>Error:</b> Could not determine sunset time.</span></p>"
+                    f"<p><span style='color: {colors['error']};'><b>Error:</b> Could not determine sunset time.</span></p>"
                 )
                 return
 
@@ -203,13 +203,13 @@ class TimeSlotsInfoDialog(QDialog):
             # Build HTML content
             html_content = []
             html_content.append(
-                "<p><span style='color: #00bcd4; font-size: 14pt; font-weight: bold;'>Time-Based Recommendations</span></p>"
+                f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Time-Based Recommendations</span></p>"
             )
             html_content.append("<br>")
 
             # Add explanatory text
             html_content.append(
-                "<p style='color: #9e9e9e; margin-bottom: 15px; line-height: 1.5;'>"
+                f"<p style='color: {colors['text_dim']}; margin-bottom: 15px; line-height: 1.5;'>"
                 "<b>What are time slots?</b><br>"
                 "Time slots show recommended objects to observe at different times throughout the night. "
                 "Each time slot displays the best objects to view during that hour, helping you plan your "
@@ -221,7 +221,7 @@ class TimeSlotsInfoDialog(QDialog):
 
             if not time_slots:
                 html_content.append(
-                    "<p><span style='color: #9e9e9e;'>No time slots available for the specified range.</span></p>"
+                    f"<p><span style='color: {colors['text_dim']};'>No time slots available for the specified range.</span></p>"
                 )
                 self.info_text.setHtml("\n".join(html_content))
                 return
@@ -230,18 +230,18 @@ class TimeSlotsInfoDialog(QDialog):
             for time_slot in time_slots:
                 time_str = format_local_time(time_slot, location.latitude, location.longitude)
                 html_content.append(
-                    f"<p><span style='color: #00bcd4; font-weight: bold; font-size: 12pt;'>{time_str}</span></p>"
+                    f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>{time_str}</span></p>"
                 )
 
                 objects = recommendations.get(time_slot, [])
                 if objects:
                     html_content.append("<ul style='margin-left: 20px; margin-top: 5px; margin-bottom: 10px;'>")
                     for obj in objects[:5]:  # Limit to 5 per time slot
-                        html_content.append(f"<li style='color: #ffffff; margin-bottom: 3px;'>{obj.name}</li>")
+                        html_content.append(f"<li style='color: {colors['text']}; margin-bottom: 3px;'>{obj.name}</li>")
                     html_content.append("</ul>")
                 else:
                     html_content.append(
-                        "<p style='color: #9e9e9e; margin-left: 20px; margin-top: 5px; margin-bottom: 10px;'>"
+                        f"<p style='color: {colors['text_dim']}; margin-left: 20px; margin-top: 5px; margin-bottom: 10px;'>"
                         "No specific recommendations</p>"
                     )
 
@@ -250,5 +250,5 @@ class TimeSlotsInfoDialog(QDialog):
         except Exception as e:
             logger.error(f"Error loading time slots: {e}", exc_info=True)
             self.info_text.setHtml(
-                f"<p><span style='color: #f44336;'><b>Error:</b> Failed to load time slots: {e}</span></p>"
+                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load time slots: {e}</span></p>"
             )
