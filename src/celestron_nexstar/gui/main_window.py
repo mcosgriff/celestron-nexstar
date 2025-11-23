@@ -1456,6 +1456,24 @@ class MainWindow(QMainWindow):
             dialog = BinocularsInfoDialog(self)
             progress.close()
             dialog.exec()
+        elif object_name == "naked_eye":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading naked-eye viewing information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show naked-eye dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.naked_eye_info_dialog import NakedEyeInfoDialog
+
+            dialog = NakedEyeInfoDialog(self)
+            progress.close()
+            dialog.exec()
         else:
             # TODO: Open celestial object window for other objects
             pass
