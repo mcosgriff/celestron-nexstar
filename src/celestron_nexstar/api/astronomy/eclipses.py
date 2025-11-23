@@ -124,7 +124,13 @@ def _calculate_lunar_eclipse(
         Eclipse object or None if calculation fails
     """
     try:
-        t = ts.from_datetime(eclipse_time.replace(tzinfo=UTC))
+        # Normalize eclipse_time to UTC
+        if eclipse_time.tzinfo is None:
+            eclipse_time_utc = eclipse_time.replace(tzinfo=UTC)
+        else:
+            eclipse_time_utc = eclipse_time.astimezone(UTC)
+
+        t = ts.from_datetime(eclipse_time_utc)
         observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
 
         # Get moon position
@@ -148,13 +154,13 @@ def _calculate_lunar_eclipse(
 
         return Eclipse(
             eclipse_type=eclipse_type,
-            date=eclipse_time,
-            maximum_time=eclipse_time,
+            date=eclipse_time_utc,
+            maximum_time=eclipse_time_utc,
             duration_minutes=duration_minutes,
             magnitude=magnitude,
             is_visible=is_visible,
-            visibility_start=eclipse_time - timedelta(minutes=duration_minutes / 2) if is_visible else None,
-            visibility_end=eclipse_time + timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_start=eclipse_time_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_end=eclipse_time_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None,
             altitude_at_maximum=moon_alt.degrees,
             notes=notes,
         )
@@ -224,6 +230,14 @@ async def get_next_lunar_eclipse(
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
+
+        # Normalize eclipse_date to UTC for comparison
+        if isinstance(eclipse_date, datetime):
+            if eclipse_date.tzinfo is None:
+                eclipse_date = eclipse_date.replace(tzinfo=UTC)
+            else:
+                eclipse_date = eclipse_date.astimezone(UTC)
+
         if (
             isinstance(eclipse_type, str)
             and eclipse_type.startswith("lunar")
@@ -319,6 +333,14 @@ async def get_next_solar_eclipse(
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
         magnitude = eclipse_data["magnitude"]
+
+        # Normalize eclipse_date to UTC for comparison
+        if isinstance(eclipse_date, datetime):
+            if eclipse_date.tzinfo is None:
+                eclipse_date = eclipse_date.replace(tzinfo=UTC)
+            else:
+                eclipse_date = eclipse_date.astimezone(UTC)
+
         if (
             isinstance(eclipse_type, str)
             and eclipse_type.startswith("solar")
@@ -371,7 +393,13 @@ def _calculate_solar_eclipse(
         Eclipse object or None if calculation fails
     """
     try:
-        t = ts.from_datetime(eclipse_time.replace(tzinfo=UTC))
+        # Normalize eclipse_time to UTC
+        if eclipse_time.tzinfo is None:
+            eclipse_time_utc = eclipse_time.replace(tzinfo=UTC)
+        else:
+            eclipse_time_utc = eclipse_time.astimezone(UTC)
+
+        t = ts.from_datetime(eclipse_time_utc)
         observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
 
         # Get sun position
@@ -395,13 +423,13 @@ def _calculate_solar_eclipse(
 
         return Eclipse(
             eclipse_type=eclipse_type,
-            date=eclipse_time,
-            maximum_time=eclipse_time,
+            date=eclipse_time_utc,
+            maximum_time=eclipse_time_utc,
             duration_minutes=duration_minutes,
             magnitude=magnitude,
             is_visible=is_visible,
-            visibility_start=eclipse_time - timedelta(minutes=duration_minutes / 2) if is_visible else None,
-            visibility_end=eclipse_time + timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_start=eclipse_time_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_end=eclipse_time_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None,
             altitude_at_maximum=sun_alt.degrees,
             notes=notes,
         )
