@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QPushButton,
     QSizeGrip,
     QSizePolicy,
     QStatusBar,
@@ -55,8 +54,8 @@ class MainWindow(QMainWindow):
         # Using FontAwesome 5 Solid (fa5s) icons
         icon_map: dict[str, str] = {
             # Telescope operations
-            "link": "fa5s.link",
-            "link_off": "fa5s.unlink",
+            "link": "mdi.lan-connect",
+            "link_off": "mdi.lan-disconnect",
             "my_location": "fa5s.map-marker-alt",
             "tune": "fa5s.cog",
             "crosshairs": "mdi.crosshairs-gps",
@@ -335,19 +334,19 @@ class MainWindow(QMainWindow):
             self.addToolBar(area, toolbar)
             return toolbar
 
-        # Left side toolbars
-        # 1. Telescope Operations
-        telescope_toolbar = create_toolbar("Telescope Operations", Qt.ToolBarArea.LeftToolBarArea)
+        # Left side toolbar - combined Telescope Operations and Planning Tools
+        left_toolbar = create_toolbar("Left Toolbar", Qt.ToolBarArea.LeftToolBarArea)
 
+        # Telescope Operations buttons
         connect_icon = self._create_icon("link", ["network-connect", "network-wired", "network-workgroup"])
-        self.connect_action = telescope_toolbar.addAction(connect_icon, "Connect")
+        self.connect_action = left_toolbar.addAction(connect_icon, "Connect")
         self.connect_action.setToolTip("CONNECT")
         self.connect_action.setStatusTip("Connect to telescope")
         self.connect_action.triggered.connect(self._on_connect)
         self.connect_action.setIcon(connect_icon)
 
         disconnect_icon = self._create_icon("link_off", ["network-disconnect", "network-offline", "network-error"])
-        self.disconnect_action = telescope_toolbar.addAction(disconnect_icon, "Disconnect")
+        self.disconnect_action = left_toolbar.addAction(disconnect_icon, "Disconnect")
         self.disconnect_action.setToolTip("DISCONNECT")
         self.disconnect_action.setStatusTip("Disconnect from telescope")
         self.disconnect_action.triggered.connect(self._on_disconnect)
@@ -355,7 +354,7 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setIcon(disconnect_icon)
 
         calibrate_icon = self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
-        self.calibrate_action = telescope_toolbar.addAction(calibrate_icon, "Calibrate")
+        self.calibrate_action = left_toolbar.addAction(calibrate_icon, "Calibrate")
         self.calibrate_action.setToolTip("CALIBRATE")
         self.calibrate_action.setStatusTip("Calibrate telescope")
         self.calibrate_action.triggered.connect(self._on_calibrate)
@@ -363,82 +362,75 @@ class MainWindow(QMainWindow):
         self.calibrate_action.setIcon(calibrate_icon)
 
         align_icon = self._create_icon("my_location", ["edit-find", "system-search", "find-location"])
-        self.align_action = telescope_toolbar.addAction(align_icon, "Align")
+        self.align_action = left_toolbar.addAction(align_icon, "Align")
         self.align_action.setToolTip("ALIGN")
         self.align_action.setStatusTip("Align telescope")
         self.align_action.triggered.connect(self._on_align)
         self.align_action.setEnabled(False)
         self.align_action.setIcon(align_icon)
 
-        # Spacer toolbar to push Planning Tools to the bottom
-        spacer_toolbar = QToolBar("Spacer")
-        spacer_toolbar.setMovable(False)
-        spacer_toolbar.setFloatable(False)
-        spacer_toolbar.setOrientation(Qt.Orientation.Vertical)
-        spacer_toolbar.setVisible(True)
-        # Add a stretchable widget to fill available space
-        spacer_widget = QWidget()
-        spacer_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # spacer_widget.setMinimumHeight(1)
-        # spacer_widget.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
-        spacer_toolbar.addWidget(spacer_widget)
-        # Set toolbar to expand - use Expanding policy
-        # spacer_toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        # spacer_toolbar.setMinimumHeight(1)
-        spacer_toolbar.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
-        # Hide the toolbar handle/separator to make it invisible
-        spacer_toolbar.setStyleSheet("QToolBar { border: none; background: transparent; }")
-        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, spacer_toolbar)
+        # Communication Log button
+        log_icon = self._create_icon("console", ["terminal", "code-tags", "text-box"])
+        self.log_toggle_action = left_toolbar.addAction(log_icon, "Communication Log")
+        self.log_toggle_action.setToolTip("COMMUNICATION LOG")
+        self.log_toggle_action.setStatusTip("Toggle communication log panel")
+        self.log_toggle_action.setCheckable(True)  # Make it a toggle button
+        self.log_toggle_action.setChecked(False)  # Start unchecked (log panel hidden)
+        self.log_toggle_action.triggered.connect(self._on_toggle_log)
+        self.log_toggle_action.setIcon(log_icon)
 
-        # 2. Planning Tools (left side, at bottom)
-        # Create after spacer so it appears at the bottom
-        planning_toolbar = create_toolbar("Planning Tools", Qt.ToolBarArea.LeftToolBarArea)
+        # Spacer widget to push Planning Tools to the bottom
+        spacer_widget = QWidget()
+        spacer_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        spacer_widget.setMinimumHeight(1)
+        left_toolbar.addWidget(spacer_widget)
+
+        # Planning Tools buttons
 
         checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
-        self.checklist_action = planning_toolbar.addAction(checklist_icon, "Checklist")
+        self.checklist_action = left_toolbar.addAction(checklist_icon, "Checklist")
         self.checklist_action.setToolTip("CHECKLIST")
         self.checklist_action.setStatusTip("View observation checklist")
         self.checklist_action.triggered.connect(self._on_checklist)
         self.checklist_action.setIcon(checklist_icon)
 
         time_slots_icon = self._create_icon("time_slots", ["clock-outline", "timer"])
-        self.time_slots_action = planning_toolbar.addAction(time_slots_icon, "Time Slots")
+        self.time_slots_action = left_toolbar.addAction(time_slots_icon, "Time Slots")
         self.time_slots_action.setToolTip("TIME SLOTS")
         self.time_slots_action.setStatusTip("View available time slots")
         self.time_slots_action.triggered.connect(self._on_time_slots)
         self.time_slots_action.setIcon(time_slots_icon)
 
         moon_impact_icon = self._create_icon("moon_impact", ["moon-waning-crescent", "moon-full"])
-        self.moon_impact_action = planning_toolbar.addAction(moon_impact_icon, "Moon Impact")
+        self.moon_impact_action = left_toolbar.addAction(moon_impact_icon, "Moon Impact")
         self.moon_impact_action.setToolTip("MOON IMPACT")
         self.moon_impact_action.setStatusTip("View moon impact on observations")
         self.moon_impact_action.triggered.connect(self._on_moon_impact)
         self.moon_impact_action.setIcon(moon_impact_icon)
 
         quick_ref_icon = self._create_icon("quick_reference", ["book-open-variant", "information"])
-        self.quick_reference_action = planning_toolbar.addAction(quick_ref_icon, "Quick Reference")
+        self.quick_reference_action = left_toolbar.addAction(quick_ref_icon, "Quick Reference")
         self.quick_reference_action.setToolTip("QUICK REFERENCE")
         self.quick_reference_action.setStatusTip("Open quick reference guide")
         self.quick_reference_action.triggered.connect(self._on_quick_reference)
         self.quick_reference_action.setIcon(quick_ref_icon)
 
         transit_times_icon = self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
-        self.transit_times_action = planning_toolbar.addAction(transit_times_icon, "Transit Times")
+        self.transit_times_action = left_toolbar.addAction(transit_times_icon, "Transit Times")
         self.transit_times_action.setToolTip("TRANSIT TIMES")
         self.transit_times_action.setStatusTip("View transit times")
         self.transit_times_action.triggered.connect(self._on_transit_times)
         self.transit_times_action.setIcon(transit_times_icon)
 
         timeline_icon = self._create_icon("timeline", ["timeline", "chart-timeline-variant"])
-        self.timeline_action = planning_toolbar.addAction(timeline_icon, "Timeline")
+        self.timeline_action = left_toolbar.addAction(timeline_icon, "Timeline")
         self.timeline_action.setToolTip("TIMELINE")
         self.timeline_action.setStatusTip("View observation timeline")
         self.timeline_action.triggered.connect(self._on_timeline)
         self.timeline_action.setIcon(timeline_icon)
 
-        # Right side toolbars
-        # 3. Celestial Objects
-        celestial_toolbar = create_toolbar("Celestial Objects", Qt.ToolBarArea.RightToolBarArea)
+        # Right side toolbar - combined Celestial Objects and Communication Log
+        right_toolbar = create_toolbar("Right Toolbar", Qt.ToolBarArea.RightToolBarArea)
 
         # Celestial object actions (using alpha-box-outline pattern)
         celestial_objects = [
@@ -461,25 +453,13 @@ class MainWindow(QMainWindow):
 
         for obj_name, display_name, icon_names in celestial_objects:
             icon = self._create_icon(obj_name, icon_names)
-            action = celestial_toolbar.addAction(icon, display_name)
+            action = right_toolbar.addAction(icon, display_name)
             action.setToolTip(display_name.upper())
             action.setStatusTip(f"View {display_name} information")
             action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
             action.setIcon(icon)
             # Store action for later reference
             setattr(self, f"{obj_name}_action", action)
-
-        # 4. Communication Log (right side, separate toolbar)
-        log_toolbar = create_toolbar("Communication Log", Qt.ToolBarArea.RightToolBarArea)
-
-        log_icon = self._create_icon("console", ["terminal", "code-tags", "text-box"])
-        self.log_toggle_action = log_toolbar.addAction(log_icon, "Communication Log")
-        self.log_toggle_action.setToolTip("COMMUNICATION LOG")
-        self.log_toggle_action.setStatusTip("Toggle communication log panel")
-        self.log_toggle_action.setCheckable(True)  # Make it a toggle button
-        self.log_toggle_action.setChecked(False)  # Start unchecked (log panel hidden)
-        self.log_toggle_action.triggered.connect(self._on_toggle_log)
-        self.log_toggle_action.setIcon(log_icon)
 
     def _refresh_toolbar_icons(self) -> None:
         """Refresh toolbar icons after window is shown."""
@@ -570,30 +550,7 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        # Goto button (stays in control panel)
-        button_layout = QHBoxLayout()
-
-        self.goto_btn = QPushButton("Goto")
-        self.goto_btn.clicked.connect(self._on_goto)
-        self.goto_btn.setEnabled(False)
-        button_layout.addWidget(self.goto_btn)
-
-        layout.addLayout(button_layout)
-
-        # Planning and Catalog buttons (open separate windows)
-        secondary_button_layout = QHBoxLayout()
-
-        self.planning_btn = QPushButton("Planning")
-        self.planning_btn.clicked.connect(self._on_planning)
-        secondary_button_layout.addWidget(self.planning_btn)
-
-        self.catalog_btn = QPushButton("Catalog")
-        self.catalog_btn.clicked.connect(self._on_catalog)
-        secondary_button_layout.addWidget(self.catalog_btn)
-
-        layout.addLayout(secondary_button_layout)
-
-        # Add stretch to push buttons to top
+        # Add stretch to push content to top
         layout.addStretch()
 
         return panel
@@ -729,7 +686,6 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setEnabled(True)
         self.align_action.setEnabled(True)
         self.calibrate_action.setEnabled(True)
-        self.goto_btn.setEnabled(True)
 
     def _on_disconnect(self) -> None:
         """Handle disconnect button click."""
@@ -743,12 +699,6 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setEnabled(False)
         self.align_action.setEnabled(False)
         self.calibrate_action.setEnabled(False)
-        self.goto_btn.setEnabled(False)
-
-    def _on_goto(self) -> None:
-        """Handle goto button click."""
-        # TODO: Open goto dialog
-        pass
 
     def _on_align(self) -> None:
         """Handle align button click."""
