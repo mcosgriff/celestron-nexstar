@@ -106,8 +106,14 @@ def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
     Returns:
         Estimated magnitude
     """
+    # Normalize datetimes to UTC for comparison
+    date = date.replace(tzinfo=UTC) if date.tzinfo is None else date.astimezone(UTC)
+
+    perihelion = comet.perihelion_date
+    perihelion = perihelion.replace(tzinfo=UTC) if perihelion.tzinfo is None else perihelion.astimezone(UTC)
+
     # Days from perihelion
-    days_from_perihelion = (date - comet.perihelion_date).days
+    days_from_perihelion = (date - perihelion).days
 
     # Simplified magnitude model
     # Comets are brightest near perihelion
@@ -149,22 +155,32 @@ async def get_visible_comets(
     # For each known comet, check visibility
     comets = await get_known_comets(db_session)
     for comet in comets:
+        # Normalize comet dates to UTC for comparison
+        perihelion = comet.perihelion_date
+        perihelion = perihelion.replace(tzinfo=UTC) if perihelion.tzinfo is None else perihelion.astimezone(UTC)
+
+        peak = comet.peak_date
+        peak = peak.replace(tzinfo=UTC) if peak.tzinfo is None else peak.astimezone(UTC)
+
         # Check if comet is active in our time window
         # Comets are typically visible for several months around perihelion
-        activity_start = comet.perihelion_date - timedelta(days=90)
-        activity_end = comet.perihelion_date + timedelta(days=180)
+        activity_start = perihelion - timedelta(days=90)
+        activity_end = perihelion + timedelta(days=180)
 
         if activity_end < now or activity_start > end_date:
             continue
 
         # Check visibility at peak and around it
         check_dates = [
-            comet.peak_date,
-            comet.peak_date - timedelta(days=30),
-            comet.peak_date + timedelta(days=30),
+            peak,
+            peak - timedelta(days=30),
+            peak + timedelta(days=30),
         ]
 
         for check_date in check_dates:
+            # Ensure check_date is timezone-aware
+            check_date = check_date.replace(tzinfo=UTC) if check_date.tzinfo is None else check_date.astimezone(UTC)
+
             if now <= check_date <= end_date:
                 magnitude = _estimate_comet_magnitude(comet, check_date)
 
@@ -175,7 +191,10 @@ async def get_visible_comets(
                     is_visible = altitude > 0
 
                     # Best viewing time (simplified - would calculate transit)
-                    best_time = check_date.replace(hour=2, minute=0)  # 2 AM local
+                    # Ensure best_time is timezone-aware
+                    best_time = check_date.replace(hour=2, minute=0, second=0, microsecond=0)  # 2 AM UTC
+                    if best_time.tzinfo is None:
+                        best_time = best_time.replace(tzinfo=UTC)
 
                     notes = f"Magnitude {magnitude:.2f}"
                     if magnitude < 6.0:

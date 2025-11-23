@@ -1474,6 +1474,24 @@ class MainWindow(QMainWindow):
             dialog = NakedEyeInfoDialog(self)
             progress.close()
             dialog.exec()
+        elif object_name == "comets":
+            # Show progress dialog while loading
+            progress = QProgressDialog("Loading comet visibility information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show comets dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.comets_info_dialog import CometsInfoDialog
+
+            dialog = CometsInfoDialog(self)
+            progress.close()
+            dialog.exec()
         else:
             # TODO: Open celestial object window for other objects
             pass
