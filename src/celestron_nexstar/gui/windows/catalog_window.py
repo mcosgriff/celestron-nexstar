@@ -50,6 +50,7 @@ class CatalogSearchWindow(QMainWindow):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter object name, type, or description...")
         self.search_input.textChanged.connect(self._on_search_text_changed)
+        self._update_textbox_placeholder_style(self.search_input)
 
         # Clear button
         clear_icon = self._create_icon("close", ["edit-clear", "window-close"])
@@ -129,6 +130,11 @@ class CatalogSearchWindow(QMainWindow):
         self.search_timer.setSingleShot(True)
         self.search_timer.timeout.connect(self._perform_search)
 
+        # Monitor system theme changes to refresh icons
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            app.paletteChanged.connect(self._on_theme_changed)  # type: ignore[attr-defined]
+
     def _create_icon(self, icon_name: str, fallback_theme_names: list[str] | None = None) -> QIcon:
         """Create an icon using FontAwesome icons (via qtawesome) with theme icon fallbacks."""
         # Detect theme for icon color
@@ -175,6 +181,51 @@ class CatalogSearchWindow(QMainWindow):
 
         # Final fallback: return empty icon
         return QIcon()
+
+    def _on_theme_changed(self) -> None:
+        """Handle theme changes - refresh icons to match new theme."""
+        self._refresh_icons()
+        # Update textbox placeholder text colors
+        self._update_textbox_placeholder_style(self.search_input)
+
+    def _update_textbox_placeholder_style(self, textbox: QLineEdit) -> None:
+        """Update placeholder text color to be theme-aware."""
+        from PySide6.QtGui import QPalette
+
+        is_dark = self._is_dark_theme()
+        # Set placeholder text color based on theme
+        # Use a lighter gray for dark mode, darker gray for light mode
+        placeholder_color = "#999999" if is_dark else "#666666"
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            textbox.setStyleSheet(
+                f"""
+                QLineEdit {{
+                    color: {palette.color(QPalette.ColorRole.Text).name()};
+                }}
+                QLineEdit::placeholder {{
+                    color: {placeholder_color};
+                }}
+            """
+            )
+
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _refresh_icons(self) -> None:
+        """Refresh button icons to match current theme."""
+        clear_icon = self._create_icon("close", ["edit-clear", "window-close"])
+        self.clear_button.setIcon(clear_icon)
+        info_icon = self._create_icon("info", ["dialog-information", "help-about"])
+        self.info_button.setIcon(info_icon)
 
     def _on_search_text_changed(self, text: str) -> None:
         """Handle search text changes with debouncing."""
@@ -412,16 +463,21 @@ class CatalogSearchWindow(QMainWindow):
 
     def _show_toast(self, message: str, duration_ms: int = 2000) -> None:
         """Show a temporary toast notification."""
+        # Detect theme for toast styling
+        is_dark = self._is_dark_theme()
+        # Theme-aware toast styling
+        bg_color = "rgba(0, 0, 0, 200)" if not is_dark else "rgba(255, 255, 255, 200)"
+        text_color = "white" if not is_dark else "black"
         # Create a simple label for toast
         toast = QLabel(message, self)
         toast.setStyleSheet(
-            """
-            QLabel {
-                background-color: rgba(0, 0, 0, 200);
-                color: white;
+            f"""
+            QLabel {{
+                background-color: {bg_color};
+                color: {text_color};
                 padding: 8px;
                 border-radius: 4px;
-            }
+            }}
         """
         )
         toast.setAlignment(Qt.AlignmentFlag.AlignCenter)

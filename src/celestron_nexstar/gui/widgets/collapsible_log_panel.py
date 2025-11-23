@@ -127,6 +127,7 @@ class CollapsibleLogPanel(QWidget):
     def apply_theme(self, theme: object) -> None:
         """Apply theme to the log panel (qt-material handles most styling)."""
         # Get monospace font from application property, fallback to system fonts
+        from PySide6.QtGui import QGuiApplication, QPalette
         from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance()
@@ -137,12 +138,23 @@ class CollapsibleLogPanel(QWidget):
             else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
         )
 
-        # Log panel styling is handled by qt-material, but we keep dark background for readability
+        # Detect theme for log panel styling
+        is_dark = False
+        gui_app = QGuiApplication.instance()
+        if gui_app and isinstance(gui_app, QGuiApplication):
+            palette = gui_app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+
+        # Theme-aware log panel styling
+        bg_color = "#ffffff" if not is_dark else "#1e1e1e"
+        text_color = "#000000" if not is_dark else "#d4d4d4"
         self.log_text.setStyleSheet(
             f"""
             QPlainTextEdit {{
-                background-color: #1e1e1e;
-                color: #d4d4d4;
+                background-color: {bg_color};
+                color: {text_color};
                 font-family: {font_family};
                 font-size: 10pt;
                 border: none;

@@ -432,7 +432,7 @@ class ObjectInfoDialog(QDialog):
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
                                 f"<span style='color: {colors['cyan']};'>Rise:</span> <span style='color: {colors['text']};'>{time_str}</span> "
-                                f"<span style='color: #9e9e9e;'>({alt:.1f}°)</span></p>"
+                                f"<span style='color: {colors['text_dim']};'>({alt:.1f}°)</span></p>"
                             )
 
                         if timeline.set_time:
@@ -450,8 +450,9 @@ class ObjectInfoDialog(QDialog):
 
             # Description
             if obj.description:
+                colors = self._get_theme_colors()
                 html_parts.append(
-                    "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Description:</p>"
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Description:</p>"
                 )
                 # Format description (preserve line breaks)
                 formatted_desc = obj.description.replace("\n", "<br>")
@@ -466,4 +467,7 @@ class ObjectInfoDialog(QDialog):
 
         except Exception as e:
             logger.error(f"Error loading object info for '{self.object_name}': {e}", exc_info=True)
-            self.info_text.setHtml(f"<p style='color: red;'><b>Error:</b> Failed to load object information: {e}</p>")
+            colors = self._get_theme_colors()
+            self.info_text.setHtml(
+                f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load object information: {e}</p>"
+            )

@@ -51,6 +51,10 @@ class WeatherInfoDialog(QDialog):
             else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
         )
 
+        # Store font family for later use in _load_weather_info
+        self._font_family = font_family
+
+        # Set initial stylesheet (will be updated with theme colors in _load_weather_info)
         self.info_text.setStyleSheet(
             f"""
             QTextEdit {{
@@ -58,26 +62,6 @@ class WeatherInfoDialog(QDialog):
                 background-color: transparent;
                 border: none;
             }}
-            h2 {{
-                color: #ffc107; /* Yellow for headers */
-                margin-top: 1em;
-                margin-bottom: 0.5em;
-            }}
-            .location {{
-                color: #00bcd4; /* Cyan for location */
-                font-size: 14pt;
-                font-weight: bold;
-            }}
-            .status_excellent {{ color: #4caf50; font-weight: bold; }} /* Green */
-            .status_good {{ color: #00bcd4; font-weight: bold; }} /* Cyan */
-            .status_fair {{ color: #ffc107; font-weight: bold; }} /* Yellow */
-            .status_poor {{ color: #f44336; font-weight: bold; }} /* Red */
-            .detail_label {{ color: #9e9e9e; }} /* Dim gray */
-            .detail_value {{ color: #ffffff; }} /* White */
-            .green_text {{ color: #4caf50; }}
-            .yellow_text {{ color: #ffc107; }}
-            .red_text {{ color: #f44336; }}
-            .dim_text {{ color: #9e9e9e; }}
         """
         )
         layout.addWidget(self.info_text)
@@ -87,7 +71,7 @@ class WeatherInfoDialog(QDialog):
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load weather information
+        # Load weather information (this will also update stylesheet with theme colors)
         self._load_weather_info()
 
     def _is_dark_theme(self) -> bool:
@@ -119,6 +103,38 @@ class WeatherInfoDialog(QDialog):
     def _load_weather_info(self) -> None:
         """Load weather information from the API and format it for display."""
         colors = self._get_theme_colors()
+
+        # Update stylesheet with theme-aware colors (even though HTML uses inline styles)
+        self.info_text.setStyleSheet(
+            f"""
+            QTextEdit {{
+                font-family: {self._font_family};
+                background-color: transparent;
+                border: none;
+            }}
+            h2 {{
+                color: {colors["header"]};
+                margin-top: 1em;
+                margin-bottom: 0.5em;
+            }}
+            .location {{
+                color: {colors["cyan"]};
+                font-size: 14pt;
+                font-weight: bold;
+            }}
+            .status_excellent {{ color: {colors["green"]}; font-weight: bold; }}
+            .status_good {{ color: {colors["cyan"]}; font-weight: bold; }}
+            .status_fair {{ color: {colors["yellow"]}; font-weight: bold; }}
+            .status_poor {{ color: {colors["red"]}; font-weight: bold; }}
+            .detail_label {{ color: {colors["text_dim"]}; }}
+            .detail_value {{ color: {colors["text"]}; }}
+            .green_text {{ color: {colors["green"]}; }}
+            .yellow_text {{ color: {colors["yellow"]}; }}
+            .red_text {{ color: {colors["red"]}; }}
+            .dim_text {{ color: {colors["text_dim"]}; }}
+        """
+        )
+
         try:
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.weather import (

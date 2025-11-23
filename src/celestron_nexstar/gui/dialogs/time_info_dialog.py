@@ -56,7 +56,17 @@ class TimeInfoDialog(QDialog):
 
         # Add separator
         separator = QLabel("─" * 30)
-        separator.setStyleSheet("color: gray;")
+        # Theme-aware separator color
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+            separator_color = "#999999" if is_dark else "#666666"
+            separator.setStyleSheet(f"color: {separator_color};")
         form_layout.addRow("", separator)
 
         # Sun information
@@ -71,7 +81,15 @@ class TimeInfoDialog(QDialog):
 
         # Add separator
         separator2 = QLabel("─" * 30)
-        separator2.setStyleSheet("color: gray;")
+        # Theme-aware separator color (reuse same logic)
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+            separator_color = "#999999" if is_dark else "#666666"
+            separator2.setStyleSheet(f"color: {separator_color};")
         form_layout.addRow("", separator2)
 
         # Moon information

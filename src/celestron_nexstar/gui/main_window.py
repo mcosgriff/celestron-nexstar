@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
             "info": "mdi.information",
             "download": "mdi.download",
             "close": "mdi.close",
+            # Communication
+            "console": "mdi.console",
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -564,8 +566,6 @@ class MainWindow(QMainWindow):
             self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
         )
         self.align_action.setIcon(self._create_icon("my_location", ["edit-find", "system-search", "find-location"]))
-        # Communication log toggle
-        self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
         # Planning tools
         self.weather_action.setIcon(
             self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
@@ -604,6 +604,16 @@ class MainWindow(QMainWindow):
         # Communication log toggle
         if hasattr(self, "log_toggle_action"):
             self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
+        # Catalog button
+        if hasattr(self, "catalog_action"):
+            self.catalog_action.setIcon(self._create_icon("catalog", ["folder", "folder-open", "folder-documents"]))
+        # Table toolbar buttons
+        if hasattr(self, "refresh_action"):
+            self.refresh_action.setIcon(self._create_icon("refresh", ["view-refresh", "reload"]))
+        if hasattr(self, "load_all_action"):
+            self.load_all_action.setIcon(self._create_icon("download", ["download", "folder-download"]))
+        if hasattr(self, "info_action"):
+            self.info_action.setIcon(self._create_icon("info", ["dialog-information", "help-about"]))
 
     def _set_theme(self, mode: ThemeMode) -> None:
         """Set the theme to the specified mode."""
@@ -620,6 +630,34 @@ class MainWindow(QMainWindow):
 
         # Refresh icons to match new theme
         self._refresh_toolbar_icons()
+        # Update textbox placeholder text colors
+        if hasattr(self, "filter_textbox"):
+            self._update_textbox_placeholder_style(self.filter_textbox)
+
+    def _update_textbox_placeholder_style(self, textbox: QLineEdit) -> None:
+        """Update placeholder text color to be theme-aware."""
+        from PySide6.QtGui import QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+
+            # Set placeholder text color based on theme
+            # Use a lighter gray for dark mode, darker gray for light mode
+            placeholder_color = "#999999" if is_dark else "#666666"
+            textbox.setStyleSheet(
+                f"""
+                QLineEdit {{
+                    color: {palette.color(QPalette.ColorRole.Text).name()};
+                }}
+                QLineEdit::placeholder {{
+                    color: {placeholder_color};
+                }}
+            """
+            )
 
     def _on_system_theme_changed(self) -> None:
         """Handle system theme changes."""
@@ -628,6 +666,9 @@ class MainWindow(QMainWindow):
             self.theme.set_mode(ThemeMode.SYSTEM)
             # Refresh icons to match new theme
             self._refresh_toolbar_icons()
+            # Update textbox placeholder text colors
+            if hasattr(self, "filter_textbox"):
+                self._update_textbox_placeholder_style(self.filter_textbox)
 
     def _update_theme_menu_state(self) -> None:
         """Update the checked state of theme menu actions."""
@@ -869,6 +910,7 @@ class MainWindow(QMainWindow):
         self.filter_textbox = QLineEdit()
         self.filter_textbox.setPlaceholderText("Filter objects...")
         self.filter_textbox.textChanged.connect(self._on_filter_changed)
+        self._update_textbox_placeholder_style(self.filter_textbox)
         toolbar.addWidget(self.filter_textbox)
 
         # Spacer
@@ -1075,17 +1117,31 @@ class MainWindow(QMainWindow):
         if len(message) > max_length:
             display_message = message[: max_length - 3] + "..."
 
+        # Detect theme for toast styling
+        from PySide6.QtGui import QPalette
+
+        is_dark = False
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+
         # Create a label for the toast
         toast = QLabel(display_message, self)
+        # Theme-aware toast styling
+        bg_color = "rgba(0, 0, 0, 200)" if not is_dark else "rgba(255, 255, 255, 200)"
+        text_color = "white" if not is_dark else "black"
         toast.setStyleSheet(
-            """
-            QLabel {
-                background-color: rgba(0, 0, 0, 200);
-                color: white;
+            f"""
+            QLabel {{
+                background-color: {bg_color};
+                color: {text_color};
                 padding: 8px 16px;
                 border-radius: 4px;
                 font-size: 12px;
-            }
+            }}
         """
         )
         toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
