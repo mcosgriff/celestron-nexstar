@@ -4,6 +4,7 @@
 Shows observing conditions and recommended objects for tonight.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -1522,13 +1523,73 @@ def show_time_slots(
     if sunset.tzinfo is None:
         sunset = sunset.replace(tzinfo=UTC)
 
-    time_slots = []
-    current = sunset.replace(hour=start_hour, minute=0, second=0)
-    while current.hour <= end_hour:
+    # Get current time
+    now = datetime.now(UTC)
+    if sunset.tzinfo and now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+
+    # Get today's date (use sunset date to ensure consistency)
+    today_date = sunset.date()
+
+    # Determine the start time:
+    # 1. If current time is past start_hour, start from current hour (rounded up)
+    # 2. Otherwise, start from start_hour
+    # 3. But never start before sunset
+
+    # Calculate desired start time based on start_hour
+    desired_start = datetime.combine(today_date, datetime.min.time()).replace(
+        hour=start_hour, minute=0, second=0, microsecond=0, tzinfo=UTC
+    )
+
+    # If we're already past the desired start hour, use current hour (rounded up)
+    if now > desired_start:
+        # Round current time up to next hour
+        current_hour = now.hour
+        if now.minute > 0 or now.second > 0:
+            current_hour += 1
+        if current_hour > 23:
+            # Move to next day at midnight
+            today_date += timedelta(days=1)
+            current_hour = 0
+        current = datetime.combine(today_date, datetime.min.time()).replace(
+            hour=current_hour, minute=0, second=0, microsecond=0, tzinfo=UTC
+        )
+    else:
+        current = desired_start
+
+    # Ensure we don't start before sunset
+    if current < sunset:
+        # Round sunset up to next hour
+        sunset_hour = sunset.hour
+        if sunset.minute > 0 or sunset.second > 0:
+            sunset_hour += 1
+        if sunset_hour > 23:
+            # Move to next day at midnight
+            today_date += timedelta(days=1)
+            sunset_hour = 0
+        current = datetime.combine(today_date, datetime.min.time()).replace(
+            hour=min(sunset_hour, 23), minute=0, second=0, microsecond=0, tzinfo=UTC
+        )
+
+    start_date = current.date()
+    max_slots = 24  # Safety limit to prevent infinite loops
+
+    time_slots: list[datetime] = []
+    while len(time_slots) < max_slots:
+        # Stop if we've moved to the next day
+        if current.date() > start_date:
+            break
+        # Stop if we've gone past end_hour on the same day
+        if current.hour > end_hour:
+            break
+        # Add the time slot
         time_slots.append(current)
+        # Move to next interval
         current += timedelta(hours=interval)
 
-    recommendations = get_time_based_recommendations(time_slots, location.latitude, location.longitude, "telescope")
+    recommendations = asyncio.run(
+        get_time_based_recommendations(time_slots, location.latitude, location.longitude, "telescope")
+    )
 
     console.print("\n[bold cyan]Time-Based Recommendations[/bold cyan]\n")
 

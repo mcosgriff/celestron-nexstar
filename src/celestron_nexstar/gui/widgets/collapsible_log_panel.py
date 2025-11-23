@@ -126,16 +126,27 @@ class CollapsibleLogPanel(QWidget):
 
     def apply_theme(self, theme: object) -> None:
         """Apply theme to the log panel (qt-material handles most styling)."""
+        # Get monospace font from application property, fallback to system fonts
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        monospace_font = "JetBrains Mono" if app and app.property("monospace_font") else None
+        font_family = (
+            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
+            if monospace_font
+            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
+        )
+
         # Log panel styling is handled by qt-material, but we keep dark background for readability
         self.log_text.setStyleSheet(
-            """
-            QPlainTextEdit {
+            f"""
+            QPlainTextEdit {{
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                font-family: 'Courier New', monospace;
+                font-family: {font_family};
                 font-size: 10pt;
                 border: none;
-            }
+            }}
         """
         )
 

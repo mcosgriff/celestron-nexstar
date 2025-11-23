@@ -2,6 +2,8 @@
 Main application window for telescope control.
 """
 
+from __future__ import annotations
+
 import contextlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -31,6 +33,7 @@ from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.gui.dialogs.gps_info_dialog import GPSInfoDialog
 from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
+from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPanel
 
@@ -103,6 +106,7 @@ class MainWindow(QMainWindow):
             "tune": "fa5s.cog",
             "crosshairs": "mdi.crosshairs-gps",
             # Planning tools
+            "weather": "mdi.weather-cloudy",
             "checklist": "mdi.check-circle",
             "time_slots": "mdi.clock-outline",
             "moon_impact": "mdi.moon-waning-crescent",
@@ -449,6 +453,14 @@ class MainWindow(QMainWindow):
 
         # Planning Tools buttons
 
+        # Weather button
+        weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
+        self.weather_action = left_toolbar.addAction(weather_icon, "Weather")
+        self.weather_action.setToolTip("WEATHER")
+        self.weather_action.setStatusTip("View current weather conditions")
+        self.weather_action.triggered.connect(self._on_weather)
+        self.weather_action.setIcon(weather_icon)
+
         checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
         self.checklist_action = left_toolbar.addAction(checklist_icon, "Checklist")
         self.checklist_action.setToolTip("CHECKLIST")
@@ -537,7 +549,12 @@ class MainWindow(QMainWindow):
             self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
         )
         self.align_action.setIcon(self._create_icon("my_location", ["edit-find", "system-search", "find-location"]))
+        # Communication log toggle
+        self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
         # Planning tools
+        self.weather_action.setIcon(
+            self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
+        )
         self.checklist_action.setIcon(self._create_icon("checklist", ["format-list-checks", "check-circle"]))
         self.time_slots_action.setIcon(self._create_icon("time_slots", ["clock-outline", "timer"]))
         self.moon_impact_action.setIcon(self._create_icon("moon_impact", ["moon-waning-crescent", "moon-full"]))
@@ -1240,6 +1257,11 @@ class MainWindow(QMainWindow):
         # TODO: Open catalog window
         pass
 
+    def _on_weather(self) -> None:
+        """Handle weather button click."""
+        dialog = WeatherInfoDialog(self)
+        dialog.exec()
+
     def _on_checklist(self) -> None:
         """Handle checklist button click."""
         # TODO: Open checklist window
@@ -1247,8 +1269,23 @@ class MainWindow(QMainWindow):
 
     def _on_time_slots(self) -> None:
         """Handle time slots button click."""
-        # TODO: Open time slots window
-        pass
+        # Show progress dialog while loading
+        progress = QProgressDialog("Loading time slots and recommendations...", "Cancel", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # Disable cancel button
+        progress.show()
+
+        # Process events to show the dialog immediately
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        # Show time slots dialog (it will load data in its constructor)
+        from celestron_nexstar.gui.dialogs.time_slots_dialog import TimeSlotsInfoDialog
+
+        dialog = TimeSlotsInfoDialog(self)
+        progress.close()
+        dialog.exec()
 
     def _on_moon_impact(self) -> None:
         """Handle moon impact button click."""

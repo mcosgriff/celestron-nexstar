@@ -209,7 +209,7 @@ def get_object_visibility_timeline(
     )
 
 
-def get_time_based_recommendations(
+async def get_time_based_recommendations(
     time_slots: list[datetime],
     observer_lat: float | None = None,
     observer_lon: float | None = None,
@@ -227,9 +227,85 @@ def get_time_based_recommendations(
     Returns:
         Dictionary mapping time slots to recommended objects
     """
-    # This is a placeholder - would need to query database and filter by visibility
-    # For now, return empty dict
-    return {dt: [] for dt in time_slots}
+    if not time_slots:
+        return {}
+
+    # Get observer location if not provided
+    if observer_lat is None or observer_lon is None:
+        location = get_observer_location()
+        observer_lat = location.latitude
+        observer_lon = location.longitude
+
+    # Get optical configuration based on equipment type
+    from celestron_nexstar.api.observation.optics import get_current_configuration
+
+    config = get_current_configuration()
+    if equipment_type == "binoculars":
+        # Adjust config for binoculars if needed
+        from celestron_nexstar.api.observation.optics import (
+            EyepieceSpecs,
+            OpticalConfiguration,
+            TelescopeModel,
+            TelescopeSpecs,
+        )
+
+        # Create a simple telescope spec for binoculars
+        telescope_specs = TelescopeSpecs(
+            model=TelescopeModel.NEXSTAR_6SE,  # Use a model as placeholder
+            aperture_mm=50,
+            focal_length_mm=200,
+            focal_ratio=4.0,
+            obstruction_diameter_mm=0.0,
+        )
+        eyepiece_specs = EyepieceSpecs(focal_length_mm=10, apparent_fov_deg=50.0)
+        config = OpticalConfiguration(telescope=telescope_specs, eyepiece=eyepiece_specs)
+    elif equipment_type == "naked_eye":
+        from celestron_nexstar.api.observation.optics import (
+            EyepieceSpecs,
+            OpticalConfiguration,
+            TelescopeModel,
+            TelescopeSpecs,
+        )
+
+        # Create a simple telescope spec for human eye
+        telescope_specs = TelescopeSpecs(
+            model=TelescopeModel.NEXSTAR_6SE,  # Use a model as placeholder
+            aperture_mm=7,
+            focal_length_mm=7,
+            focal_ratio=1.0,
+            obstruction_diameter_mm=0.0,
+        )
+        eyepiece_specs = EyepieceSpecs(focal_length_mm=7, apparent_fov_deg=60.0)
+        config = OpticalConfiguration(telescope=telescope_specs, eyepiece=eyepiece_specs)
+
+    # Get objects from database
+    from celestron_nexstar.api.database.database import get_database
+
+    db = get_database()
+    # Get a reasonable set of objects (limit to bright objects for performance)
+    all_objects = await db.filter_objects(max_magnitude=12.0, limit=1000)
+
+    # For each time slot, get recommendations
+    recommendations: dict[datetime, list[CelestialObject]] = {}
+    for time_slot in time_slots:
+        # Filter visible objects for this time slot
+        from celestron_nexstar.api.observation.visibility import filter_visible_objects
+
+        visible_pairs = filter_visible_objects(
+            all_objects,
+            config=config,
+            min_altitude_deg=20.0,
+            min_observability_score=0.3,
+            observer_lat=observer_lat,
+            observer_lon=observer_lon,
+            dt=time_slot,
+        )
+
+        # Sort by observability score and take top 10
+        visible_pairs.sort(key=lambda x: x[1].observability_score, reverse=True)
+        recommendations[time_slot] = [obj for obj, _ in visible_pairs[:10]]
+
+    return recommendations
 
 
 def generate_observation_checklist(

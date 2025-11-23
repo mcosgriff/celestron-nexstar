@@ -517,20 +517,24 @@ class TestGetTimeBasedRecommendations(unittest.TestCase):
 
     def test_get_time_based_recommendations(self):
         """Test time-based recommendations"""
+        import asyncio
+
         time_slots = [
             datetime(2024, 1, 15, 20, 0, 0, tzinfo=UTC),
             datetime(2024, 1, 15, 22, 0, 0, tzinfo=UTC),
         ]
-        result = get_time_based_recommendations(time_slots)
+        result = asyncio.run(get_time_based_recommendations(time_slots))
         self.assertEqual(len(result), 2)
         for time_slot in time_slots:
             self.assertIn(time_slot, result)
 
     def test_get_time_based_recommendations_equipment_types(self):
         """Test time-based recommendations with different equipment types"""
+        import asyncio
+
         time_slots = [datetime(2024, 1, 15, 20, 0, 0, tzinfo=UTC)]
         for eq_type in ["telescope", "binoculars", "naked_eye"]:
-            result = get_time_based_recommendations(time_slots, equipment_type=eq_type)
+            result = asyncio.run(get_time_based_recommendations(time_slots, equipment_type=eq_type))
             self.assertIn(time_slots[0], result)
 
 

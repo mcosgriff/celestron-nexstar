@@ -277,6 +277,152 @@ class ObjectInfoDialog(QDialog):
                 except Exception:
                     pass
 
+            # Moon Phase Impact section (bold yellow header)
+            try:
+                from celestron_nexstar.api.astronomy.solar_system import get_moon_info
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.planning_utils import get_moon_phase_impact
+
+                location = get_observer_location()
+                if location:
+                    moon_info = get_moon_info(location.latitude, location.longitude)
+                    if moon_info:
+                        moon_phase = moon_info.phase_name if moon_info else None
+                        moon_illum = moon_info.illumination if moon_info else None
+
+                        impact = get_moon_phase_impact(obj.object_type.value, moon_phase, moon_illum)
+
+                        html_parts.append(
+                            "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Moon Phase Impact:</p>"
+                        )
+
+                        # Current moon phase and illumination
+                        if moon_info.phase_name:
+                            phase_name = (
+                                moon_info.phase_name.value
+                                if hasattr(moon_info.phase_name, "value")
+                                else str(moon_info.phase_name)
+                            )
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"Current moon phase: <span style='color: #00bcd4;'>{phase_name}</span></p>"
+                            )
+                        if moon_info.illumination is not None:
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"Moon illumination: <span style='color: #00bcd4;'>{moon_info.illumination * 100:.0f}%</span></p>"
+                            )
+
+                        # Impact level with color coding
+                        impact_level = impact.get("impact_level", "unknown")
+                        if impact_level == "none" or impact_level == "minimal":
+                            impact_color = "#4caf50"  # Green
+                        elif impact_level == "moderate":
+                            impact_color = "#ffc107"  # Yellow
+                        elif impact_level == "significant" or impact_level == "severe":
+                            impact_color = "#f44336"  # Red
+                        else:
+                            impact_color = "#9e9e9e"  # Gray
+
+                        html_parts.append(
+                            f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                            f"Impact level: <span style='color: {impact_color}; font-weight: bold;'>{impact_level.title()}</span></p>"
+                        )
+
+                        # Recommended
+                        recommended = impact.get("recommended", True)
+                        rec_color = "#4caf50" if recommended else "#f44336"
+                        rec_text = "Yes" if recommended else "No"
+                        html_parts.append(
+                            f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                            f"Recommended: <span style='color: {rec_color}; font-weight: bold;'>{rec_text}</span></p>"
+                        )
+
+                        # Notes
+                        notes = impact.get("notes", [])
+                        if notes and isinstance(notes, list):
+                            html_parts.append(
+                                "<p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px; "
+                                "color: #9e9e9e; font-style: italic;'>Notes:</p>"
+                            )
+                            for note in notes:
+                                html_parts.append(
+                                    f"<p style='margin-left: 40px; margin-top: 2px; margin-bottom: 2px; "
+                                    f"color: #9e9e9e;'>• {note}</p>"
+                                )
+            except Exception as e:
+                logger.debug(f"Error loading moon impact info: {e}")
+
+            # Visibility Timeline section (bold yellow header)
+            try:
+                from celestron_nexstar.api.core.utils import format_local_time
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.planning_utils import get_object_visibility_timeline
+                from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+                location = get_observer_location()
+                if location:
+                    timeline = get_object_visibility_timeline(obj, location.latitude, location.longitude, days=1)
+
+                    html_parts.append(
+                        "<p style='font-weight: bold; color: #ffc107; margin-top: 15px; margin-bottom: 5px;'>Visibility Timeline:</p>"
+                    )
+
+                    if timeline.is_never_visible:
+                        html_parts.append(
+                            "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
+                            "color: #ffc107;'>This object is never visible from your location.</p>"
+                        )
+                    elif timeline.is_always_visible:
+                        html_parts.append(
+                            "<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
+                            "color: #4caf50;'>This object is always visible (circumpolar).</p>"
+                        )
+                        if timeline.transit_time:
+                            time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"Transit (highest): <span style='color: #00bcd4;'>{time_str}</span></p>"
+                            )
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"Maximum altitude: <span style='color: #4caf50;'>{timeline.max_altitude:.1f}°</span></p>"
+                            )
+                    else:
+                        # Show rise, transit, and set times
+                        # Always show transit if available (even for circumpolar objects that aren't marked as always_visible)
+                        if timeline.transit_time:
+                            time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"<span style='color: #00bcd4;'>Transit (Highest):</span> <span style='color: #ffffff;'>{time_str}</span> "
+                                f"<span style='color: #4caf50;'>({timeline.max_altitude:.1f}°)</span></p>"
+                            )
+
+                        if timeline.rise_time:
+                            time_str = format_local_time(timeline.rise_time, location.latitude, location.longitude)
+                            alt, _ = get_object_altitude_azimuth(
+                                obj, location.latitude, location.longitude, timeline.rise_time
+                            )
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"<span style='color: #00bcd4;'>Rise:</span> <span style='color: #ffffff;'>{time_str}</span> "
+                                f"<span style='color: #9e9e9e;'>({alt:.1f}°)</span></p>"
+                            )
+
+                        if timeline.set_time:
+                            time_str = format_local_time(timeline.set_time, location.latitude, location.longitude)
+                            alt, _ = get_object_altitude_azimuth(
+                                obj, location.latitude, location.longitude, timeline.set_time
+                            )
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"<span style='color: #00bcd4;'>Set:</span> <span style='color: #ffffff;'>{time_str}</span> "
+                                f"<span style='color: #9e9e9e;'>({alt:.1f}°)</span></p>"
+                            )
+            except Exception as e:
+                logger.error(f"Error loading timeline info: {e}", exc_info=True)
+
             # Description
             if obj.description:
                 html_parts.append(
