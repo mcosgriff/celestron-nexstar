@@ -128,9 +128,8 @@ class TransitTimesInfoDialog(QDialog):
             # Build HTML content
             html_content = []
             html_content.append(
-                f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Transit Times (Objects at Highest Point)</span></p>"
+                f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Transit Times (Objects at Highest Point)</span></p>"
             )
-            html_content.append("<br>")
 
             # Add explanatory text
             html_content.append(

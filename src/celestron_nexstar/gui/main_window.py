@@ -122,7 +122,8 @@ class MainWindow(QMainWindow):
             "time_slots": "mdi.clock-outline",
             "quick_reference": "mdi.book-open-variant",
             "transit_times": "mdi.transit-connection",
-            "timeline": "mdi.timeline",
+            "glossary": "mdi.book-open-page-variant",
+            "settings": "mdi.cog",
             # Celestial objects (using alpha-box-outline pattern)
             "aurora": "mdi.alpha-a-box-outline",
             "binoculars": "mdi.alpha-b-box-outline",
@@ -512,12 +513,24 @@ class MainWindow(QMainWindow):
         self.transit_times_action.triggered.connect(self._on_transit_times)
         self.transit_times_action.setIcon(transit_times_icon)
 
-        timeline_icon = self._create_icon("timeline", ["timeline", "chart-timeline-variant"])
-        self.timeline_action = left_toolbar.addAction(timeline_icon, "Timeline")
-        self.timeline_action.setToolTip("TIMELINE")
-        self.timeline_action.setStatusTip("View observation timeline")
-        self.timeline_action.triggered.connect(self._on_timeline)
-        self.timeline_action.setIcon(timeline_icon)
+        # Glossary button
+        glossary_icon = self._create_icon("glossary", ["book-open-page-variant", "book-open-variant"])
+        self.glossary_action = left_toolbar.addAction(glossary_icon, "Glossary")
+        self.glossary_action.setToolTip("GLOSSARY")
+        self.glossary_action.setStatusTip("View astronomical glossary")
+        self.glossary_action.triggered.connect(self._on_glossary)
+        self.glossary_action.setIcon(glossary_icon)
+
+        # Add separator
+        left_toolbar.addSeparator()
+
+        # Settings button
+        settings_icon = self._create_icon("settings", ["cog", "settings"])
+        self.settings_action = left_toolbar.addAction(settings_icon, "Settings")
+        self.settings_action.setToolTip("SETTINGS")
+        self.settings_action.setStatusTip("View and manage settings")
+        self.settings_action.triggered.connect(self._on_settings)
+        self.settings_action.setIcon(settings_icon)
 
         # Right side toolbar - combined Celestial Objects and Communication Log
         right_toolbar = create_toolbar("Right Toolbar", Qt.ToolBarArea.RightToolBarArea)
@@ -587,7 +600,8 @@ class MainWindow(QMainWindow):
         self.transit_times_action.setIcon(
             self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
         )
-        self.timeline_action.setIcon(self._create_icon("timeline", ["timeline", "chart-timeline-variant"]))
+        self.glossary_action.setIcon(self._create_icon("glossary", ["book-open-page-variant", "book-open-variant"]))
+        self.settings_action.setIcon(self._create_icon("settings", ["cog", "settings"]))
         # Celestial objects (using alpha-box-outline pattern)
         for obj_name in [
             "aurora",
@@ -1405,10 +1419,19 @@ class MainWindow(QMainWindow):
         progress.close()
         dialog.exec()
 
-    def _on_timeline(self) -> None:
-        """Handle timeline button click."""
-        # TODO: Open timeline window
-        pass
+    def _on_glossary(self) -> None:
+        """Handle glossary button click."""
+        from celestron_nexstar.gui.dialogs.glossary_dialog import GlossaryDialog
+
+        dialog = GlossaryDialog(self)
+        dialog.exec()
+
+    def _on_settings(self) -> None:
+        """Handle settings button click."""
+        from celestron_nexstar.gui.dialogs.settings_dialog import SettingsDialog
+
+        dialog = SettingsDialog(self)
+        dialog.exec()
 
     def _on_celestial_object(self, object_name: str) -> None:
         """Handle celestial object button click."""

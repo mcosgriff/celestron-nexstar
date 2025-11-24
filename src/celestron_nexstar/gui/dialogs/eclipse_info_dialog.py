@@ -250,10 +250,11 @@ class EclipseInfoDialog(QDialog):
 
         # Header
         html_content.append(
-            f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>{title} for {location_name}</span></p>"
+            f"<p style='margin-bottom: 5px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>{title} for {location_name}</span></p>"
         )
-        html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {years} years</p>")
-        html_content.append("<br>")
+        html_content.append(
+            f"<p style='color: {colors['text_dim']}; margin-bottom: 10px;'>Searching next {years} years</p>"
+        )
 
         if not eclipses:
             html_content.append(

@@ -195,10 +195,11 @@ class CometsInfoDialog(QDialog):
 
             # Header
             html_content.append(
-                f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Comet Visibility for {location_name}</span></p>"
+                f"<p style='margin-bottom: 5px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Comet Visibility for {location_name}</span></p>"
             )
-            html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>")
-            html_content.append("<br>")
+            html_content.append(
+                f"<p style='color: {colors['text_dim']}; margin-bottom: 10px;'>Searching next {months} months</p>"
+            )
 
             # Load async content using safe async runner
             async def _load_async_content() -> list[str]:
