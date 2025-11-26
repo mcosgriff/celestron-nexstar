@@ -446,6 +446,7 @@ class ObservationPlanner:
         target_types: list[ObservingTarget] | CelestialObjectType | None = None,
         max_results: int = 20,
         best_for_seeing: bool = False,
+        constellation: str | None = None,
     ) -> list[RecommendedObject]:
         """
         Get recommended objects to observe tonight.
@@ -486,7 +487,9 @@ class ObservationPlanner:
 
         import asyncio
 
-        all_objects = asyncio.run(db.filter_objects(max_magnitude=max_mag, limit=initial_limit))
+        all_objects = asyncio.run(
+            db.filter_objects(max_magnitude=max_mag, limit=initial_limit, constellation=constellation)
+        )
 
         # Filter by target types if specified
         if target_types:

@@ -193,6 +193,12 @@ class ObjectInfoDialog(QDialog):
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Magnitude: {obj.magnitude:.2f}</p>"
                 )
+            # Display constellation for stars and other objects that have constellation data
+            if obj.constellation:
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Constellation: <span style='color: {colors['cyan']};'>{obj.constellation}</span></p>"
+                )
             html_parts.append(
                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Catalog: {obj.catalog}</p>"
             )

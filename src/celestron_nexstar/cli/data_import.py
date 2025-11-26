@@ -580,6 +580,170 @@ def import_celestial_data_geojson(
     return imported, skipped
 
 
+# Known star-to-constellation mappings for well-known bright stars
+# These override coordinate-based lookup for accuracy
+KNOWN_STAR_CONSTELLATIONS: dict[str, str] = {
+    "Sirius": "Canis Major",
+    "Canopus": "Carina",
+    "Arcturus": "Boötes",
+    "Vega": "Lyra",
+    "Capella": "Auriga",
+    "Rigel": "Orion",
+    "Procyon": "Canis Minor",
+    "Betelgeuse": "Orion",
+    "Achernar": "Eridanus",
+    "Hadar": "Centaurus",
+    "Altair": "Aquila",
+    "Aldebaran": "Taurus",
+    "Spica": "Virgo",
+    "Antares": "Scorpius",
+    "Pollux": "Gemini",
+    "Fomalhaut": "Piscis Austrinus",
+    "Deneb": "Cygnus",
+    "Mimosa": "Crux",
+    "Regulus": "Leo",
+    "Adhara": "Canis Major",
+    "Castor": "Gemini",
+    "Bellatrix": "Orion",
+    "Elnath": "Taurus",
+    "Miaplacidus": "Carina",
+    "Alnilam": "Orion",
+    "Alnair": "Grus",
+    "Alioth": "Ursa Major",
+    "Mirphak": "Perseus",
+    "Dubhe": "Ursa Major",
+    "Wezen": "Canis Major",
+    "Sargas": "Scorpius",
+    "Kaus Australis": "Sagittarius",
+    "Avior": "Carina",
+    "Alkaid": "Ursa Major",
+    "Menkalinan": "Auriga",
+    "Atria": "Triangulum Australe",
+    "Alhena": "Gemini",
+    "Peacock": "Pavo",
+    "Alsephina": "Vela",
+    "Mirzam": "Canis Major",
+    "Alphard": "Hydra",
+    "Polaris": "Ursa Minor",
+    "Hamal": "Aries",
+    "Algol": "Perseus",
+    "Denebola": "Leo",
+    "Nunki": "Sagittarius",
+    "Mirach": "Andromeda",
+    "Alpheratz": "Andromeda",
+    "Rasalhague": "Ophiuchus",
+    "Kochab": "Ursa Minor",
+    "Dschubba": "Scorpius",
+    "Graffias": "Scorpius",
+    "Shaula": "Scorpius",
+    "Rasalgethi": "Hercules",
+    "Rastaban": "Draco",
+    "Eltanin": "Draco",
+    "Kaus Media": "Sagittarius",
+    "Kaus Borealis": "Sagittarius",
+    "Arneb": "Lepus",
+    "Gienah": "Corvus",
+    "Mintaka": "Orion",
+    "Saiph": "Orion",
+    "Alnitak": "Orion",
+    "Meissa": "Orion",
+    "Algieba": "Leo",
+    "Almach": "Andromeda",
+    "Acrux": "Crux",
+    "Gacrux": "Crux",
+    "Rigil Kentaurus": "Centaurus",
+    "Toliman": "Centaurus",
+}
+
+
+def _find_constellation_by_coordinates(
+    ra_hours: float, dec_degrees: float, constellations: list, star_name: str | None = None
+) -> str | None:
+    """
+    Find constellation for a star based on coordinates.
+
+    Uses known mappings for well-known stars, then constellation boundaries if available,
+    otherwise finds nearest constellation center.
+
+    Args:
+        ra_hours: Star's right ascension in hours
+        dec_degrees: Star's declination in degrees
+        constellations: List of ConstellationModel objects with boundary data
+        star_name: Optional star name for known star lookup
+
+    Returns:
+        Constellation name or None if not found
+    """
+    # First, check known star mappings for well-known stars
+    if star_name and star_name in KNOWN_STAR_CONSTELLATIONS:
+        return KNOWN_STAR_CONSTELLATIONS[star_name]
+    from celestron_nexstar.api.database.models import ConstellationModel
+
+    # First, try to find a constellation whose boundaries contain this star
+    for const in constellations:
+        if not isinstance(const, ConstellationModel):
+            continue
+
+        # Check if boundaries are set (not None and not zero-width)
+        has_boundaries = (
+            const.ra_min_hours is not None
+            and const.ra_max_hours is not None
+            and const.dec_min_degrees is not None
+            and const.dec_max_degrees is not None
+            and (const.ra_max_hours != const.ra_min_hours or const.dec_max_degrees != const.dec_min_degrees)
+        )
+
+        if has_boundaries:
+            # Check if star is within constellation boundaries
+            # Handle RA wrap-around (0-24 hours)
+            ra_min = const.ra_min_hours
+            ra_max = const.ra_max_hours
+
+            # Check if RA range crosses 0h (e.g., 22h to 2h)
+            in_ra = ra_hours >= ra_min or ra_hours <= ra_max if ra_min > ra_max else ra_min <= ra_hours <= ra_max
+
+            in_dec = const.dec_min_degrees <= dec_degrees <= const.dec_max_degrees
+
+            if in_ra and in_dec:
+                return const.name
+
+    # If no boundary match (or boundaries not set), find nearest constellation center
+    min_distance = float("inf")
+    nearest_const = None
+
+    for const in constellations:
+        if not isinstance(const, ConstellationModel):
+            continue
+
+        # Calculate angular distance (simplified - using Euclidean distance in RA/Dec space)
+        ra_diff = abs(ra_hours - const.ra_hours)
+        if ra_diff > 12:  # Handle wrap-around
+            ra_diff = 24 - ra_diff
+
+        dec_diff = abs(dec_degrees - const.dec_degrees)
+
+        # Convert RA difference to degrees (1 hour = 15 degrees)
+        ra_diff_deg = ra_diff * 15
+
+        # Calculate approximate angular distance
+        # Weight RA by cos(dec) to account for coordinate system
+        cos_dec = abs(dec_degrees / 90.0) if abs(dec_degrees) < 90 else 0.1
+        distance = (ra_diff_deg * cos_dec) ** 2 + dec_diff**2
+
+        if distance < min_distance:
+            min_distance = distance
+            nearest_const = const
+
+    # Use nearest constellation if it's reasonably close
+    # For prominent constellations, use a generous radius (~45 degrees)
+    max_distance = 2025  # ~45 degrees squared
+
+    if nearest_const and min_distance < max_distance:
+        return nearest_const.name
+
+    return None
+
+
 def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
     """
     Import stars from celestial_data GeoJSON with name matching from starnames.csv.
@@ -626,6 +790,20 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     console.print("[dim]Loading existing stars for deduplication...[/dim]")
     existing_objects = _run_async_safe(db.get_existing_objects_set(catalog="celestial_stars"))
     console.print(f"[dim]Found {len(existing_objects):,} existing stars[/dim]")
+
+    # Pre-load constellations for coordinate-based lookup
+    console.print("[dim]Loading constellations for coordinate-based lookup...[/dim]")
+    from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
+
+    async def _load_constellations() -> list[ConstellationModel]:
+        async with get_db_session() as session:
+            from sqlalchemy import select
+
+            result = await session.execute(select(ConstellationModel))
+            return list(result.scalars().all())
+
+    constellations = _run_async_safe(_load_constellations())
+    console.print(f"[dim]Loaded {len(constellations):,} constellations for coordinate lookup[/dim]")
 
     imported = 0
     skipped = 0
@@ -759,6 +937,10 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                     or properties.get("const")
                     or properties.get("con")
                 )
+
+                # If not found in properties, determine from coordinates
+                if not constellation and constellations:
+                    constellation = _find_constellation_by_coordinates(ra_hours, dec_degrees, constellations, name)
 
                 # Build description
                 description_parts = []

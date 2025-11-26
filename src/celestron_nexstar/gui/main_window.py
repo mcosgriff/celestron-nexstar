@@ -97,15 +97,37 @@ class ObjectsLoaderThread(QThread):
     def run(self) -> None:
         """Load objects data in background thread."""
         try:
+            import asyncio
+
+            from celestron_nexstar.api.astronomy.constellations import get_visible_constellations
             from celestron_nexstar.api.core.enums import CelestialObjectType
+            from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
             obj_type = CelestialObjectType(self.obj_type_str)
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
 
-            # Get recommended objects for this type
-            objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
+            # Special handling for constellation type: show constellations
+            if obj_type == CelestialObjectType.CONSTELLATION:
+                # Load visible constellations
+                async def _load_constellations():
+                    db = get_database()
+                    async with db._AsyncSession() as session:
+                        return await get_visible_constellations(
+                            session,
+                            conditions.latitude,
+                            conditions.longitude,
+                            conditions.timestamp,
+                            min_altitude_deg=20.0,
+                        )
+
+                constellations = asyncio.run(_load_constellations())
+                # Convert to list of constellation names for display
+                objects = [const[0].name for const in constellations]  # const[0] is the Constellation object
+            else:
+                # Get recommended objects for this type
+                objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
 
             # Emit signal with loaded data
             self.data_loaded.emit(self.obj_type_str, objects)
@@ -773,22 +795,45 @@ class MainWindow(QMainWindow):
     def _create_objects_table(self, obj_type: CelestialObjectType) -> QTableWidget:
         """Create a table widget displaying objects of the specified type."""
         table = QTableWidget()
-        table.setColumnCount(9)
-        table.setHorizontalHeaderLabels(
-            ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
-        )
+        # For constellation tab, show simple constellation list
+        if obj_type == CelestialObjectType.CONSTELLATION:
+            table.setColumnCount(1)
+            table.setHorizontalHeaderLabels(["Constellation"])
+        # For star tab, add a Constellation column
+        elif obj_type == CelestialObjectType.STAR:
+            table.setColumnCount(10)
+            table.setHorizontalHeaderLabels(
+                ["Priority", "Name", "Type", "Constellation", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
+            )
+        else:
+            table.setColumnCount(9)
+            table.setHorizontalHeaderLabels(
+                ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
+            )
 
         # Set column widths
         header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Type
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Mag
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Alt
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Transit
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Chance
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)  # Tips
+        if obj_type == CelestialObjectType.CONSTELLATION:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Constellation name
+        else:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Type
+            if obj_type == CelestialObjectType.STAR:
+                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Constellation
+                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Mag
+                header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Alt
+                header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Transit
+                header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
+                header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # Chance
+                header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)  # Tips
+            else:
+                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Mag
+                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Alt
+                header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Transit
+                header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
+                header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Chance
+                header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)  # Tips
 
         # Enable sorting
         table.setSortingEnabled(True)
@@ -855,7 +900,7 @@ class MainWindow(QMainWindow):
     def _on_objects_loaded(
         self,
         obj_type_str: str,
-        objects: list[RecommendedObject] | None,
+        objects: list[RecommendedObject] | list[str] | None,
         table: QTableWidget,
         progress: QProgressDialog | None,
     ) -> None:
@@ -877,7 +922,10 @@ class MainWindow(QMainWindow):
 
         # Populate table (must be done on main thread)
         if objects:
-            self._populate_table(table, objects)
+            if obj_type_str == "constellation":
+                self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
+            else:
+                self._populate_table(table, objects)  # type: ignore[arg-type]
 
     def _populate_table(self, table: QTableWidget, objects: list[RecommendedObject]) -> None:
         """Populate table with objects data (must be called on main thread)."""
@@ -899,6 +947,9 @@ class MainWindow(QMainWindow):
         except Exception:
             tz = None
 
+        # Check if this is the star tab (needs constellation column)
+        is_star_tab = table.property("object_type") == "star"
+
         for row, obj_rec in enumerate(objects):
             # Priority (stars)
             priority_stars = "★" * (6 - obj_rec.priority)
@@ -912,13 +963,21 @@ class MainWindow(QMainWindow):
             # Type
             table.setItem(row, 2, QTableWidgetItem(obj.object_type.value))
 
+            # Column offset for star tab (has constellation column)
+            col_offset = 1 if is_star_tab else 0
+
+            # Constellation (only for star tab)
+            if is_star_tab:
+                constellation_text = obj.constellation or "-"
+                table.setItem(row, 3, QTableWidgetItem(constellation_text))
+
             # Magnitude
             mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"
-            table.setItem(row, 3, QTableWidgetItem(mag_text))
+            table.setItem(row, 3 + col_offset, QTableWidgetItem(mag_text))
 
             # Altitude
             alt_text = f"{obj_rec.altitude:.0f}°"
-            table.setItem(row, 4, QTableWidgetItem(alt_text))
+            table.setItem(row, 4 + col_offset, QTableWidgetItem(alt_text))
 
             # Transit time
             best_time = obj_rec.best_viewing_time
@@ -929,24 +988,24 @@ class MainWindow(QMainWindow):
                 time_str = local_time.strftime("%I:%M %p")
             else:
                 time_str = best_time.strftime("%I:%M %p UTC")
-            table.setItem(row, 5, QTableWidgetItem(time_str))
+            table.setItem(row, 5 + col_offset, QTableWidgetItem(time_str))
 
             # Moon separation
             moon_sep_text = "-"
             if obj_rec.moon_separation_deg is not None:
                 moon_sep_text = f"{obj_rec.moon_separation_deg:.0f}°"
-            table.setItem(row, 6, QTableWidgetItem(moon_sep_text))
+            table.setItem(row, 6 + col_offset, QTableWidgetItem(moon_sep_text))
 
             # Visibility probability
             prob = obj_rec.visibility_probability
             prob_text = f"{prob:.0%}"
-            table.setItem(row, 7, QTableWidgetItem(prob_text))
+            table.setItem(row, 7 + col_offset, QTableWidgetItem(prob_text))
 
             # Tips
             tips_text = "; ".join(obj_rec.viewing_tips[:2]) if obj_rec.viewing_tips else ""
             if len(tips_text) > 50:
                 tips_text = tips_text[:47] + "..."
-            table.setItem(row, 8, QTableWidgetItem(tips_text))
+            table.setItem(row, 8 + col_offset, QTableWidgetItem(tips_text))
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
@@ -962,6 +1021,23 @@ class MainWindow(QMainWindow):
             header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
             table.setProperty("sort_column", 0)
             table.setProperty("sort_order", Qt.SortOrder.DescendingOrder)
+
+    def _populate_constellation_table(self, table: QTableWidget, constellation_names: list[str]) -> None:
+        """Populate table with constellation names (must be called on main thread)."""
+        if not constellation_names:
+            return
+
+        # Temporarily disable sorting while populating to improve performance
+        table.setSortingEnabled(False)
+
+        table.setRowCount(len(constellation_names))
+
+        for row, constellation_name in enumerate(constellation_names):
+            # Constellation name
+            table.setItem(row, 0, QTableWidgetItem(constellation_name))
+
+        # Re-enable sorting after populating
+        table.setSortingEnabled(True)
 
     def _create_table_toolbar(self) -> None:
         """Create toolbar for table controls in the top toolbar area."""
@@ -1132,30 +1208,58 @@ class MainWindow(QMainWindow):
             return
 
         row = selected_rows[0].row()
-        # Get object name from the Name column (column 1)
-        name_item = current_table.item(row, 1)
-        if not name_item:
-            return
 
-        object_name = name_item.text()
+        # Check if this is the constellation tab
+        obj_type = current_table.property("object_type")
+        if obj_type == "constellation":
+            # Get constellation name from column 0
+            name_item = current_table.item(row, 0)
+            if not name_item:
+                return
+            constellation_name = name_item.text()
 
-        # Show loading dialog
-        progress = QProgressDialog(f"Loading information for {object_name}...", "Cancel", 0, 0, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)  # Disable cancel button
-        progress.show()
+            # Show loading dialog
+            progress = QProgressDialog(f"Loading information for {constellation_name}...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
 
-        # Process events to show the dialog immediately
-        from PySide6.QtWidgets import QApplication
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
 
-        QApplication.processEvents()
+            QApplication.processEvents()
 
-        # Show info dialog (it will load data in its constructor)
-        from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+            # Show constellation info dialog
+            from celestron_nexstar.gui.dialogs.constellation_info_dialog import ConstellationInfoDialog
 
-        dialog = ObjectInfoDialog(self, object_name)
-        progress.close()
-        dialog.exec()
+            dialog = ConstellationInfoDialog(self, constellation_name)
+            progress.close()
+            dialog.exec()
+        else:
+            # Get object name from the Name column (column 1)
+            name_item = current_table.item(row, 1)
+            if not name_item:
+                return
+
+            object_name = name_item.text()
+
+            # Show loading dialog
+            progress = QProgressDialog(f"Loading information for {object_name}...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)  # Disable cancel button
+            progress.show()
+
+            # Process events to show the dialog immediately
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            # Show info dialog (it will load data in its constructor)
+            from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+
+            dialog = ObjectInfoDialog(self, object_name)
+            progress.close()
+            dialog.exec()
 
     def _on_sort_changed(self, table: QTableWidget, logical_index: int, order: Qt.SortOrder) -> None:
         """Handle sort indicator change - track sort column and order."""

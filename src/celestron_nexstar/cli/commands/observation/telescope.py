@@ -511,6 +511,11 @@ def show_objects(
         "--type",
         help="Filter by type: categories (planets, deep_sky, messier, etc.) or object types (galaxy, cluster, nebula, planet, star, etc.)",
     ),
+    constellation: str | None = typer.Option(
+        None,
+        "--constellation",
+        help="Filter by constellation name (case-insensitive, partial match supported)",
+    ),
     limit: int = typer.Option(20, "--limit", help="Maximum objects to show"),
     best_for_seeing: bool = typer.Option(
         False, "--best-for-seeing", help="Show only objects ideal for current seeing conditions"
@@ -530,7 +535,7 @@ def show_objects(
             export_path_obj = generate_export_filename("objects", viewing_type="telescope")
 
         file_console = create_file_console()
-        _show_objects_content(file_console, target_type, limit, best_for_seeing)
+        _show_objects_content(file_console, target_type, constellation, limit, best_for_seeing)
         content = file_console.file.getvalue()
         file_console.file.close()
 
@@ -538,12 +543,13 @@ def show_objects(
         console.print(f"\n[green]✓[/green] Exported to {export_path_obj}")
         return
 
-    _show_objects_content(console, target_type, limit, best_for_seeing)
+    _show_objects_content(console, target_type, constellation, limit, best_for_seeing)
 
 
 def _show_objects_content(
     output_console: Console | FileConsole,
     target_type: str | None = None,
+    constellation: str | None = None,
     limit: int = 20,
     best_for_seeing: bool = False,
 ) -> None:
@@ -598,7 +604,7 @@ def _show_objects_content(
                         raise typer.Exit(code=1) from None
 
         objects = planner.get_recommended_objects(
-            conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing
+            conditions, target_types, max_results=limit, best_for_seeing=best_for_seeing, constellation=constellation
         )
 
         if not objects:
