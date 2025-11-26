@@ -3,8 +3,9 @@ Unit tests for Celestron NexStar 6SE Telescope API
 Provides comprehensive test coverage for the telescope module.
 """
 
+import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from returns.result import Failure, Success
 
@@ -72,10 +73,10 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test successful connection to telescope"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "open", return_value=True),
-            patch.object(self.telescope.protocol, "echo", return_value=True),
+            patch.object(self.telescope.protocol, "open", new_callable=AsyncMock, return_value=True),
+            patch.object(self.telescope.protocol, "echo", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.connect()
+            result = asyncio.run(self.telescope.connect())
 
         self.assertTrue(result)
 
@@ -83,40 +84,40 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test connection failure when echo test fails"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "open", return_value=True),
-            patch.object(self.telescope.protocol, "echo", return_value=False),
-            patch.object(self.telescope.protocol, "close"),
+            patch.object(self.telescope.protocol, "open", new_callable=AsyncMock, return_value=True),
+            patch.object(self.telescope.protocol, "echo", new_callable=AsyncMock, return_value=False),
+            patch.object(self.telescope.protocol, "close", new_callable=AsyncMock),
             self.assertRaises(TelescopeConnectionError),
         ):
-            self.telescope.connect()
+            asyncio.run(self.telescope.connect())
 
     def test_connect_serial_exception(self):
         """Test connection failure with serial exception"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "open", side_effect=TelescopeConnectionError("Port not found")),
+            patch.object(self.telescope.protocol, "open", new_callable=AsyncMock, side_effect=TelescopeConnectionError("Port not found")),
         ):
             with self.assertRaises(TelescopeConnectionError):
-                self.telescope.connect()
+                asyncio.run(self.telescope.connect())
 
     def test_disconnect(self):
         """Test disconnecting from telescope"""
-        with patch.object(self.telescope.protocol, "close") as mock_close:
-            self.telescope.disconnect()
+        with patch.object(self.telescope.protocol, "close", new_callable=AsyncMock) as mock_close:
+            asyncio.run(self.telescope.disconnect())
 
-        mock_close.assert_called_once()
+        mock_close.assert_awaited_once()
 
     def test_echo_test_success(self):
         """Test successful echo test"""
-        with patch.object(self.telescope.protocol, "echo", return_value=True):
-            result = self.telescope.echo_test("x")
+        with patch.object(self.telescope.protocol, "echo", new_callable=AsyncMock, return_value=True):
+            result = asyncio.run(self.telescope.echo_test("x"))
 
         self.assertTrue(result)
 
     def test_echo_test_failure(self):
         """Test failed echo test"""
-        with patch.object(self.telescope.protocol, "echo", return_value=False):
-            result = self.telescope.echo_test("x")
+        with patch.object(self.telescope.protocol, "echo", new_callable=AsyncMock, return_value=False):
+            result = asyncio.run(self.telescope.echo_test("x"))
 
         self.assertFalse(result)
 
@@ -126,10 +127,10 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting telescope information"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_version", return_value=(4, 21)),
-            patch.object(self.telescope.protocol, "get_model", return_value=6),
+            patch.object(self.telescope.protocol, "get_version", new_callable=AsyncMock, return_value=(4, 21)),
+            patch.object(self.telescope.protocol, "get_model", new_callable=AsyncMock, return_value=6),
         ):
-            info = self.telescope.get_info()
+            info = asyncio.run(self.telescope.get_info())
 
         self.assertIsInstance(info, TelescopeInfo)
         self.assertEqual(info.model, 6)
@@ -140,9 +141,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting firmware version"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_version", return_value=(4, 6)),
+            patch.object(self.telescope.protocol, "get_version", new_callable=AsyncMock, return_value=(4, 6)),
         ):
-            major, minor = self.telescope.get_version()
+            major, minor = asyncio.run(self.telescope.get_version())
 
         self.assertEqual(major, 4)
         self.assertEqual(minor, 6)
@@ -151,9 +152,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting telescope model"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_model", return_value=6),
+            patch.object(self.telescope.protocol, "get_model", new_callable=AsyncMock, return_value=6),
         ):
-            model = self.telescope.get_model()
+            model = asyncio.run(self.telescope.get_model())
 
         self.assertEqual(model, 6)
 
@@ -166,7 +167,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Success((180.0, 45.0))),
         ):
-            position = self.telescope.get_position_ra_dec()
+            position = asyncio.run(self.telescope.get_position_ra_dec())
 
         self.assertIsInstance(position, EquatorialCoordinates)
         # 180 degrees = 12 hours
@@ -179,7 +180,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Failure("Invalid response")),
         ):
-            position = self.telescope.get_position_ra_dec()
+            position = asyncio.run(self.telescope.get_position_ra_dec())
 
         self.assertEqual(position.ra_hours, 0.0)
         self.assertEqual(position.dec_degrees, 0.0)
@@ -191,7 +192,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_ra_dec_precise", return_value=Success((90.0, 330.0))),
         ):
-            position = self.telescope.get_position_ra_dec()
+            position = asyncio.run(self.telescope.get_position_ra_dec())
 
         self.assertAlmostEqual(position.ra_hours, 6.0, places=2)
         self.assertEqual(position.dec_degrees, -30.0)
@@ -202,7 +203,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Success((180.0, 45.0))),
         ):
-            position = self.telescope.get_position_alt_az()
+            position = asyncio.run(self.telescope.get_position_alt_az())
 
         self.assertIsInstance(position, HorizontalCoordinates)
         self.assertEqual(position.azimuth, 180.0)
@@ -215,7 +216,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Success((90.0, 345.0))),
         ):
-            position = self.telescope.get_position_alt_az()
+            position = asyncio.run(self.telescope.get_position_alt_az())
 
         self.assertEqual(position.azimuth, 90.0)
         self.assertEqual(position.altitude, -15.0)
@@ -226,7 +227,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "get_alt_az_precise", return_value=Failure("Invalid response")),
         ):
-            position = self.telescope.get_position_alt_az()
+            position = asyncio.run(self.telescope.get_position_alt_az())
 
         self.assertEqual(position.azimuth, 0.0)
         self.assertEqual(position.altitude, 0.0)
@@ -239,7 +240,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "goto_ra_dec_precise", return_value=True),
         ):
-            result = self.telescope.goto_ra_dec(12.5, 45.0)
+            result = asyncio.run(self.telescope.goto_ra_dec(12.5, 45.0))
 
         self.assertTrue(result)
 
@@ -249,7 +250,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "goto_ra_dec_precise", return_value=True) as mock_goto,
         ):
-            result = self.telescope.goto_ra_dec(10.0, -30.0)
+            result = asyncio.run(self.telescope.goto_ra_dec(10.0, -30.0))
 
         self.assertTrue(result)
         # Verify conversion to unsigned format (negative becomes 360 + value)
@@ -261,7 +262,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "goto_alt_az_precise", return_value=True),
         ):
-            result = self.telescope.goto_alt_az(180.0, 45.0)
+            result = asyncio.run(self.telescope.goto_alt_az(180.0, 45.0))
 
         self.assertTrue(result)
 
@@ -271,7 +272,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "goto_alt_az_precise", return_value=True),
         ):
-            result = self.telescope.goto_alt_az(90.0, -15.0)
+            result = asyncio.run(self.telescope.goto_alt_az(90.0, -15.0))
 
         self.assertTrue(result)
 
@@ -281,7 +282,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "sync_ra_dec_precise", return_value=True),
         ):
-            result = self.telescope.sync_ra_dec(5.5, 22.5)
+            result = asyncio.run(self.telescope.sync_ra_dec(5.5, 22.5))
 
         self.assertTrue(result)
 
@@ -291,7 +292,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "is_goto_in_progress", return_value=True),
         ):
-            result = self.telescope.is_slewing()
+            result = asyncio.run(self.telescope.is_slewing())
 
         self.assertTrue(result)
 
@@ -301,7 +302,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "is_goto_in_progress", return_value=False),
         ):
-            result = self.telescope.is_slewing()
+            result = asyncio.run(self.telescope.is_slewing())
 
         self.assertFalse(result)
 
@@ -323,7 +324,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed(Direction.UP, rate=5)
+            result = asyncio.run(self.telescope.move_fixed(Direction.UP, rate=5))
 
         self.assertTrue(result)
 
@@ -333,7 +334,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed(Direction.DOWN, rate=3)
+            result = asyncio.run(self.telescope.move_fixed(Direction.DOWN, rate=3))
 
         self.assertTrue(result)
 
@@ -343,7 +344,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed(Direction.LEFT, rate=7)
+            result = asyncio.run(self.telescope.move_fixed(Direction.LEFT, rate=7))
 
         self.assertTrue(result)
 
@@ -353,7 +354,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.move_fixed(Direction.RIGHT, rate=9)
+            result = asyncio.run(self.telescope.move_fixed(Direction.RIGHT, rate=9))
 
         self.assertTrue(result)
 
@@ -361,19 +362,19 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test move_fixed with invalid direction"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
-                self.telescope.move_fixed("diagonal", rate=5)
+                asyncio.run(self.telescope.move_fixed("diagonal", rate=5))
 
     def test_move_fixed_invalid_rate_too_high(self):
         """Test move_fixed with rate too high"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
-                self.telescope.move_fixed(Direction.UP, rate=10)
+                asyncio.run(self.telescope.move_fixed(Direction.UP, rate=10))
 
     def test_move_fixed_invalid_rate_negative(self):
         """Test move_fixed with negative rate"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises(Exception):  # noqa: B017  # deal.PreContractError
-                self.telescope.move_fixed(Direction.UP, rate=-1)
+                asyncio.run(self.telescope.move_fixed(Direction.UP, rate=-1))
 
     def test_stop_motion_both(self):
         """Test stopping motion on both axes"""
@@ -381,7 +382,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.stop_motion("both")
+            result = asyncio.run(self.telescope.stop_motion("both"))
 
         self.assertTrue(result)
 
@@ -391,7 +392,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.stop_motion("az")
+            result = asyncio.run(self.telescope.stop_motion("az"))
 
         self.assertTrue(result)
 
@@ -401,7 +402,7 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", return_value=True),
         ):
-            result = self.telescope.stop_motion("alt")
+            result = asyncio.run(self.telescope.stop_motion("alt"))
 
         self.assertTrue(result)
 
@@ -411,9 +412,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting tracking mode"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_tracking_mode", return_value=1),
+            patch.object(self.telescope.protocol, "get_tracking_mode", new_callable=AsyncMock, return_value=1),
         ):
-            mode = self.telescope.get_tracking_mode()
+            mode = asyncio.run(self.telescope.get_tracking_mode())
 
         self.assertEqual(mode, TrackingMode.ALT_AZ)
 
@@ -421,9 +422,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting tracking mode when off"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_tracking_mode", return_value=0),
+            patch.object(self.telescope.protocol, "get_tracking_mode", new_callable=AsyncMock, return_value=0),
         ):
-            mode = self.telescope.get_tracking_mode()
+            mode = asyncio.run(self.telescope.get_tracking_mode())
 
         self.assertEqual(mode, TrackingMode.OFF)
 
@@ -431,9 +432,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test setting tracking mode"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "set_tracking_mode", return_value=True),
+            patch.object(self.telescope.protocol, "set_tracking_mode", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.set_tracking_mode(TrackingMode.ALT_AZ)
+            result = asyncio.run(self.telescope.set_tracking_mode(TrackingMode.ALT_AZ))
 
         self.assertTrue(result)
 
@@ -441,9 +442,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test setting equatorial north tracking"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "set_tracking_mode", return_value=True),
+            patch.object(self.telescope.protocol, "set_tracking_mode", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.set_tracking_mode(TrackingMode.EQ_NORTH)
+            result = asyncio.run(self.telescope.set_tracking_mode(TrackingMode.EQ_NORTH))
 
         self.assertTrue(result)
 
@@ -453,9 +454,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test getting observer location"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_location", return_value=(40.7, 286.0)),
+            patch.object(self.telescope.protocol, "get_location", new_callable=AsyncMock, return_value=(40.7, 286.0)),
         ):
-            location = self.telescope.get_location()
+            location = asyncio.run(self.telescope.get_location())
 
         self.assertIsInstance(location, GeographicLocation)
         self.assertAlmostEqual(location.latitude, 40.7, places=1)
@@ -466,9 +467,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test get_location with invalid response"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_location", return_value=None),
+            patch.object(self.telescope.protocol, "get_location", new_callable=AsyncMock, return_value=None),
         ):
-            location = self.telescope.get_location()
+            location = asyncio.run(self.telescope.get_location())
 
         self.assertEqual(location.latitude, 0.0)
         self.assertEqual(location.longitude, 0.0)
@@ -477,9 +478,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test setting observer location"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "set_location", return_value=True),
+            patch.object(self.telescope.protocol, "set_location", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.set_location(40.7128, -74.0060)
+            result = asyncio.run(self.telescope.set_location(40.7128, -74.0060))
 
         self.assertTrue(result)
 
@@ -487,9 +488,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test setting location with negative coordinates"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "set_location", return_value=True),
+            patch.object(self.telescope.protocol, "set_location", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.set_location(-33.8688, -151.2093)
+            result = asyncio.run(self.telescope.set_location(-33.8688, -151.2093))
 
         self.assertTrue(result)
 
@@ -500,9 +501,9 @@ class TestNexStarTelescope(unittest.TestCase):
         # Protocol returns year_offset, telescope converts to actual year
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_time", return_value=(12, 30, 0, 10, 14, 24, 0, 0)),
+            patch.object(self.telescope.protocol, "get_time", new_callable=AsyncMock, return_value=(12, 30, 0, 10, 14, 24, 0, 0)),
         ):
-            time_info = self.telescope.get_time()
+            time_info = asyncio.run(self.telescope.get_time())
 
             self.assertIsInstance(time_info, TelescopeTime)
             self.assertEqual(time_info.hour, 12)
@@ -516,9 +517,9 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test get_time with invalid response"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "get_time", return_value=None),
+            patch.object(self.telescope.protocol, "get_time", new_callable=AsyncMock, return_value=None),
         ):
-            time_info = self.telescope.get_time()
+            time_info = asyncio.run(self.telescope.get_time())
 
         self.assertEqual(time_info.year, 0)
 
@@ -526,17 +527,17 @@ class TestNexStarTelescope(unittest.TestCase):
         """Test setting date and time"""
         with (
             patch.object(self.telescope.protocol, "is_open", return_value=True),
-            patch.object(self.telescope.protocol, "set_time", return_value=True),
+            patch.object(self.telescope.protocol, "set_time", new_callable=AsyncMock, return_value=True),
         ):
-            result = self.telescope.set_time(12, 30, 0, 10, 14, 2024, 0, 0)
+            result = asyncio.run(self.telescope.set_time(12, 30, 0, 10, 14, 2024, 0, 0))
 
         self.assertTrue(result)
 
     def test_set_time_with_timezone(self):
         """Test setting time with timezone offset"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
-            with patch.object(self.telescope.protocol, "set_time", return_value=True):
-                result = self.telescope.set_time(18, 45, 30, 7, 4, 2024, -5, 1)
+            with patch.object(self.telescope.protocol, "set_time", new_callable=AsyncMock, return_value=True):
+                result = asyncio.run(self.telescope.set_time(18, 45, 30, 7, 4, 2024, -5, 1))
 
         self.assertTrue(result)
 
@@ -654,7 +655,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "open", side_effect=Exception("Protocol error")),
         ):
             with self.assertRaises(Exception):
-                self.telescope.connect()
+                asyncio.run(self.telescope.connect())
 
     def test_move_step_diagonal_up_left(self):
         """Test move_step with diagonal UP_LEFT"""
@@ -664,7 +665,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_step(Direction.UP_LEFT, rate=5)
+            result = asyncio.run(self.telescope.move_step(Direction.UP_LEFT, rate=5))
             self.assertTrue(result)
 
     def test_move_step_diagonal_up_right(self):
@@ -675,7 +676,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_step(Direction.UP_RIGHT, rate=5)
+            result = asyncio.run(self.telescope.move_step(Direction.UP_RIGHT, rate=5))
             self.assertTrue(result)
 
     def test_move_step_diagonal_down_left(self):
@@ -686,7 +687,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_step(Direction.DOWN_LEFT, rate=5)
+            result = asyncio.run(self.telescope.move_step(Direction.DOWN_LEFT, rate=5))
             self.assertTrue(result)
 
     def test_move_step_diagonal_down_right(self):
@@ -697,7 +698,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_step(Direction.DOWN_RIGHT, rate=5)
+            result = asyncio.run(self.telescope.move_step(Direction.DOWN_RIGHT, rate=5))
             self.assertTrue(result)
 
     def test_move_for_time_diagonal_up_left(self):
@@ -708,7 +709,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5)
+            result = asyncio.run(self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5))
             self.assertTrue(result)
 
     def test_move_for_time_diagonal_failure(self):
@@ -717,7 +718,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope, "move_fixed", return_value=False),
         ):
-            result = self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5)
+            result = asyncio.run(self.telescope.move_for_time(Direction.UP_LEFT, duration=1.0, rate=5))
             self.assertFalse(result)
 
     def test_move_for_time_string_direction(self):
@@ -728,13 +729,13 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_for_time("up", duration=1.0, rate=5)
+            result = asyncio.run(self.telescope.move_for_time("up", duration=1.0, rate=5))
             self.assertTrue(result)
 
     def test_move_for_time_invalid_string_direction(self):
         """Test move_for_time with invalid string direction"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True), self.assertRaises(ValueError):
-            self.telescope.move_for_time("invalid", duration=1.0, rate=5)
+            asyncio.run(self.telescope.move_for_time("invalid", duration=1.0, rate=5))
 
     def test_move_for_time_rate_zero(self):
         """Test move_for_time with rate 0 (should stop)"""
@@ -742,7 +743,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope, "stop_motion", return_value=True),
         ):
-            result = self.telescope.move_for_time(Direction.UP, duration=1.0, rate=0)
+            result = asyncio.run(self.telescope.move_for_time(Direction.UP, duration=1.0, rate=0))
             self.assertTrue(result)
 
     def test_move_for_time_invalid_duration(self):
@@ -752,7 +753,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
 
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises((ValueError, PreContractError)):
-                self.telescope.move_for_time(Direction.UP, duration=0, rate=5)
+                asyncio.run(self.telescope.move_for_time(Direction.UP, duration=0, rate=5))
 
     def test_move_for_time_negative_duration(self):
         """Test move_for_time with negative duration"""
@@ -761,7 +762,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
 
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises((ValueError, PreContractError)):
-                self.telescope.move_for_time(Direction.UP, duration=-1.0, rate=5)
+                asyncio.run(self.telescope.move_for_time(Direction.UP, duration=-1.0, rate=5))
 
     def test_move_step_diagonal_failure(self):
         """Test move_step with diagonal movement failure"""
@@ -769,7 +770,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope, "move_fixed", return_value=False),
         ):
-            result = self.telescope.move_step(Direction.UP_LEFT, rate=5)
+            result = asyncio.run(self.telescope.move_step(Direction.UP_LEFT, rate=5))
             self.assertFalse(result)
 
     def test_move_step_string_direction(self):
@@ -780,13 +781,13 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope, "stop_motion", return_value=True),
             patch("time.sleep"),
         ):
-            result = self.telescope.move_step("up", rate=5)
+            result = asyncio.run(self.telescope.move_step("up", rate=5))
             self.assertTrue(result)
 
     def test_move_step_invalid_string_direction(self):
         """Test move_step with invalid string direction"""
         with patch.object(self.telescope.protocol, "is_open", return_value=True), self.assertRaises(ValueError):
-            self.telescope.move_step("invalid", rate=5)
+            asyncio.run(self.telescope.move_step("invalid", rate=5))
 
     def test_move_step_rate_zero(self):
         """Test move_step with rate 0 (should stop)"""
@@ -794,7 +795,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope, "stop_motion", return_value=True),
         ):
-            result = self.telescope.move_step(Direction.UP, rate=0)
+            result = asyncio.run(self.telescope.move_step(Direction.UP, rate=0))
             self.assertTrue(result)
 
     def test_stop_motion_failure(self):
@@ -803,7 +804,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "variable_rate_motion", side_effect=[True, False]),
         ):
-            result = self.telescope.stop_motion("both")
+            result = asyncio.run(self.telescope.stop_motion("both"))
             self.assertFalse(result)
 
 

@@ -4,8 +4,9 @@ Unit tests for movement.py
 Tests MovementController for interactive telescope control.
 """
 
+import asyncio
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.telescope.movement import MovementController
 
@@ -62,13 +63,18 @@ class TestMovementController(unittest.TestCase):
     def test_start_move_success(self, mock_telescope_class):
         """Test starting movement successfully"""
         mock_telescope = MagicMock()
-        mock_telescope.__enter__ = MagicMock(return_value=mock_telescope)
-        mock_telescope.__exit__ = MagicMock(return_value=None)
+        mock_telescope.__aenter__ = AsyncMock(return_value=mock_telescope)
+        mock_telescope.__aexit__ = AsyncMock(return_value=None)
+        mock_telescope.move_fixed = AsyncMock(return_value=True)
         mock_telescope_class.return_value = mock_telescope
 
         self.controller.start_move("up")
 
-        mock_telescope.move_fixed.assert_called_once_with("up", 5)
+        # Give async operations time to complete
+        import time
+        time.sleep(0.1)
+        
+        mock_telescope.move_fixed.assert_awaited_once_with("up", 5)
         self.assertTrue(self.controller.moving)
         self.assertEqual(self.controller.active_direction, "up")
 
@@ -95,13 +101,17 @@ class TestMovementController(unittest.TestCase):
     def test_start_move_exception(self, mock_telescope_class):
         """Test starting move when exception occurs"""
         mock_telescope = MagicMock()
-        mock_telescope.__enter__ = MagicMock(side_effect=Exception("Connection error"))
-        mock_telescope.__exit__ = MagicMock(return_value=None)
+        mock_telescope.__aenter__ = AsyncMock(side_effect=Exception("Connection error"))
+        mock_telescope.__aexit__ = AsyncMock(return_value=None)
         mock_telescope_class.return_value = mock_telescope
 
         # Should not raise exception
         self.controller.start_move("up")
 
+        # Give async operations time to complete
+        import time
+        time.sleep(0.1)
+        
         self.assertFalse(self.controller.moving)
 
     @patch("celestron_nexstar.api.telescope.telescope.NexStarTelescope")
@@ -111,13 +121,18 @@ class TestMovementController(unittest.TestCase):
         self.controller.active_direction = "up"
 
         mock_telescope = MagicMock()
-        mock_telescope.__enter__ = MagicMock(return_value=mock_telescope)
-        mock_telescope.__exit__ = MagicMock(return_value=None)
+        mock_telescope.__aenter__ = AsyncMock(return_value=mock_telescope)
+        mock_telescope.__aexit__ = AsyncMock(return_value=None)
+        mock_telescope.stop_motion = AsyncMock(return_value=True)
         mock_telescope_class.return_value = mock_telescope
 
         self.controller.stop_move()
 
-        mock_telescope.stop_motion.assert_called_once_with("both")
+        # Give async operations time to complete
+        import time
+        time.sleep(0.1)
+        
+        mock_telescope.stop_motion.assert_awaited_once_with("both")
         self.assertFalse(self.controller.moving)
         self.assertIsNone(self.controller.active_direction)
 
@@ -142,13 +157,17 @@ class TestMovementController(unittest.TestCase):
         """Test stopping move when exception occurs"""
         self.controller.moving = True
         mock_telescope = MagicMock()
-        mock_telescope.__enter__ = MagicMock(side_effect=Exception("Connection error"))
-        mock_telescope.__exit__ = MagicMock(return_value=None)
+        mock_telescope.__aenter__ = AsyncMock(side_effect=Exception("Connection error"))
+        mock_telescope.__aexit__ = AsyncMock(return_value=None)
         mock_telescope_class.return_value = mock_telescope
 
         # Should not raise exception
         self.controller.stop_move()
 
+        # Give async operations time to complete
+        import time
+        time.sleep(0.1)
+        
         # Should still be marked as moving since we couldn't stop
         self.assertTrue(self.controller.moving)
 
@@ -156,13 +175,17 @@ class TestMovementController(unittest.TestCase):
     def test_different_directions(self, mock_telescope_class):
         """Test moving in different directions"""
         mock_telescope = MagicMock()
-        mock_telescope.__enter__ = MagicMock(return_value=mock_telescope)
-        mock_telescope.__exit__ = MagicMock(return_value=None)
+        mock_telescope.__aenter__ = AsyncMock(return_value=mock_telescope)
+        mock_telescope.__aexit__ = AsyncMock(return_value=None)
+        mock_telescope.move_fixed = AsyncMock(return_value=True)
         mock_telescope_class.return_value = mock_telescope
 
         for direction in ["up", "down", "left", "right"]:
             self.controller.start_move(direction)
-            mock_telescope.move_fixed.assert_called_with(direction, 5)
+            # Give async operations time to complete
+            import time
+            time.sleep(0.1)
+            mock_telescope.move_fixed.assert_awaited_with(direction, 5)
             self.assertEqual(self.controller.active_direction, direction)
 
 

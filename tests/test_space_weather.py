@@ -149,25 +149,24 @@ class TestGetSolarWindData(unittest.TestCase):
 
         # For empty response, we need to mock both plasma and mag responses
         mock_plasma_response = AsyncMock()
-        mock_plasma_response.__aenter__ = AsyncMock(return_value=mock_plasma_response)
-        mock_plasma_response.__aexit__ = AsyncMock(return_value=None)
         mock_plasma_response.status = 200
         mock_plasma_response.json = AsyncMock(return_value=[])
         mock_plasma_response.raise_for_status = MagicMock()
 
         mock_mag_response = AsyncMock()
-        mock_mag_response.__aenter__ = AsyncMock(return_value=mock_mag_response)
-        mock_mag_response.__aexit__ = AsyncMock(return_value=None)
         mock_mag_response.status = 200
         mock_mag_response.json = AsyncMock(return_value=[])
 
         call_count = [0]
-        async def mock_get(*args, **kwargs):
+        def mock_get(*args, **kwargs):
             call_count[0] += 1
+            mock_context = AsyncMock()
             if call_count[0] == 1:
-                return mock_plasma_response
+                mock_context.__aenter__ = AsyncMock(return_value=mock_plasma_response)
             else:
-                return mock_mag_response
+                mock_context.__aenter__ = AsyncMock(return_value=mock_mag_response)
+            mock_context.__aexit__ = AsyncMock(return_value=None)
+            return mock_context
         mock_session.get = mock_get
 
         result = asyncio.run(get_solar_wind_data())
@@ -203,19 +202,19 @@ class TestGetGoesXrayData(unittest.TestCase):
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
 
+        # In aiohttp, session.get() returns an async context manager directly
         mock_response = AsyncMock()
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=[
             {"time_tag": "2024-06-15T12:00:00Z", "flux": "1.5e-6", "class": "M2.5"},
             {"time_tag": "2024-06-15T11:00:00Z", "flux": "1.0e-6", "class": "C5.0"},
         ])
         mock_response.raise_for_status = MagicMock()
-
-        async def mock_get(*args, **kwargs):
-            return mock_response
-        mock_session.get = mock_get
+        
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_get_context)
 
         result = asyncio.run(get_goes_xray_data())
 
@@ -277,11 +276,9 @@ class TestGetKpApData(unittest.TestCase):
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
 
-        # session.get() returns a coroutine that resolves to a response object
-        # The response object is then used as an async context manager
+        # In aiohttp, session.get() returns an async context manager directly
+        # When used in "async with session.get(...) as response:", it enters the context
         mock_response = AsyncMock()
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=[
             ["time_tag", "kp", "observed"],
@@ -289,12 +286,12 @@ class TestGetKpApData(unittest.TestCase):
             ["2024-06-15 11:00:00", "2.5", "observed"],
         ])
         mock_response.raise_for_status = MagicMock()
-
-        # session.get() should return the response directly (not a coroutine)
-        # because it's used in "async with session.get(...)"
-        async def mock_get(*args, **kwargs):
-            return mock_response
-        mock_session.get = mock_get
+        
+        # session.get() returns an async context manager that yields the response
+        mock_get_context = AsyncMock()
+        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_get_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_get_context)
 
         result = asyncio.run(get_kp_ap_data())
 
@@ -311,7 +308,8 @@ class TestGetKpApData(unittest.TestCase):
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
-        mock_session.get = AsyncMock(side_effect=aiohttp.ClientError("Network error"))
+        # session.get() should raise an error when called
+        mock_session.get = MagicMock(side_effect=aiohttp.ClientError("Network error"))
 
         result = asyncio.run(get_kp_ap_data())
 
