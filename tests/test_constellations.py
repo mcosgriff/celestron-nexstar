@@ -6,10 +6,8 @@ Tests constellation and asterism catalog functions.
 
 import asyncio
 import unittest
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.astronomy.constellations import (
     Asterism,
     Constellation,
@@ -18,6 +16,7 @@ from celestron_nexstar.api.astronomy.constellations import (
     get_visible_asterisms,
     get_visible_constellations,
 )
+from celestron_nexstar.api.core.exceptions import DatabaseError
 
 
 class TestConstellation(unittest.TestCase):

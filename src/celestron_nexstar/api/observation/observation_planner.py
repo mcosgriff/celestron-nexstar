@@ -373,7 +373,8 @@ class ObservationPlanner:
         try:
             from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
 
-            swx = get_space_weather_conditions()
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
+            swx = asyncio.run(get_space_weather_conditions())
             if swx.alerts:
                 space_weather_alerts_list.extend(swx.alerts)
 

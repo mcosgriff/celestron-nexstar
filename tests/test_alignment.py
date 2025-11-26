@@ -5,7 +5,6 @@ Tests telescope alignment methods including SkyAlign.
 """
 
 import unittest
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
@@ -64,10 +63,43 @@ class TestSkyAlignGroup(unittest.TestCase):
 
     def test_creation(self):
         """Test creating a SkyAlignGroup"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        obj2 = CelestialObject(name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star")
-        obj3 = CelestialObject(name="Star3", common_name="Star3", ra_hours=2, dec_degrees=0, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj2 = CelestialObject(
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj3 = CelestialObject(
+            name="Star3",
+            common_name="Star3",
+            ra_hours=2,
+            dec_degrees=0,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj3, visibility=vis, display_name="Star3")
@@ -89,12 +121,63 @@ class TestCalculateSeparationScore(unittest.TestCase):
 
     def test_calculate_separation_score(self):
         """Test separation score calculation"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        obj2 = CelestialObject(name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star")
-        obj3 = CelestialObject(name="Star3", common_name="Star3", ra_hours=2, dec_degrees=0, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis1 = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis2 = VisibilityInfo(object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis3 = VisibilityInfo(object_name="Star3", is_visible=True, magnitude=2.0, altitude_deg=45.0, azimuth_deg=120.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj2 = CelestialObject(
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj3 = CelestialObject(
+            name="Star3",
+            common_name="Star3",
+            ra_hours=2,
+            dec_degrees=0,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=60.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis3 = VisibilityInfo(
+            object_name="Star3",
+            is_visible=True,
+            magnitude=2.0,
+            altitude_deg=45.0,
+            azimuth_deg=120.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj3, visibility=vis3, display_name="Star3")
@@ -113,12 +196,63 @@ class TestCheckCollinear(unittest.TestCase):
 
     def test_not_collinear(self):
         """Test non-collinear objects"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        obj2 = CelestialObject(name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star")
-        obj3 = CelestialObject(name="Star3", common_name="Star3", ra_hours=0, dec_degrees=1, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis1 = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis2 = VisibilityInfo(object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis3 = VisibilityInfo(object_name="Star3", is_visible=True, magnitude=2.0, altitude_deg=45.0, azimuth_deg=120.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj2 = CelestialObject(
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj3 = CelestialObject(
+            name="Star3",
+            common_name="Star3",
+            ra_hours=0,
+            dec_degrees=1,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=60.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis3 = VisibilityInfo(
+            object_name="Star3",
+            is_visible=True,
+            magnitude=2.0,
+            altitude_deg=45.0,
+            azimuth_deg=120.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj3, visibility=vis3, display_name="Star3")
@@ -129,12 +263,63 @@ class TestCheckCollinear(unittest.TestCase):
     def test_collinear(self):
         """Test collinear objects"""
         # Objects in a line (same azimuth, different altitudes)
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        obj2 = CelestialObject(name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star")
-        obj3 = CelestialObject(name="Star3", common_name="Star3", ra_hours=2, dec_degrees=0, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis1 = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=30.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis2 = VisibilityInfo(object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis3 = VisibilityInfo(object_name="Star3", is_visible=True, magnitude=2.0, altitude_deg=60.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj2 = CelestialObject(
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj3 = CelestialObject(
+            name="Star3",
+            common_name="Star3",
+            ra_hours=2,
+            dec_degrees=0,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=30.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis3 = VisibilityInfo(
+            object_name="Star3",
+            is_visible=True,
+            magnitude=2.0,
+            altitude_deg=60.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj3, visibility=vis3, display_name="Star3")
@@ -148,8 +333,25 @@ class TestCalculateConditionsScore(unittest.TestCase):
 
     def test_calculate_conditions_score_no_conditions(self):
         """Test conditions score with no condition data"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star3")
@@ -159,8 +361,25 @@ class TestCalculateConditionsScore(unittest.TestCase):
 
     def test_calculate_conditions_score_cloudy(self):
         """Test conditions score with cloud cover"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star3")
@@ -171,8 +390,25 @@ class TestCalculateConditionsScore(unittest.TestCase):
 
     def test_calculate_conditions_score_moon_interference(self):
         """Test conditions score with moon interference"""
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star3")
@@ -208,12 +444,27 @@ class TestGetBrightObjectsForSkyalign(unittest.TestCase):
 
         # Mock stars
         star = CelestialObject(
-            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Vega",
+            common_name="Vega",
+            ra_hours=18.615,
+            dec_degrees=38.784,
+            magnitude=0.03,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         mock_db.filter_objects = AsyncMock(return_value=[star])
 
         # Mock visibility
-        vis = VisibilityInfo(object_name="Vega", is_visible=True, magnitude=0.03, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9)
+        vis = VisibilityInfo(
+            object_name="Vega",
+            is_visible=True,
+            magnitude=0.03,
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.9,
+        )
         mock_assess.return_value = vis
 
         # Mock planetary positions
@@ -260,12 +511,63 @@ class TestSuggestSkyalignObjects(unittest.TestCase):
     def test_suggest_skyalign_objects_success(self, mock_get_bright):
         """Test successful suggestion of SkyAlign objects"""
         # Create mock objects
-        obj1 = CelestialObject(name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star")
-        obj2 = CelestialObject(name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star")
-        obj3 = CelestialObject(name="Star3", common_name="Star3", ra_hours=2, dec_degrees=0, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="star")
-        vis1 = VisibilityInfo(object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9)
-        vis2 = VisibilityInfo(object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8)
-        vis3 = VisibilityInfo(object_name="Star3", is_visible=True, magnitude=2.0, altitude_deg=45.0, azimuth_deg=120.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.85)
+        obj1 = CelestialObject(
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj2 = CelestialObject(
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        obj3 = CelestialObject(
+            name="Star3",
+            common_name="Star3",
+            ra_hours=2,
+            dec_degrees=0,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
+        )
+        vis1 = VisibilityInfo(
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.9,
+        )
+        vis2 = VisibilityInfo(
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=60.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
+        )
+        vis3 = VisibilityInfo(
+            object_name="Star3",
+            is_visible=True,
+            magnitude=2.0,
+            altitude_deg=45.0,
+            azimuth_deg=120.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.85,
+        )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
         align_obj3 = SkyAlignObject(obj=obj3, visibility=vis3, display_name="Star3")
@@ -312,13 +614,32 @@ class TestTwoStarAlignPair(unittest.TestCase):
     def test_creation(self):
         """Test creating a TwoStarAlignPair"""
         obj1 = CelestialObject(
-            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         obj2 = CelestialObject(
-            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis = VisibilityInfo(
-            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis, display_name="Star2")
@@ -345,16 +666,42 @@ class TestCalculateTwoStarSeparationScore(unittest.TestCase):
     def test_calculate_two_star_separation_score(self):
         """Test two-star separation score calculation"""
         obj1 = CelestialObject(
-            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         obj2 = CelestialObject(
-            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis1 = VisibilityInfo(
-            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         vis2 = VisibilityInfo(
-            object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=60.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")
@@ -374,10 +721,23 @@ class TestCalculateTwoStarConditionsScore(unittest.TestCase):
     def test_calculate_two_star_conditions_score_no_conditions(self):
         """Test two-star conditions score with no condition data"""
         obj1 = CelestialObject(
-            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis = VisibilityInfo(
-            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
@@ -388,10 +748,23 @@ class TestCalculateTwoStarConditionsScore(unittest.TestCase):
     def test_calculate_two_star_conditions_score_cloudy(self):
         """Test two-star conditions score with cloud cover"""
         obj1 = CelestialObject(
-            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis = VisibilityInfo(
-            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj1, visibility=vis, display_name="Star2")
@@ -467,10 +840,23 @@ class TestFindSkyalignObjectByName(unittest.TestCase):
     def test_find_skyalign_object_by_name_found(self, mock_get_bright):
         """Test finding a SkyAlign object by name"""
         obj = CelestialObject(
-            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Vega",
+            common_name="Vega",
+            ra_hours=18.615,
+            dec_degrees=38.784,
+            magnitude=0.03,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis = VisibilityInfo(
-            object_name="Vega", is_visible=True, magnitude=0.03, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+            object_name="Vega",
+            is_visible=True,
+            magnitude=0.03,
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.9,
         )
         align_obj = SkyAlignObject(obj=obj, visibility=vis, display_name="Vega")
         mock_get_bright.return_value = [align_obj]
@@ -484,10 +870,23 @@ class TestFindSkyalignObjectByName(unittest.TestCase):
     def test_find_skyalign_object_by_name_not_found(self, mock_get_bright):
         """Test finding a SkyAlign object that doesn't exist"""
         obj = CelestialObject(
-            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Vega",
+            common_name="Vega",
+            ra_hours=18.615,
+            dec_degrees=38.784,
+            magnitude=0.03,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis = VisibilityInfo(
-            object_name="Vega", is_visible=True, magnitude=0.03, altitude_deg=45.0, azimuth_deg=180.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+            object_name="Vega",
+            is_visible=True,
+            magnitude=0.03,
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.9,
         )
         align_obj = SkyAlignObject(obj=obj, visibility=vis, display_name="Vega")
         mock_get_bright.return_value = [align_obj]
@@ -515,16 +914,42 @@ class TestSuggestTwoStarAlignObjects(unittest.TestCase):
         """Test successful suggestion of two-star align objects"""
         # Create mock objects
         obj1 = CelestialObject(
-            name="Star1", common_name="Star1", ra_hours=0, dec_degrees=0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star1",
+            common_name="Star1",
+            ra_hours=0,
+            dec_degrees=0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         obj2 = CelestialObject(
-            name="Star2", common_name="Star2", ra_hours=1, dec_degrees=0, magnitude=1.5, object_type=CelestialObjectType.STAR, catalog="star"
+            name="Star2",
+            common_name="Star2",
+            ra_hours=1,
+            dec_degrees=0,
+            magnitude=1.5,
+            object_type=CelestialObjectType.STAR,
+            catalog="star",
         )
         vis1 = VisibilityInfo(
-            object_name="Star1", is_visible=True, magnitude=1.0, altitude_deg=45.0, azimuth_deg=0.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.9
+            object_name="Star1",
+            is_visible=True,
+            magnitude=1.0,
+            altitude_deg=45.0,
+            azimuth_deg=0.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.9,
         )
         vis2 = VisibilityInfo(
-            object_name="Star2", is_visible=True, magnitude=1.5, altitude_deg=45.0, azimuth_deg=60.0, limiting_magnitude=6.0, reasons=("Visible",), observability_score=0.8
+            object_name="Star2",
+            is_visible=True,
+            magnitude=1.5,
+            altitude_deg=45.0,
+            azimuth_deg=60.0,
+            limiting_magnitude=6.0,
+            reasons=("Visible",),
+            observability_score=0.8,
         )
         align_obj1 = SkyAlignObject(obj=obj1, visibility=vis1, display_name="Star1")
         align_obj2 = SkyAlignObject(obj=obj2, visibility=vis2, display_name="Star2")

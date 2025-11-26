@@ -5,7 +5,6 @@ Tests light pollution data fetching, Bortle scale conversion, and caching.
 """
 
 import asyncio
-import json
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -196,9 +195,8 @@ class TestCacheFunctions(unittest.TestCase):
 
         if self.original_cache_dir is not None:
             # Restore original cache dir
-            from celestron_nexstar.api.location.light_pollution import CACHE_DIR
+            pass
 
-            CACHE_DIR = self.original_cache_dir
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_get_cache_key(self):
@@ -225,7 +223,9 @@ class TestCacheFunctions(unittest.TestCase):
 
     def test_load_cache_not_exists(self):
         """Test loading cache when file doesn't exist"""
-        with patch("celestron_nexstar.api.location.light_pollution.CACHE_FILE", Path(self.temp_dir) / "nonexistent.json"):
+        with patch(
+            "celestron_nexstar.api.location.light_pollution.CACHE_FILE", Path(self.temp_dir) / "nonexistent.json"
+        ):
             result = _load_cache()
             self.assertIsNone(result)
 

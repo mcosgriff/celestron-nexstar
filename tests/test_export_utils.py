@@ -4,8 +4,6 @@ Tests for export filename generation utilities.
 
 from pathlib import Path
 
-import pytest
-
 from celestron_nexstar.api.core.export_utils import (
     generate_catalog_export_filename,
     generate_export_filename,

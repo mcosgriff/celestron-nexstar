@@ -31,7 +31,6 @@ from celestron_nexstar.cli.commands.astronomy import (
     variables,
     zodiacal,
 )
-from celestron_nexstar.cli.commands.dashboard import dashboard
 from celestron_nexstar.cli.commands.data import catalog, data, ephemeris
 from celestron_nexstar.cli.commands.location import location, weather
 from celestron_nexstar.cli.commands.observation import multi_night, telescope
@@ -500,12 +499,6 @@ app.add_typer(
     data.app,
     name="data",
     help="Data import and management",
-    rich_help_panel="Data & Management",
-)
-app.add_typer(
-    dashboard.app,
-    name="dashboard",
-    help="Full-screen dashboard",
     rich_help_panel="Data & Management",
 )
 app.add_typer(

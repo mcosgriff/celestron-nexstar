@@ -154,9 +154,7 @@ class TestFilterObjects(unittest.TestCase):
 
     def test_filter_combines_multiple_criteria(self):
         """Test filtering with multiple criteria"""
-        filtered = filter_objects(
-            self.objects, search_query="Vega", object_type="star", magnitude_max=1.0
-        )
+        filtered = filter_objects(self.objects, search_query="Vega", object_type="star", magnitude_max=1.0)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0][0].name, "Vega")
 
@@ -186,7 +184,7 @@ class TestFilterObjects(unittest.TestCase):
             observability_score=0.9,
             reasons=("Good altitude",),
         )
-        objects_with_none = self.objects + [(obj_none_mag, vis_none)]
+        objects_with_none = [*self.objects, (obj_none_mag, vis_none)]
 
         filtered = filter_objects(objects_with_none, magnitude_min=0.0)
         # Should not include object with None magnitude
@@ -326,7 +324,7 @@ class TestSortObjects(unittest.TestCase):
             object_type=CelestialObjectType.STAR,
             catalog="test",
         )
-        objects_with_none = self.objects + [(obj_none, vis_none)]
+        objects_with_none = [*self.objects, (obj_none, vis_none)]
 
         sorted_objs = sort_objects(objects_with_none, sort_by="altitude", reverse=False)
         # None altitude should be at the beginning (sorted as -999)
@@ -405,17 +403,13 @@ class TestFilterAndSortObjects(unittest.TestCase):
 
     def test_filter_and_sort(self):
         """Test filtering and sorting together"""
-        result = filter_and_sort_objects(
-            self.objects, search_query="Vega", sort_by="altitude", sort_reverse=True
-        )
+        result = filter_and_sort_objects(self.objects, search_query="Vega", sort_by="altitude", sort_reverse=True)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][0].name, "Vega")
 
     def test_filter_and_sort_with_limit(self):
         """Test filtering, sorting, and limiting"""
-        result = filter_and_sort_objects(
-            self.objects, sort_by="altitude", sort_reverse=True, limit=2
-        )
+        result = filter_and_sort_objects(self.objects, sort_by="altitude", sort_reverse=True, limit=2)
         self.assertEqual(len(result), 2)
         # Should be sorted by altitude descending
         self.assertEqual(result[0][1].altitude_deg, 60.0)

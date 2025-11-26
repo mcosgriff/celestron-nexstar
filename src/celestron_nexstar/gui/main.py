@@ -22,7 +22,7 @@ def main() -> int:
 
     # Pre-import qtawesome to ensure fonts/resources are loaded
     try:
-        import qtawesome as qta  # type: ignore[import-not-found]
+        import qtawesome as qta  # type: ignore[import-untyped]
 
         # Test creating an icon to trigger font loading
         _ = qta.icon("fa5s.link")

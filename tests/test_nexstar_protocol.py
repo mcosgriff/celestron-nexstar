@@ -3,20 +3,21 @@ Unit tests for NexStar Protocol Layer
 Provides comprehensive test coverage for the protocol module.
 """
 
+import asyncio
 import builtins
 import contextlib
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import serial
-from celestron_nexstar.api.telescope.protocol import NexStarProtocol
-from returns.result import Failure
+from returns.result import Failure, Success
 
 from celestron_nexstar.api.core.exceptions import (
     NotConnectedError,
     TelescopeConnectionError,
     TelescopeTimeoutError,
 )
+from celestron_nexstar.api.telescope.protocol import NexStarProtocol
 
 
 class TestNexStarProtocol(unittest.TestCase):
@@ -28,9 +29,9 @@ class TestNexStarProtocol(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after each test"""
-        if self.protocol.serial_conn:
+        if self.protocol.serial_writer or self.protocol.tcp_writer:
             with contextlib.suppress(builtins.BaseException):
-                self.protocol.close()
+                asyncio.run(self.protocol.close())
 
     # ========== Connection Tests ==========
 
@@ -40,60 +41,61 @@ class TestNexStarProtocol(unittest.TestCase):
         self.assertEqual(protocol.port, "/dev/ttyUSB1")
         self.assertEqual(protocol.baudrate, 19200)
         self.assertEqual(protocol.timeout, 3.0)
-        self.assertIsNone(protocol.serial_conn)
+        self.assertIsNone(protocol.serial_reader)
+        self.assertIsNone(protocol.serial_writer)
 
-    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
-    @patch("celestron_nexstar.api.telescope.protocol.time.sleep")
-    def test_open_success(self, mock_sleep, mock_serial):
+    @patch("celestron_nexstar.api.telescope.protocol.serial_asyncio.open_serial_connection")
+    @patch("celestron_nexstar.api.telescope.protocol.asyncio.sleep")
+    def test_open_success(self, mock_sleep, mock_open_serial):
         """Test successful serial port opening"""
-        mock_conn = MagicMock()
-        mock_serial.return_value = mock_conn
+        mock_reader = MagicMock()
+        mock_writer = MagicMock()
+        mock_writer.is_closing.return_value = False
+        mock_open_serial.return_value = (mock_reader, mock_writer)
+        mock_sleep.return_value = None
 
-        result = self.protocol.open()
+        result = asyncio.run(self.protocol.open())
 
         self.assertTrue(result)
-        mock_serial.assert_called_once_with(
-            port="/dev/ttyUSB0",
-            baudrate=9600,
-            timeout=2.0,
-            bytesize=serial.EIGHTBITS,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-        )
-        mock_sleep.assert_called_once_with(0.5)
+        mock_open_serial.assert_called_once()
+        mock_sleep.assert_called_once()
 
-    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
-    def test_open_failure(self, mock_serial):
+    @patch("celestron_nexstar.api.telescope.protocol.serial_asyncio.open_serial_connection")
+    def test_open_failure(self, mock_open_serial):
         """Test serial port opening failure"""
-        mock_serial.side_effect = serial.SerialException("Port not found")
+        mock_open_serial.side_effect = serial.SerialException("Port not found")
 
         with self.assertRaises(TelescopeConnectionError) as context:
-            self.protocol.open()
+            asyncio.run(self.protocol.open())
 
         self.assertIn("Port not found", str(context.exception))
 
-    @patch("celestron_nexstar.api.telescope.protocol.serial.Serial")
-    def test_close(self, mock_serial):
+    @patch("celestron_nexstar.api.telescope.protocol.serial_asyncio.open_serial_connection")
+    def test_close(self, mock_open_serial):
         """Test closing serial connection"""
-        mock_conn = MagicMock()
-        mock_conn.is_open = True
-        mock_serial.return_value = mock_conn
+        mock_reader = MagicMock()
+        mock_writer = AsyncMock()
+        mock_writer.is_closing.return_value = False
+        mock_writer.close = AsyncMock()
+        mock_writer.wait_closed = AsyncMock()
+        mock_open_serial.return_value = (mock_reader, mock_writer)
 
-        self.protocol.open()
-        self.protocol.close()
+        asyncio.run(self.protocol.open())
+        asyncio.run(self.protocol.close())
 
-        mock_conn.close.assert_called_once()
+        mock_writer.close.assert_called_once()
+        mock_writer.wait_closed.assert_called_once()
 
     def test_close_when_not_open(self):
         """Test closing when connection is not open"""
         # Should not raise an exception
-        self.protocol.close()
+        asyncio.run(self.protocol.close())
 
     def test_is_open_true(self):
         """Test is_open when connection is active"""
-        mock_conn = MagicMock()
-        mock_conn.is_open = True
-        self.protocol.serial_conn = mock_conn
+        mock_writer = MagicMock()
+        mock_writer.is_closing.return_value = False
+        self.protocol.serial_writer = mock_writer
 
         self.assertTrue(self.protocol.is_open())
 
@@ -106,40 +108,46 @@ class TestNexStarProtocol(unittest.TestCase):
     def test_send_command_not_connected(self):
         """Test sending command when not connected"""
         with self.assertRaises(NotConnectedError):
-            self.protocol.send_command("V")
+            asyncio.run(self.protocol.send_command("V"))
 
-    @patch("celestron_nexstar.api.telescope.protocol.time.time")
-    def test_send_command_success(self, mock_time):
+    @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
+    def test_send_command_success(self, mock_wait_for):
         """Test successful command send and receive"""
-        mock_conn = MagicMock()
-        mock_conn.is_open = True
-        mock_conn.in_waiting = 3
-        mock_conn.read.side_effect = [b"4", b"\x15", b"#"]
-        self.protocol.serial_conn = mock_conn
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+        mock_writer.is_closing.return_value = False
+        mock_writer.drain = AsyncMock()
+        self.protocol.serial_reader = mock_reader
+        self.protocol.serial_writer = mock_writer
 
-        # Mock time to avoid timeout
-        mock_time.return_value = 0
+        # Mock async read to return response bytes
+        mock_wait_for.side_effect = [
+            b"4",  # First byte
+            b"\x15",  # Second byte
+            b"#",  # Terminator
+        ]
 
-        response = self.protocol.send_command("V")
+        response = asyncio.run(self.protocol.send_command("V"))
 
         self.assertEqual(response, "4\x15")
-        mock_conn.reset_input_buffer.assert_called()
-        mock_conn.reset_output_buffer.assert_called()
-        mock_conn.write.assert_called_once_with(b"V#")
+        mock_writer.write.assert_called_once()
+        mock_writer.drain.assert_called()
 
-    @patch("celestron_nexstar.api.telescope.protocol.time.time")
-    def test_send_command_timeout(self, mock_time):
+    @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
+    def test_send_command_timeout(self, mock_wait_for):
         """Test command timeout"""
-        mock_conn = MagicMock()
-        mock_conn.is_open = True
-        mock_conn.in_waiting = 0
-        self.protocol.serial_conn = mock_conn
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+        mock_writer.is_closing.return_value = False
+        mock_writer.drain = AsyncMock()
+        self.protocol.serial_reader = mock_reader
+        self.protocol.serial_writer = mock_writer
 
-        # Mock time to simulate timeout
-        mock_time.side_effect = [0, 0.5, 1.0, 1.5, 2.0, 2.5]
+        # Mock timeout
+        mock_wait_for.side_effect = TimeoutError()
 
         with self.assertRaises(TelescopeTimeoutError):
-            self.protocol.send_command("V")
+            asyncio.run(self.protocol.send_command("V"))
 
     # ========== Coordinate Encoding/Decoding Tests ==========
 
@@ -208,286 +216,287 @@ class TestNexStarProtocol(unittest.TestCase):
 
     # ========== Common Command Pattern Tests ==========
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_single_byte(self, mock_send):
         """Test get_single_byte helper"""
         mock_send.return_value = "A"
-        result = self.protocol.get_single_byte("test")
+        result = asyncio.run(self.protocol.get_single_byte("test"))
         self.assertEqual(result, ord("A"))
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_single_byte_invalid(self, mock_send):
         """Test get_single_byte with invalid response"""
         mock_send.return_value = "AB"
-        result = self.protocol.get_single_byte("test")
+        result = asyncio.run(self.protocol.get_single_byte("test"))
         self.assertIsNone(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_two_bytes(self, mock_send):
         """Test get_two_bytes helper"""
         mock_send.return_value = "AB"
-        result = self.protocol.get_two_bytes("test")
+        result = asyncio.run(self.protocol.get_two_bytes("test"))
         self.assertEqual(result, (ord("A"), ord("B")))
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_two_bytes_invalid(self, mock_send):
         """Test get_two_bytes with invalid response"""
         mock_send.return_value = "A"
-        result = self.protocol.get_two_bytes("test")
+        result = asyncio.run(self.protocol.get_two_bytes("test"))
         self.assertIsNone(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_send_empty_command_success(self, mock_send):
         """Test send_empty_command with empty response"""
         mock_send.return_value = ""
-        result = self.protocol.send_empty_command("M")
+        result = asyncio.run(self.protocol.send_empty_command("M"))
         self.assertTrue(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_send_empty_command_failure(self, mock_send):
         """Test send_empty_command with non-empty response"""
         mock_send.return_value = "ERROR"
-        result = self.protocol.send_empty_command("M")
+        result = asyncio.run(self.protocol.send_empty_command("M"))
         self.assertFalse(result)
 
     # ========== Specific Protocol Commands Tests ==========
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_echo_success(self, mock_send):
         """Test successful echo command"""
         mock_send.return_value = "x"
-        result = self.protocol.echo("x")
+        result = asyncio.run(self.protocol.echo("x"))
         self.assertTrue(result)
-        mock_send.assert_called_once_with("Kx")
+        mock_send.assert_awaited_once_with("Kx")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_echo_failure(self, mock_send):
         """Test failed echo command"""
         mock_send.return_value = "y"
-        result = self.protocol.echo("x")
+        result = asyncio.run(self.protocol.echo("x"))
         self.assertFalse(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_echo_exception(self, mock_send):
         """Test echo command with exception"""
         mock_send.side_effect = NotConnectedError("Connection error")
-        result = self.protocol.echo("x")
+        result = asyncio.run(self.protocol.echo("x"))
         self.assertFalse(result)
 
-    @patch.object(NexStarProtocol, "get_two_bytes")
+    @patch.object(NexStarProtocol, "get_two_bytes", new_callable=AsyncMock)
     def test_get_version(self, mock_get_two):
         """Test get firmware version"""
         mock_get_two.return_value = (4, 21)
-        result = self.protocol.get_version()
+        result = asyncio.run(self.protocol.get_version())
         self.assertEqual(result, (4, 21))
         mock_get_two.assert_called_once_with("V")
 
-    @patch.object(NexStarProtocol, "get_two_bytes")
+    @patch.object(NexStarProtocol, "get_two_bytes", new_callable=AsyncMock)
     def test_get_version_invalid(self, mock_get_two):
         """Test get version with invalid response"""
         mock_get_two.return_value = None
-        result = self.protocol.get_version()
+        result = asyncio.run(self.protocol.get_version())
         self.assertEqual(result, (0, 0))
 
-    @patch.object(NexStarProtocol, "get_single_byte")
+    @patch.object(NexStarProtocol, "get_single_byte", new_callable=AsyncMock)
     def test_get_model(self, mock_get_single):
         """Test get telescope model"""
         mock_get_single.return_value = 6
-        result = self.protocol.get_model()
+        result = asyncio.run(self.protocol.get_model())
         self.assertEqual(result, 6)
         mock_get_single.assert_called_once_with("m")
 
-    @patch.object(NexStarProtocol, "get_single_byte")
+    @patch.object(NexStarProtocol, "get_single_byte", new_callable=AsyncMock)
     def test_get_model_invalid(self, mock_get_single):
         """Test get model with invalid response"""
         mock_get_single.return_value = None
-        result = self.protocol.get_model()
+        result = asyncio.run(self.protocol.get_model())
         self.assertEqual(result, 0)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_ra_dec_precise(self, mock_decode, mock_send):
         """Test get RA/Dec precise command"""
         mock_send.return_value = "12345678,87654321"
         mock_decode.return_value = (180.0, 45.0)
 
-        result = self.protocol.get_ra_dec_precise()
+        result = asyncio.run(self.protocol.get_ra_dec_precise())
 
         self.assertEqual(result, (180.0, 45.0))
-        mock_send.assert_called_once_with("E")
+        mock_send.assert_awaited_once_with("E")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_alt_az_precise(self, mock_decode, mock_send):
         """Test get Alt/Az precise command"""
         mock_send.return_value = "12345678,87654321"
-        mock_decode.return_value = (90.0, 45.0)
+        mock_decode.return_value = Success((90.0, 45.0))
 
-        result = self.protocol.get_alt_az_precise()
+        result = asyncio.run(self.protocol.get_alt_az_precise())
 
-        self.assertEqual(result, (90.0, 45.0))
-        mock_send.assert_called_once_with("Z")
+        self.assertTrue(result.is_successful())
+        self.assertEqual(result.unwrap(), (90.0, 45.0))
+        mock_send.assert_awaited_once_with("Z")
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "encode_coordinate_pair")
     def test_goto_ra_dec_precise(self, mock_encode, mock_send_empty):
         """Test goto RA/Dec precise command"""
         mock_encode.return_value = "12345678,87654321"
         mock_send_empty.return_value = True
 
-        result = self.protocol.goto_ra_dec_precise(180.0, 45.0)
+        result = asyncio.run(self.protocol.goto_ra_dec_precise(180.0, 45.0))
 
         self.assertTrue(result)
         mock_encode.assert_called_once_with(180.0, 45.0)
         mock_send_empty.assert_called_once_with("R12345678,87654321")
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "encode_coordinate_pair")
     def test_goto_alt_az_precise(self, mock_encode, mock_send_empty):
         """Test goto Alt/Az precise command"""
         mock_encode.return_value = "12345678,87654321"
         mock_send_empty.return_value = True
 
-        result = self.protocol.goto_alt_az_precise(90.0, 45.0)
+        result = asyncio.run(self.protocol.goto_alt_az_precise(90.0, 45.0))
 
         self.assertTrue(result)
         mock_encode.assert_called_once_with(90.0, 45.0)
         mock_send_empty.assert_called_once_with("B12345678,87654321")
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "encode_coordinate_pair")
     def test_sync_ra_dec_precise(self, mock_encode, mock_send_empty):
         """Test sync RA/Dec precise command"""
         mock_encode.return_value = "12345678,87654321"
         mock_send_empty.return_value = True
 
-        result = self.protocol.sync_ra_dec_precise(180.0, 45.0)
+        result = asyncio.run(self.protocol.sync_ra_dec_precise(180.0, 45.0))
 
         self.assertTrue(result)
         mock_encode.assert_called_once_with(180.0, 45.0)
         mock_send_empty.assert_called_once_with("S12345678,87654321")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_is_goto_in_progress_true(self, mock_send):
         """Test is_goto_in_progress returns True"""
         mock_send.return_value = "1"
-        result = self.protocol.is_goto_in_progress()
+        result = asyncio.run(self.protocol.is_goto_in_progress())
         self.assertTrue(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_is_goto_in_progress_false(self, mock_send):
         """Test is_goto_in_progress returns False"""
         mock_send.return_value = "0"
-        result = self.protocol.is_goto_in_progress()
+        result = asyncio.run(self.protocol.is_goto_in_progress())
         self.assertFalse(result)
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     def test_cancel_goto(self, mock_send_empty):
         """Test cancel goto command"""
         mock_send_empty.return_value = True
-        result = self.protocol.cancel_goto()
+        result = asyncio.run(self.protocol.cancel_goto())
         self.assertTrue(result)
         mock_send_empty.assert_called_once_with("M")
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     def test_variable_rate_motion(self, mock_send_empty):
         """Test variable rate motion command"""
         mock_send_empty.return_value = True
 
-        result = self.protocol.variable_rate_motion(1, 17, 5)
+        result = asyncio.run(self.protocol.variable_rate_motion(1, 17, 5))
 
         self.assertTrue(result)
         # Verify command format: P + axis + direction + rate + three zeros
         expected_cmd = f"P{chr(1)}{chr(17)}{chr(5)}{chr(0)}{chr(0)}{chr(0)}"
         mock_send_empty.assert_called_once_with(expected_cmd)
 
-    @patch.object(NexStarProtocol, "get_single_byte")
+    @patch.object(NexStarProtocol, "get_single_byte", new_callable=AsyncMock)
     def test_get_tracking_mode(self, mock_get_single):
         """Test get tracking mode"""
         mock_get_single.return_value = 1
-        result = self.protocol.get_tracking_mode()
+        result = asyncio.run(self.protocol.get_tracking_mode())
         self.assertEqual(result, 1)
         mock_get_single.assert_called_once_with("t")
 
-    @patch.object(NexStarProtocol, "get_single_byte")
+    @patch.object(NexStarProtocol, "get_single_byte", new_callable=AsyncMock)
     def test_get_tracking_mode_invalid(self, mock_get_single):
         """Test get tracking mode with invalid response"""
         mock_get_single.return_value = None
-        result = self.protocol.get_tracking_mode()
+        result = asyncio.run(self.protocol.get_tracking_mode())
         self.assertEqual(result, 0)
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     def test_set_tracking_mode(self, mock_send_empty):
         """Test set tracking mode"""
         mock_send_empty.return_value = True
-        result = self.protocol.set_tracking_mode(1)
+        result = asyncio.run(self.protocol.set_tracking_mode(1))
         self.assertTrue(result)
         mock_send_empty.assert_called_once_with(f"T{chr(1)}")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_location(self, mock_send):
         """Test get observer location"""
         # 16 hex chars representing lat/lon
         mock_send.return_value = "123456787654321A"
 
-        result = self.protocol.get_location()
+        result = asyncio.run(self.protocol.get_location())
 
         self.assertIsNotNone(result)
         self.assertEqual(len(result), 2)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_location_invalid_length(self, mock_send):
         """Test get location with invalid response length"""
         mock_send.return_value = "12345"
-        result = self.protocol.get_location()
+        result = asyncio.run(self.protocol.get_location())
         self.assertIsNone(result)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_location_invalid_hex(self, mock_send):
         """Test get location with invalid hex values"""
         mock_send.return_value = "XXXXXXXXXXXXXXXX"
-        result = self.protocol.get_location()
+        result = asyncio.run(self.protocol.get_location())
         self.assertIsNone(result)
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "encode_coordinate_pair")
     def test_set_location(self, mock_encode, mock_send_empty):
         """Test set observer location"""
         mock_encode.return_value = "12345678,87654321"
         mock_send_empty.return_value = True
 
-        result = self.protocol.set_location(40.7, 286.0)
+        result = asyncio.run(self.protocol.set_location(40.7, 286.0))
 
         self.assertTrue(result)
         mock_encode.assert_called_once_with(40.7, 286.0)
         mock_send_empty.assert_called_once_with("W12345678,87654321")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_time(self, mock_send):
         """Test get date and time"""
         # 8 bytes: hour, minute, second, month, day, year_offset, timezone, dst
         mock_send.return_value = "\x0c\x1e\x00\x0a\x0e\x18\x00\x00"
 
-        result = self.protocol.get_time()
+        result = asyncio.run(self.protocol.get_time())
 
         self.assertIsNotNone(result)
         self.assertEqual(len(result), 8)
         self.assertEqual(result[0], 12)  # hour
         self.assertEqual(result[1], 30)  # minute
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_get_time_invalid(self, mock_send):
         """Test get time with invalid response"""
         mock_send.return_value = "ABC"
-        result = self.protocol.get_time()
+        result = asyncio.run(self.protocol.get_time())
         self.assertIsNone(result)
 
-    @patch.object(NexStarProtocol, "send_empty_command")
+    @patch.object(NexStarProtocol, "send_empty_command", new_callable=AsyncMock)
     def test_set_time(self, mock_send_empty):
         """Test set date and time"""
         mock_send_empty.return_value = True
 
-        result = self.protocol.set_time(12, 30, 0, 10, 14, 24, 0, 0)
+        result = asyncio.run(self.protocol.set_time(12, 30, 0, 10, 14, 24, 0, 0))
 
         self.assertTrue(result)
         expected_cmd = f"H{chr(12)}{chr(30)}{chr(0)}{chr(10)}{chr(14)}{chr(24)}{chr(0)}{chr(0)}"
@@ -644,7 +653,7 @@ class TestNexStarProtocol(unittest.TestCase):
 
         self.assertIn("Recv error", str(context.exception))
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     def test_echo_tcp_exception(self, mock_send):
         """Test echo command with TCP/IP exception"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
@@ -653,29 +662,29 @@ class TestNexStarProtocol(unittest.TestCase):
         with self.assertRaises(Exception):
             protocol.echo("x")
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_ra_dec_precise_failure(self, mock_decode, mock_send):
         """Test get RA/Dec precise with decode failure"""
-        from returns.result import Failure
+        from returns.result import Failure, Success
 
         mock_send.return_value = "12345678,87654321"
         mock_decode.return_value = Failure("Invalid format")
 
-        result = self.protocol.get_ra_dec_precise()
+        result = asyncio.run(self.protocol.get_ra_dec_precise())
 
         self.assertIsInstance(result, Failure)
 
-    @patch.object(NexStarProtocol, "send_command")
+    @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_alt_az_precise_failure(self, mock_decode, mock_send):
         """Test get Alt/Az precise with decode failure"""
-        from returns.result import Failure
+        from returns.result import Failure, Success
 
         mock_send.return_value = "12345678,87654321"
         mock_decode.return_value = Failure("Invalid format")
 
-        result = self.protocol.get_alt_az_precise()
+        result = asyncio.run(self.protocol.get_alt_az_precise())
 
         self.assertIsInstance(result, Failure)
 

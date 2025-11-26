@@ -2,7 +2,7 @@
 Database Statistics Functions
 
 Functions for aggregating and retrieving database statistics.
-These functions are designed to be reusable across CLI, TUI, and other interfaces.
+These functions are designed to be reusable across CLI, GUI, and other interfaces.
 """
 
 from __future__ import annotations

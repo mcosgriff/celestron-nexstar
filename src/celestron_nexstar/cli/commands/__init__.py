@@ -9,6 +9,5 @@ This module contains all CLI command implementations organized into logical subp
 - data: Data management (catalog, data import/export, ephemeris)
 - location: Location and environment (location, weather)
 - vacation: Vacation planning
-- dashboard: Dashboard/TUI
 - optics: Optics configuration
 """

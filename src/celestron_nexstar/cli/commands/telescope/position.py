@@ -21,7 +21,7 @@ from celestron_nexstar.cli.utils.output import (
     print_json,
     print_position_table,
 )
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -62,8 +62,8 @@ def get_position(
                 with Live(console=console, refresh_per_second=4) as live:
                     while True:
                         # Get both coordinate systems
-                        radec = telescope.get_position_ra_dec()
-                        altaz = telescope.get_position_alt_az()
+                        radec = run_async(telescope.get_position_ra_dec())
+                        altaz = run_async(telescope.get_position_alt_az())
 
                         # Create table for live display
                         table = Table(title="Telescope Position (Live)", show_header=True, header_style="bold magenta")
@@ -84,8 +84,8 @@ def get_position(
 
         else:
             # Single position query
-            radec = telescope.get_position_ra_dec()
-            altaz = telescope.get_position_alt_az()
+            radec = run_async(telescope.get_position_ra_dec())
+            altaz = run_async(telescope.get_position_alt_az())
 
             if format_output == "json":
                 print_json(
@@ -135,7 +135,7 @@ def radec(
     """
     try:
         telescope = ensure_connected()
-        coords = telescope.get_position_ra_dec()
+        coords = run_async(telescope.get_position_ra_dec())
 
         if json_output:
             print_json(
@@ -168,7 +168,7 @@ def altaz(
     """
     try:
         telescope = ensure_connected()
-        coords = telescope.get_position_alt_az()
+        coords = run_async(telescope.get_position_alt_az())
 
         if json_output:
             print_json({"azimuth": coords.azimuth, "altitude": coords.altitude})

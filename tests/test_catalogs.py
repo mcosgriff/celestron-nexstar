@@ -124,7 +124,9 @@ class TestCelestialObject(unittest.TestCase):
 
     def test_with_current_position_dynamic_object_failure(self):
         """Test with_current_position handles ephemeris calculation failure"""
-        with patch("celestron_nexstar.api.catalogs.catalogs.get_planetary_position", side_effect=ValueError("Not found")):
+        with patch(
+            "celestron_nexstar.api.catalogs.catalogs.get_planetary_position", side_effect=ValueError("Not found")
+        ):
             result = self.planet.with_current_position()
             # Should return original object on failure
             self.assertEqual(result.ra_hours, 10.0)
@@ -133,7 +135,9 @@ class TestCelestialObject(unittest.TestCase):
     def test_with_current_position_with_datetime(self):
         """Test with_current_position accepts datetime parameter"""
         dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
-        with patch("celestron_nexstar.api.catalogs.catalogs.get_planetary_position", return_value=(15.0, 40.0)) as mock_get:
+        with patch(
+            "celestron_nexstar.api.catalogs.catalogs.get_planetary_position", return_value=(15.0, 40.0)
+        ) as mock_get:
             self.planet.with_current_position(dt=dt)
             mock_get.assert_called_once()
             # Check that dt was passed (via call args)
@@ -482,10 +486,9 @@ class TestSearchObjects(unittest.TestCase):
         # Set up execute to return different results for different calls
         async def execute_side_effect(query, params=None):
             # First call: exact match query
-            if "SELECT" in str(query) and "objects.name" in str(query) and "LIMIT 1" in str(query):
-                return mock_result_empty
-            # Second call: name match query
-            elif "SELECT" in str(query) and "objects.name" in str(query):
+            if ("SELECT" in str(query) and "objects.name" in str(query) and "LIMIT 1" in str(query)) or (
+                "SELECT" in str(query) and "objects.name" in str(query)
+            ):
                 return mock_result_empty
             # Third call: FTS query
             elif "MATCH" in str(query):

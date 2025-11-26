@@ -6,8 +6,8 @@ checklists, difficulty ratings, moon phase impact, and more.
 """
 
 import unittest
-from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
@@ -419,7 +419,7 @@ class TestCompareEquipment(unittest.TestCase):
     def test_compare_equipment_structure(self):
         """Test equipment comparison result structure"""
         result = compare_equipment("M31")
-        for equipment, data in result.items():
+        for _equipment, data in result.items():
             self.assertIn("visible", data)
             self.assertIn("notes", data)
 
@@ -431,7 +431,7 @@ class TestGenerateQuickReference(unittest.TestCase):
         """Test quick reference generation"""
         objects = [
             CelestialObject(
-            name="M31",
+                name="M31",
                 common_name=None,
                 catalog="messier",
                 ra_hours=0.7,
@@ -440,7 +440,7 @@ class TestGenerateQuickReference(unittest.TestCase):
                 magnitude=3.4,
             ),
             CelestialObject(
-            name="Jupiter",
+                name="Jupiter",
                 common_name=None,
                 catalog="planet",
                 ra_hours=10.0,
@@ -579,7 +579,9 @@ class TestGetObjectVisibilityTimeline(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.planning_utils.calculate_lst")
     @patch("celestron_nexstar.api.observation.planning_utils.ra_dec_to_alt_az")
     @patch("celestron_nexstar.api.observation.planning_utils.is_dynamic_object")
-    def test_get_timeline_dynamic_object(self, mock_dynamic, mock_ra_dec, mock_lst, mock_alt_az, mock_planet_pos, mock_location):
+    def test_get_timeline_dynamic_object(
+        self, mock_dynamic, mock_ra_dec, mock_lst, mock_alt_az, mock_planet_pos, mock_location
+    ):
         """Test timeline for dynamic object (planet)"""
         from celestron_nexstar.api.location.observer import ObserverLocation
 
@@ -705,7 +707,7 @@ class TestGetTransitTimes(unittest.TestCase):
 
         objects = [
             CelestialObject(
-            name="M31",
+                name="M31",
                 common_name=None,
                 catalog="messier",
                 ra_hours=0.7,
@@ -739,7 +741,7 @@ class TestGetTransitTimes(unittest.TestCase):
 
         objects = [
             CelestialObject(
-            name="M31",
+                name="M31",
                 common_name=None,
                 catalog="messier",
                 ra_hours=0.7,
@@ -763,7 +765,7 @@ class TestGetTransitTimes(unittest.TestCase):
 
         objects = [
             CelestialObject(
-            name="M31",
+                name="M31",
                 common_name=None,
                 catalog="messier",
                 ra_hours=0.7,

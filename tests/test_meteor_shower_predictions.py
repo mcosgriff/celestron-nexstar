@@ -5,8 +5,8 @@ Tests enhanced meteor shower predictions with moon phase adjustments.
 """
 
 import unittest
-from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 from celestron_nexstar.api.astronomy.meteor_shower_predictions import (
     MeteorShowerPrediction,
@@ -15,7 +15,6 @@ from celestron_nexstar.api.astronomy.meteor_shower_predictions import (
     get_enhanced_meteor_predictions,
 )
 from celestron_nexstar.api.astronomy.meteor_showers import MeteorShower
-from celestron_nexstar.api.astronomy.solar_system import MoonInfo
 from celestron_nexstar.api.location.observer import ObserverLocation
 
 
@@ -109,6 +108,7 @@ class TestGetEnhancedMeteorPredictions(unittest.TestCase):
         # Function exists and can be called - full testing requires database setup
         # This test just verifies the function signature
         import inspect
+
         sig = inspect.signature(get_enhanced_meteor_predictions)
         self.assertIn("location", sig.parameters)
         self.assertIn("months_ahead", sig.parameters)

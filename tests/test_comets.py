@@ -200,7 +200,9 @@ class TestGetVisibleComets(unittest.TestCase):
         )
         mock_get_known.return_value = [comet]
 
-        result = asyncio.run(get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0))
+        result = asyncio.run(
+            get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0)
+        )
 
         self.assertIsInstance(result, list)
         # Should have visibility entries for the comet
@@ -223,7 +225,9 @@ class TestGetVisibleComets(unittest.TestCase):
         )
         mock_get_known.return_value = [comet]
 
-        result = asyncio.run(get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0))
+        result = asyncio.run(
+            get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0)
+        )
 
         # Should be empty since comet is outside activity window
         self.assertEqual(len(result), 0)
@@ -245,7 +249,9 @@ class TestGetVisibleComets(unittest.TestCase):
         )
         mock_get_known.return_value = [comet]
 
-        result = asyncio.run(get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0))
+        result = asyncio.run(
+            get_visible_comets(self.mock_session, self.test_location, months_ahead=12, max_magnitude=8.0)
+        )
 
         # Should be empty since comet is too dim
         self.assertEqual(len(result), 0)
@@ -285,7 +291,9 @@ class TestGetUpcomingComets(unittest.TestCase):
 
         result = asyncio.run(get_upcoming_comets(self.mock_session, self.test_location, months_ahead=24))
 
-        mock_get_visible.assert_called_once_with(self.mock_session, self.test_location, months_ahead=24, max_magnitude=10.0)
+        mock_get_visible.assert_called_once_with(
+            self.mock_session, self.test_location, months_ahead=24, max_magnitude=10.0
+        )
         self.assertEqual(len(result), 1)
 
 

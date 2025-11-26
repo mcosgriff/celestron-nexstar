@@ -9,7 +9,6 @@ import unittest
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.astronomy.meteor_showers import (
     MeteorShower,
     _is_date_in_range,
@@ -18,6 +17,7 @@ from celestron_nexstar.api.astronomy.meteor_showers import (
     get_peak_showers,
     get_radiant_position,
 )
+from celestron_nexstar.api.core.exceptions import DatabaseError
 
 
 class TestMeteorShower(unittest.TestCase):

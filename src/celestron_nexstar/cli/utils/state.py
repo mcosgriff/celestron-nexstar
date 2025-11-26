@@ -4,6 +4,7 @@ CLI State Management
 Manages telescope connection state across CLI commands.
 """
 
+import asyncio
 import contextlib
 from typing import Any
 
@@ -36,7 +37,19 @@ def clear_telescope() -> None:
     global _telescope
     if _telescope is not None:
         with contextlib.suppress(Exception):
-            _telescope.disconnect()
+            # Try to disconnect synchronously if possible
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, schedule disconnect
+                    # Store task reference to avoid garbage collection
+                    _disconnect_task = asyncio.create_task(_telescope.disconnect())  # noqa: RUF006
+                    # Task will run in background, we don't wait for it
+                else:
+                    loop.run_until_complete(_telescope.disconnect())
+            except RuntimeError:
+                # No event loop, create one
+                asyncio.run(_telescope.disconnect())
     _telescope = None
 
 
@@ -62,7 +75,7 @@ def ensure_connected() -> NexStarTelescope:
         if not _telescope.protocol.is_open():
             print_info("Telescope connection lost. Attempting to reconnect...")
             try:
-                _telescope.connect()
+                asyncio.run(_telescope.connect())
                 print_info("Reconnected successfully")
                 return _telescope
             except Exception as e:
@@ -110,7 +123,7 @@ def ensure_connected() -> NexStarTelescope:
     try:
         with console.status(f"[bold blue]Connecting to telescope on {connection_desc}...", spinner="dots"):
             _telescope = NexStarTelescope(config)
-            _telescope.connect()
+            asyncio.run(_telescope.connect())
         print_info(f"Connected to telescope on {connection_desc}")
         return _telescope
     except Exception as e:
@@ -132,3 +145,27 @@ def set_cli_state(key: str, value: Any) -> None:
 def get_cli_state_value(key: str, default: Any = None) -> Any:
     """Get CLI state value with default."""
     return _cli_state.get(key, default)
+
+
+def run_async(coro: Any) -> Any:
+    """
+    Run an async coroutine from a sync context.
+
+    This is a helper function for CLI commands that need to call async telescope methods.
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is running, we can't use run_until_complete
+            # This shouldn't happen in CLI context, but handle it gracefully
+            raise RuntimeError("Cannot run async code from within an async context in CLI")
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        # No event loop, create one
+        return asyncio.run(coro)

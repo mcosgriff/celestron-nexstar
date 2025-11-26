@@ -13,7 +13,7 @@ from typer.core import TyperGroup
 
 from celestron_nexstar import NexStarTelescope, TelescopeConfig
 from celestron_nexstar.cli.utils.output import print_error, print_json, print_success, print_telescope_info
-from celestron_nexstar.cli.utils.state import clear_telescope, get_telescope, set_telescope
+from celestron_nexstar.cli.utils.state import clear_telescope, get_telescope, run_async, set_telescope
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -75,14 +75,14 @@ def connect(
 
         with console.status(f"[bold blue]Connecting to telescope on {connection_desc}...", spinner="dots"):
             telescope = NexStarTelescope(config)
-            telescope.connect()
+            run_async(telescope.connect())
             set_telescope(telescope)
 
         print_success(f"Connected to telescope on {connection_desc}")
 
         # Get and display telescope info
         try:
-            info = telescope.get_info()
+            info = run_async(telescope.get_info())
             print_telescope_info(info.model, info.firmware_major, info.firmware_minor)
         except Exception:
             # Connection succeeded but info failed - not critical
@@ -156,10 +156,10 @@ def test(
 
         with console.status(f"[bold blue]Testing connection on {connection_desc}...", spinner="dots"):
             telescope = NexStarTelescope(config)
-            telescope.connect()
+            run_async(telescope.connect())
 
             # Run echo test
-            success = telescope.echo_test(char)
+            success = run_async(telescope.echo_test(char))
 
         if success:
             print_success(f"Echo test passed on {connection_desc}")
@@ -168,7 +168,7 @@ def test(
             raise typer.Exit(code=1) from None
 
         # Clean up
-        telescope.disconnect()
+        run_async(telescope.disconnect())
 
     except Exception as e:
         print_error(f"Connection test failed: {e}")
@@ -214,11 +214,11 @@ def info(
                 config = TelescopeConfig(port=port)
 
             telescope = NexStarTelescope(config)
-            telescope.connect()
+            run_async(telescope.connect())
             temp_connection = True
 
         # Get telescope info
-        info = telescope.get_info()
+        info = run_async(telescope.get_info())
 
         if json_output:
             print_json(
@@ -239,4 +239,4 @@ def info(
     finally:
         # Clean up temporary connection
         if temp_connection and telescope is not None:
-            telescope.disconnect()
+            run_async(telescope.disconnect())

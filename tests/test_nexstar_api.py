@@ -85,7 +85,8 @@ class TestNexStarTelescope(unittest.TestCase):
             patch.object(self.telescope.protocol, "is_open", return_value=True),
             patch.object(self.telescope.protocol, "open", return_value=True),
             patch.object(self.telescope.protocol, "echo", return_value=False),
-            patch.object(self.telescope.protocol, "close"),self.assertRaises(TelescopeConnectionError)
+            patch.object(self.telescope.protocol, "close"),
+            self.assertRaises(TelescopeConnectionError),
         ):
             self.telescope.connect()
 
@@ -732,9 +733,8 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
 
     def test_move_for_time_invalid_string_direction(self):
         """Test move_for_time with invalid string direction"""
-        with patch.object(self.telescope.protocol, "is_open", return_value=True):
-            with self.assertRaises(ValueError):
-                self.telescope.move_for_time("invalid", duration=1.0, rate=5)
+        with patch.object(self.telescope.protocol, "is_open", return_value=True), self.assertRaises(ValueError):
+            self.telescope.move_for_time("invalid", duration=1.0, rate=5)
 
     def test_move_for_time_rate_zero(self):
         """Test move_for_time with rate 0 (should stop)"""
@@ -749,6 +749,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
         """Test move_for_time with invalid duration"""
         # The deal.pre decorator will raise PreContractError, not ValueError
         from deal import PreContractError
+
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises((ValueError, PreContractError)):
                 self.telescope.move_for_time(Direction.UP, duration=0, rate=5)
@@ -757,6 +758,7 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
         """Test move_for_time with negative duration"""
         # The deal.pre decorator will raise PreContractError, not ValueError
         from deal import PreContractError
+
         with patch.object(self.telescope.protocol, "is_open", return_value=True):
             with self.assertRaises((ValueError, PreContractError)):
                 self.telescope.move_for_time(Direction.UP, duration=-1.0, rate=5)
@@ -783,9 +785,8 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
 
     def test_move_step_invalid_string_direction(self):
         """Test move_step with invalid string direction"""
-        with patch.object(self.telescope.protocol, "is_open", return_value=True):
-            with self.assertRaises(ValueError):
-                self.telescope.move_step("invalid", rate=5)
+        with patch.object(self.telescope.protocol, "is_open", return_value=True), self.assertRaises(ValueError):
+            self.telescope.move_step("invalid", rate=5)
 
     def test_move_step_rate_zero(self):
         """Test move_step with rate 0 (should stop)"""
@@ -795,7 +796,6 @@ class TestNexStarTelescopeAdditional(unittest.TestCase):
         ):
             result = self.telescope.move_step(Direction.UP, rate=0)
             self.assertTrue(result)
-
 
     def test_stop_motion_failure(self):
         """Test stop_motion when one axis fails"""

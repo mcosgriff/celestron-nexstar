@@ -4,9 +4,13 @@ Main application window for telescope control.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import contextlib
+import threading
+from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QCursor, QGuiApplication, QIcon, QMouseEvent
@@ -41,6 +45,43 @@ from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPa
 if TYPE_CHECKING:
     from celestron_nexstar import NexStarTelescope
     from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+
+
+def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
+    """
+    Run an async coroutine from a sync context, handling both cases:
+    - If called from sync context: uses asyncio.run()
+    - If called from async context: creates new event loop in thread
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Check if we're in an async context
+        asyncio.get_running_loop()
+        # We're in an async context, need to use a thread with new event loop
+        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
+
+        def run_in_thread() -> None:
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(coro)
+                future.set_result(result)
+                new_loop.close()
+            except Exception as e:
+                future.set_exception(e)
+
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+        return future.result()
+    except RuntimeError:
+        # No running loop, use asyncio.run()
+        return asyncio.run(coro)
 
 
 class ObjectsLoaderThread(QThread):
@@ -1270,7 +1311,7 @@ class MainWindow(QMainWindow):
         # Update telescope position if connected
         if self.telescope and self.telescope.protocol.is_open():
             try:
-                coords = self.telescope.get_position_ra_dec()
+                coords = _run_async_safe(self.telescope.get_position_ra_dec())
                 self.position_label.setText(f"Position: RA {coords.ra_hours:.4f}h, Dec {coords.dec_degrees:+.4f}°")
             except Exception:
                 self.position_label.setText("Position: --")
@@ -1285,7 +1326,7 @@ class MainWindow(QMainWindow):
         # Check if telescope is connected
         if self.telescope and self.telescope.protocol.is_open():
             try:
-                location_result = self.telescope.get_location()
+                location_result = _run_async_safe(self.telescope.get_location())
                 if location_result:
                     lat = location_result.latitude
                     lon = location_result.longitude
@@ -1327,7 +1368,7 @@ class MainWindow(QMainWindow):
         """Handle disconnect button click."""
         if self.telescope:
             with contextlib.suppress(Exception):
-                self.telescope.disconnect()
+                _run_async_safe(self.telescope.disconnect())
 
             self.telescope = None
 
@@ -1468,9 +1509,9 @@ class MainWindow(QMainWindow):
             # Show ISS dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.iss_info_dialog import ISSInfoDialog
 
-            dialog = ISSInfoDialog(self)
+            iss_dialog = ISSInfoDialog(self)
             progress.close()
-            dialog.exec()
+            iss_dialog.exec()
         elif object_name == "binoculars":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading binocular viewing information...", "Cancel", 0, 0, self)
@@ -1486,9 +1527,9 @@ class MainWindow(QMainWindow):
             # Show binoculars dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.binoculars_info_dialog import BinocularsInfoDialog
 
-            dialog = BinocularsInfoDialog(self)
+            binoculars_dialog = BinocularsInfoDialog(self)
             progress.close()
-            dialog.exec()
+            binoculars_dialog.exec()
         elif object_name == "naked_eye":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading naked-eye viewing information...", "Cancel", 0, 0, self)
@@ -1504,9 +1545,9 @@ class MainWindow(QMainWindow):
             # Show naked-eye dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.naked_eye_info_dialog import NakedEyeInfoDialog
 
-            dialog = NakedEyeInfoDialog(self)
+            naked_eye_dialog = NakedEyeInfoDialog(self)
             progress.close()
-            dialog.exec()
+            naked_eye_dialog.exec()
         elif object_name == "comets":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading comet visibility information...", "Cancel", 0, 0, self)
@@ -1522,9 +1563,9 @@ class MainWindow(QMainWindow):
             # Show comets dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.comets_info_dialog import CometsInfoDialog
 
-            dialog = CometsInfoDialog(self)
+            comets_dialog = CometsInfoDialog(self)
             progress.close()
-            dialog.exec()
+            comets_dialog.exec()
         elif object_name == "eclipse":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading eclipse information...", "Cancel", 0, 0, self)
@@ -1540,9 +1581,9 @@ class MainWindow(QMainWindow):
             # Show eclipse dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.eclipse_info_dialog import EclipseInfoDialog
 
-            dialog = EclipseInfoDialog(self, progress=progress)
+            eclipse_dialog = EclipseInfoDialog(self, progress=progress)
             progress.close()
-            dialog.exec()
+            eclipse_dialog.exec()
         elif object_name == "planets":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading planetary events information...", "Cancel", 0, 0, self)
@@ -1558,9 +1599,9 @@ class MainWindow(QMainWindow):
             # Show planets dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.planets_info_dialog import PlanetsInfoDialog
 
-            dialog = PlanetsInfoDialog(self, progress=progress)
+            planets_dialog = PlanetsInfoDialog(self, progress=progress)
             progress.close()
-            dialog.exec()
+            planets_dialog.exec()
         elif object_name == "space_weather":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading space weather information...", "Cancel", 0, 0, self)
@@ -1576,9 +1617,9 @@ class MainWindow(QMainWindow):
             # Show space weather dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.space_weather_info_dialog import SpaceWeatherInfoDialog
 
-            dialog = SpaceWeatherInfoDialog(self)
+            space_weather_dialog = SpaceWeatherInfoDialog(self)
             progress.close()
-            dialog.exec()
+            space_weather_dialog.exec()
         elif object_name == "satellites":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading satellite passes information...", "Cancel", 0, 0, self)
@@ -1594,9 +1635,9 @@ class MainWindow(QMainWindow):
             # Show satellites dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.satellites_info_dialog import SatellitesInfoDialog
 
-            dialog = SatellitesInfoDialog(self, progress=progress)
+            satellites_dialog = SatellitesInfoDialog(self, progress=progress)
             progress.close()
-            dialog.exec()
+            satellites_dialog.exec()
         elif object_name == "meteors":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading meteor shower predictions...", "Cancel", 0, 0, self)
@@ -1612,9 +1653,9 @@ class MainWindow(QMainWindow):
             # Show meteors dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.meteors_info_dialog import MeteorsInfoDialog
 
-            dialog = MeteorsInfoDialog(self, progress=progress)
+            meteors_dialog = MeteorsInfoDialog(self, progress=progress)
             progress.close()
-            dialog.exec()
+            meteors_dialog.exec()
         elif object_name == "milky_way":
             # Show progress dialog while loading
             progress = QProgressDialog("Loading Milky Way visibility information...", "Cancel", 0, 0, self)
@@ -1629,9 +1670,9 @@ class MainWindow(QMainWindow):
 
             from celestron_nexstar.gui.dialogs.milky_way_info_dialog import MilkyWayInfoDialog
 
-            dialog = MilkyWayInfoDialog(self, progress=progress)
+            milky_way_dialog = MilkyWayInfoDialog(self, progress=progress)
             progress.close()
-            dialog.exec()
+            milky_way_dialog.exec()
         else:
             # TODO: Open celestial object window for other objects
             pass

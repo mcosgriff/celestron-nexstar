@@ -66,7 +66,10 @@ def status() -> None:
     console.print("[dim]Data from NOAA Space Weather Prediction Center[/dim]\n")
 
     try:
-        conditions = get_space_weather_conditions()
+        import asyncio
+
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        conditions = asyncio.run(get_space_weather_conditions())
 
         # NOAA Scales Table
         scales_table = Table(title="NOAA Space Weather Scales", show_header=True, header_style="bold")
@@ -195,7 +198,10 @@ def ovation() -> None:
     console.print("[dim]30-minute aurora probability predictions from NOAA SWPC[/dim]\n")
 
     try:
-        forecasts = get_ovation_aurora_forecast()
+        import asyncio
+
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        forecasts = asyncio.run(get_ovation_aurora_forecast())
 
         if not forecasts:
             console.print("[yellow]⚠[/yellow] Ovation aurora forecast data not available.\n")

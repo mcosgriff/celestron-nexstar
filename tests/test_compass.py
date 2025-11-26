@@ -7,8 +7,8 @@ Tests compass direction utilities and sky position formatting.
 import unittest
 
 from celestron_nexstar.api.telescope.compass import (
-    azimuth_to_compass_16point,
     azimuth_to_compass_8point,
+    azimuth_to_compass_16point,
     format_altitude_description,
     format_object_path,
     format_sky_position,

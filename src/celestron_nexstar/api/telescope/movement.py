@@ -10,6 +10,7 @@ movement control with features including:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -48,10 +49,23 @@ class MovementController:
         try:
             from celestron_nexstar.api.telescope.telescope import NexStarTelescope
 
-            with NexStarTelescope(str(port)) as telescope:
-                telescope.move_fixed(direction, self.slew_rate)
-                self.moving = True
-                self.active_direction = direction
+            async def _move() -> None:
+                async with NexStarTelescope(str(port)) as telescope:
+                    await telescope.move_fixed(direction, self.slew_rate)
+                    self.moving = True
+                    self.active_direction = direction
+
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, schedule the move
+                    # Store task reference to avoid garbage collection
+                    _move_task = asyncio.create_task(_move())  # noqa: RUF006
+                    # Task will run in background, we don't wait for it
+                else:
+                    loop.run_until_complete(_move())
+            except RuntimeError:
+                asyncio.run(_move())
         except Exception:
             pass  # Silently fail to not disrupt UI
 
@@ -67,10 +81,23 @@ class MovementController:
         try:
             from celestron_nexstar.api.telescope.telescope import NexStarTelescope
 
-            with NexStarTelescope(str(port)) as telescope:
-                telescope.stop_motion("both")
-                self.moving = False
-                self.active_direction = None
+            async def _stop() -> None:
+                async with NexStarTelescope(str(port)) as telescope:
+                    await telescope.stop_motion("both")
+                    self.moving = False
+                    self.active_direction = None
+
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, schedule the stop
+                    # Store task reference to avoid garbage collection
+                    _stop_task = asyncio.create_task(_stop())  # noqa: RUF006
+                    # Task will run in background, we don't wait for it
+                else:
+                    loop.run_until_complete(_stop())
+            except RuntimeError:
+                asyncio.run(_stop())
         except Exception:
             pass  # Silently fail
 

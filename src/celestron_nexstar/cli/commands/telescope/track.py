@@ -18,7 +18,7 @@ from celestron_nexstar.cli.utils.output import (
     print_json,
     print_success,
 )
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -61,7 +61,7 @@ def start(
     try:
         telescope = ensure_connected()
 
-        success = telescope.set_tracking_mode(tracking_mode)
+        success = run_async(telescope.set_tracking_mode(tracking_mode))
         if success:
             print_success(f"Tracking started in {format_tracking_mode(tracking_mode.name)} mode")
         else:
@@ -86,7 +86,7 @@ def stop(
     try:
         telescope = ensure_connected()
 
-        success = telescope.set_tracking_mode(TrackingMode.OFF)
+        success = run_async(telescope.set_tracking_mode(TrackingMode.OFF))
         if success:
             print_success("Tracking stopped")
         else:
@@ -113,7 +113,7 @@ def status(
     try:
         telescope = ensure_connected()
 
-        mode = telescope.get_tracking_mode()
+        mode = run_async(telescope.get_tracking_mode())
 
         if json_output:
             print_json({"mode": mode.name, "mode_value": mode.value, "mode_display": format_tracking_mode(mode.name)})

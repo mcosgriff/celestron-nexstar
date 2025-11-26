@@ -9,19 +9,17 @@ from datetime import UTC, datetime
 from unittest.mock import patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase, SkyBrightness
+from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
 from celestron_nexstar.api.core.exceptions import LocationNotSetError
 from celestron_nexstar.api.location.light_pollution import BortleClass, LightPollutionData
-from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.location.weather import WeatherData
 from celestron_nexstar.api.observation.observation_planner import (
+    ObservationPlanner,
     ObservingConditions,
     ObservingTarget,
-    ObservationPlanner,
     RecommendedObject,
     get_tonight_plan,
 )
-from celestron_nexstar.api.location.observer import ObserverLocation
 
 
 class TestObservingTarget(unittest.TestCase):

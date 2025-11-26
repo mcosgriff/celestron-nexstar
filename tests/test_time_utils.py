@@ -4,8 +4,6 @@ Tests for time formatting utilities.
 
 from datetime import UTC, datetime
 
-import pytest
-
 from celestron_nexstar.api.core import format_local_time, get_local_timezone
 
 

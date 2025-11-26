@@ -26,7 +26,7 @@ from celestron_nexstar.api.location.observer import (
     set_observer_location,
 )
 from celestron_nexstar.cli.utils.output import console, print_error, print_info, print_json, print_success
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -76,7 +76,7 @@ def set_location(
 
         print_info(f"Setting location to {latitude:.4f}°, {longitude:.4f}°")
 
-        success = telescope.set_location(latitude, longitude)
+        success = run_async(telescope.set_location(latitude, longitude))
         if success:
             # Format location nicely
             lat_dir = "N" if latitude >= 0 else "S"
@@ -106,7 +106,7 @@ def get_location(
     try:
         telescope = ensure_connected()
 
-        location = telescope.get_location()
+        location = run_async(telescope.get_location())
 
         if json_output:
             lat_dir = "N" if location.latitude >= 0 else "S"

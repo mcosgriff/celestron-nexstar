@@ -12,7 +12,7 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from celestron_nexstar.cli.utils.output import console, print_error, print_info, print_json, print_success
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -42,7 +42,7 @@ def get_time(
     try:
         telescope = ensure_connected()
 
-        time_info = telescope.get_time()
+        time_info = run_async(telescope.get_time())
 
         if json_output:
             print_json(
@@ -124,7 +124,7 @@ def set_time(
 
         print_info(f"Setting time to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
 
-        success = telescope.set_time(hour, minute, second, month, day, year, timezone, daylight_savings)
+        success = run_async(telescope.set_time(hour, minute, second, month, day, year, timezone, daylight_savings))
         if success:
             print_success(
                 f"Time set to {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d} (GMT{timezone:+d})"
@@ -173,7 +173,9 @@ def sync_time(
             f"{now.hour:02d}:{now.minute:02d}:{now.second:02d} (GMT{timezone:+d})"
         )
 
-        success = telescope.set_time(now.hour, now.minute, now.second, now.month, now.day, now.year, timezone, dst)
+        success = run_async(
+            telescope.set_time(now.hour, now.minute, now.second, now.month, now.day, now.year, timezone, dst)
+        )
 
         if success:
             print_success("Telescope time synced with system time")

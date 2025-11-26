@@ -249,9 +249,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_visible_object(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_visible_object(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for a visible object"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -267,9 +265,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_below_horizon(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_below_horizon(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for object below horizon"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -284,9 +280,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_too_faint(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_too_faint(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for object that's too faint"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 10.0  # Limiting magnitude
@@ -311,9 +305,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_low_altitude(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_low_altitude(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for object at low altitude"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -328,9 +320,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_position_error(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_position_error(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility when position calculation fails"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -431,9 +421,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_near_detection_limit(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_near_detection_limit(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for object near detection limit"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -459,9 +447,7 @@ class TestAssessVisibility(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.visibility.get_object_altitude_azimuth")
     @patch("celestron_nexstar.api.observation.visibility.calculate_limiting_magnitude")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_assess_visibility_excellent_altitude(
-        self, mock_get_config, mock_calc_limiting, mock_get_alt_az
-    ):
+    def test_assess_visibility_excellent_altitude(self, mock_get_config, mock_calc_limiting, mock_get_alt_az):
         """Test assessing visibility for object at excellent altitude (>60 degrees)"""
         mock_get_config.return_value = self.test_config
         mock_calc_limiting.return_value = 12.0
@@ -528,9 +514,7 @@ class TestFilterVisibleObjects(unittest.TestCase):
 
     @patch("celestron_nexstar.api.observation.visibility.assess_visibility")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_filter_visible_objects_filters_invisible(
-        self, mock_get_config, mock_assess
-    ):
+    def test_filter_visible_objects_filters_invisible(self, mock_get_config, mock_assess):
         """Test that filter_visible_objects filters out invisible objects"""
         mock_get_config.return_value = self.test_config
 
@@ -565,9 +549,7 @@ class TestFilterVisibleObjects(unittest.TestCase):
 
     @patch("celestron_nexstar.api.observation.visibility.assess_visibility")
     @patch("celestron_nexstar.api.observation.visibility.get_current_configuration")
-    def test_filter_visible_objects_sorts_by_score(
-        self, mock_get_config, mock_assess
-    ):
+    def test_filter_visible_objects_sorts_by_score(self, mock_get_config, mock_assess):
         """Test that filter_visible_objects sorts by observability score"""
         mock_get_config.return_value = self.test_config
 

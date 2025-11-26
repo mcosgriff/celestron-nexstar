@@ -678,6 +678,7 @@ class TestFetchWeather(unittest.TestCase):
     def test_fetch_weather_network_error(self, mock_session_class: MagicMock) -> None:
         """Test weather fetch with network error"""
         import aiohttp
+
         # Mock session that raises exception
         mock_session = AsyncMock()
         mock_session.get = AsyncMock(side_effect=aiohttp.ClientError("Network error"))
@@ -997,8 +998,6 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
     @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
     def test_fetch_hourly_forecast_table_creation(self, mock_session, mock_stale, mock_get_db):
         """Test that table is created if it doesn't exist"""
-        from celestron_nexstar.api.database.database import get_database
-        from sqlalchemy import text
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1022,15 +1021,17 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
         # Mock API response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "hourly": {
-                "time": ["2024-01-15T12:00"],
-                "temperature_2m": [70.0],
-                "relative_humidity_2m": [50.0],
-                "cloud_cover": [10.0],
-                "wind_speed_10m": [5.0],
+        mock_response.json = AsyncMock(
+            return_value={
+                "hourly": {
+                    "time": ["2024-01-15T12:00"],
+                    "temperature_2m": [70.0],
+                    "relative_humidity_2m": [50.0],
+                    "cloud_cover": [10.0],
+                    "wind_speed_10m": [5.0],
+                }
             }
-        })
+        )
         mock_session_context = AsyncMock()
         mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
         mock_session_context.__aexit__ = AsyncMock(return_value=None)
@@ -1049,8 +1050,9 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
     def test_fetch_hourly_forecast_cached_data(self, mock_stale, mock_get_db):
         """Test using cached forecast data from database"""
-        from celestron_nexstar.api.database.models import WeatherForecastModel
         from datetime import UTC, datetime, timedelta
+
+        from celestron_nexstar.api.database.models import WeatherForecastModel
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1103,8 +1105,6 @@ class TestFetchWeatherDatabase(unittest.TestCase):
     @patch("celestron_nexstar.api.database.database.get_database")
     def test_fetch_weather_table_creation(self, mock_get_db):
         """Test that table is created if it doesn't exist"""
-        from celestron_nexstar.api.database.database import get_database
-        from sqlalchemy import text
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1130,7 +1130,6 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
     @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_historical_cloud_cover_tighter_range(self, mock_get_db):
         """Test getting historical cloud cover with tighter range (p40-p60)"""
-        from celestron_nexstar.api.database.models import HistoricalWeatherModel
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1157,7 +1156,6 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
     @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_historical_cloud_cover_fallback_to_p25_p75(self, mock_get_db):
         """Test fallback to p25-p75 when p40-p60 not available"""
-        from celestron_nexstar.api.database.models import HistoricalWeatherModel
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1194,7 +1192,6 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
     @patch("celestron_nexstar.api.database.database.get_database")
     def test_get_historical_cloud_cover_wider_range(self, mock_get_db):
         """Test getting historical cloud cover with wider range (p25-p75)"""
-        from celestron_nexstar.api.database.models import HistoricalWeatherModel
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
@@ -1248,15 +1245,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
         # Mock API response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 0.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 0,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 0.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 0,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1296,15 +1295,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
         # Mock API response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 45,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 45,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1344,15 +1345,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
         # Mock API response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 95,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 95,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1387,15 +1390,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 51,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 51,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1430,15 +1435,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 61,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 61,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1473,15 +1480,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 71,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 71,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1516,15 +1525,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 80,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 80,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1559,15 +1570,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 85,
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 85,
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1602,15 +1615,17 @@ class TestFetchWeatherWeatherCodes(unittest.TestCase):
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "current": {
-                "temperature_2m": 70.0,
-                "relative_humidity_2m": 50.0,
-                "cloud_cover": 100.0,
-                "wind_speed_10m": 5.0,
-                "weather_code": 999,  # Unknown code
+        mock_response.json = AsyncMock(
+            return_value={
+                "current": {
+                    "temperature_2m": 70.0,
+                    "relative_humidity_2m": 50.0,
+                    "cloud_cover": 100.0,
+                    "wind_speed_10m": 5.0,
+                    "weather_code": 999,  # Unknown code
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)
@@ -1670,16 +1685,18 @@ class TestFetchHourlyForecastEdgeCases(unittest.TestCase):
         # Mock API response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "hourly": {
-                "time": ["2024-01-15T12:00", "2024-01-15T13:00"],
-                "temperature_2m": [70.0, 72.0],
-                "relative_humidity_2m": [50.0, 55.0],
-                "cloud_cover": [10.0, 15.0],
-                "wind_speed_10m": [5.0, 6.0],
-                "dew_point_2m": [50.0, 52.0],
+        mock_response.json = AsyncMock(
+            return_value={
+                "hourly": {
+                    "time": ["2024-01-15T12:00", "2024-01-15T13:00"],
+                    "temperature_2m": [70.0, 72.0],
+                    "relative_humidity_2m": [50.0, 55.0],
+                    "cloud_cover": [10.0, 15.0],
+                    "wind_speed_10m": [5.0, 6.0],
+                    "dew_point_2m": [50.0, 52.0],
+                }
             }
-        })
+        )
         mock_response_context = AsyncMock()
         mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response_context.__aexit__ = AsyncMock(return_value=None)

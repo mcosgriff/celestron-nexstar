@@ -27,7 +27,7 @@ from celestron_nexstar.cli.utils.output import (
     print_success,
 )
 from celestron_nexstar.cli.utils.selection import select_object
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -71,7 +71,7 @@ def radec(
         print_info(f"Slewing to RA {ra:.4f}h, Dec {dec:+.4f}°")
 
         # Start slew
-        success = telescope.goto_ra_dec(ra, dec)
+        success = run_async(telescope.goto_ra_dec(ra, dec))
         if not success:
             print_error("Failed to initiate slew")
             raise typer.Exit(code=1) from None
@@ -88,7 +88,7 @@ def radec(
                 ) as prog:
                     task = prog.add_task("Slewing to target...", total=None)
 
-                    while telescope.is_slewing():
+                    while run_async(telescope.is_slewing()):
                         time.sleep(0.5)
                         prog.update(task)
 
@@ -135,7 +135,7 @@ def altaz(
         print_info(f"Slewing to Az {az:.2f}°, Alt {alt:+.2f}°")
 
         # Start slew
-        success = telescope.goto_alt_az(az, alt)
+        success = run_async(telescope.goto_alt_az(az, alt))
         if not success:
             print_error("Failed to initiate slew")
             raise typer.Exit(code=1)
@@ -152,7 +152,7 @@ def altaz(
                 ) as prog:
                     task = prog.add_task("Slewing to target...", total=None)
 
-                    while telescope.is_slewing():
+                    while run_async(telescope.is_slewing()):
                         time.sleep(0.5)
                         prog.update(task)
 
@@ -181,11 +181,11 @@ def cancel() -> None:
     try:
         telescope = ensure_connected()
 
-        if not telescope.is_slewing():
+        if not run_async(telescope.is_slewing()):
             print_info("Telescope is not currently slewing")
             return
 
-        success = telescope.cancel_goto()
+        success = run_async(telescope.cancel_goto())
         if success:
             print_success("Slew cancelled")
         else:
@@ -318,7 +318,7 @@ def by_name(
         print_info(f"Slewing to {display_name} (RA {obj.ra_hours:.4f}h, Dec {obj.dec_degrees:+.4f}°)")
 
         # Start slew
-        success = telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees)
+        success = run_async(telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees))
         if not success:
             print_error("Failed to initiate slew")
             raise typer.Exit(code=1) from None
@@ -335,7 +335,7 @@ def by_name(
                 ) as prog:
                     task = prog.add_task(f"Slewing to {display_name}...", total=None)
 
-                    while telescope.is_slewing():
+                    while run_async(telescope.is_slewing()):
                         time.sleep(0.5)
                         prog.update(task)
 
@@ -363,7 +363,7 @@ def status() -> None:
     """
     try:
         telescope = ensure_connected()
-        is_slewing = telescope.is_slewing()
+        is_slewing = run_async(telescope.is_slewing())
 
         if is_slewing:
             console.print("[yellow]Telescope is slewing[/yellow]")

@@ -156,9 +156,12 @@ def _show_aurora_content(
 
     # Add G-scale from space weather if available
     try:
+        import asyncio
+
         from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
 
-        swx = get_space_weather_conditions()
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        swx = asyncio.run(get_space_weather_conditions())
         if swx.g_scale:
             g_scale_display = f"G{swx.g_scale.level} ({swx.g_scale.display_name})"
             match swx.g_scale.level:

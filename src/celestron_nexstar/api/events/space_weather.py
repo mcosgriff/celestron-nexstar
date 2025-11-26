@@ -10,21 +10,17 @@ from __future__ import annotations
 import contextlib
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-import requests
-import requests_cache
-from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
-
-
-try:
-    from urllib3.util.retry import Retry  # type: ignore[import-not-found]
-except ImportError:
-    Retry = None  # type: ignore[assignment,misc]
+import aiohttp
 
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cache for API responses
+_cache: dict[str, tuple[datetime, dict[str, Any] | list[Any] | float | None]] = {}
+_CACHE_TTL_SECONDS = 1800  # 30 minutes
 
 
 __all__ = [
@@ -107,26 +103,20 @@ class SpaceWeatherConditions:
             object.__setattr__(self, "alerts", [])
 
 
-def _get_cached_session() -> requests_cache.CachedSession:
-    """Get a cached HTTP session for NOAA SWPC API calls."""
-    cache_dir = Path.home() / ".cache" / "celestron-nexstar"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_session = requests_cache.CachedSession(
-        str(cache_dir / "space_weather_cache"),
-        expire_after=1800,  # 30 minutes
-    )
+def _get_from_cache(key: str) -> dict[str, Any] | list[Any] | float | None:
+    """Get cached response if still valid."""
+    if key in _cache:
+        timestamp, data = _cache[key]
+        if datetime.now(UTC) - timestamp < timedelta(seconds=_CACHE_TTL_SECONDS):
+            return data
+        # Cache expired, remove it
+        del _cache[key]
+    return None
 
-    # Add retry strategy if urllib3 is available
-    if Retry is not None:
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=0.2,
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        cache_session.mount("https://", adapter)
 
-    return cache_session
+def _set_cache(key: str, data: dict[str, Any] | list[Any] | float | None) -> None:
+    """Store response in cache."""
+    _cache[key] = (datetime.now(UTC), data)
 
 
 def _parse_noaa_scale(scale_str: str | None, scale_type: str) -> NOAAScale | None:
@@ -148,62 +138,78 @@ def _parse_noaa_scale(scale_str: str | None, scale_type: str) -> NOAAScale | Non
     return None
 
 
-def get_solar_wind_data() -> dict[str, float | None]:
+async def get_solar_wind_data() -> dict[str, float | None]:
     """
     Fetch current solar wind data from NOAA SWPC.
+
+    Fetches plasma and magnetic field data concurrently for better performance.
 
     Returns:
         Dictionary with solar_wind_speed, solar_wind_bt, solar_wind_bz, solar_wind_density
     """
+    import asyncio
+
+    cache_key = "solar_wind_data"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, dict):
+        return cached
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            # Fetch plasma and magnetic field data concurrently
+            plasma_url = "https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json"
+            mag_url = "https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json"
 
-        # Try 7-day plasma data (most recent)
-        url = "https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json"
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            plasma_task = session.get(plasma_url, timeout=aiohttp.ClientTimeout(total=10))
+            mag_task = session.get(mag_url, timeout=aiohttp.ClientTimeout(total=10))
 
-        if not data or len(data) < 2:
-            return {}
+            plasma_response, mag_response = await asyncio.gather(plasma_task, mag_task)
 
-        # Format: First row is header, subsequent rows are data
-        # Header: ["time_tag", "density", "speed", "temperature"]
-        # Get the most recent entry (last row)
-        latest_row = data[-1]
-        try:
-            density = float(latest_row[1]) if latest_row[1] else None
-            speed = float(latest_row[2]) if latest_row[2] else None
-        except (IndexError, ValueError, TypeError):
+            # Process plasma data
             density = None
             speed = None
+            async with plasma_response:
+                plasma_response.raise_for_status()
+                data = await plasma_response.json()
 
-        # Get magnetic field data
-        mag_url = "https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json"
-        mag_response = session.get(mag_url, timeout=10)
-        bt = None
-        bz = None
+                if data and len(data) >= 2:
+                    # Format: First row is header, subsequent rows are data
+                    # Header: ["time_tag", "density", "speed", "temperature"]
+                    # Get the most recent entry (last row)
+                    latest_row = data[-1]
+                    try:
+                        density = float(latest_row[1]) if latest_row[1] else None
+                        speed = float(latest_row[2]) if latest_row[2] else None
+                    except (IndexError, ValueError, TypeError):
+                        density = None
+                        speed = None
 
-        if mag_response.status_code == 200:
-            mag_data = mag_response.json()
-            if mag_data and len(mag_data) >= 2:
-                # Header: ["time_tag", "bt", "bz", "phi", "theta"]
-                latest_mag = mag_data[-1]
-                try:
-                    bt = float(latest_mag[1]) if latest_mag[1] else None
-                    bz = float(latest_mag[2]) if latest_mag[2] else None
-                except (IndexError, ValueError, TypeError):
-                    bt = None
-                    bz = None
+            # Process magnetic field data
+            bt = None
+            bz = None
+            async with mag_response:
+                if mag_response.status == 200:
+                    mag_data = await mag_response.json()
+                    if mag_data and len(mag_data) >= 2:
+                        # Header: ["time_tag", "bt", "bz", "phi", "theta"]
+                        latest_mag = mag_data[-1]
+                        try:
+                            bt = float(latest_mag[1]) if latest_mag[1] else None
+                            bz = float(latest_mag[2]) if latest_mag[2] else None
+                        except (IndexError, ValueError, TypeError):
+                            bt = None
+                            bz = None
 
-        return {
-            "solar_wind_speed": speed,
-            "solar_wind_bt": bt,
-            "solar_wind_bz": bz,
-            "solar_wind_density": density,
-        }
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+            result = {
+                "solar_wind_speed": speed,
+                "solar_wind_bt": bt,
+                "solar_wind_bz": bz,
+                "solar_wind_density": density,
+            }
+            _set_cache(cache_key, result)
+            return result
+    except (aiohttp.ClientError, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
@@ -213,63 +219,71 @@ def get_solar_wind_data() -> dict[str, float | None]:
         return {}
 
 
-def get_goes_xray_data() -> dict[str, float | str | None]:
+async def get_goes_xray_data() -> dict[str, float | str | None]:
     """
     Fetch GOES X-ray flux data from NOAA SWPC.
 
     Returns:
         Dictionary with xray_flux, xray_class
     """
+    cache_key = "goes_xray_data"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, dict):
+        return cached
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            # GOES XRS report
+            url = "https://services.swpc.noaa.gov/json/goes/goes-xrs-report.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                response.raise_for_status()
+                data = await response.json()
 
-        # GOES XRS report
-        url = "https://services.swpc.noaa.gov/json/goes/goes-xrs-report.json"
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            if not data:
+                return {}
 
-        if not data:
-            return {}
-
-        # Find the most recent entry using max() with key function
-        def get_entry_time(entry: dict[str, object]) -> datetime | None:
-            """Extract datetime from entry, or return None if invalid."""
-            time_str = entry.get("time_tag")
-            if not time_str:
+            # Find the most recent entry using max() with key function
+            def get_entry_time(entry: dict[str, object]) -> datetime | None:
+                """Extract datetime from entry, or return None if invalid."""
+                time_str = entry.get("time_tag")
+                if not time_str:
+                    return None
+                with contextlib.suppress(ValueError, AttributeError):
+                    if isinstance(time_str, str):
+                        return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
                 return None
-            with contextlib.suppress(ValueError, AttributeError):
-                if isinstance(time_str, str):
-                    return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-            return None
 
-        # Filter entries with valid timestamps and get the latest
-        entries_with_times = [
-            (entry, time) for entry in data if isinstance(entry, dict) and (time := get_entry_time(entry)) is not None
-        ]
-        latest_pair = max(entries_with_times, key=lambda x: x[1], default=None)
-        latest = latest_pair[0] if latest_pair else None
+            # Filter entries with valid timestamps and get the latest
+            entries_with_times = [
+                (entry, time)
+                for entry in data
+                if isinstance(entry, dict) and (time := get_entry_time(entry)) is not None
+            ]
+            latest_pair = max(entries_with_times, key=lambda x: x[1], default=None)
+            latest = latest_pair[0] if latest_pair else None
 
-        if latest:
-            flux = latest.get("flux")
-            xray_class = latest.get("class")
+            if latest:
+                flux = latest.get("flux")
+                xray_class = latest.get("class")
 
-            # Convert flux to float if it's a string
-            xray_flux = None
-            if flux:
-                with contextlib.suppress(ValueError, TypeError):
-                    xray_flux = float(flux)
+                # Convert flux to float if it's a string
+                xray_flux = None
+                if flux:
+                    with contextlib.suppress(ValueError, TypeError):
+                        xray_flux = float(flux)
 
-            xray_class_str = str(xray_class) if xray_class else None
+                xray_class_str = str(xray_class) if xray_class else None
 
-            return {
-                "xray_flux": xray_flux,
-                "xray_class": xray_class_str,
-            }
+                result = {
+                    "xray_flux": xray_flux,
+                    "xray_class": xray_class_str,
+                }
+                _set_cache(cache_key, result)
+                return result
 
-        return {}
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+            return {}
+    except (aiohttp.ClientError, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
@@ -279,7 +293,7 @@ def get_goes_xray_data() -> dict[str, float | str | None]:
         return {}
 
 
-def get_radio_flux_107() -> float | None:
+async def get_radio_flux_107() -> float | None:
     """
     Fetch 10.7cm radio flux from NOAA SWPC.
 
@@ -289,74 +303,82 @@ def get_radio_flux_107() -> float | None:
     Returns:
         10.7cm radio flux in sfu (solar flux units), or None if unavailable
     """
+    cache_key = "radio_flux_107"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, (int, float)):
+        return float(cached)
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            # Try the GOES XRS report which sometimes includes radio flux
+            # Alternative: Use daily solar data endpoint if available
+            url = "https://services.swpc.noaa.gov/json/goes/goes-xrs-report.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                response.raise_for_status()
+                data = await response.json()
 
-        # Try the GOES XRS report which sometimes includes radio flux
-        # Alternative: Use daily solar data endpoint if available
-        url = "https://services.swpc.noaa.gov/json/goes/goes-xrs-report.json"
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            if not data:
+                return None
 
-        if not data:
+            # Look for radio flux in the data
+            # The structure may vary, so we'll try multiple approaches
+            field_names = ("flux_107", "f107", "radio_flux")
+            for entry in data:
+                if isinstance(entry, dict):
+                    # Try common field names
+                    flux_107 = next((entry.get(field) for field in field_names if entry.get(field)), None)
+                    if flux_107:
+                        with contextlib.suppress(ValueError, TypeError):
+                            result = float(flux_107)
+                            _set_cache(cache_key, result)
+                            return result
+
+            # Try alternative endpoint for daily solar flux
+            # NOAA provides daily solar flux data
+            try:
+                flux_url = "https://services.swpc.noaa.gov/json/radio_flux/daily_flux.json"
+                async with session.get(flux_url, timeout=aiohttp.ClientTimeout(total=10)) as flux_response:
+                    if flux_response.status == 200:
+                        flux_data = await flux_response.json()
+                        if flux_data and isinstance(flux_data, list):
+                            # Get the most recent entry
+                            def get_flux_entry_time(entry: dict[str, object]) -> datetime | None:
+                                """Extract datetime from flux entry."""
+                                time_str = entry.get("time_tag") or entry.get("date") or entry.get("time")
+                                if not time_str:
+                                    return None
+                                with contextlib.suppress(ValueError, AttributeError):
+                                    if isinstance(time_str, str):
+                                        return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                                return None
+
+                            # Filter entries with valid timestamps and get the latest
+                            entries_with_times = [
+                                (entry, time)
+                                for entry in flux_data
+                                if isinstance(entry, dict) and (time := get_flux_entry_time(entry)) is not None
+                            ]
+                            latest_entry_pair = max(entries_with_times, key=lambda x: x[1], default=None)
+                            latest_entry = latest_entry_pair[0] if latest_entry_pair else None
+                            if latest_entry:
+                                flux_value = (
+                                    latest_entry.get("flux") or latest_entry.get("f107") or latest_entry.get("flux_107")
+                                )
+                                if flux_value:
+                                    with contextlib.suppress(ValueError, TypeError):
+                                        result = float(flux_value)
+                                        _set_cache(cache_key, result)
+                                        return result
+            except (KeyError, IndexError, AttributeError):
+                # KeyError: missing keys in response
+                # IndexError: missing array indices
+                # AttributeError: missing attributes
+                pass
+
+            # If not found, return None
             return None
-
-        # Look for radio flux in the data
-        # The structure may vary, so we'll try multiple approaches
-        field_names = ("flux_107", "f107", "radio_flux")
-        for entry in data:
-            if isinstance(entry, dict):
-                # Try common field names
-                flux_107 = next((entry.get(field) for field in field_names if entry.get(field)), None)
-                if flux_107:
-                    with contextlib.suppress(ValueError, TypeError):
-                        return float(flux_107)
-
-        # Try alternative endpoint for daily solar flux
-        # NOAA provides daily solar flux data
-        try:
-            flux_url = "https://services.swpc.noaa.gov/json/radio_flux/daily_flux.json"
-            flux_response = session.get(flux_url, timeout=10)
-            if flux_response.status_code == 200:
-                flux_data = flux_response.json()
-                if flux_data and isinstance(flux_data, list):
-                    # Get the most recent entry
-                    def get_flux_entry_time(entry: dict[str, object]) -> datetime | None:
-                        """Extract datetime from flux entry."""
-                        time_str = entry.get("time_tag") or entry.get("date") or entry.get("time")
-                        if not time_str:
-                            return None
-                        with contextlib.suppress(ValueError, AttributeError):
-                            if isinstance(time_str, str):
-                                return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                        return None
-
-                    # Filter entries with valid timestamps and get the latest
-                    entries_with_times = [
-                        (entry, time)
-                        for entry in flux_data
-                        if isinstance(entry, dict) and (time := get_flux_entry_time(entry)) is not None
-                    ]
-                    latest_entry_pair = max(entries_with_times, key=lambda x: x[1], default=None)
-                    latest_entry = latest_entry_pair[0] if latest_entry_pair else None
-                    if latest_entry:
-                        flux_value = (
-                            latest_entry.get("flux") or latest_entry.get("f107") or latest_entry.get("flux_107")
-                        )
-                        if flux_value:
-                            with contextlib.suppress(ValueError, TypeError):
-                                return float(flux_value)
-        except (KeyError, IndexError, AttributeError):
-            # KeyError: missing keys in response
-            # IndexError: missing array indices
-            # AttributeError: missing attributes
-            pass
-
-        # If not found, return None
-        return None
-    except (requests.RequestException, ValueError, TypeError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+    except (aiohttp.ClientError, ValueError, TypeError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # TimeoutError: request timeout
@@ -364,7 +386,7 @@ def get_radio_flux_107() -> float | None:
         return None
 
 
-def get_proton_flux_data() -> dict[str, float | None]:
+async def get_proton_flux_data() -> dict[str, float | None]:
     """
     Fetch proton flux data from NOAA SWPC for S-scale calculation.
 
@@ -378,53 +400,59 @@ def get_proton_flux_data() -> dict[str, float | None]:
     Returns:
         Dictionary with proton_flux_10mev (proton flux at >10 MeV in pfu)
     """
+    cache_key = "proton_flux_data"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, dict):
+        return cached
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            # Try GOES proton flux endpoint
+            # Common endpoint: goes-proton-flux or similar
+            # Note: Exact endpoint may need verification
+            url = "https://services.swpc.noaa.gov/json/goes/goes-proton-flux.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status != 200:
+                    # Try alternative endpoint format
+                    url = "https://services.swpc.noaa.gov/products/goes/goes-proton-flux.json"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as alt_response:
+                        response = alt_response
 
-        # Try GOES proton flux endpoint
-        # Common endpoint: goes-proton-flux or similar
-        # Note: Exact endpoint may need verification
-        url = "https://services.swpc.noaa.gov/json/goes/goes-proton-flux.json"
-        response = session.get(url, timeout=10)
+                if response.status == 200:
+                    data = await response.json()
+                    if data and isinstance(data, list):
+                        # Find the most recent entry
+                        def get_proton_entry_time(entry: dict[str, object]) -> datetime | None:
+                            """Extract datetime from proton flux entry."""
+                            time_str = entry.get("time_tag") or entry.get("time")
+                            if not time_str:
+                                return None
+                            with contextlib.suppress(ValueError, AttributeError):
+                                if isinstance(time_str, str):
+                                    return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                            return None
 
-        if response.status_code != 200:
-            # Try alternative endpoint format
-            url = "https://services.swpc.noaa.gov/products/goes/goes-proton-flux.json"
-            response = session.get(url, timeout=10)
+                        # Filter entries with valid timestamps and get the latest
+                        entries_with_times = [
+                            (entry, time)
+                            for entry in data
+                            if isinstance(entry, dict) and (time := get_proton_entry_time(entry)) is not None
+                        ]
+                        latest_pair = max(entries_with_times, key=lambda x: x[1], default=None)
+                        latest = latest_pair[0] if latest_pair else None
 
-        if response.status_code == 200:
-            data = response.json()
-            if data and isinstance(data, list):
-                # Find the most recent entry
-                def get_proton_entry_time(entry: dict[str, object]) -> datetime | None:
-                    """Extract datetime from proton flux entry."""
-                    time_str = entry.get("time_tag") or entry.get("time")
-                    if not time_str:
-                        return None
-                    with contextlib.suppress(ValueError, AttributeError):
-                        if isinstance(time_str, str):
-                            return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                    return None
+                        if latest:
+                            # Look for >10 MeV proton flux
+                            flux_10mev = latest.get("flux_10mev") or latest.get("p10") or latest.get("proton_flux")
+                            if flux_10mev:
+                                with contextlib.suppress(ValueError, TypeError):
+                                    result: dict[str, float | None] = {"proton_flux_10mev": float(flux_10mev)}
+                                    _set_cache(cache_key, result)
+                                    return result
 
-                # Filter entries with valid timestamps and get the latest
-                entries_with_times = [
-                    (entry, time)
-                    for entry in data
-                    if isinstance(entry, dict) and (time := get_proton_entry_time(entry)) is not None
-                ]
-                latest_pair = max(entries_with_times, key=lambda x: x[1], default=None)
-                latest = latest_pair[0] if latest_pair else None
-
-                if latest:
-                    # Look for >10 MeV proton flux
-                    flux_10mev = latest.get("flux_10mev") or latest.get("p10") or latest.get("proton_flux")
-                    if flux_10mev:
-                        with contextlib.suppress(ValueError, TypeError):
-                            return {"proton_flux_10mev": float(flux_10mev)}
-
-        return {}
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+            return {}
+    except (aiohttp.ClientError, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
@@ -434,96 +462,118 @@ def get_proton_flux_data() -> dict[str, float | None]:
         return {}
 
 
-def get_kp_ap_data() -> dict[str, float | None]:
+async def get_kp_ap_data() -> dict[str, float | None]:
     """
     Fetch current Kp and Ap indices from NOAA SWPC.
 
     Returns:
         Dictionary with kp_index, ap_index
     """
+    cache_key = "kp_ap_data"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, dict):
+        return cached
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            # Kp forecast includes current observed values
+            url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                response.raise_for_status()
+                data = await response.json()
 
-        # Kp forecast includes current observed values
-        url = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            if not data or len(data) < 2:
+                return {}
 
-        if not data or len(data) < 2:
-            return {}
-
-        # Find the most recent observed value
-        def get_kp_entry_time(row: list[object]) -> datetime | None:
-            """Extract datetime from Kp data row if it's observed."""
-            if len(row) < 3:
+            # Find the most recent observed value
+            def get_kp_entry_time(row: list[object]) -> datetime | None:
+                """Extract datetime from Kp data row if it's observed."""
+                if len(row) < 3:
+                    return None
+                try:
+                    observed = str(row[2]).lower() if row[2] else ""
+                    if observed == "observed":
+                        time_str = str(row[0])
+                        return datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+                except (ValueError, IndexError, TypeError, AttributeError):
+                    pass
                 return None
-            try:
-                observed = str(row[2]).lower() if row[2] else ""
-                if observed == "observed":
-                    time_str = str(row[0])
-                    return datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-            except (ValueError, IndexError, TypeError, AttributeError):
-                pass
-            return None
 
-        # Filter rows with valid timestamps and get the latest
-        rows_with_times = [
-            (row, time) for row in data[1:] if len(row) >= 3 and (time := get_kp_entry_time(row)) is not None
-        ]
-        if rows_with_times:
-            latest_row_pair = max(rows_with_times, key=lambda x: x[1])
-            latest_row = latest_row_pair[0]
-            try:
-                latest_kp = float(latest_row[1])
-                return {"kp_index": latest_kp}
-            except (ValueError, IndexError, TypeError):
-                pass
+            # Filter rows with valid timestamps and get the latest
+            rows_with_times = [
+                (row, time) for row in data[1:] if len(row) >= 3 and (time := get_kp_entry_time(row)) is not None
+            ]
+            if rows_with_times:
+                latest_row_pair = max(rows_with_times, key=lambda x: x[1])
+                latest_row = latest_row_pair[0]
+                try:
+                    latest_kp = float(latest_row[1])
+                    result: dict[str, float | None] = {"kp_index": latest_kp}
+                    _set_cache(cache_key, result)
+                    return result
+                except (ValueError, IndexError, TypeError):
+                    pass
 
-        return {"kp_index": None}
-    except (requests.RequestException, KeyError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+            return {"kp_index": None}
+    except (aiohttp.ClientError, KeyError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # KeyError: missing keys in response
         # TimeoutError: request timeout
         logger.debug(f"Error fetching Kp/Ap data: {e}")
         return {}
 
 
-def get_space_weather_conditions() -> SpaceWeatherConditions:
+async def get_space_weather_conditions() -> SpaceWeatherConditions:
     """
     Fetch current space weather conditions from NOAA SWPC.
+
+    All API calls are made concurrently for improved performance.
 
     Returns:
         SpaceWeatherConditions object with current data
     """
+    import asyncio
+
     conditions = SpaceWeatherConditions(last_updated=datetime.now(UTC))
 
-    # Fetch solar wind data
-    solar_wind = get_solar_wind_data()
-    conditions.solar_wind_speed = solar_wind.get("solar_wind_speed")
-    conditions.solar_wind_bt = solar_wind.get("solar_wind_bt")
-    conditions.solar_wind_bz = solar_wind.get("solar_wind_bz")
-    conditions.solar_wind_density = solar_wind.get("solar_wind_density")
+    # Fetch all data concurrently using asyncio.gather() for better performance
+    solar_wind, xray_data, kp_data, radio_flux, proton_data = await asyncio.gather(
+        get_solar_wind_data(),
+        get_goes_xray_data(),
+        get_kp_ap_data(),
+        get_radio_flux_107(),
+        get_proton_flux_data(),
+        return_exceptions=True,  # Continue even if one request fails
+    )
 
-    # Fetch X-ray data
-    xray_data = get_goes_xray_data()
-    xray_flux_val = xray_data.get("xray_flux")
-    xray_class_val = xray_data.get("xray_class")
-    if isinstance(xray_flux_val, float):
-        conditions.xray_flux = xray_flux_val
-    if isinstance(xray_class_val, str):
-        conditions.xray_class = xray_class_val
+    # Process solar wind data (handle exception)
+    if not isinstance(solar_wind, Exception) and isinstance(solar_wind, dict):
+        conditions.solar_wind_speed = solar_wind.get("solar_wind_speed")
+        conditions.solar_wind_bt = solar_wind.get("solar_wind_bt")
+        conditions.solar_wind_bz = solar_wind.get("solar_wind_bz")
+        conditions.solar_wind_density = solar_wind.get("solar_wind_density")
 
-    # Fetch Kp index
-    kp_data = get_kp_ap_data()
-    conditions.kp_index = kp_data.get("kp_index")
+    # Process X-ray data (handle exception)
+    if not isinstance(xray_data, Exception) and isinstance(xray_data, dict):
+        xray_flux_val = xray_data.get("xray_flux")
+        xray_class_val = xray_data.get("xray_class")
+        if isinstance(xray_flux_val, float):
+            conditions.xray_flux = xray_flux_val
+        if isinstance(xray_class_val, str):
+            conditions.xray_class = xray_class_val
 
-    # Fetch 10.7cm radio flux
-    conditions.radio_flux_107 = get_radio_flux_107()
+    # Process Kp index (handle exception)
+    if not isinstance(kp_data, Exception) and isinstance(kp_data, dict):
+        conditions.kp_index = kp_data.get("kp_index")
 
-    # Fetch proton flux for S-scale calculation
-    proton_data = get_proton_flux_data()
-    proton_flux_10mev = proton_data.get("proton_flux_10mev")
+    # Process radio flux (handle exception)
+    if not isinstance(radio_flux, Exception) and isinstance(radio_flux, (int, float)):
+        conditions.radio_flux_107 = float(radio_flux)
+
+    # Process proton flux (handle exception)
+    proton_flux_10mev = None
+    if not isinstance(proton_data, Exception) and isinstance(proton_data, dict):
+        proton_flux_10mev = proton_data.get("proton_flux_10mev")
 
     # Determine NOAA scales from Kp index, X-ray class, and proton flux
     # G-scale from Kp: G1 (Kp=5), G2 (Kp=6), G3 (Kp=7), G4 (Kp=8), G5 (Kp=9)
@@ -623,7 +673,7 @@ class OvationAuroraForecast:
     forecast_type: str  # "forecast" or "observed"
 
 
-def get_ovation_aurora_forecast() -> list[OvationAuroraForecast] | None:
+async def get_ovation_aurora_forecast() -> list[OvationAuroraForecast] | None:
     """
     Fetch Ovation aurora forecast from NOAA SWPC.
 
@@ -633,18 +683,22 @@ def get_ovation_aurora_forecast() -> list[OvationAuroraForecast] | None:
     Returns:
         List of OvationAuroraForecast objects, or None if unavailable
     """
+    cache_key = "ovation_aurora_forecast"
+    cached = _get_from_cache(cache_key)
+    if cached is not None and isinstance(cached, list):
+        return cached
+
     try:
-        session = _get_cached_session()
+        async with aiohttp.ClientSession() as session:
+            url = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                response.raise_for_status()
+                data = await response.json()
 
-        url = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            if not data:
+                return None
 
-        if not data:
-            return None
-
-        forecasts: list[OvationAuroraForecast] = []
+            forecasts: list[OvationAuroraForecast] = []
 
         # The Ovation data structure can vary
         # Common formats:
@@ -733,9 +787,12 @@ def get_ovation_aurora_forecast() -> list[OvationAuroraForecast] | None:
             case _:
                 pass
 
-        return forecasts if forecasts else None
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
+        result = forecasts if forecasts else None
+        if result:
+            _set_cache(cache_key, result)
+        return result
+    except (aiohttp.ClientError, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
+        # aiohttp.ClientError: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response

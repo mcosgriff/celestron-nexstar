@@ -154,7 +154,7 @@ class CatalogSearchWindow(QMainWindow):
 
         # Try FontAwesome icons via qtawesome first
         try:
-            import qtawesome as qta  # type: ignore[import-not-found]
+            import qtawesome as qta  # type: ignore[import-untyped]
 
             fa_icon_name = icon_map.get(icon_name, icon_name)
             if fa_icon_name.startswith("mdi."):

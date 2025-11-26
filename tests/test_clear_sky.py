@@ -65,53 +65,73 @@ class TestCalculateDarkness(unittest.TestCase):
 
     def test_daytime_returns_zero(self):
         """Test that daytime (sun above horizon) returns 0.0"""
-        result = calculate_darkness(sun_altitude_deg=10.0, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=10.0, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 0.0)
 
     def test_civil_twilight(self):
         """Test civil twilight (sun between 0 and -6 degrees)"""
-        result = calculate_darkness(sun_altitude_deg=-3.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-3.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 2.0)
 
     def test_nautical_twilight(self):
         """Test nautical twilight (sun between -6 and -12 degrees)"""
-        result = calculate_darkness(sun_altitude_deg=-9.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-9.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 3.0)
 
     def test_astronomical_twilight_no_moon(self):
         """Test astronomical twilight without moon"""
-        result = calculate_darkness(sun_altitude_deg=-15.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-15.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5
+        )
         self.assertAlmostEqual(result, 6.0, places=1)  # 6.5 - 0.5
 
     def test_astronomical_twilight_with_moon(self):
         """Test astronomical twilight with moon"""
-        result = calculate_darkness(sun_altitude_deg=-15.0, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-15.0, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5
+        )
         self.assertAlmostEqual(result, 5.5, places=1)  # 6.5 - 1.0
 
     def test_dark_sky_no_moon(self):
         """Test dark sky (sun < -18 degrees) without moon"""
-        result = calculate_darkness(sun_altitude_deg=-20.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-20.0, moon_illumination=None, moon_altitude_deg=None, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 6.5)
 
     def test_dark_sky_full_moon_high(self):
         """Test dark sky with full moon at high altitude"""
-        result = calculate_darkness(sun_altitude_deg=-20.0, moon_illumination=1.0, moon_altitude_deg=90.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-20.0, moon_illumination=1.0, moon_altitude_deg=90.0, base_limiting_magnitude=6.5
+        )
         # Full moon at zenith: 6.5 - (1.0 * 3.5 * 1.0) = 3.0
         self.assertAlmostEqual(result, 3.0, places=1)
 
     def test_dark_sky_new_moon(self):
         """Test dark sky with new moon (no reduction)"""
-        result = calculate_darkness(sun_altitude_deg=-20.0, moon_illumination=0.0, moon_altitude_deg=45.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-20.0, moon_illumination=0.0, moon_altitude_deg=45.0, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 6.5)
 
     def test_dark_sky_moon_below_horizon(self):
         """Test dark sky with moon below horizon (no reduction)"""
-        result = calculate_darkness(sun_altitude_deg=-20.0, moon_illumination=1.0, moon_altitude_deg=-10.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=-20.0, moon_illumination=1.0, moon_altitude_deg=-10.0, base_limiting_magnitude=6.5
+        )
         self.assertEqual(result, 6.5)
 
     def test_none_sun_altitude(self):
         """Test with None sun altitude"""
-        result = calculate_darkness(sun_altitude_deg=None, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5)
+        result = calculate_darkness(
+            sun_altitude_deg=None, moon_illumination=0.5, moon_altitude_deg=45.0, base_limiting_magnitude=6.5
+        )
         self.assertIsNone(result)
 
 
@@ -225,9 +245,10 @@ class TestCalculateChartDataPoint(unittest.TestCase):
         # Test with timezone-naive datetime
         naive_dt = datetime(2024, 1, 1, 12, 0, 0)
 
-        with patch("celestron_nexstar.api.observation.clear_sky.get_sun_info") as mock_sun_info, patch(
-            "celestron_nexstar.api.observation.clear_sky.get_moon_info"
-        ) as mock_moon_info:
+        with (
+            patch("celestron_nexstar.api.observation.clear_sky.get_sun_info") as mock_sun_info,
+            patch("celestron_nexstar.api.observation.clear_sky.get_moon_info") as mock_moon_info,
+        ):
             mock_sun = MagicMock()
             mock_sun.altitude_deg = -20.0
             mock_sun_info.return_value = mock_sun

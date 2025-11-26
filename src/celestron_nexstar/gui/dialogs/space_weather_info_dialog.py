@@ -144,9 +144,12 @@ class SpaceWeatherInfoDialog(QDialog):
         )
 
         try:
+            import asyncio
+
             from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
 
-            conditions = get_space_weather_conditions()
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
+            conditions = asyncio.run(get_space_weather_conditions())
 
             # Build HTML content
             html_content = []

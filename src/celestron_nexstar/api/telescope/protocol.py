@@ -19,16 +19,23 @@ Protocol Specification (based on NexStar 6/8SE manual):
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
-import socket
-import time
+from typing import TYPE_CHECKING
 
 import deal
 import serial
+import serial_asyncio  # type: ignore[import-untyped]
 from returns.result import Failure, Result, Success
 
 from celestron_nexstar.api.core.exceptions import NotConnectedError, TelescopeConnectionError, TelescopeTimeoutError
+
+
+if TYPE_CHECKING:
+    from asyncio import StreamReader, StreamWriter
+
+    from serial_asyncio import SerialTransport
 
 
 __all__ = ["NexStarProtocol"]
@@ -42,12 +49,13 @@ class NexStarProtocol:
     Low-level implementation of the NexStar communication protocol.
 
     This class handles:
-    - Serial port and TCP/IP socket management
-    - Command transmission and response reception
+    - Serial port and TCP/IP socket management (async)
+    - Command transmission and response reception (async)
     - Coordinate encoding/decoding (degrees <-> hex)
     - Protocol-level error handling
 
     Supports both serial and TCP/IP connections (e.g., via Celestron SkyPortal WiFi Adapter).
+    All I/O operations are non-blocking and use asyncio.
     """
 
     # Protocol constants
@@ -83,10 +91,20 @@ class NexStarProtocol:
         self.timeout = timeout
         self.host = host
         self.tcp_port = tcp_port
-        self.serial_conn: serial.Serial | None = None
-        self.tcp_socket: socket.socket | None = None
 
-    def open(self) -> bool:
+        # Async serial connection
+        self.serial_reader: StreamReader | None = None
+        self.serial_writer: StreamWriter | None = None
+        self.serial_transport: SerialTransport | None = None
+
+        # Async TCP/IP connection
+        self.tcp_reader: StreamReader | None = None
+        self.tcp_writer: StreamWriter | None = None
+
+        # Lock for concurrent command handling
+        self._command_lock = asyncio.Lock()
+
+    async def open(self) -> bool:
         """
         Open connection to telescope (serial or TCP/IP).
 
@@ -97,72 +115,92 @@ class NexStarProtocol:
             TelescopeConnectionError: If connection cannot be opened
         """
         if self.connection_type == "tcp":
-            return self._open_tcp()
+            return await self._open_tcp()
         else:
-            return self._open_serial()
+            return await self._open_serial()
 
-    def _open_serial(self) -> bool:
-        """Open serial connection to telescope."""
+    async def _open_serial(self) -> bool:
+        """Open async serial connection to telescope."""
         try:
-            logger.debug(f"Opening serial connection to {self.port} at {self.baudrate} baud")
-            self.serial_conn = serial.Serial(
-                port=self.port,
+            logger.debug(f"Opening async serial connection to {self.port} at {self.baudrate} baud")
+            self.serial_reader, self.serial_writer = await serial_asyncio.open_serial_connection(
+                url=self.port,
                 baudrate=self.baudrate,
-                timeout=self.timeout,
                 bytesize=serial.EIGHTBITS,
                 parity=serial.PARITY_NONE,
                 stopbits=serial.STOPBITS_ONE,
             )
-            time.sleep(0.5)  # Allow connection to stabilize
-            logger.info(f"Serial connection opened successfully on {self.port}")
+            # Store transport for later access if needed
+            if hasattr(self.serial_writer, "_transport"):
+                self.serial_transport = self.serial_writer._transport
+
+            # Allow connection to stabilize
+            await asyncio.sleep(0.5)
+            logger.info(f"Async serial connection opened successfully on {self.port}")
             return True
-        except serial.SerialException as e:
+        except Exception as e:
             logger.error(f"Failed to open serial port {self.port}: {e}")
             raise TelescopeConnectionError(f"Failed to open port {self.port}: {e}") from e
 
-    def _open_tcp(self) -> bool:
-        """Open TCP/IP connection to telescope (e.g., via SkyPortal WiFi Adapter)."""
+    async def _open_tcp(self) -> bool:
+        """Open async TCP/IP connection to telescope (e.g., via SkyPortal WiFi Adapter)."""
         try:
-            logger.debug(f"Opening TCP/IP connection to {self.host}:{self.tcp_port}")
-            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.tcp_socket.settimeout(self.timeout)
-            self.tcp_socket.connect((self.host, self.tcp_port))
-            time.sleep(0.2)  # Allow connection to stabilize
-            logger.info(f"TCP/IP connection opened successfully to {self.host}:{self.tcp_port}")
+            logger.debug(f"Opening async TCP/IP connection to {self.host}:{self.tcp_port}")
+            self.tcp_reader, self.tcp_writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.tcp_port),
+                timeout=self.timeout,
+            )
+            # Allow connection to stabilize
+            await asyncio.sleep(0.2)
+            logger.info(f"Async TCP/IP connection opened successfully to {self.host}:{self.tcp_port}")
             return True
+        except TimeoutError as e:
+            logger.error(f"Timeout opening TCP/IP connection to {self.host}:{self.tcp_port}")
+            raise TelescopeConnectionError(f"Timeout connecting to {self.host}:{self.tcp_port}") from e
         except OSError as e:
             logger.error(f"Failed to open TCP/IP connection to {self.host}:{self.tcp_port}: {e}")
-            if self.tcp_socket:
+            if self.tcp_writer:
                 with contextlib.suppress(Exception):
-                    self.tcp_socket.close()
-                self.tcp_socket = None
+                    self.tcp_writer.close()
+                    await self.tcp_writer.wait_closed()
+                self.tcp_writer = None
+                self.tcp_reader = None
             raise TelescopeConnectionError(f"Failed to connect to {self.host}:{self.tcp_port}: {e}") from e
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close connection (serial or TCP/IP)."""
         if self.connection_type == "tcp":
-            if self.tcp_socket:
+            if self.tcp_writer:
                 try:
-                    self.tcp_socket.close()
+                    self.tcp_writer.close()
+                    await self.tcp_writer.wait_closed()
                     logger.info(f"TCP/IP connection closed to {self.host}:{self.tcp_port}")
                 except Exception as e:
-                    logger.warning(f"Error closing TCP/IP socket: {e}")
-                self.tcp_socket = None
+                    logger.warning(f"Error closing TCP/IP connection: {e}")
+                self.tcp_writer = None
+                self.tcp_reader = None
         else:
-            if self.serial_conn and self.serial_conn.is_open:
-                self.serial_conn.close()
-                logger.info(f"Serial connection closed on {self.port}")
+            if self.serial_writer:
+                try:
+                    self.serial_writer.close()
+                    await self.serial_writer.wait_closed()
+                    logger.info(f"Serial connection closed on {self.port}")
+                except Exception as e:
+                    logger.warning(f"Error closing serial connection: {e}")
+                self.serial_writer = None
+                self.serial_reader = None
+                self.serial_transport = None
 
     def is_open(self) -> bool:
         """Check if connection is open."""
         if self.connection_type == "tcp":
-            return self.tcp_socket is not None
+            return self.tcp_writer is not None and not self.tcp_writer.is_closing()
         else:
-            return self.serial_conn is not None and self.serial_conn.is_open
+            return self.serial_writer is not None and not self.serial_writer.is_closing()
 
-    def send_command(self, command: str) -> str:
+    async def send_command(self, command: str) -> str:
         """
-        Send a command and receive response.
+        Send a command and receive response (async, non-blocking).
 
         All NexStar commands are ASCII strings terminated with '#'.
         Responses are also terminated with '#'.
@@ -181,7 +219,7 @@ class NexStarProtocol:
         if not self.is_open():
             logger.info("Connection not open, attempting to reconnect...")
             try:
-                if not self.open():
+                if not await self.open():
                     logger.error("Failed to reconnect")
                     raise NotConnectedError("Connection not open and reconnection failed") from None
                 logger.info("Reconnected successfully")
@@ -189,87 +227,85 @@ class NexStarProtocol:
                 logger.error(f"Reconnection failed: {e}")
                 raise NotConnectedError("Connection not open and reconnection failed") from e
 
-        if self.connection_type == "tcp":
-            return self._send_command_tcp(command)
-        else:
-            return self._send_command_serial(command)
+        # Use lock to prevent concurrent commands
+        async with self._command_lock:
+            if self.connection_type == "tcp":
+                return await self._send_command_tcp(command)
+            else:
+                return await self._send_command_serial(command)
 
-    def _send_command_serial(self, command: str) -> str:
-        """Send command over serial connection."""
-        # Type guard to ensure serial_conn is not None
-        assert self.serial_conn is not None, "Serial connection should be open at this point"
+    async def _send_command_serial(self, command: str) -> str:
+        """Send command over async serial connection."""
+        assert self.serial_reader is not None and self.serial_writer is not None, "Serial connection should be open"
 
-        # Clear buffers to ensure clean communication
-        self.serial_conn.reset_input_buffer()
-        self.serial_conn.reset_output_buffer()
+        # Clear input buffer by reading any pending data
+        try:
+            while True:
+                # Try to read with a very short timeout to drain buffer
+                try:
+                    await asyncio.wait_for(self.serial_reader.read(1024), timeout=0.01)
+                except TimeoutError:
+                    break
+        except Exception:
+            # Ignore errors while clearing buffer
+            pass
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
         logger.debug(f"Sending command: {command!r}")
-        self.serial_conn.write(full_command.encode("ascii"))
+        self.serial_writer.write(full_command.encode("ascii"))
+        await self.serial_writer.drain()
 
-        # Read response until terminator
+        # Read response until terminator (async, non-blocking)
         response = b""
-        start_time = time.time()
+        terminator_bytes = self.TERMINATOR.encode("ascii")
 
-        while True:
-            if time.time() - start_time > self.timeout:
-                logger.error(f"Timeout waiting for response to command: {command!r}")
-                raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
-
-            if self.serial_conn.in_waiting > 0:
-                byte = self.serial_conn.read(1)
+        try:
+            while True:
+                # Read one byte at a time until we get the terminator
+                byte = await asyncio.wait_for(self.serial_reader.read(1), timeout=self.timeout)
+                if not byte:
+                    # Connection closed
+                    raise TelescopeConnectionError("Serial connection closed by device") from None
                 response += byte
-                if byte == self.TERMINATOR.encode("ascii"):
+                if byte == terminator_bytes:
                     break
+        except TimeoutError:
+            logger.error(f"Timeout waiting for response to command: {command!r}")
+            raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
         # Decode and remove terminator
         response_str = response.decode("ascii").rstrip(self.TERMINATOR)
         logger.debug(f"Received response: {response_str!r}")
         return response_str
 
-    def _send_command_tcp(self, command: str) -> str:
-        """Send command over TCP/IP connection."""
-        # Type guard to ensure tcp_socket is not None
-        assert self.tcp_socket is not None, "TCP/IP connection should be open at this point"
+    async def _send_command_tcp(self, command: str) -> str:
+        """Send command over async TCP/IP connection."""
+        assert self.tcp_reader is not None and self.tcp_writer is not None, "TCP/IP connection should be open"
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
         logger.debug(f"Sending command: {command!r}")
-        try:
-            self.tcp_socket.sendall(full_command.encode("ascii"))
-        except OSError as e:
-            logger.error(f"Error sending command over TCP/IP: {e}")
-            raise TelescopeConnectionError(f"Failed to send command: {e}") from e
+        self.tcp_writer.write(full_command.encode("ascii"))
+        await self.tcp_writer.drain()
 
-        # Read response until terminator
+        # Read response until terminator (async, non-blocking)
         response = b""
-        start_time = time.time()
+        terminator_bytes = self.TERMINATOR.encode("ascii")
 
-        while True:
-            if time.time() - start_time > self.timeout:
-                logger.error(f"Timeout waiting for response to command: {command!r}")
-                raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
-
-            try:
-                # Set socket to non-blocking for timeout handling
-                self.tcp_socket.settimeout(0.1)
-                byte = self.tcp_socket.recv(1)
+        try:
+            while True:
+                # Read one byte at a time until we get the terminator
+                byte = await asyncio.wait_for(self.tcp_reader.read(1), timeout=self.timeout)
                 if not byte:
                     # Connection closed
-                    raise TelescopeConnectionError("Connection closed by remote host") from None
+                    raise TelescopeConnectionError("TCP/IP connection closed by remote host") from None
                 response += byte
-                if byte == self.TERMINATOR.encode("ascii"):
+                if byte == terminator_bytes:
                     break
-            except TimeoutError:
-                # Continue waiting if timeout hasn't been exceeded
-                continue
-            except OSError as e:
-                logger.error(f"Error receiving response over TCP/IP: {e}")
-                raise TelescopeConnectionError(f"Failed to receive response: {e}") from e
-            finally:
-                # Restore original timeout
-                self.tcp_socket.settimeout(self.timeout)
+        except TimeoutError:
+            logger.error(f"Timeout waiting for response to command: {command!r}")
+            raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
         # Decode and remove terminator
         response_str = response.decode("ascii").rstrip(self.TERMINATOR)
@@ -358,7 +394,7 @@ class NexStarProtocol:
 
     # ========== Common Command Patterns ==========
 
-    def get_single_byte(self, command: str) -> int | None:
+    async def get_single_byte(self, command: str) -> int | None:
         """
         Send command and receive single-byte response.
 
@@ -368,12 +404,12 @@ class NexStarProtocol:
         Returns:
             Byte value or None if invalid
         """
-        response = self.send_command(command)
+        response = await self.send_command(command)
         if len(response) == 1:
             return ord(response[0])
         return None
 
-    def get_two_bytes(self, command: str) -> tuple[int, int] | None:
+    async def get_two_bytes(self, command: str) -> tuple[int, int] | None:
         """
         Send command and receive two-byte response.
 
@@ -383,12 +419,12 @@ class NexStarProtocol:
         Returns:
             Tuple of (byte1, byte2) or None if invalid
         """
-        response = self.send_command(command)
+        response = await self.send_command(command)
         if len(response) == 2:
             return ord(response[0]), ord(response[1])
         return None
 
-    def send_empty_command(self, command: str) -> bool:
+    async def send_empty_command(self, command: str) -> bool:
         """
         Send command expecting empty response (success indicator).
 
@@ -398,13 +434,13 @@ class NexStarProtocol:
         Returns:
             True if response was empty (success)
         """
-        response = self.send_command(command)
+        response = await self.send_command(command)
         return response == ""
 
     # ========== Specific Protocol Commands ==========
 
     @deal.pre(lambda self, char: len(char) == 1)  # type: ignore[misc,arg-type]
-    def echo(self, char: str = "x") -> bool:
+    async def echo(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
         Command: K<char>#
@@ -417,17 +453,15 @@ class NexStarProtocol:
             True if echo successful
         """
         try:
-            response = self.send_command(f"K{char}")
+            response = await self.send_command(f"K{char}")
             return response == char
         except (NotConnectedError, TelescopeTimeoutError, TelescopeConnectionError):
             return False
         except Exception:
-            # Handle serial.SerialException for serial connections
-            if self.connection_type == "serial":
-                return False
-            raise
+            # Handle other exceptions
+            return False
 
-    def get_version(self) -> tuple[int, int]:
+    async def get_version(self) -> tuple[int, int]:
         """
         Get firmware version.
         Command: V#
@@ -436,10 +470,10 @@ class NexStarProtocol:
         Returns:
             Tuple of (major_version, minor_version)
         """
-        result = self.get_two_bytes("V")
+        result = await self.get_two_bytes("V")
         return result if result else (0, 0)
 
-    def get_model(self) -> int:
+    async def get_model(self) -> int:
         """
         Get telescope model number.
         Command: m#
@@ -448,10 +482,10 @@ class NexStarProtocol:
         Returns:
             Model number (6 for NexStar 6SE)
         """
-        result = self.get_single_byte("m")
+        result = await self.get_single_byte("m")
         return result if result is not None else 0
 
-    def get_ra_dec_precise(self) -> Result[tuple[float, float], str]:
+    async def get_ra_dec_precise(self) -> Result[tuple[float, float], str]:
         """
         Get precise RA/Dec position.
         Command: E#
@@ -460,10 +494,10 @@ class NexStarProtocol:
         Returns:
             Success with tuple of (RA_degrees, Dec_degrees) or Failure with error message
         """
-        response = self.send_command("E")
+        response = await self.send_command("E")
         return self.decode_coordinate_pair(response)
 
-    def get_alt_az_precise(self) -> Result[tuple[float, float], str]:
+    async def get_alt_az_precise(self) -> Result[tuple[float, float], str]:
         """
         Get precise Alt/Az position.
         Command: Z#
@@ -472,11 +506,11 @@ class NexStarProtocol:
         Returns:
             Success with tuple of (Az_degrees, Alt_degrees) or Failure with error message
         """
-        response = self.send_command("Z")
+        response = await self.send_command("Z")
         return self.decode_coordinate_pair(response)
 
     @deal.pre(lambda self, ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)  # type: ignore[misc,arg-type]
-    def goto_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
+    async def goto_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
         """
         Slew to RA/Dec coordinates.
         Command: R<RA>,<DEC>#
@@ -490,10 +524,10 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(ra_degrees, dec_degrees)
-        return self.send_empty_command(f"R{coords}")
+        return await self.send_empty_command(f"R{coords}")
 
     @deal.pre(lambda self, az_degrees, alt_degrees: 0.0 <= az_degrees <= 360.0 and 0.0 <= alt_degrees <= 360.0)  # type: ignore[misc,arg-type]
-    def goto_alt_az_precise(self, az_degrees: float, alt_degrees: float) -> bool:
+    async def goto_alt_az_precise(self, az_degrees: float, alt_degrees: float) -> bool:
         """
         Slew to Alt/Az coordinates.
         Command: B<AZ>,<ALT>#
@@ -507,10 +541,10 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(az_degrees, alt_degrees)
-        return self.send_empty_command(f"B{coords}")
+        return await self.send_empty_command(f"B{coords}")
 
     @deal.pre(lambda self, ra_degrees, dec_degrees: 0.0 <= ra_degrees <= 360.0 and 0.0 <= dec_degrees <= 360.0)  # type: ignore[misc,arg-type]
-    def sync_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
+    async def sync_ra_dec_precise(self, ra_degrees: float, dec_degrees: float) -> bool:
         """
         Sync to RA/Dec coordinates (for alignment).
         Command: S<RA>,<DEC>#
@@ -524,9 +558,9 @@ class NexStarProtocol:
             True if command successful
         """
         coords = self.encode_coordinate_pair(ra_degrees, dec_degrees)
-        return self.send_empty_command(f"S{coords}")
+        return await self.send_empty_command(f"S{coords}")
 
-    def is_goto_in_progress(self) -> bool:
+    async def is_goto_in_progress(self) -> bool:
         """
         Check if goto is in progress.
         Command: L#
@@ -535,10 +569,10 @@ class NexStarProtocol:
         Returns:
             True if slewing
         """
-        response = self.send_command("L")
+        response = await self.send_command("L")
         return response == "1"
 
-    def cancel_goto(self) -> bool:
+    async def cancel_goto(self) -> bool:
         """
         Cancel current goto.
         Command: M#
@@ -547,10 +581,10 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        return self.send_empty_command("M")
+        return await self.send_empty_command("M")
 
     @deal.pre(lambda self, axis, direction, rate: axis in [1, 2] and direction in [17, 18] and 0 <= rate <= 9)  # type: ignore[misc,arg-type]
-    def variable_rate_motion(self, axis: int, direction: int, rate: int) -> bool:
+    async def variable_rate_motion(self, axis: int, direction: int, rate: int) -> bool:
         """
         Initiate variable rate motion.
         Command: P<axis><direction><rate><0><0><0>#
@@ -576,9 +610,9 @@ class NexStarProtocol:
             True if successful
         """
         command = f"P{chr(axis)}{chr(direction)}{chr(rate)}{chr(0)}{chr(0)}{chr(0)}"
-        return self.send_empty_command(command)
+        return await self.send_empty_command(command)
 
-    def get_tracking_mode(self) -> int:
+    async def get_tracking_mode(self) -> int:
         """
         Get tracking mode.
         Command: t#
@@ -587,11 +621,11 @@ class NexStarProtocol:
         Returns:
             Tracking mode (0=off, 1=alt-az, 2=eq-north, 3=eq-south)
         """
-        result = self.get_single_byte("t")
+        result = await self.get_single_byte("t")
         return result if result is not None else 0
 
     @deal.pre(lambda self, mode: 0 <= mode <= 3)  # type: ignore[misc,arg-type]
-    def set_tracking_mode(self, mode: int) -> bool:
+    async def set_tracking_mode(self, mode: int) -> bool:
         """
         Set tracking mode.
         Command: T<mode>#
@@ -603,9 +637,9 @@ class NexStarProtocol:
         Returns:
             True if successful
         """
-        return self.send_empty_command(f"T{chr(mode)}")
+        return await self.send_empty_command(f"T{chr(mode)}")
 
-    def get_location(self) -> tuple[float, float] | None:
+    async def get_location(self) -> tuple[float, float] | None:
         """
         Get observer location.
         Command: w#
@@ -614,7 +648,7 @@ class NexStarProtocol:
         Returns:
             Tuple of (latitude_degrees, longitude_degrees) or None
         """
-        response = self.send_command("w")
+        response = await self.send_command("w")
         if len(response) == 16:
             try:
                 lat = self.hex_to_degrees(response[:8])
@@ -628,7 +662,7 @@ class NexStarProtocol:
         lambda self, latitude_degrees, longitude_degrees: 0.0 <= latitude_degrees <= 360.0
         and 0.0 <= longitude_degrees <= 360.0
     )  # type: ignore[misc,arg-type]
-    def set_location(self, latitude_degrees: float, longitude_degrees: float) -> bool:
+    async def set_location(self, latitude_degrees: float, longitude_degrees: float) -> bool:
         """
         Set observer location.
         Command: W<lat>,<lon>#
@@ -642,9 +676,9 @@ class NexStarProtocol:
             True if successful
         """
         coords = self.encode_coordinate_pair(latitude_degrees, longitude_degrees)
-        return self.send_empty_command(f"W{coords}")
+        return await self.send_empty_command(f"W{coords}")
 
-    def get_time(self) -> tuple[int, int, int, int, int, int, int, int] | None:
+    async def get_time(self) -> tuple[int, int, int, int, int, int, int, int] | None:
         """
         Get date and time.
         Command: h#
@@ -654,7 +688,7 @@ class NexStarProtocol:
             Tuple of (hour, minute, second, month, day, year_offset, timezone, dst)
             or None if invalid
         """
-        response = self.send_command("h")
+        response = await self.send_command("h")
         if len(response) == 8:
             values = tuple(ord(c) for c in response)
             # Explicitly cast to the expected 8-tuple type
@@ -670,7 +704,7 @@ class NexStarProtocol:
         and year_offset >= 0
         and dst in [0, 1]
     )  # type: ignore[misc,arg-type]
-    def set_time(
+    async def set_time(
         self, hour: int, minute: int, second: int, month: int, day: int, year_offset: int, timezone: int, dst: int
     ) -> bool:
         """
@@ -694,4 +728,27 @@ class NexStarProtocol:
         command = (
             f"H{chr(hour)}{chr(minute)}{chr(second)}{chr(month)}{chr(day)}{chr(year_offset)}{chr(timezone)}{chr(dst)}"
         )
-        return self.send_empty_command(command)
+        return await self.send_empty_command(command)
+
+    # ========== Concurrent Request Support ==========
+
+    async def send_commands_concurrent(self, *commands: str) -> list[str]:
+        """
+        Send multiple commands concurrently using asyncio.gather().
+
+        This allows non-blocking execution of multiple telescope commands
+        when they can be executed in parallel.
+
+        Args:
+            *commands: Variable number of command strings to send
+
+        Returns:
+            List of response strings in the same order as commands
+
+        Example:
+            >>> protocol = NexStarProtocol('/dev/ttyUSB0')
+            >>> await protocol.open()
+            >>> responses = await protocol.send_commands_concurrent("V", "m", "t")
+            >>> # All three commands executed concurrently
+        """
+        return await asyncio.gather(*[self.send_command(cmd) for cmd in commands])

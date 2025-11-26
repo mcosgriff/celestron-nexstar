@@ -23,7 +23,7 @@ from celestron_nexstar.api.telescope.alignment import (
     suggest_two_star_align_objects,
 )
 from celestron_nexstar.cli.utils.output import print_error, print_info, print_success
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ def sync(
 
         print_info(f"Syncing to RA {ra:.4f}h, Dec {dec:+.4f}°")
 
-        success = telescope.sync_ra_dec(ra, dec)
+        success = run_async(telescope.sync_ra_dec(ra, dec))
         if success:
             print_success(f"Synced to RA {ra:.4f}h, Dec {dec:+.4f}°")
             print_info("Alignment updated. You may want to sync on additional stars for better accuracy.")
@@ -315,11 +315,11 @@ Requirements:
 
             # Get current telescope position
             try:
-                altaz = telescope.get_position_alt_az()
+                altaz = run_async(telescope.get_position_alt_az())
                 # Convert to RA/Dec for sync
                 # Note: For SkyAlign, we'd typically use the telescope's built-in SkyAlign mode
                 # This is a simplified version that uses sync
-                radec = telescope.get_position_ra_dec()
+                radec = run_async(telescope.get_position_ra_dec())
                 alignment_positions.append((radec.ra_hours, radec.dec_degrees))
 
                 console.print(
@@ -338,7 +338,7 @@ Requirements:
         # Note: Real SkyAlign would send alignment data to telescope in specific format
         # This is a simplified version using sync
         for idx, (ra, dec) in enumerate(alignment_positions, 1):
-            success = telescope.sync_ra_dec(ra, dec)
+            success = run_async(telescope.sync_ra_dec(ra, dec))
             if not success:
                 print_error(f"Failed to sync on object {idx}")
                 raise typer.Exit(code=1) from None
@@ -586,8 +586,8 @@ Requirements:
 
         # Get current telescope position for first star
         try:
-            altaz1 = telescope.get_position_alt_az()
-            radec1 = telescope.get_position_ra_dec()
+            altaz1 = run_async(telescope.get_position_alt_az())
+            radec1 = run_async(telescope.get_position_ra_dec())
             console.print(f"[green]✓[/green] Star 1 recorded: Alt {altaz1.altitude:.1f}°, Az {altaz1.azimuth:.1f}°")
             console.print()
         except Exception as e:
@@ -618,7 +618,7 @@ Requirements:
 
         # Automatically slew to second star
         try:
-            success = telescope.goto_ra_dec(star2_obj.obj.ra_hours, star2_obj.obj.dec_degrees)
+            success = run_async(telescope.goto_ra_dec(star2_obj.obj.ra_hours, star2_obj.obj.dec_degrees))
             if not success:
                 print_error(f"Failed to slew to {star2_name}")
                 raise typer.Exit(code=1) from None
@@ -631,11 +631,11 @@ Requirements:
 
             max_wait = 60  # Maximum 60 seconds
             wait_time = 0
-            while telescope.is_slewing() and wait_time < max_wait:
+            while run_async(telescope.is_slewing()) and wait_time < max_wait:
                 time.sleep(1)
                 wait_time += 1
 
-            if telescope.is_slewing():
+            if run_async(telescope.is_slewing()):
                 console.print("[yellow]Warning: Slew taking longer than expected. Proceeding anyway...[/yellow]")
 
             console.print()
@@ -660,8 +660,8 @@ Requirements:
                     raise typer.Exit(code=1) from None
 
             # Get current telescope position for second star
-            altaz2 = telescope.get_position_alt_az()
-            radec2 = telescope.get_position_ra_dec()
+            altaz2 = run_async(telescope.get_position_alt_az())
+            radec2 = run_async(telescope.get_position_ra_dec())
             console.print(f"[green]✓[/green] Star 2 recorded: Alt {altaz2.altitude:.1f}°, Az {altaz2.azimuth:.1f}°")
             console.print()
 

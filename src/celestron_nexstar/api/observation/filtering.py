@@ -2,7 +2,7 @@
 Object Filtering and Sorting Functions
 
 Functions for filtering and sorting celestial objects with visibility information.
-These functions are designed to be reusable across CLI, TUI, and other interfaces.
+These functions are designed to be reusable across CLI, GUI, and other interfaces.
 """
 
 from __future__ import annotations

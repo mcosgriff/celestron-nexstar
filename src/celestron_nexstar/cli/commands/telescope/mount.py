@@ -16,7 +16,7 @@ from rich.table import Table
 from typer.core import TyperGroup
 
 from celestron_nexstar.cli.utils.output import print_error, print_success
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 logger = logging.getLogger(__name__)
@@ -428,7 +428,7 @@ def backlash_test(
 
         # Start movement
         console.print(f"\n[bold green]Moving {direction_name} at rate {rate}...[/bold green]")
-        success = telescope.move_fixed(move_dir, rate)
+        success = run_async(telescope.move_fixed(move_dir, rate))
         if not success:
             print_error("Failed to start movement")
             raise typer.Exit(code=1) from None
@@ -438,7 +438,7 @@ def backlash_test(
 
         # Stop movement
         axis_code = "az" if axis == "azimuth" else "alt"
-        telescope.stop_motion(axis_code)
+        run_async(telescope.stop_motion(axis_code))
 
         console.print("[bold]Movement stopped. Observe the field of view now.[/bold]")
         console.print()

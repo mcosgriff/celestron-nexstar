@@ -130,7 +130,15 @@ class TestPositionTracker(unittest.TestCase):
     def test_clear_history(self):
         """Test clearing history"""
         with self.tracker.lock:
-            self.tracker.history.append({"timestamp": datetime.now(UTC), "ra_hours": 12.0, "dec_degrees": 45.0, "alt_degrees": 30.0, "az_degrees": 180.0})
+            self.tracker.history.append(
+                {
+                    "timestamp": datetime.now(UTC),
+                    "ra_hours": 12.0,
+                    "dec_degrees": 45.0,
+                    "alt_degrees": 30.0,
+                    "az_degrees": 180.0,
+                }
+            )
 
         self.tracker.clear_history()
         self.assertEqual(len(self.tracker.get_history()), 0)
@@ -290,8 +298,8 @@ class TestPositionTracker(unittest.TestCase):
                 }
             )
 
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             temp_path = f.name
@@ -320,8 +328,8 @@ class TestPositionTracker(unittest.TestCase):
                 }
             )
 
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             temp_path = f.name
@@ -338,8 +346,8 @@ class TestPositionTracker(unittest.TestCase):
 
     def test_export_history_empty(self):
         """Test exporting empty history"""
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
             temp_path = f.name
@@ -354,8 +362,8 @@ class TestPositionTracker(unittest.TestCase):
 
     def test_export_history_invalid_format(self):
         """Test exporting with invalid format"""
-        import tempfile
         import os
+        import tempfile
 
         with self.tracker.lock:
             self.tracker.history.append(

@@ -199,16 +199,16 @@ class TestFindDarkSitesNear(unittest.TestCase):
                 # Mock neighbors to include the site's geohash prefix
                 mock_neighbors.return_value = ["9yf0", "9yf1", "9yf2"]
                 mock_load.return_value = [
-                        {
-                            "name": "Test Site",
-                            "latitude": 40.1,
-                            "longitude": -100.1,
-                            "bortle_class": 2,
-                            "sqm_value": 21.5,
-                            "description": "A test site",
-                            "geohash": "9yf01234567",  # Full geohash
-                        }
-                    ]
+                    {
+                        "name": "Test Site",
+                        "latitude": 40.1,
+                        "longitude": -100.1,
+                        "bortle_class": 2,
+                        "sqm_value": 21.5,
+                        "description": "A test site",
+                        "geohash": "9yf01234567",  # Full geohash
+                    }
+                ]
             result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
 
         self.assertIsInstance(result, list)
@@ -224,25 +224,25 @@ class TestFindDarkSitesNear(unittest.TestCase):
             ):
                 mock_neighbors.return_value = ["9yf0", "9yf1"]
                 mock_load.return_value = [
-                        {
-                            "name": "Bright Site",
-                            "latitude": 40.1,
-                            "longitude": -100.1,
-                            "bortle_class": 5,  # Too bright
-                            "sqm_value": 19.0,
-                            "description": "Bright site",
-                            "geohash": "9yf01234567",
-                        },
-                        {
-                            "name": "Dark Site",
-                            "latitude": 40.2,
-                            "longitude": -100.2,
-                            "bortle_class": 2,  # Dark enough
-                            "sqm_value": 21.5,
-                            "description": "Dark site",
-                            "geohash": "9yf11234567",
-                        },
-                    ]
+                    {
+                        "name": "Bright Site",
+                        "latitude": 40.1,
+                        "longitude": -100.1,
+                        "bortle_class": 5,  # Too bright
+                        "sqm_value": 19.0,
+                        "description": "Bright site",
+                        "geohash": "9yf01234567",
+                    },
+                    {
+                        "name": "Dark Site",
+                        "latitude": 40.2,
+                        "longitude": -100.2,
+                        "bortle_class": 2,  # Dark enough
+                        "sqm_value": 21.5,
+                        "description": "Dark site",
+                        "geohash": "9yf11234567",
+                    },
+                ]
                 result = find_dark_sites_near(self.test_location, min_bortle=BortleClass.CLASS_4)
 
         # Should only include sites with bortle <= 4
@@ -299,25 +299,25 @@ class TestFindDarkSitesNear(unittest.TestCase):
                 # The code checks if item_prefix.startswith(search_prefix), so search_prefix should be shorter or equal
                 mock_neighbors.return_value = ["9yf012345", "9yf212345"]  # 9-char prefixes
                 mock_load.return_value = [
-                        {
-                            "name": "Far Site",
-                            "latitude": 40.5,
-                            "longitude": -100.5,
-                            "bortle_class": 2,
-                            "sqm_value": 21.5,
-                            "description": "Far site",
-                            "geohash": "9yf21234567",  # Starts with 9yf212345
-                        },
-                        {
-                            "name": "Near Site",
-                            "latitude": 40.1,
-                            "longitude": -100.1,
-                            "bortle_class": 2,
-                            "sqm_value": 21.5,
-                            "description": "Near site",
-                            "geohash": "9yf01234567",  # Starts with 9yf012345
-                        },
-                    ]
+                    {
+                        "name": "Far Site",
+                        "latitude": 40.5,
+                        "longitude": -100.5,
+                        "bortle_class": 2,
+                        "sqm_value": 21.5,
+                        "description": "Far site",
+                        "geohash": "9yf21234567",  # Starts with 9yf212345
+                    },
+                    {
+                        "name": "Near Site",
+                        "latitude": 40.1,
+                        "longitude": -100.1,
+                        "bortle_class": 2,
+                        "sqm_value": 21.5,
+                        "description": "Near site",
+                        "geohash": "9yf01234567",  # Starts with 9yf012345
+                    },
+                ]
                 result = find_dark_sites_near(self.test_location, max_distance_km=200.0)
 
         # Should be sorted by distance (nearest first)

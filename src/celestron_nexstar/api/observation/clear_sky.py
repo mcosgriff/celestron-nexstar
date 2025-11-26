@@ -3,7 +3,7 @@ Clear Sky Chart Calculations
 
 Functions for calculating transparency, darkness, and other observing conditions
 for Clear Sky Chart-style displays. These functions are designed to be reusable
-across CLI, TUI, and other interfaces.
+across CLI, GUI, and other interfaces.
 """
 
 from __future__ import annotations

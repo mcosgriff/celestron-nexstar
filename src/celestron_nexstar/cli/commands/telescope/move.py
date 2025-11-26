@@ -12,7 +12,7 @@ from typer.core import TyperGroup
 
 from celestron_nexstar.api.core.enums import Direction
 from celestron_nexstar.cli.utils.output import print_error, print_info, print_success
-from celestron_nexstar.cli.utils.state import ensure_connected
+from celestron_nexstar.cli.utils.state import ensure_connected, run_async
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -52,11 +52,14 @@ def fixed(
         raise typer.Exit(code=1) from None
 
     try:
+        import asyncio
+
         telescope = ensure_connected()
 
         # If duration specified, use move_for_time
         if duration is not None:
-            success = telescope.move_for_time(direction, duration, rate)
+            # Run async function - this is a sync entry point, so asyncio.run() is safe
+            success = asyncio.run(telescope.move_for_time(direction, duration, rate))
             if success:
                 print_success(f"Moved {direction} for {duration:.1f} seconds at rate {rate}")
             else:
@@ -64,7 +67,7 @@ def fixed(
                 raise typer.Exit(code=1) from None
         else:
             # Start continuous movement
-            success = telescope.move_fixed(direction, rate)
+            success = run_async(telescope.move_fixed(direction, rate))
             if not success:
                 print_error(f"Failed to start movement {direction}")
                 raise typer.Exit(code=1) from None
@@ -99,9 +102,12 @@ def step(
         raise typer.Exit(code=1) from None
 
     try:
+        import asyncio
+
         telescope = ensure_connected()
 
-        success = telescope.move_step(direction, rate)
+        # Run async function - this is a sync entry point, so asyncio.run() is safe
+        success = asyncio.run(telescope.move_step(direction, rate))
         if success:
             print_success(f"Moved one step {direction} at rate {rate}")
         else:
@@ -128,7 +134,7 @@ def stop(
     try:
         telescope = ensure_connected()
 
-        success = telescope.stop_motion(axis)
+        success = run_async(telescope.stop_motion(axis))
         if success:
             if axis == "both":
                 print_success("Stopped all motion")

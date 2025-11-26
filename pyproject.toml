@@ -19,6 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "pyserial>=3.5",
+    "pyserial-asyncio>=0.6",
     "deal>=4.24.5",
     "tqdm>=4.66.0",
     "returns>=0.23.0",
@@ -36,7 +37,6 @@ dependencies = [
     "geopy>=2.4.0",
     "geopandas>=0.14.0",
     "shapely>=2.0.0",
-    "textual>=0.80.0",
     "sqlalchemy>=2.0.0",
     "greenlet>=3.0.0", # Required for SQLAlchemy async operations (run_sync, etc.)
     "aiosqlite>=0.20.0",

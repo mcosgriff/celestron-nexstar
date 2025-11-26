@@ -3,7 +3,7 @@ Color Mapping Functions for Observing Conditions
 
 Functions for mapping observing condition values to colors for display.
 These functions match the color schemes used by Clear Sky Chart and are
-designed to be reusable across CLI, TUI, and other interfaces.
+designed to be reusable across CLI, GUI, and other interfaces.
 """
 
 from __future__ import annotations

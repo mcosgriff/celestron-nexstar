@@ -9,14 +9,14 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase, SkyBrightness
+from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
 from celestron_nexstar.api.core.exceptions import LocationNotSetError
 from celestron_nexstar.api.location.light_pollution import BortleClass, LightPollutionData
 from celestron_nexstar.api.location.observer import ObserverLocation
 from celestron_nexstar.api.location.weather import WeatherData
 from celestron_nexstar.api.observation.observation_planner import (
-    ObservingConditions,
     ObservationPlanner,
+    ObservingConditions,
     RecommendedObject,
 )
 from celestron_nexstar.api.observation.visibility import VisibilityInfo
@@ -101,9 +101,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_calculate_visibility_probability_poor_seeing(self):
         """Test visibility probability with poor seeing"""
-        poor_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 30.0}
-        )
+        poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
         result = self.planner._calculate_visibility_probability(self.obj, poor_conditions, self.vis_info)
         # Handle both float and tuple return types
@@ -113,9 +111,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
     def test_calculate_visibility_probability_cloudy(self):
         """Test visibility probability with cloud cover"""
         cloudy_weather = WeatherData(temperature_c=20.0, cloud_cover_percent=85.0)
-        cloudy_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "weather": cloudy_weather}
-        )
+        cloudy_conditions = ObservingConditions(**{**self.conditions.__dict__, "weather": cloudy_weather})
 
         result = self.planner._calculate_visibility_probability(self.obj, cloudy_conditions, self.vis_info)
         # Handle both float and tuple return types
@@ -124,9 +120,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_calculate_quality_score_excellent_weather(self):
         """Test quality score calculation with excellent weather"""
-        score = self.planner._calculate_quality_score(
-            self.weather, self.lp_data, 0.1, "excellent"
-        )
+        score = self.planner._calculate_quality_score(self.weather, self.lp_data, 0.1, "excellent")
         self.assertGreaterEqual(score, 0.0)
         self.assertLessEqual(score, 1.0)
         self.assertGreater(score, 0.5)  # Should be high for excellent conditions
@@ -144,19 +138,13 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
             description="Poor",
             recommendations=("Poor conditions",),
         )
-        score = self.planner._calculate_quality_score(
-            self.weather, lp_poor, 0.1, "poor"
-        )
+        score = self.planner._calculate_quality_score(self.weather, lp_poor, 0.1, "poor")
         self.assertLess(score, 0.5)  # Should be lower for poor conditions
 
     def test_calculate_quality_score_full_moon(self):
         """Test quality score with full moon"""
-        score_full = self.planner._calculate_quality_score(
-            self.weather, self.lp_data, 1.0, "excellent"
-        )
-        score_new = self.planner._calculate_quality_score(
-            self.weather, self.lp_data, 0.0, "excellent"
-        )
+        score_full = self.planner._calculate_quality_score(self.weather, self.lp_data, 1.0, "excellent")
+        score_new = self.planner._calculate_quality_score(self.weather, self.lp_data, 0.0, "excellent")
         self.assertLess(score_full, score_new)  # Full moon should reduce score
 
     def test_calculate_quality_score_light_pollution(self):
@@ -188,25 +176,21 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_generate_recommendations_clear_skies(self):
         """Test recommendation generation for clear skies"""
-        recs, warnings = self.planner._generate_recommendations(
-            self.weather, self.lp_data, 0.1, 0.9, "excellent", ""
-        )
+        recs, warnings = self.planner._generate_recommendations(self.weather, self.lp_data, 0.1, 0.9, "excellent", "")
         self.assertIsInstance(recs, tuple)
         self.assertIsInstance(warnings, tuple)
 
     def test_generate_recommendations_cloudy(self):
         """Test recommendation generation for cloudy conditions"""
         cloudy_weather = WeatherData(temperature_c=20.0, cloud_cover_percent=85.0)
-        recs, warnings = self.planner._generate_recommendations(
+        _recs, warnings = self.planner._generate_recommendations(
             cloudy_weather, self.lp_data, 0.1, 0.3, "poor", "High cloud cover"
         )
         self.assertGreater(len(warnings), 0)
 
     def test_generate_recommendations_full_moon(self):
         """Test recommendation generation with full moon"""
-        recs, warnings = self.planner._generate_recommendations(
-            self.weather, self.lp_data, 1.0, 0.5, "good", ""
-        )
+        _recs, warnings = self.planner._generate_recommendations(self.weather, self.lp_data, 1.0, 0.5, "good", "")
         # Should have warning about bright moon
         self.assertGreater(len(warnings), 0)
 
@@ -222,9 +206,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
             description="Excellent",
             recommendations=("Excellent conditions",),
         )
-        recs, warnings = self.planner._generate_recommendations(
-            self.weather, lp_dark, 0.1, 0.9, "excellent", ""
-        )
+        recs, _warnings = self.planner._generate_recommendations(self.weather, lp_dark, 0.1, 0.9, "excellent", "")
         # Should recommend faint objects
         self.assertGreater(len(recs), 0)
 
@@ -253,9 +235,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_determine_priority_excellent_seeing(self):
         """Test priority determination with excellent seeing"""
-        excellent_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 90.0}
-        )
+        excellent_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 90.0})
 
         # Faint galaxy should get priority 1 with excellent seeing
         faint_galaxy = CelestialObject(
@@ -272,9 +252,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_determine_priority_poor_seeing(self):
         """Test priority determination with poor seeing"""
-        poor_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 30.0}
-        )
+        poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
         # Planet should get priority 1 with poor seeing
         planet = CelestialObject(
@@ -333,16 +311,19 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
         )
         # Use poor light pollution so it doesn't match "bright objects in dark skies"
         poor_lp_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "light_pollution": LightPollutionData(
-                bortle_class=BortleClass.CLASS_7,
-                sqm_value=18.0,
-                naked_eye_limiting_magnitude=4.0,
-                milky_way_visible=False,
-                airglow_visible=False,
-                zodiacal_light_visible=False,
-                description="Poor",
-                recommendations=("Poor conditions",),
-            )}
+            **{
+                **self.conditions.__dict__,
+                "light_pollution": LightPollutionData(
+                    bortle_class=BortleClass.CLASS_7,
+                    sqm_value=18.0,
+                    naked_eye_limiting_magnitude=4.0,
+                    milky_way_visible=False,
+                    airglow_visible=False,
+                    zodiacal_light_visible=False,
+                    description="Poor",
+                    recommendations=("Poor conditions",),
+                ),
+            }
         )
         priority = self.planner._determine_priority(messier_obj, poor_lp_conditions, self.vis_info)
         # Should get priority 4 for Messier objects that don't match earlier conditions
@@ -371,9 +352,7 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_generate_viewing_tips_poor_seeing(self):
         """Test viewing tips with poor seeing"""
-        poor_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 30.0}
-        )
+        poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
         tips = self.planner._generate_viewing_tips(self.obj, poor_conditions)
         self.assertIsInstance(tips, tuple)
@@ -382,16 +361,12 @@ class TestObservationPlannerInternalMethods(unittest.TestCase):
 
     def test_calculate_best_viewing_time(self):
         """Test calculation of best viewing time (transit)"""
-        best_time = self.planner._calculate_best_viewing_time(
-            self.obj, 40.0, -100.0, datetime.now(UTC)
-        )
+        best_time = self.planner._calculate_best_viewing_time(self.obj, 40.0, -100.0, datetime.now(UTC))
         self.assertIsInstance(best_time, datetime)
 
     def test_calculate_moon_separation_fast(self):
         """Test fast moon separation calculation"""
-        separation = self.planner._calculate_moon_separation_fast(
-            self.obj, moon_ra=12.0, moon_dec=45.0
-        )
+        separation = self.planner._calculate_moon_separation_fast(self.obj, moon_ra=12.0, moon_dec=45.0)
         self.assertIsNotNone(separation)
         self.assertGreaterEqual(separation, 0.0)
         self.assertLessEqual(separation, 180.0)
@@ -478,7 +453,8 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_db.filter_objects = AsyncMock(return_value=[])
         mock_get_db.return_value = mock_db
 
-        from celestron_nexstar.api.observation.optics import TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
+
         mock_telescope = TelescopeSpecs(
             model=TelescopeModel.NEXSTAR_6SE,
             aperture_mm=150.0,
@@ -510,9 +486,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         """Test getting recommended objects with poor seeing"""
         from celestron_nexstar.api.observation.optics import OpticalConfiguration
 
-        poor_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 30.0}
-        )
+        poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
         mock_moon_info = MagicMock()
         mock_moon_info.ra_hours = 12.0
@@ -523,7 +497,8 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_db.filter_objects = AsyncMock(return_value=[])
         mock_get_db.return_value = mock_db
 
-        from celestron_nexstar.api.observation.optics import TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
+
         mock_telescope = TelescopeSpecs(
             model=TelescopeModel.NEXSTAR_6SE,
             aperture_mm=150.0,
@@ -564,7 +539,8 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_db.filter_objects = AsyncMock(return_value=[])
         mock_get_db.return_value = mock_db
 
-        from celestron_nexstar.api.observation.optics import TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
+
         mock_telescope = TelescopeSpecs(
             model=TelescopeModel.NEXSTAR_6SE,
             aperture_mm=150.0,
@@ -583,9 +559,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
 
         mock_filter_visible.return_value = []
 
-        result = self.planner.get_recommended_objects(
-            self.conditions, max_results=10, best_for_seeing=True
-        )
+        result = self.planner.get_recommended_objects(self.conditions, max_results=10, best_for_seeing=True)
         self.assertIsInstance(result, list)
 
     @patch("celestron_nexstar.api.observation.observation_planner.get_moon_info")
@@ -596,8 +570,8 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         self, mock_get_config, mock_filter_visible, mock_get_db, mock_get_moon
     ):
         """Test getting recommended objects with target type filtering"""
-        from celestron_nexstar.api.observation.optics import OpticalConfiguration
         from celestron_nexstar.api.observation.observation_planner import ObservingTarget
+        from celestron_nexstar.api.observation.optics import OpticalConfiguration
 
         mock_moon_info = MagicMock()
         mock_moon_info.ra_hours = 12.0
@@ -608,7 +582,8 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_db.filter_objects = AsyncMock(return_value=[])
         mock_get_db.return_value = mock_db
 
-        from celestron_nexstar.api.observation.optics import TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
+
         mock_telescope = TelescopeSpecs(
             model=TelescopeModel.NEXSTAR_6SE,
             aperture_mm=150.0,
@@ -712,7 +687,10 @@ class TestObservationPlannerGetTonightConditionsExtended(unittest.TestCase):
         mock_calculate_seeing.return_value = (70.0, [])
         mock_is_nighttime.return_value = False  # Daytime
         sunset_time = datetime(2023, 1, 1, 0, 0, tzinfo=UTC)
-        mock_calculate_sun_times.return_value = {"sunset": sunset_time, "sunrise": datetime(2023, 1, 1, 12, 0, tzinfo=UTC)}
+        mock_calculate_sun_times.return_value = {
+            "sunset": sunset_time,
+            "sunrise": datetime(2023, 1, 1, 12, 0, tzinfo=UTC),
+        }
         mock_fetch_hourly.return_value = []  # No hourly forecast
         mock_astronomical_twilight.return_value = (None, None, None, None)  # 4-element tuple
         mock_golden_hour.return_value = (None, None, None, None)  # 4-element tuple
@@ -786,7 +764,10 @@ class TestObservationPlannerGetTonightConditionsExtended(unittest.TestCase):
         mock_assess_conditions.return_value = ("good", "No warnings")
         mock_calculate_seeing.return_value = (70.0, [])
         mock_is_nighttime.return_value = True
-        mock_calculate_sun_times.return_value = {"sunset": datetime(2023, 1, 1, 0, 0, tzinfo=UTC), "sunrise": datetime(2023, 1, 1, 12, 0, tzinfo=UTC)}
+        mock_calculate_sun_times.return_value = {
+            "sunset": datetime(2023, 1, 1, 0, 0, tzinfo=UTC),
+            "sunrise": datetime(2023, 1, 1, 12, 0, tzinfo=UTC),
+        }
         mock_fetch_hourly.return_value = []
         mock_astronomical_twilight.return_value = (None, None, None, None)  # 4-element tuple
         mock_golden_hour.return_value = (None, None, None, None)  # 4-element tuple
@@ -852,7 +833,12 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         self, mock_score_object, mock_get_config, mock_filter_visible, mock_get_db, mock_get_moon
     ):
         """Test that poor seeing filters out faint objects"""
-        from celestron_nexstar.api.observation.optics import OpticalConfiguration, TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import (
+            EyepieceSpecs,
+            OpticalConfiguration,
+            TelescopeModel,
+            TelescopeSpecs,
+        )
 
         poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
@@ -863,18 +849,63 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
 
         # Create test objects
         bright_obj = CelestialObject(
-            name="Bright Star", common_name="Bright", ra_hours=10.0, dec_degrees=20.0, magnitude=2.0, object_type=CelestialObjectType.STAR, catalog="test"
+            name="Bright Star",
+            common_name="Bright",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=2.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="test",
         )
         faint_obj = CelestialObject(
-            name="Faint Galaxy", common_name=None, ra_hours=10.0, dec_degrees=20.0, magnitude=12.0, object_type=CelestialObjectType.GALAXY, catalog="test"
+            name="Faint Galaxy",
+            common_name=None,
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=12.0,
+            object_type=CelestialObjectType.GALAXY,
+            catalog="test",
         )
         planet = CelestialObject(
-            name="Jupiter", common_name="Jupiter", ra_hours=10.0, dec_degrees=20.0, magnitude=-2.0, object_type=CelestialObjectType.PLANET, catalog="planets"
+            name="Jupiter",
+            common_name="Jupiter",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=-2.0,
+            object_type=CelestialObjectType.PLANET,
+            catalog="planets",
         )
 
-        bright_vis = VisibilityInfo(object_name="Bright Star", altitude_deg=45.0, azimuth_deg=180.0, magnitude=2.0, limiting_magnitude=6.5, is_visible=True, observability_score=0.9, reasons=("Good altitude",))
-        faint_vis = VisibilityInfo(object_name="Faint Galaxy", altitude_deg=45.0, azimuth_deg=180.0, magnitude=12.0, limiting_magnitude=6.5, is_visible=True, observability_score=0.7, reasons=("Good altitude",))
-        planet_vis = VisibilityInfo(object_name="Jupiter", altitude_deg=45.0, azimuth_deg=180.0, magnitude=-2.0, limiting_magnitude=6.5, is_visible=True, observability_score=0.95, reasons=("Good altitude",))
+        bright_vis = VisibilityInfo(
+            object_name="Bright Star",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=2.0,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.9,
+            reasons=("Good altitude",),
+        )
+        faint_vis = VisibilityInfo(
+            object_name="Faint Galaxy",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=12.0,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.7,
+            reasons=("Good altitude",),
+        )
+        planet_vis = VisibilityInfo(
+            object_name="Jupiter",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=-2.0,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.95,
+            reasons=("Good altitude",),
+        )
 
         mock_db = MagicMock()
         # Poor seeing should limit to max_mag = 10.0
@@ -882,7 +913,9 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         mock_get_db.return_value = mock_db
 
         mock_config = OpticalConfiguration(
-            telescope=TelescopeSpecs(model=TelescopeModel.NEXSTAR_6SE, aperture_mm=150.0, focal_length_mm=1500.0, focal_ratio=10.0),
+            telescope=TelescopeSpecs(
+                model=TelescopeModel.NEXSTAR_6SE, aperture_mm=150.0, focal_length_mm=1500.0, focal_ratio=10.0
+            ),
             eyepiece=EyepieceSpecs(focal_length_mm=25.0, apparent_fov_deg=50.0),
         )
         mock_get_config.return_value = mock_config
@@ -929,7 +962,12 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         self, mock_score_object, mock_get_config, mock_filter_visible, mock_get_db, mock_get_moon
     ):
         """Test filtering with direct CelestialObjectType"""
-        from celestron_nexstar.api.observation.optics import OpticalConfiguration, TelescopeModel, TelescopeSpecs, EyepieceSpecs
+        from celestron_nexstar.api.observation.optics import (
+            EyepieceSpecs,
+            OpticalConfiguration,
+            TelescopeModel,
+            TelescopeSpecs,
+        )
 
         mock_moon_info = MagicMock()
         mock_moon_info.ra_hours = 12.0
@@ -937,21 +975,53 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         mock_get_moon.return_value = mock_moon_info
 
         star_obj = CelestialObject(
-            name="Vega", common_name="Vega", ra_hours=18.615, dec_degrees=38.784, magnitude=0.03, object_type=CelestialObjectType.STAR, catalog="bright_stars"
+            name="Vega",
+            common_name="Vega",
+            ra_hours=18.615,
+            dec_degrees=38.784,
+            magnitude=0.03,
+            object_type=CelestialObjectType.STAR,
+            catalog="bright_stars",
         )
         galaxy_obj = CelestialObject(
-            name="M31", common_name="Andromeda Galaxy", ra_hours=0.711, dec_degrees=41.269, magnitude=3.4, object_type=CelestialObjectType.GALAXY, catalog="messier"
+            name="M31",
+            common_name="Andromeda Galaxy",
+            ra_hours=0.711,
+            dec_degrees=41.269,
+            magnitude=3.4,
+            object_type=CelestialObjectType.GALAXY,
+            catalog="messier",
         )
 
-        star_vis = VisibilityInfo(object_name="Vega", altitude_deg=45.0, azimuth_deg=180.0, magnitude=0.03, limiting_magnitude=6.5, is_visible=True, observability_score=0.9, reasons=("Good altitude",))
-        galaxy_vis = VisibilityInfo(object_name="M31", altitude_deg=45.0, azimuth_deg=180.0, magnitude=3.4, limiting_magnitude=6.5, is_visible=True, observability_score=0.8, reasons=("Good altitude",))
+        star_vis = VisibilityInfo(
+            object_name="Vega",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=0.03,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.9,
+            reasons=("Good altitude",),
+        )
+        VisibilityInfo(
+            object_name="M31",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=3.4,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.8,
+            reasons=("Good altitude",),
+        )
 
         mock_db = MagicMock()
         mock_db.filter_objects = AsyncMock(return_value=[star_obj, galaxy_obj])
         mock_get_db.return_value = mock_db
 
         mock_config = OpticalConfiguration(
-            telescope=TelescopeSpecs(model=TelescopeModel.NEXSTAR_6SE, aperture_mm=150.0, focal_length_mm=1500.0, focal_ratio=10.0),
+            telescope=TelescopeSpecs(
+                model=TelescopeModel.NEXSTAR_6SE, aperture_mm=150.0, focal_length_mm=1500.0, focal_ratio=10.0
+            ),
             eyepiece=EyepieceSpecs(focal_length_mm=25.0, apparent_fov_deg=50.0),
         )
         mock_get_config.return_value = mock_config
@@ -977,7 +1047,9 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
 
         mock_score_object.side_effect = score_side_effect
 
-        result = self.planner.get_recommended_objects(self.conditions, target_types=CelestialObjectType.STAR, max_results=10)
+        result = self.planner.get_recommended_objects(
+            self.conditions, target_types=CelestialObjectType.STAR, max_results=10
+        )
 
         self.assertIsInstance(result, list)
         # Should filter to only stars (galaxy should be filtered out before filter_visible_objects)
@@ -994,10 +1066,23 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         """Set up test fixtures"""
         self.planner = ObservationPlanner()
         self.obj = CelestialObject(
-            name="M31", common_name="Andromeda Galaxy", ra_hours=0.711, dec_degrees=41.269, magnitude=3.4, object_type=CelestialObjectType.GALAXY, catalog="messier"
+            name="M31",
+            common_name="Andromeda Galaxy",
+            ra_hours=0.711,
+            dec_degrees=41.269,
+            magnitude=3.4,
+            object_type=CelestialObjectType.GALAXY,
+            catalog="messier",
         )
         self.vis_info = VisibilityInfo(
-            object_name="M31", altitude_deg=45.0, azimuth_deg=180.0, magnitude=3.4, limiting_magnitude=6.5, is_visible=True, observability_score=0.9, reasons=("Good altitude",)
+            object_name="M31",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=3.4,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.9,
+            reasons=("Good altitude",),
         )
         self.conditions = ObservingConditions(
             timestamp=datetime.now(UTC),
@@ -1031,7 +1116,13 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         """Test visibility probability with very poor seeing and bright object"""
         very_poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 10.0})
         bright_obj = CelestialObject(
-            name="Bright Star", common_name="Bright", ra_hours=10.0, dec_degrees=20.0, magnitude=1.0, object_type=CelestialObjectType.STAR, catalog="test"
+            name="Bright Star",
+            common_name="Bright",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=1.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="test",
         )
 
         result = self.planner._calculate_visibility_probability(bright_obj, very_poor_conditions, self.vis_info)
@@ -1044,7 +1135,13 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
         """Test visibility probability with very poor seeing and faint object"""
         very_poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 10.0})
         faint_obj = CelestialObject(
-            name="Faint Galaxy", common_name=None, ra_hours=10.0, dec_degrees=20.0, magnitude=12.0, object_type=CelestialObjectType.GALAXY, catalog="test"
+            name="Faint Galaxy",
+            common_name=None,
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=12.0,
+            object_type=CelestialObjectType.GALAXY,
+            catalog="test",
         )
 
         result = self.planner._calculate_visibility_probability(faint_obj, very_poor_conditions, self.vis_info)
@@ -1076,7 +1173,13 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
     def test_calculate_visibility_probability_planet_type(self):
         """Test visibility probability for planet (less sensitive to seeing)"""
         planet = CelestialObject(
-            name="Jupiter", common_name="Jupiter", ra_hours=10.0, dec_degrees=20.0, magnitude=-2.0, object_type=CelestialObjectType.PLANET, catalog="planets"
+            name="Jupiter",
+            common_name="Jupiter",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=-2.0,
+            object_type=CelestialObjectType.PLANET,
+            catalog="planets",
         )
         poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
 
@@ -1089,7 +1192,13 @@ class TestObservationPlannerVisibilityProbabilityExtended(unittest.TestCase):
     def test_calculate_visibility_probability_cluster_type(self):
         """Test visibility probability for cluster"""
         cluster = CelestialObject(
-            name="M13", common_name="Hercules Cluster", ra_hours=16.691, dec_degrees=36.460, magnitude=5.8, object_type=CelestialObjectType.CLUSTER, catalog="messier"
+            name="M13",
+            common_name="Hercules Cluster",
+            ra_hours=16.691,
+            dec_degrees=36.460,
+            magnitude=5.8,
+            object_type=CelestialObjectType.CLUSTER,
+            catalog="messier",
         )
 
         result = self.planner._calculate_visibility_probability(cluster, self.conditions, self.vis_info)
@@ -1143,14 +1252,27 @@ class TestObservationPlannerDeterminePriorityExtended(unittest.TestCase):
             warnings=(),
         )
         self.vis_info = VisibilityInfo(
-            object_name="Test", altitude_deg=45.0, azimuth_deg=180.0, magnitude=3.4, limiting_magnitude=6.5, is_visible=True, observability_score=0.9, reasons=("Good altitude",)
+            object_name="Test",
+            altitude_deg=45.0,
+            azimuth_deg=180.0,
+            magnitude=3.4,
+            limiting_magnitude=6.5,
+            is_visible=True,
+            observability_score=0.9,
+            reasons=("Good altitude",),
         )
 
     def test_determine_priority_excellent_seeing_faint_galaxy(self):
         """Test priority for faint galaxy with excellent seeing"""
         excellent_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 90.0})
         faint_galaxy = CelestialObject(
-            name="Faint Galaxy", common_name=None, ra_hours=10.0, dec_degrees=20.0, magnitude=12.0, object_type=CelestialObjectType.GALAXY, catalog="test"
+            name="Faint Galaxy",
+            common_name=None,
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=12.0,
+            object_type=CelestialObjectType.GALAXY,
+            catalog="test",
         )
 
         priority = self.planner._determine_priority(faint_galaxy, excellent_conditions, self.vis_info)
@@ -1160,7 +1282,13 @@ class TestObservationPlannerDeterminePriorityExtended(unittest.TestCase):
         """Test priority for bright object with poor seeing"""
         poor_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
         bright_obj = CelestialObject(
-            name="Bright Star", common_name="Bright", ra_hours=10.0, dec_degrees=20.0, magnitude=4.0, object_type=CelestialObjectType.STAR, catalog="test"
+            name="Bright Star",
+            common_name="Bright",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=4.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="test",
         )
 
         priority = self.planner._determine_priority(bright_obj, poor_conditions, self.vis_info)
@@ -1170,7 +1298,13 @@ class TestObservationPlannerDeterminePriorityExtended(unittest.TestCase):
         """Test priority for object in dark skies with good seeing"""
         good_conditions = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 70.0})
         bright_obj = CelestialObject(
-            name="Bright Object", common_name="Bright", ra_hours=10.0, dec_degrees=20.0, magnitude=6.0, object_type=CelestialObjectType.STAR, catalog="test"
+            name="Bright Object",
+            common_name="Bright",
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=6.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="test",
         )
 
         priority = self.planner._determine_priority(bright_obj, good_conditions, self.vis_info)
@@ -1180,22 +1314,38 @@ class TestObservationPlannerDeterminePriorityExtended(unittest.TestCase):
         """Test priority for object at high altitude"""
         # Use object that doesn't match earlier conditions (faint, not in dark skies)
         poor_lp_conditions = ObservingConditions(
-            **{**self.conditions.__dict__, "light_pollution": LightPollutionData(
-                bortle_class=BortleClass.CLASS_7,
-                sqm_value=18.0,
-                naked_eye_limiting_magnitude=4.0,
-                milky_way_visible=False,
-                airglow_visible=False,
-                zodiacal_light_visible=False,
-                description="Poor",
-                recommendations=("Poor conditions",),
-            )}
+            **{
+                **self.conditions.__dict__,
+                "light_pollution": LightPollutionData(
+                    bortle_class=BortleClass.CLASS_7,
+                    sqm_value=18.0,
+                    naked_eye_limiting_magnitude=4.0,
+                    milky_way_visible=False,
+                    airglow_visible=False,
+                    zodiacal_light_visible=False,
+                    description="Poor",
+                    recommendations=("Poor conditions",),
+                ),
+            }
         )
         high_alt_vis = VisibilityInfo(
-            object_name="High Alt", altitude_deg=75.0, azimuth_deg=180.0, magnitude=8.0, limiting_magnitude=4.0, is_visible=True, observability_score=0.9, reasons=("High altitude",)
+            object_name="High Alt",
+            altitude_deg=75.0,
+            azimuth_deg=180.0,
+            magnitude=8.0,
+            limiting_magnitude=4.0,
+            is_visible=True,
+            observability_score=0.9,
+            reasons=("High altitude",),
         )
         obj = CelestialObject(
-            name="Object", common_name=None, ra_hours=10.0, dec_degrees=20.0, magnitude=8.0, object_type=CelestialObjectType.STAR, catalog="test"
+            name="Object",
+            common_name=None,
+            ra_hours=10.0,
+            dec_degrees=20.0,
+            magnitude=8.0,
+            object_type=CelestialObjectType.STAR,
+            catalog="test",
         )
 
         priority = self.planner._determine_priority(obj, poor_lp_conditions, high_alt_vis)
@@ -1204,7 +1354,13 @@ class TestObservationPlannerDeterminePriorityExtended(unittest.TestCase):
     def test_determine_priority_very_bright_star(self):
         """Test priority for very bright star (1st magnitude)"""
         bright_star = CelestialObject(
-            name="Sirius", common_name="Sirius", ra_hours=6.752, dec_degrees=-16.716, magnitude=-1.46, object_type=CelestialObjectType.STAR, catalog="bright_stars"
+            name="Sirius",
+            common_name="Sirius",
+            ra_hours=6.752,
+            dec_degrees=-16.716,
+            magnitude=-1.46,
+            object_type=CelestialObjectType.STAR,
+            catalog="bright_stars",
         )
 
         priority = self.planner._determine_priority(bright_star, self.conditions, self.vis_info)
@@ -1332,7 +1488,9 @@ class TestObservationPlannerGalacticCenter(unittest.TestCase):
         sunset = datetime(2023, 6, 15, 0, 0, tzinfo=UTC)  # Summer, galactic center should be visible
         sunrise = datetime(2023, 6, 15, 12, 0, tzinfo=UTC)
 
-        result = self.planner._calculate_galactic_center_visibility(40.0, -100.0, datetime(2023, 6, 15, 6, 0, tzinfo=UTC), sunset, sunrise)
+        result = self.planner._calculate_galactic_center_visibility(
+            40.0, -100.0, datetime(2023, 6, 15, 6, 0, tzinfo=UTC), sunset, sunrise
+        )
         # Should return tuple of (start, end) or (None, None)
         self.assertIsInstance(result, tuple)
         self.assertEqual(len(result), 2)
@@ -1367,39 +1525,92 @@ class TestObservationPlannerEdgeCases(unittest.TestCase):
         start_time_no_tz = datetime(2023, 1, 1, 20, 0)  # No timezone
 
         with patch("celestron_nexstar.api.database.models.get_db_session", return_value=mock_session()):
-            with patch("celestron_nexstar.api.observation.observation_planner.fetch_weather", return_value=WeatherData(temperature_c=20.0, cloud_cover_percent=10.0)):
-                with patch("celestron_nexstar.api.observation.observation_planner.get_light_pollution_data", return_value=LightPollutionData(
-                    bortle_class=BortleClass.CLASS_3,
-                    sqm_value=21.5,
-                    naked_eye_limiting_magnitude=6.5,
-                    milky_way_visible=True,
-                    airglow_visible=True,
-                    zodiacal_light_visible=True,
-                    description="Good",
-                    recommendations=("Good for observing",),
-                )):
-                    with patch("celestron_nexstar.api.observation.observation_planner.get_current_configuration", return_value=None):
-                        with patch("celestron_nexstar.api.astronomy.sun_moon.calculate_sun_times", return_value={"sunset": datetime(2023, 1, 1, 20, 0, tzinfo=UTC), "sunrise": datetime(2023, 1, 2, 6, 0, tzinfo=UTC)}):
-                            with patch("celestron_nexstar.api.observation.observation_planner.get_sun_info") as mock_sun_info:
+            with patch(
+                "celestron_nexstar.api.observation.observation_planner.fetch_weather",
+                return_value=WeatherData(temperature_c=20.0, cloud_cover_percent=10.0),
+            ):
+                with patch(
+                    "celestron_nexstar.api.observation.observation_planner.get_light_pollution_data",
+                    return_value=LightPollutionData(
+                        bortle_class=BortleClass.CLASS_3,
+                        sqm_value=21.5,
+                        naked_eye_limiting_magnitude=6.5,
+                        milky_way_visible=True,
+                        airglow_visible=True,
+                        zodiacal_light_visible=True,
+                        description="Good",
+                        recommendations=("Good for observing",),
+                    ),
+                ):
+                    with patch(
+                        "celestron_nexstar.api.observation.observation_planner.get_current_configuration",
+                        return_value=None,
+                    ):
+                        with patch(
+                            "celestron_nexstar.api.astronomy.sun_moon.calculate_sun_times",
+                            return_value={
+                                "sunset": datetime(2023, 1, 1, 20, 0, tzinfo=UTC),
+                                "sunrise": datetime(2023, 1, 2, 6, 0, tzinfo=UTC),
+                            },
+                        ):
+                            with patch(
+                                "celestron_nexstar.api.observation.observation_planner.get_sun_info"
+                            ) as mock_sun_info:
                                 mock_sun = MagicMock()
                                 mock_sun.altitude_deg = -30.0
                                 mock_sun.sunrise_time = datetime(2023, 1, 2, 6, 0, tzinfo=UTC)
                                 mock_sun.sunset_time = datetime(2023, 1, 1, 20, 0, tzinfo=UTC)
                                 mock_sun_info.return_value = mock_sun
-                                with patch("celestron_nexstar.api.observation.observation_planner.get_moon_info", return_value=MagicMock(
-                                    illumination=0.5, altitude_deg=30.0, ra_hours=10.0, dec_degrees=20.0, phase=MoonPhase.FIRST_QUARTER
-                                )):
-                                    with patch("celestron_nexstar.api.observation.observation_planner.assess_observing_conditions", return_value=("good", "No warnings")):
-                                        with patch("celestron_nexstar.api.observation.observation_planner.calculate_seeing_conditions", return_value=(70.0, [])):
-                                            with patch("celestron_nexstar.api.observation.scoring.is_nighttime", return_value=True):
-                                                with patch("celestron_nexstar.api.location.weather.fetch_hourly_weather_forecast", return_value=[]):
-                                                    with patch("celestron_nexstar.api.observation.observation_planner.calculate_astronomical_twilight", return_value=(None, None, None, None)):
-                                                        with patch("celestron_nexstar.api.observation.observation_planner.calculate_golden_hour", return_value=(None, None, None, None)):
-                                                            with patch("celestron_nexstar.api.observation.observation_planner.calculate_blue_hour", return_value=(None, None, None, None)):
-                                                                with patch.object(ObservationPlanner, "_calculate_galactic_center_visibility", return_value=(None, None)):
+                                with patch(
+                                    "celestron_nexstar.api.observation.observation_planner.get_moon_info",
+                                    return_value=MagicMock(
+                                        illumination=0.5,
+                                        altitude_deg=30.0,
+                                        ra_hours=10.0,
+                                        dec_degrees=20.0,
+                                        phase=MoonPhase.FIRST_QUARTER,
+                                    ),
+                                ):
+                                    with patch(
+                                        "celestron_nexstar.api.observation.observation_planner.assess_observing_conditions",
+                                        return_value=("good", "No warnings"),
+                                    ):
+                                        with patch(
+                                            "celestron_nexstar.api.observation.observation_planner.calculate_seeing_conditions",
+                                            return_value=(70.0, []),
+                                        ):
+                                            with patch(
+                                                "celestron_nexstar.api.observation.scoring.is_nighttime",
+                                                return_value=True,
+                                            ):
+                                                with patch(
+                                                    "celestron_nexstar.api.location.weather.fetch_hourly_weather_forecast",
+                                                    return_value=[],
+                                                ):
+                                                    with patch(
+                                                        "celestron_nexstar.api.observation.observation_planner.calculate_astronomical_twilight",
+                                                        return_value=(None, None, None, None),
+                                                    ):
+                                                        with patch(
+                                                            "celestron_nexstar.api.observation.observation_planner.calculate_golden_hour",
+                                                            return_value=(None, None, None, None),
+                                                        ):
+                                                            with patch(
+                                                                "celestron_nexstar.api.observation.observation_planner.calculate_blue_hour",
+                                                                return_value=(None, None, None, None),
+                                                            ):
+                                                                with patch.object(
+                                                                    ObservationPlanner,
+                                                                    "_calculate_galactic_center_visibility",
+                                                                    return_value=(None, None),
+                                                                ):
                                                                     # Test with start_time that has no timezone (should add UTC)
-                                                                    conditions = self.planner.get_tonight_conditions(start_time=start_time_no_tz)
-                                                                    self.assertIsInstance(conditions, ObservingConditions)
+                                                                    conditions = self.planner.get_tonight_conditions(
+                                                                        start_time=start_time_no_tz
+                                                                    )
+                                                                    self.assertIsInstance(
+                                                                        conditions, ObservingConditions
+                                                                    )
 
     @patch("celestron_nexstar.api.observation.observation_planner.get_observer_location")
     @patch("celestron_nexstar.api.astronomy.sun_moon.calculate_sun_times")
@@ -1420,35 +1631,77 @@ class TestObservationPlannerEdgeCases(unittest.TestCase):
         }
 
         with patch("celestron_nexstar.api.database.models.get_db_session", return_value=mock_session()):
-            with patch("celestron_nexstar.api.observation.observation_planner.fetch_weather", return_value=WeatherData(temperature_c=20.0, cloud_cover_percent=10.0)):
-                with patch("celestron_nexstar.api.observation.observation_planner.get_light_pollution_data", return_value=LightPollutionData(
-                    bortle_class=BortleClass.CLASS_3,
-                    sqm_value=21.5,
-                    naked_eye_limiting_magnitude=6.5,
-                    milky_way_visible=True,
-                    airglow_visible=True,
-                    zodiacal_light_visible=True,
-                    description="Good",
-                    recommendations=("Good for observing",),
-                )):
-                    with patch("celestron_nexstar.api.observation.observation_planner.get_current_configuration", return_value=None):
-                        with patch("celestron_nexstar.api.observation.observation_planner.get_sun_info") as mock_sun_info:
+            with patch(
+                "celestron_nexstar.api.observation.observation_planner.fetch_weather",
+                return_value=WeatherData(temperature_c=20.0, cloud_cover_percent=10.0),
+            ):
+                with patch(
+                    "celestron_nexstar.api.observation.observation_planner.get_light_pollution_data",
+                    return_value=LightPollutionData(
+                        bortle_class=BortleClass.CLASS_3,
+                        sqm_value=21.5,
+                        naked_eye_limiting_magnitude=6.5,
+                        milky_way_visible=True,
+                        airglow_visible=True,
+                        zodiacal_light_visible=True,
+                        description="Good",
+                        recommendations=("Good for observing",),
+                    ),
+                ):
+                    with patch(
+                        "celestron_nexstar.api.observation.observation_planner.get_current_configuration",
+                        return_value=None,
+                    ):
+                        with patch(
+                            "celestron_nexstar.api.observation.observation_planner.get_sun_info"
+                        ) as mock_sun_info:
                             mock_sun = MagicMock()
                             mock_sun.altitude_deg = -30.0
                             mock_sun.sunrise_time = datetime(2023, 1, 1, 6, 0, tzinfo=UTC)
                             mock_sun.sunset_time = datetime(2023, 1, 1, 20, 0, tzinfo=UTC)
                             mock_sun_info.return_value = mock_sun
-                            with patch("celestron_nexstar.api.observation.observation_planner.get_moon_info", return_value=MagicMock(
-                                illumination=0.5, altitude_deg=30.0, ra_hours=10.0, dec_degrees=20.0, phase=MoonPhase.FIRST_QUARTER
-                            )):
-                                with patch("celestron_nexstar.api.observation.observation_planner.assess_observing_conditions", return_value=("good", "No warnings")):
-                                    with patch("celestron_nexstar.api.observation.observation_planner.calculate_seeing_conditions", return_value=(70.0, [])):
-                                        with patch("celestron_nexstar.api.observation.scoring.is_nighttime", return_value=True):
-                                            with patch("celestron_nexstar.api.location.weather.fetch_hourly_weather_forecast", return_value=[]):
-                                                with patch("celestron_nexstar.api.observation.observation_planner.calculate_astronomical_twilight", return_value=(None, None, None, None)):
-                                                    with patch("celestron_nexstar.api.observation.observation_planner.calculate_golden_hour", return_value=(None, None, None, None)):
-                                                        with patch("celestron_nexstar.api.observation.observation_planner.calculate_blue_hour", return_value=(None, None, None, None)):
-                                                            with patch.object(ObservationPlanner, "_calculate_galactic_center_visibility", return_value=(None, None)):
+                            with patch(
+                                "celestron_nexstar.api.observation.observation_planner.get_moon_info",
+                                return_value=MagicMock(
+                                    illumination=0.5,
+                                    altitude_deg=30.0,
+                                    ra_hours=10.0,
+                                    dec_degrees=20.0,
+                                    phase=MoonPhase.FIRST_QUARTER,
+                                ),
+                            ):
+                                with patch(
+                                    "celestron_nexstar.api.observation.observation_planner.assess_observing_conditions",
+                                    return_value=("good", "No warnings"),
+                                ):
+                                    with patch(
+                                        "celestron_nexstar.api.observation.observation_planner.calculate_seeing_conditions",
+                                        return_value=(70.0, []),
+                                    ):
+                                        with patch(
+                                            "celestron_nexstar.api.observation.scoring.is_nighttime", return_value=True
+                                        ):
+                                            with patch(
+                                                "celestron_nexstar.api.location.weather.fetch_hourly_weather_forecast",
+                                                return_value=[],
+                                            ):
+                                                with patch(
+                                                    "celestron_nexstar.api.observation.observation_planner.calculate_astronomical_twilight",
+                                                    return_value=(None, None, None, None),
+                                                ):
+                                                    with patch(
+                                                        "celestron_nexstar.api.observation.observation_planner.calculate_golden_hour",
+                                                        return_value=(None, None, None, None),
+                                                    ):
+                                                        with patch(
+                                                            "celestron_nexstar.api.observation.observation_planner.calculate_blue_hour",
+                                                            return_value=(None, None, None, None),
+                                                        ):
+                                                            with patch.object(
+                                                                ObservationPlanner,
+                                                                "_calculate_galactic_center_visibility",
+                                                                return_value=(None, None),
+                                                            ):
                                                                 # This should handle the sunrise < sunset case
                                                                 conditions = self.planner.get_tonight_conditions()
                                                                 self.assertIsInstance(conditions, ObservingConditions)

@@ -5,8 +5,8 @@ Tests space event calendar and viewing location calculations.
 """
 
 import unittest
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.events.space_events import (
     SpaceEvent,
@@ -225,9 +225,7 @@ class TestGetUpcomingEvents(unittest.TestCase):
 
         mock_asyncio_run.return_value = [mock_event_model]
 
-        result = get_upcoming_events(
-            self.start_date, self.end_date, event_types=[SpaceEventType.METEOR_SHOWER]
-        )
+        result = get_upcoming_events(self.start_date, self.end_date, event_types=[SpaceEventType.METEOR_SHOWER])
 
         self.assertIsInstance(result, list)
         if result:

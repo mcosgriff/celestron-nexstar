@@ -81,26 +81,26 @@ class TestCalculateMoonSeparationScore(unittest.TestCase):
     def test_separation_60_degrees_good(self):
         """Test separation ~60 degrees (good)"""
         # With new moon to avoid brightness penalty
-        score, sep = calculate_moon_separation_score(0.0, 0.0, 4.0, 0.0, 0.0)
+        score, _sep = calculate_moon_separation_score(0.0, 0.0, 4.0, 0.0, 0.0)
         self.assertGreater(score, 0.7)
         self.assertLess(score, 1.0)
 
     def test_separation_30_degrees_fair(self):
         """Test separation ~30 degrees (fair)"""
         # With new moon to avoid brightness penalty
-        score, sep = calculate_moon_separation_score(0.0, 0.0, 2.0, 0.0, 0.0)
+        score, _sep = calculate_moon_separation_score(0.0, 0.0, 2.0, 0.0, 0.0)
         self.assertGreater(score, 0.4)
         self.assertLess(score, 0.7)
 
     def test_separation_15_degrees_poor(self):
         """Test separation ~15 degrees (poor)"""
-        score, sep = calculate_moon_separation_score(0.0, 0.0, 1.0, 0.0, 0.5)
+        score, _sep = calculate_moon_separation_score(0.0, 0.0, 1.0, 0.0, 0.5)
         self.assertGreater(score, 0.1)
         self.assertLess(score, 0.4)
 
     def test_separation_very_close_very_bad(self):
         """Test separation <15 degrees (very bad)"""
-        score, sep = calculate_moon_separation_score(0.0, 0.0, 0.1, 0.0, 0.5)
+        score, _sep = calculate_moon_separation_score(0.0, 0.0, 0.1, 0.0, 0.5)
         self.assertLess(score, 0.2)
 
     def test_new_moon_no_penalty(self):
@@ -174,15 +174,11 @@ class TestCalculateObjectTypeScore(unittest.TestCase):
         )
 
         # High seeing conditions
-        conditions_good_seeing = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 90.0}
-        )
+        conditions_good_seeing = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 90.0})
         score_good = calculate_object_type_score(planet, conditions_good_seeing, self.visibility, 0.8, None)
 
         # Low seeing conditions
-        conditions_poor_seeing = ObservingConditions(
-            **{**self.conditions.__dict__, "seeing_score": 30.0}
-        )
+        conditions_poor_seeing = ObservingConditions(**{**self.conditions.__dict__, "seeing_score": 30.0})
         score_poor = calculate_object_type_score(planet, conditions_poor_seeing, self.visibility, 0.8, None)
 
         self.assertGreater(score_good, score_poor)

@@ -13,6 +13,7 @@ in a background thread with features including:
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import json
 import threading
@@ -352,13 +353,28 @@ class PositionTracker:
 
                 # Get current position
                 try:
-                    with NexStarTelescope(str(port)) as telescope:
-                        eq_coords = telescope.get_position_ra_dec()
-                        hor_coords = telescope.get_position_alt_az()
-                        ra_hours = eq_coords.ra_hours
-                        dec_degrees = eq_coords.dec_degrees
-                        alt_degrees = hor_coords.altitude
-                        az_degrees = hor_coords.azimuth
+                    # Capture port in default parameter to avoid loop variable binding issue
+                    async def _get_position(port_val: str | None = port) -> tuple[float, float, float, float]:
+                        async with NexStarTelescope(str(port_val)) as telescope:
+                            eq_coords = await telescope.get_position_ra_dec()
+                            hor_coords = await telescope.get_position_alt_az()
+                            return (
+                                eq_coords.ra_hours,
+                                eq_coords.dec_degrees,
+                                hor_coords.altitude,
+                                hor_coords.azimuth,
+                            )
+
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # If loop is running, we can't block - skip this update
+                            time.sleep(self.update_interval)
+                            continue
+                        else:
+                            ra_hours, dec_degrees, alt_degrees, az_degrees = loop.run_until_complete(_get_position())
+                    except RuntimeError:
+                        ra_hours, dec_degrees, alt_degrees, az_degrees = asyncio.run(_get_position())
 
                         with self.lock:
                             now = datetime.now()
