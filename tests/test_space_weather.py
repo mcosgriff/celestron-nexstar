@@ -212,7 +212,7 @@ class TestGetGoesXrayData(unittest.TestCase):
             {"time_tag": "2024-06-15T11:00:00Z", "flux": "1.0e-6", "class": "C5.0"},
         ])
         mock_response.raise_for_status = MagicMock()
-        
+
         async def mock_get(*args, **kwargs):
             return mock_response
         mock_session.get = mock_get
@@ -239,7 +239,7 @@ class TestGetGoesXrayData(unittest.TestCase):
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=[])
         mock_response.raise_for_status = MagicMock()
-        
+
         async def mock_get(*args, **kwargs):
             return mock_response
         mock_session.get = mock_get
@@ -289,7 +289,7 @@ class TestGetKpApData(unittest.TestCase):
             ["2024-06-15 11:00:00", "2.5", "observed"],
         ])
         mock_response.raise_for_status = MagicMock()
-        
+
         # session.get() should return the response directly (not a coroutine)
         # because it's used in "async with session.get(...)"
         async def mock_get(*args, **kwargs):
