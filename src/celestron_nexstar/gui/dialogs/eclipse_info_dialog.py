@@ -72,9 +72,9 @@ class EclipseInfoDialog(QDialog):
         """Initialize the eclipse info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Eclipse Predictions")
-        self.setMinimumWidth(700)
+        self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(900, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -323,7 +323,6 @@ class EclipseInfoDialog(QDialog):
         # Show details for visible eclipses
         visible_eclipses = [e for e in eclipses if e.is_visible]
         if visible_eclipses:
-            html_content.append("<br>")
             html_content.append("<h2>Visible Eclipses Details</h2>")
 
             for eclipse in visible_eclipses[:5]:  # Show first 5
@@ -367,21 +366,16 @@ class EclipseInfoDialog(QDialog):
 
                 html_content.append(f"<li>{eclipse.notes}</li>")
                 html_content.append("</ul>")
-                html_content.append("<br>")
 
         # Viewing tips
-        html_content.append("<br>")
-        html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
+            "<h2>Viewing Tips</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Lunar eclipses are safe to view with naked eye or binoculars</li>"
             f"<li style='color: {colors['red']}; margin-bottom: 5px;'>⚠ Solar eclipses require special eye protection - NEVER look directly at the sun</li>"
             f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>For solar eclipses, use ISO 12312-2 certified eclipse glasses</li>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Check weather forecast for cloud cover during eclipse times</li>"
             "</ul>"
-        )
-        html_content.append("<br>")
-        html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Eclipses are rare events - plan ahead for the best viewing experience!</p>"
         )
 

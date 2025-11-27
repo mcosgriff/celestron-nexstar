@@ -487,8 +487,22 @@ class ObservationPlanner:
 
         import asyncio
 
+        # If filtering by a specific object type, pass it to filter_objects
+        # This ensures objects without magnitudes are still included for that type
+        filter_object_type = None
+        if target_types:
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+            if isinstance(target_types, CelestialObjectType):
+                filter_object_type = target_types
+
         all_objects = asyncio.run(
-            db.filter_objects(max_magnitude=max_mag, limit=initial_limit, constellation=constellation)
+            db.filter_objects(
+                object_type=filter_object_type,
+                max_magnitude=max_mag,
+                limit=initial_limit,
+                constellation=constellation,
+            )
         )
 
         # Filter by target types if specified
@@ -521,6 +535,9 @@ class ObservationPlanner:
                             "celestial_local_group",
                         ):
                             continue  # Skip DSO catalog objects when filtering for stars
+                        # Note: Double stars are automatically excluded from the star tab
+                        # because obj.object_type == target_types requires exact match,
+                        # and DOUBLE_STAR != STAR
                         filtered_objects.append(obj)
                         seen_coordinates.add(coord_key)
                 # Handle ObservingTarget category filtering

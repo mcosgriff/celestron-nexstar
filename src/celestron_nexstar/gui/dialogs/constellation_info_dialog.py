@@ -7,6 +7,7 @@ import concurrent.futures
 import logging
 import threading
 from collections.abc import Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import (
@@ -69,11 +70,12 @@ class ConstellationInfoDialog(QDialog):
         """Initialize the constellation info dialog."""
         super().__init__(parent)
         self.setWindowTitle(f"Constellation Information: {constellation_name}")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(600)
-        self.resize(900, 700)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         self.constellation_name = constellation_name
+        self.svg_path: Path | None = None  # Store SVG path for double-click viewing
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -82,6 +84,9 @@ class ConstellationInfoDialog(QDialog):
         self.info_text = QTextEdit()
         self.info_text.setReadOnly(True)
         self.info_text.setAcceptRichText(True)
+        # Handle double-clicks to enlarge SVG
+        # Store handler reference (will be called via event filter)
+        self._double_click_handler = self._on_text_double_click
         layout.addWidget(self.info_text)
 
         # Add button box
@@ -143,7 +148,7 @@ class ConstellationInfoDialog(QDialog):
                 if rec.obj.common_name:
                     star_map[rec.obj.common_name] = rec
 
-            async def _load_data() -> tuple[dict, list]:
+            async def _load_data() -> tuple[dict[str, Any], list[Any]]:
                 db = get_database()
                 async with db._AsyncSession() as session:
                     # Get constellation info
@@ -155,7 +160,7 @@ class ConstellationInfoDialog(QDialog):
                             break
 
                     if not constellation:
-                        return None, []
+                        return {}, []
 
                     # Get stars in this constellation
                     stars = await db.filter_objects(
@@ -205,23 +210,61 @@ class ConstellationInfoDialog(QDialog):
 
             # Try to load and display constellation SVG
             try:
+                import re
                 import urllib.parse
 
                 from celestron_nexstar.api.astronomy.constellation_images import get_constellation_svg
 
-                svg_path = get_constellation_svg(constellation_data["name"])
+                svg_path = _run_async_safe(get_constellation_svg(constellation_data["name"]))
                 if svg_path and svg_path.exists():
+                    # Store SVG path for double-click viewing
+                    self.svg_path = svg_path
+
                     # Read SVG content and embed it in HTML
                     svg_content = svg_path.read_text(encoding="utf-8")
+
+                    # Add a white background to the SVG if it doesn't have one
+                    # This ensures the SVG is visible on dark themes
+                    # Check if SVG already has a background rectangle
+                    if not re.search(
+                        r'<rect[^>]*fill\s*=\s*["\'](?:white|#fff|#ffffff|#f5f5f5|#e0e0e0)', svg_content, re.IGNORECASE
+                    ):
+                        # Find the opening <svg> tag and add a background rectangle after it
+                        svg_match = re.search(r"(<svg[^>]*>)", svg_content, re.IGNORECASE)
+                        if svg_match:
+                            # Extract viewBox or width/height to determine SVG dimensions
+                            viewbox_match = re.search(r'viewBox\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+                            width_match = re.search(r'width\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+                            height_match = re.search(r'height\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+
+                            # Default dimensions if not found
+                            x, y, width, height = 0, 0, 1000, 1000
+
+                            if viewbox_match:
+                                # Parse viewBox="x y width height"
+                                viewbox_parts = viewbox_match.group(1).split()
+                                if len(viewbox_parts) >= 4:
+                                    x, y, width, height = [float(v) for v in viewbox_parts[:4]]  # type: ignore[assignment]
+                            elif width_match and height_match:
+                                # Use width and height attributes
+                                width = float(re.sub(r"[^\d.]", "", width_match.group(1)))  # type: ignore[assignment]
+                                height = float(re.sub(r"[^\d.]", "", height_match.group(1)))  # type: ignore[assignment]
+
+                            # Add white background rectangle
+                            bg_rect = f'<rect x="{x}" y="{y}" width="{width}" height="{height}" fill="#ffffff" stroke="none"/>'
+                            svg_content = svg_content.replace(svg_match.group(1), svg_match.group(1) + bg_rect, 1)
+
                     # URL encode the SVG content for data URI
                     svg_encoded = urllib.parse.quote(svg_content)
                     # Limit SVG size for display (max width 400px)
+                    # Use transparent background so it matches the QTextEdit background exactly
+                    # The SVG itself has a white background, so it will be visible
                     html_parts.append(
-                        f"<div style='margin: 15px 0; text-align: center;'>"
+                        f"<div style='margin: 15px 0; text-align: center; padding: 5px; background-color: transparent; display: inline-block;'>"
                         f"<img src='data:image/svg+xml;charset=utf-8,{svg_encoded}' "
-                        f"style='max-width: 400px; max-height: 400px; width: auto; height: auto; "
-                        f"background-color: transparent;' "
+                        f"style='max-width: 400px; max-height: 400px; width: auto; height: auto; display: block;' "
                         f"alt='{constellation_data['name']} constellation diagram' />"
+                        f"<p style='margin-top: 5px; font-size: 0.9em; color: {colors['text_dim']};'>Double-click image to enlarge</p>"
                         f"</div>"
                     )
             except Exception as e:
@@ -333,3 +376,230 @@ class ConstellationInfoDialog(QDialog):
             self.info_text.setHtml(
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load constellation information: {e}</p>"
             )
+
+    def _on_text_double_click(self, event: Any) -> None:
+        """Handle double-click events - open SVG if available."""
+        # Check if we have an SVG
+        if self.svg_path is not None and self.svg_path.exists():
+            try:
+                # Get cursor position at click location
+                if hasattr(event, "position"):
+                    pos = event.position().toPoint()
+                elif hasattr(event, "pos"):
+                    pos = event.pos()
+                else:
+                    pos = event.globalPos()
+
+                cursor = self.info_text.cursorForPosition(pos)
+                # If cursor is in the first part of the document (where SVG is), show enlarged view
+                if cursor.position() < 5000:  # Rough check - SVG is near the top
+                    self._show_enlarged_svg()
+                    return
+            except Exception:
+                # If we can't determine position, just show the enlarged view on any double-click
+                # when SVG is available (user can double-click anywhere near the image)
+                self._show_enlarged_svg()
+                return
+
+        # Call original double-click handler for normal text selection
+        from PySide6.QtWidgets import QTextEdit
+
+        QTextEdit.mouseDoubleClickEvent(self.info_text, event)
+
+    def _show_enlarged_svg(self) -> None:
+        """Show the constellation SVG in a larger dialog."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QSizePolicy, QVBoxLayout
+
+        # Try to import QSvgWidget (it's in QtSvgWidgets in PySide6)
+        use_svg_widget = False
+        q_svg_widget_class = None
+        try:
+            from PySide6.QtSvgWidgets import QSvgWidget
+
+            q_svg_widget_class = QSvgWidget
+            use_svg_widget = True
+        except ImportError:
+            pass
+
+        # Get SVG dimensions to size the dialog appropriately
+        svg_width = 1000
+        svg_height = 1000
+        aspect_ratio = 1.0
+
+        if use_svg_widget and q_svg_widget_class is not None:
+            try:
+                temp_widget = q_svg_widget_class(str(self.svg_path))
+                svg_renderer = temp_widget.renderer()
+                if svg_renderer and svg_renderer.isValid():
+                    svg_size = svg_renderer.defaultSize()
+                    if svg_size.isValid() and svg_size.width() > 0 and svg_size.height() > 0:
+                        svg_width = svg_size.width()
+                        svg_height = svg_size.height()
+                        aspect_ratio = svg_height / svg_width
+            except Exception:
+                pass
+
+        # Calculate dialog size: SVG size + minimal padding for margins and button
+        # Add ~80px for margins (10px * 2 on each side) + ~60px for button area
+        padding_width = 80
+        padding_height = 100  # Extra for button
+        dialog_width = min(svg_width + padding_width, 1400)  # Cap at reasonable max
+        dialog_height = min(svg_height + padding_height, 1000)  # Cap at reasonable max
+
+        # Create dialog for enlarged view
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"{self.constellation_name} - Constellation Diagram")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(400)
+        dialog.resize(int(dialog_width), int(dialog_height))
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(5, 5, 5, 5)  # Minimal margins
+        layout.setSpacing(5)  # Minimal spacing
+
+        # Create scroll area for the SVG
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Try to use QSvgWidget for better SVG rendering
+        svg_widget_success = False
+        if use_svg_widget and q_svg_widget_class is not None:
+            try:
+                # Use a custom widget that maintains aspect ratio
+                from PySide6.QtCore import QSize
+
+                # Create a type alias to work around mypy's limitation with conditional imports
+                _SvgWidgetBase = q_svg_widget_class  # type: ignore[assignment,misc]  # noqa: N806
+
+                class AspectRatioSvgWidget(_SvgWidgetBase):  # type: ignore[valid-type]
+                    """QSvgWidget that maintains aspect ratio when resizing."""
+
+                    def __init__(self, path: str, aspect_ratio: float) -> None:
+                        super().__init__(path)
+                        self.aspect_ratio = aspect_ratio
+
+                    def sizeHint(self) -> QSize:  # noqa: N802
+                        """Return a size hint that maintains aspect ratio."""
+                        width = 1000  # Preferred width
+                        height = int(width * self.aspect_ratio)
+                        return QSize(width, height)
+
+                    def resizeEvent(self, event: Any) -> None:  # noqa: N802
+                        """Maintain aspect ratio when resizing."""
+                        size = event.size()
+                        width = size.width()
+                        height = int(width * self.aspect_ratio)
+
+                        # If calculated height exceeds available height, use height instead
+                        if height > size.height():
+                            height = size.height()
+                            width = int(height / self.aspect_ratio)
+
+                        self.resize(width, height)
+                        super().resizeEvent(event)
+
+                aspect_svg_widget = AspectRatioSvgWidget(str(self.svg_path), aspect_ratio)
+                aspect_svg_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+                # Create a container widget with white background
+                container = QLabel()
+                container.setStyleSheet("background-color: #ffffff;")
+                container_layout = QVBoxLayout(container)
+                container_layout.setContentsMargins(10, 10, 10, 10)  # Reduced margins
+                container_layout.setSpacing(0)
+                container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                container_layout.addWidget(aspect_svg_widget)
+
+                scroll_area.setWidget(container)
+                layout.addWidget(scroll_area)
+                svg_widget_success = True
+
+            except Exception as e:
+                # Fallback to QTextEdit if QSvgWidget fails
+                logger.warning(f"Could not use QSvgWidget, falling back to QTextEdit: {e}")
+
+        # Fallback to QTextEdit if QSvgWidget is not available or failed
+        if not svg_widget_success:
+            from PySide6.QtWidgets import QTextEdit
+
+            svg_display = QTextEdit()
+            svg_display.setReadOnly(True)
+            svg_display.setAcceptRichText(True)
+            svg_display.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+            try:
+                if self.svg_path is None:
+                    return
+                svg_content = self.svg_path.read_text(encoding="utf-8")
+                import re
+                import urllib.parse
+
+                # Add white background to SVG if needed
+                if not re.search(
+                    r'<rect[^>]*fill\s*=\s*["\'](?:white|#fff|#ffffff|#f5f5f5|#e0e0e0)', svg_content, re.IGNORECASE
+                ):
+                    svg_match = re.search(r"(<svg[^>]*>)", svg_content, re.IGNORECASE)
+                    if svg_match:
+                        viewbox_match = re.search(r'viewBox\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+                        width_match = re.search(r'width\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+                        height_match = re.search(r'height\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+
+                        x, y, width, height = 0, 0, 1000, 1000
+
+                        if viewbox_match:
+                            viewbox_parts = viewbox_match.group(1).split()
+                            if len(viewbox_parts) >= 4:
+                                x, y, width, height = [float(v) for v in viewbox_parts[:4]]  # type: ignore[assignment]
+                        elif width_match and height_match:
+                            width = float(re.sub(r"[^\d.]", "", width_match.group(1)))  # type: ignore[assignment]
+                            height = float(re.sub(r"[^\d.]", "", height_match.group(1)))  # type: ignore[assignment]
+
+                        bg_rect = (
+                            f'<rect x="{x}" y="{y}" width="{width}" height="{height}" fill="#ffffff" stroke="none"/>'
+                        )
+                        svg_content = svg_content.replace(svg_match.group(1), svg_match.group(1) + bg_rect, 1)
+
+                svg_encoded = urllib.parse.quote(svg_content)
+
+                # Use viewport-based sizing
+                html = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{
+                            margin: 0;
+                            padding: 20px;
+                            background-color: #ffffff;
+                            text-align: center;
+                        }}
+                        img {{
+                            width: 95vw;
+                            height: auto;
+                            max-width: 95vw;
+                            max-height: 90vh;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    <img src='data:image/svg+xml;charset=utf-8,{svg_encoded}'
+                         alt='{self.constellation_name} constellation diagram' />
+                </body>
+                </html>
+                """
+                svg_display.setHtml(html)
+            except Exception as e2:
+                logger.error(f"Error loading enlarged SVG: {e2}")
+                svg_display.setHtml(f"<p>Error loading image: {e2}</p>")
+
+            layout.addWidget(svg_display)
+
+        # Add close button
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        # Show dialog
+        dialog.exec()

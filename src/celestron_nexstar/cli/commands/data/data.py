@@ -377,19 +377,61 @@ def setup(
                     return {row[0] for row in result.fetchall()}
 
             existing_tables = asyncio.run(_check_tables())
-            if "objects" not in existing_tables:
+
+            # Check for new type-specific tables (after refactor)
+            required_tables = ["stars", "planets", "moons", "galaxies", "nebulae", "clusters", "double_stars"]
+            has_schema = any(table in existing_tables for table in required_tables)
+            has_old_schema = "objects" in existing_tables
+
+            if not has_schema and not has_old_schema:
                 console.print("[yellow]⚠[/yellow] Database exists but schema is missing")
                 should_rebuild = True
             else:
                 # Check if we have catalog data
                 from sqlalchemy import func, select
 
-                from celestron_nexstar.api.database.models import CelestialObjectModel
+                from celestron_nexstar.api.database.models import (
+                    ClusterModel,
+                    DoubleStarModel,
+                    GalaxyModel,
+                    MoonModel,
+                    NebulaModel,
+                    PlanetModel,
+                    StarModel,
+                )
 
+                # Count objects across all type-specific tables
+                total_count = 0
                 with db._get_session_sync() as session:
-                    object_count = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
-                    if object_count > 0:
-                        console.print(f"[yellow]⚠[/yellow] Database already exists with {object_count:,} objects")
+                    for model_class in [
+                        StarModel,
+                        DoubleStarModel,
+                        GalaxyModel,
+                        NebulaModel,
+                        ClusterModel,
+                        PlanetModel,
+                        MoonModel,
+                    ]:
+                        try:
+                            # Type ignore: model_class is guaranteed to have 'id' attribute from CelestialObjectMixin
+                            count_result = session.scalar(select(func.count(model_class.id))) or 0  # type: ignore[attr-defined]
+                            total_count += count_result
+                        except Exception:
+                            # Table might not exist yet, skip it
+                            pass
+
+                    # Also check old objects table if it exists (for backward compatibility)
+                    if has_old_schema:
+                        try:
+                            from celestron_nexstar.api.database.models import CelestialObjectModel
+
+                            result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+                            total_count += result
+                        except Exception:
+                            pass
+
+                    if total_count > 0:
+                        console.print(f"[yellow]⚠[/yellow] Database already exists with {total_count:,} objects")
                         console.print("[dim]To import all available data, the database needs to be rebuilt.[/dim]\n")
 
                         if not force:
@@ -502,7 +544,7 @@ def setup(
             # Note: import_data_source prints to console, so output should be visible
             console.print("[dim]Initializing database schema...[/dim]")
 
-            result: dict[str, Any] = asyncio.run(
+            rebuild_result: dict[str, Any] = asyncio.run(
                 rebuild_database(
                     backup_dir=None,  # Don't backup during setup
                     sources=default_sources,  # Import only comprehensive sources
@@ -516,7 +558,7 @@ def setup(
             console.print("\n[green]✓[/green] Database rebuilt successfully\n")
 
             # Show import summary
-            if result.get("imported_counts"):
+            if rebuild_result.get("imported_counts"):
                 console.print("[bold]Imported Catalog Data:[/bold]")
                 import_table = Table()
                 import_table.add_column("Source", style="cyan")
@@ -524,7 +566,7 @@ def setup(
 
                 total_imported = 0
                 any_imported = False
-                for source_id, (imported, _skipped) in result["imported_counts"].items():
+                for source_id, (imported, _skipped) in rebuild_result["imported_counts"].items():
                     source_name = DATA_SOURCES[source_id].name if source_id in DATA_SOURCES else source_id
                     import_table.add_row(source_name, f"{imported:,}")
                     total_imported += imported
@@ -544,13 +586,13 @@ def setup(
                 console.print("[dim]The rebuild completed but no data sources were processed.[/dim]\n")
 
             # Show static data summary
-            if result.get("static_data"):
+            if rebuild_result.get("static_data"):
                 console.print("[bold]Static Reference Data:[/bold]")
                 static_table = Table()
                 static_table.add_column("Data Type", style="cyan")
                 static_table.add_column("Count", justify="right", style="green")
 
-                static_data = result["static_data"]
+                static_data = rebuild_result["static_data"]
                 if static_data.get("meteor_showers", 0) > 0:
                     static_table.add_row("Meteor Showers", f"{static_data['meteor_showers']:,}")
                 if static_data.get("constellations", 0) > 0:
@@ -1624,6 +1666,108 @@ def download_light_pollution(
         raise typer.Exit(code=1) from None
 
 
+@app.command("download-constellation-images", rich_help_panel="Data Management")
+def download_constellation_images(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force re-download even if images already exist in cache",
+    ),
+) -> None:
+    """
+    Download constellation SVG images for offline use.
+
+    Downloads IAU constellation SVG images from Wikimedia Commons and caches
+    them locally for offline viewing in the GUI. Images are stored in:
+    ~/.cache/celestron-nexstar/constellation-images/
+
+    [bold green]Examples:[/bold green]
+
+        # Download all Northern Hemisphere constellation images
+        nexstar data download-constellation-images
+
+        # Force re-download all images (overwrite existing)
+        nexstar data download-constellation-images --force
+
+    [bold yellow]Note:[/bold yellow] Requires aiohttp for async downloads.
+    Images are licensed under Creative Commons Attribution-ShareAlike (CC BY-SA).
+    """
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+    from celestron_nexstar.api.astronomy.constellation_images import (
+        CONSTELLATION_NAME_MAPPINGS,
+        download_constellation_svg,
+        get_constellation_svg_path,
+    )
+
+    console.print("\n[bold cyan]Downloading Constellation Images[/bold cyan]\n")
+    console.print(f"[dim]Constellations: {len(CONSTELLATION_NAME_MAPPINGS)}[/dim]")
+    if force:
+        console.print("[dim]Mode: Force re-download (overwriting existing)[/dim]")
+    else:
+        console.print("[dim]Mode: Skip existing (download only missing)[/dim]")
+    console.print()
+
+    async def download_all() -> tuple[int, int, int]:
+        """Download all constellation images."""
+        downloaded = 0
+        skipped = 0
+        failed = 0
+
+        constellation_names = list(CONSTELLATION_NAME_MAPPINGS.keys())
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("[cyan]Downloading constellation images...", total=len(constellation_names))
+
+            for constellation_name in constellation_names:
+                progress.update(task, description=f"[cyan]Downloading {constellation_name}...")
+                try:
+                    result = await download_constellation_svg(constellation_name, force=force)
+                    if result:
+                        downloaded += 1
+                        progress.update(task, advance=1)
+                    else:
+                        # Check if it already exists (not forced)
+                        svg_path = get_constellation_svg_path(constellation_name)
+                        if svg_path.exists() and not force:
+                            skipped += 1
+                            progress.update(task, advance=1)
+                        else:
+                            failed += 1
+                            progress.update(task, advance=1)
+                            console.print(f"[yellow]⚠[/yellow] Failed to download {constellation_name}")
+                except Exception as e:
+                    failed += 1
+                    progress.update(task, advance=1)
+                    console.print(f"[red]✗[/red] Error downloading {constellation_name}: {e}")
+
+        return downloaded, skipped, failed
+
+    try:
+        downloaded, skipped, failed = asyncio.run(download_all())
+
+        console.print()
+        if downloaded > 0:
+            console.print(f"[green]✓[/green] Downloaded {downloaded} constellation image(s)")
+        if skipped > 0:
+            console.print(f"[dim]⊘[/dim] Skipped {skipped} existing image(s)")
+        if failed > 0:
+            console.print(f"[red]✗[/red] Failed to download {failed} image(s)")
+            raise typer.Exit(code=1)
+        else:
+            console.print("[green]✓[/green] All constellation images ready for offline use")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error: {e}")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("rebuild", rich_help_panel="Database Management")
 def rebuild(
     backup_dir: str | None = typer.Option(
@@ -2107,6 +2251,112 @@ def run_migrations(
         # OSError: file I/O errors
         # FileNotFoundError: missing alembic.ini
         console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
+@app.command("migrate-rollback", rich_help_panel="Database Management")
+def rollback_migration(
+    revision: str = typer.Option(
+        "-1",
+        "--revision",
+        "-r",
+        help="Revision to rollback to (use '-1' for one step back, or specific revision ID)",
+    ),
+) -> None:
+    """
+    Rollback database migrations.
+
+    This command rolls back the database to a previous migration revision.
+    Use with caution - this can cause data loss if migrations have been applied
+    that modify or delete data.
+
+    Examples:
+        nexstar data migrate-rollback          # Rollback one migration
+        nexstar data migrate-rollback -r -1    # Rollback one migration (explicit)
+        nexstar data migrate-rollback -r abc123  # Rollback to specific revision
+    """
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    from alembic import command  # type: ignore[attr-defined]
+    from celestron_nexstar.api.database.database import get_database
+
+    console.print("\n[bold yellow]Rolling back database migration...[/bold yellow]\n")
+
+    db = get_database()
+
+    # Check if database exists
+    if not db.db_path.exists():
+        console.print("[yellow]⚠[/yellow] Database does not exist. Nothing to rollback.\n")
+        return
+
+    # Configure Alembic
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.db_path}")
+
+    try:
+        # Get current revision
+        from sqlalchemy import create_engine
+
+        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
+        with sync_engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+
+        if not current_rev:
+            console.print("[yellow]⚠[/yellow] No migrations have been applied. Nothing to rollback.\n")
+            return
+
+        console.print(f"[dim]Current revision: {current_rev}[/dim]")
+
+        # Determine target revision
+        if revision == "-1":
+            # Get the previous revision
+            script = ScriptDirectory.from_config(alembic_cfg)
+            current = script.get_revision(current_rev)
+            if current and current.down_revision:
+                target_rev = (
+                    current.down_revision if isinstance(current.down_revision, str) else current.down_revision[0]
+                )
+            else:
+                console.print("[red]✗[/red] Cannot determine previous revision. Please specify a revision ID.\n")
+                raise typer.Exit(code=1)
+        else:
+            target_rev = revision
+
+        console.print(f"[dim]Rolling back to: {target_rev}[/dim]\n")
+
+        # Confirm
+        console.print("[bold yellow]Warning:[/bold yellow] This will rollback the database schema.")
+        console.print("[bold yellow]Any data in tables that are removed will be lost![/bold yellow]\n")
+
+        # Dispose of existing connections
+        import asyncio
+
+        async def _dispose_engine() -> None:
+            await db._engine.dispose()
+
+        asyncio.run(_dispose_engine())
+
+        # Rollback
+        command.downgrade(alembic_cfg, target_rev)
+        console.print("\n[bold green]✓ Migration rolled back successfully![/bold green]\n")
+
+        # Verify the new revision
+        asyncio.run(_dispose_engine())
+        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
+        with sync_engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            new_rev = context.get_current_revision()
+
+        console.print(f"[dim]Database is now at revision: {new_rev or 'base'}[/dim]\n")
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error rolling back migration: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")

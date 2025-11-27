@@ -72,7 +72,7 @@ class BinocularsInfoDialog(QDialog):
         self.setWindowTitle("Binocular Viewing Tonight")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(800, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -229,7 +229,6 @@ class BinocularsInfoDialog(QDialog):
             html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Sunset: {sunset_str} | Sunrise: {sunrise_str}</p>"
             )
-            html_content.append("<br>")
 
             # Load async content using safe async runner
             async def _load_async_content() -> list[str]:
@@ -244,11 +243,10 @@ class BinocularsInfoDialog(QDialog):
                     lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=None
                 )
 
-                content_parts.append("<h2>ISS Visible Passes</h2>")
                 content_parts.append(
+                    "<h2>ISS Visible Passes</h2>"
                     f"<p style='color: {colors['text_dim']};'>International Space Station passes visible from your location</p>"
                 )
-                content_parts.append("<br>")
 
                 if iss_passes:
                     visible_passes = [p for p in iss_passes if p.is_visible][:10]
@@ -312,8 +310,6 @@ class BinocularsInfoDialog(QDialog):
                         f"<p><span style='color: {colors['yellow']};'>No visible ISS passes in the next 7 days</span></p>"
                     )
 
-                content_parts.append("<br>")
-
                 # Meteor Showers
                 from celestron_nexstar.api.astronomy.meteor_showers import (
                     get_active_showers,
@@ -326,11 +322,10 @@ class BinocularsInfoDialog(QDialog):
                     active_showers = await get_active_showers(db_session, now)
                     peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
 
-                content_parts.append("<h2>Active Meteor Showers</h2>")
                 content_parts.append(
+                    "<h2>Active Meteor Showers</h2>"
                     f"<p style='color: {colors['text_dim']};'>Best viewed with naked eye or binoculars for wide-field sweeping</p>"
                 )
-                content_parts.append("<br>")
 
                 if active_showers:
                     content_parts.append(
@@ -375,19 +370,15 @@ class BinocularsInfoDialog(QDialog):
                             "</tr>"
                         )
 
-                    content_parts.append("</table>")
                     content_parts.append(
+                        "</table>"
                         f"<p style='color: {colors['text_dim']};'>ZHR = Zenithal Hourly Rate (meteors per hour under ideal conditions)</p>"
-                    )
-                    content_parts.append(
                         f"<p style='color: {colors['text_dim']};'>Actual rates are typically 25-50% of ZHR due to non-ideal conditions</p>"
                     )
                 else:
                     content_parts.append(
                         f"<p><span style='color: {colors['yellow']};'>No major meteor showers currently active</span></p>"
                     )
-
-                content_parts.append("<br>")
 
                 # Prominent Constellations
                 from celestron_nexstar.api.astronomy.constellations import (
@@ -491,11 +482,10 @@ class BinocularsInfoDialog(QDialog):
                     else:  # 12, 1, 2
                         return "Winter"
 
-                content_parts.append("<h2>Prominent Constellations (Tonight)</h2>")
                 content_parts.append(
+                    "<h2>Prominent Constellations (Tonight)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Best constellations visible from your location</p>"
                 )
-                content_parts.append("<br>")
 
                 if fully_visible:
                     current_season = _get_current_season(now)
@@ -532,8 +522,8 @@ class BinocularsInfoDialog(QDialog):
                             "</tr>"
                         )
 
-                    content_parts.append("</table>")
                     content_parts.append(
+                        "</table>"
                         f"<p style='color: {colors['text_dim']};'>💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°</p>"
                     )
                 else:
@@ -543,19 +533,15 @@ class BinocularsInfoDialog(QDialog):
 
                 # Partially visible constellations
                 if partially_visible:
-                    content_parts.append("<br>")
-                    content_parts.append("<h2>Constellations Partially Visible</h2>")
                     content_parts.append(
+                        "<h2>Constellations Partially Visible</h2>"
                         f"<p style='color: {colors['text_dim']};'>Some stars visible, but whole constellation is low in the sky</p>"
                     )
-                    content_parts.append("<br>")
 
                     current_season = _get_current_season(now)
 
                     content_parts.append(
                         "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
-                    )
-                    content_parts.append(
                         f"<tr style='background-color: {colors['header']}; color: white;'>"
                         "<th style='padding: 8px; text-align: left;'>Constellation</th>"
                         "<th style='padding: 8px; text-align: right;'>Direction</th>"
@@ -585,14 +571,11 @@ class BinocularsInfoDialog(QDialog):
 
                     content_parts.append("</table>")
 
-                content_parts.append("<br>")
-
                 # Bright Stars
-                content_parts.append("<h2>Bright Stars (Tonight)</h2>")
                 content_parts.append(
+                    "<h2>Bright Stars (Tonight)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Stars visible with {optics.display_name} (magnitude ≤ {limiting_mag:.2f})</p>"
                 )
-                content_parts.append("<br>")
 
                 # Get visible stars
                 visible_stars_list = []
@@ -647,8 +630,8 @@ class BinocularsInfoDialog(QDialog):
                             "</tr>"
                         )
 
-                    content_parts.append("</table>")
                     content_parts.append(
+                        "</table>"
                         f"<p style='color: {colors['text_dim']};'>💡 Tip: Estimate altitude with your hand - hold arm outstretched: fist = 10°, thumb = 2°, pinky = 1°</p>"
                     )
                 else:
@@ -656,14 +639,11 @@ class BinocularsInfoDialog(QDialog):
                         f"<p><span style='color: {colors['yellow']};'>No bright stars currently visible</span></p>"
                     )
 
-                content_parts.append("<br>")
-
                 # Visible Asterisms
-                content_parts.append("<h2>Famous Star Patterns (Asterisms)</h2>")
                 content_parts.append(
+                    "<h2>Famous Star Patterns (Asterisms)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Easily recognizable patterns visible through binoculars</p>"
                 )
-                content_parts.append("<br>")
 
                 async with get_db_session() as db_session:
                     visible_asterisms = await get_visible_asterisms(
@@ -715,9 +695,8 @@ class BinocularsInfoDialog(QDialog):
             html_content.extend(async_content)
 
             # Viewing tips
-            html_content.append("<br>")
-            html_content.append("<h2>Viewing Tips for Binoculars</h2>")
             html_content.append(
+                "<h2>Viewing Tips for Binoculars</h2>"
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li style='margin-bottom: 5px;'>Allow 20-30 minutes for dark adaptation</li>"
                 f"<li style='margin-bottom: 5px;'>Use a tripod or stable support for extended viewing</li>"

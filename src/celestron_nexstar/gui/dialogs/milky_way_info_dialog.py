@@ -73,9 +73,9 @@ class MilkyWayInfoDialog(QDialog):
         """Initialize the Milky Way info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Milky Way Visibility")
-        self.setMinimumWidth(700)
+        self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(900, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -319,22 +319,23 @@ class MilkyWayInfoDialog(QDialog):
         """Format next opportunities content as HTML."""
         html_content = []
         html_content.append(
-            f"<style>h2 {{ color: {colors['header']}; margin-top: 1em; margin-bottom: 0.5em; }}</style>"
+            f"<style>"
+            f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
+            f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
+            f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
+            f"</style>"
         )
 
         location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
         # Header
-        html_content.append(
-            f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Next Milky Way Viewing Opportunities for {location_name}</span></p>"
-        )
+        html_content.append(f"<h1>Next Milky Way Viewing Opportunities for {location_name}</h1>")
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>Forecast based on moon phase cycles and seasonal patterns</p>"
         )
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>Searching next {months} months, showing top {min(10, len(opportunities))} opportunities</p>"
         )
-        html_content.append("<br>")
 
         if not opportunities:
             html_content.append(
@@ -437,7 +438,6 @@ class MilkyWayInfoDialog(QDialog):
         html_content.append("</table>")
 
         # Understanding the Scores
-        html_content.append("<br>")
         html_content.append("<h2>Understanding the Scores</h2>")
         html_content.append(
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
@@ -453,7 +453,6 @@ class MilkyWayInfoDialog(QDialog):
         )
 
         # Cloud Cover Data Source
-        html_content.append("<br>")
         html_content.append("<h2>Cloud Cover Data Source</h2>")
 
         historical_months: list[int] = []
@@ -469,11 +468,7 @@ class MilkyWayInfoDialog(QDialog):
             month_strs = [month_names[m - 1] for m in historical_months]
             html_content.append(
                 f"<p><span style='color: {colors['green']};'>✓ Historical data used for:</span> <span style='color: {colors['text_dim']};'>{', '.join(month_strs)}</span></p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']}; margin-left: 20px;'>Location-specific statistics from Open-Meteo (2000-present)</p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']}; margin-left: 20px;'>Using p40-p60 percentile range (tighter, more confident predictions)</p>"
             )
 
@@ -481,8 +476,6 @@ class MilkyWayInfoDialog(QDialog):
             month_strs = [month_names[m - 1] for m in seasonal_months]
             html_content.append(
                 f"<p><span style='color: {colors['yellow']};'>⚠ Seasonal estimates used for:</span> <span style='color: {colors['text_dim']};'>{', '.join(month_strs)}</span></p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']}; margin-left: 20px;'>General seasonal cloud cover patterns (historical data not available)</p>"
             )
 
@@ -493,15 +486,12 @@ class MilkyWayInfoDialog(QDialog):
 
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>Historical data is checked first and cached in the database for future use</p>"
-        )
-        html_content.append(
             f"<p style='color: {colors['text_dim']};'>Use 'nexstar weather historical' to view historical cloud cover data for your location</p>"
         )
 
         # Visibility Level Calculation
-        html_content.append("<br>")
-        html_content.append("<h2>Visibility Level Calculation</h2>")
         html_content.append(
+            "<h2>Visibility Level Calculation</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text_dim']};'>"
             "<li>Excellent: score ≥ 70%</li>"
             "<li>Good: score ≥ 50%</li>"
@@ -512,7 +502,6 @@ class MilkyWayInfoDialog(QDialog):
         )
 
         # Planning Tips
-        html_content.append("<br>")
         html_content.append("<h2>Planning Tips</h2>")
         html_content.append(
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
@@ -531,19 +520,20 @@ class MilkyWayInfoDialog(QDialog):
         """Format tonight visibility content as HTML."""
         html_content = []
         html_content.append(
-            f"<style>h2 {{ color: {colors['header']}; margin-top: 1em; margin-bottom: 0.5em; }}</style>"
+            f"<style>"
+            f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
+            f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
+            f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
+            f"</style>"
         )
 
         location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
         # Header
-        html_content.append(
-            f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Milky Way Visibility for {location_name}</span></p>"
-        )
+        html_content.append(f"<h1>Milky Way Visibility for {location_name}</h1>")
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>Milky Way visibility based on dark sky conditions, moon phase, and weather</p>"
         )
-        html_content.append("<br>")
 
         if forecast is None:
             html_content.append(
@@ -564,7 +554,6 @@ class MilkyWayInfoDialog(QDialog):
             html_content.append(
                 f"<p style='color: {colors['text_dim']}; font-size: 12pt;'>○ Milky Way is not visible tonight</p>"
             )
-        html_content.append("<br>")
 
         # Detailed information table
         html_content.append("<h2>Visibility Details</h2>")
@@ -809,7 +798,6 @@ class MilkyWayInfoDialog(QDialog):
         html_content.append("</table>")
 
         # Viewing tips
-        html_content.append("<br>")
         html_content.append("<h2>Viewing Tips</h2>")
         if forecast.is_visible:
             html_content.append(
@@ -883,27 +871,19 @@ class MilkyWayInfoDialog(QDialog):
             if forecast.galactic_center_altitude is not None and not forecast.galactic_center_visible:
                 html_content.append(
                     f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>Galactic center is below the horizon</li>"
-                )
-                html_content.append(
                     f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>In Northern Hemisphere, best viewing is during summer months</li>"
                 )
             html_content.append("</ul>")
 
-        html_content.append("<br>")
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Milky Way visibility depends heavily on dark skies. Even Bortle Class 4 locations may show only faint traces.</p>"
-        )
-        html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Summer months (June-August) offer the best views of the galactic center in the Northern Hemisphere.</p>"
-        )
-        html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Use 'nexstar location light-pollution' to find darker locations near you.</p>"
         )
 
         # Visibility Level Calculation
-        html_content.append("<br>")
-        html_content.append("<h2>Visibility Level Calculation</h2>")
         html_content.append(
+            "<h2>Visibility Level Calculation</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text_dim']};'>"
             "<li>Excellent: score ≥ 70%</li>"
             "<li>Good: score ≥ 50%</li>"
@@ -940,19 +920,12 @@ class MilkyWayInfoDialog(QDialog):
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>Forecast for the next {days} days based on dark sky conditions and moon phase</p>"
         )
-        html_content.append("<br>")
 
         if not windows:
             html_content.append(
                 f"<p><span style='color: {colors['yellow']};'>No Milky Way visibility windows found in the forecast period.</span></p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Conditions may not be favorable due to light pollution, moon phase, or weather.</p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Milky Way requires dark skies (Bortle Class 4 or better) and dark moon.</p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Try 'nexstar milky-way next' to find upcoming opportunities.</p>"
             )
             return html_content
@@ -1032,9 +1005,8 @@ class MilkyWayInfoDialog(QDialog):
         html_content.append("</table>")
 
         # Viewing tips
-        html_content.append("<br>")
-        html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
+            "<h2>Viewing Tips</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Look toward the southern horizon (Northern Hemisphere)</li>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Best viewed with naked eye or binoculars</li>"
@@ -1044,15 +1016,13 @@ class MilkyWayInfoDialog(QDialog):
             "</ul>"
         )
 
-        html_content.append("<br>")
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Milky Way visibility depends heavily on dark skies and moon phase. Even Bortle Class 4 locations may show only faint traces.</p>"
         )
 
         # Visibility Level Calculation
-        html_content.append("<br>")
-        html_content.append("<h2>Visibility Level Calculation</h2>")
         html_content.append(
+            "<h2>Visibility Level Calculation</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text_dim']};'>"
             "<li>Excellent: score ≥ 70%</li>"
             "<li>Good: score ≥ 50%</li>"

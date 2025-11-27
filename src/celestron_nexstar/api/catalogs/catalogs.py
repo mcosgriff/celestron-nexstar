@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import deal
 import yaml
@@ -332,7 +332,7 @@ async def search_objects(
         List of tuples (CelestialObject, match_type) sorted by match quality.
         Match types: "exact", "name", "alias", "description"
     """
-    from sqlalchemy import select, text
+    from sqlalchemy import select
 
     from celestron_nexstar.api.database.database import get_database
 
@@ -345,69 +345,96 @@ async def search_objects(
     try:
         db = get_database()
         async with db._AsyncSession() as session:
-            from celestron_nexstar.api.database.models import CelestialObjectModel
+            from celestron_nexstar.api.database.models import (
+                CelestialObjectModelProtocol,
+                ClusterModel,
+                DoubleStarModel,
+                GalaxyModel,
+                MoonModel,
+                NebulaModel,
+                PlanetModel,
+                StarModel,
+            )
+
+            # Search across all type-specific tables
+            # Cast to Protocol type so mypy understands the attributes
+            # These models all inherit from CelestialObjectMixin which matches the Protocol
+            all_model_classes: list[type[CelestialObjectModelProtocol]] = [
+                cast(type[CelestialObjectModelProtocol], StarModel),
+                cast(type[CelestialObjectModelProtocol], DoubleStarModel),
+                cast(type[CelestialObjectModelProtocol], GalaxyModel),
+                cast(type[CelestialObjectModelProtocol], NebulaModel),
+                cast(type[CelestialObjectModelProtocol], ClusterModel),
+                cast(type[CelestialObjectModelProtocol], PlanetModel),
+                cast(type[CelestialObjectModelProtocol], MoonModel),
+            ]
 
             # First, try exact match (case-insensitive) - all filtering in database
-            # Use ilike() which is SQLAlchemy's standard case-insensitive comparison
-            # It handles type coercion automatically and avoids Python-side evaluation
-            exact_query = select(CelestialObjectModel).where(
-                (CelestialObjectModel.name.ilike(query)) | (CelestialObjectModel.common_name.ilike(query))
-            )
-            if catalog_name:
-                exact_query = exact_query.where(CelestialObjectModel.catalog == catalog_name)
+            exact_results = []
+            seen_names = set()  # Deduplicate by name (case-insensitive)
+            for model_class in all_model_classes:
+                exact_query = select(model_class).where(
+                    (model_class.name.ilike(query)) | (model_class.common_name.ilike(query))
+                )
+                if catalog_name:
+                    exact_query = exact_query.where(model_class.catalog == catalog_name)
 
-            result = await session.execute(exact_query)
-            exact_models = result.scalars().all()
-            if exact_models:
-                # Return all exact matches (there may be multiple objects with same common name)
-                exact_results = []
+                result = await session.execute(exact_query)
+                exact_models = result.scalars().all()
                 for exact_model in exact_models:
                     exact_obj = db._model_to_object(exact_model)
                     if update_positions:
                         exact_obj = exact_obj.with_current_position()
-                    exact_results.append((exact_obj, "exact"))
+
+                    # Deduplicate by name (case-insensitive)
+                    obj_name_lower = str(exact_obj.name).lower() if exact_obj.name else ""
+                    if obj_name_lower and obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        exact_results.append((exact_obj, "exact"))
+
+            if exact_results:
                 return exact_results
 
             # Search for substring matches in name (score: 0) - all filtering in database
-            # Use ilike() for case-insensitive substring matching
-            name_query = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(f"%{query}%"))
-            if catalog_name:
-                name_query = name_query.where(CelestialObjectModel.catalog == catalog_name)
+            for model_class in all_model_classes:
+                name_query = select(model_class).where(model_class.name.ilike(f"%{query}%"))
+                if catalog_name:
+                    name_query = name_query.where(model_class.catalog == catalog_name)
 
-            result = await session.execute(name_query)
-            name_models = result.scalars().all()
-            for model in name_models:
-                obj = db._model_to_object(model)
-                if update_positions:
-                    obj = obj.with_current_position()
-                # Check if it's an exact match (shouldn't happen, but just in case)
-                if obj and obj.name and str(obj.name).lower() == query_lower:
-                    exact_match = (obj, "exact")
-                    break
-                all_results.append((0, obj, "name"))
+                result = await session.execute(name_query)
+                name_models = result.scalars().all()
+                for model in name_models:
+                    obj = db._model_to_object(model)
+                    if update_positions:
+                        obj = obj.with_current_position()
+                    # Check if it's an exact match (shouldn't happen, but just in case)
+                    if obj and obj.name and str(obj.name).lower() == query_lower:
+                        exact_match = (obj, "exact")
+                        break
+                    all_results.append((0, obj, "name"))
 
             # If exact match found, return it
             if exact_match:
                 return [exact_match]
 
             # Search for substring matches in common_name (score: 1) - all filtering in database
-            # Use ilike() for case-insensitive substring matching
-            common_query = select(CelestialObjectModel).where(
-                CelestialObjectModel.common_name.isnot(None),
-                CelestialObjectModel.common_name.ilike(f"%{query}%"),
-            )
-            if catalog_name:
-                common_query = common_query.where(CelestialObjectModel.catalog == catalog_name)
-
-            result = await session.execute(common_query)
-            common_models = result.scalars().all()
             seen_names = {
                 str(obj.name).lower()
                 for _, obj, _ in all_results
                 if obj and hasattr(obj, "name") and obj.name is not None
             }
-            for model in common_models:
-                obj = db._model_to_object(model)
+            for model_class in all_model_classes:
+                common_query = select(model_class).where(
+                    model_class.common_name.isnot(None),
+                    model_class.common_name.ilike(f"%{query}%"),
+                )
+                if catalog_name:
+                    common_query = common_query.where(model_class.catalog == catalog_name)
+
+                result = await session.execute(common_query)
+                common_models = result.scalars().all()
+                for model in common_models:
+                    obj = db._model_to_object(model)
                 if obj and obj.name is not None:
                     obj_name_lower = str(obj.name).lower()
                     if obj_name_lower not in seen_names:
@@ -423,49 +450,38 @@ async def search_objects(
             if exact_match:
                 return [exact_match]
 
-            # Ensure FTS table exists before using it
-            await db.ensure_fts_table()
+            # Search in description across all type-specific tables (score: 2)
+            # Note: FTS5 is no longer available after splitting objects table,
+            # so we use LIKE queries on description fields instead
+            for model_class in all_model_classes:
+                desc_query = select(model_class).where(
+                    model_class.description.isnot(None),
+                    model_class.description.ilike(f"%{query}%"),
+                )
+                if catalog_name:
+                    desc_query = desc_query.where(model_class.catalog == catalog_name)
 
-            # Use FTS5 for full-text search in description (score: 2)
-            fts_query = text("""
-                SELECT objects.id FROM objects
-                JOIN objects_fts ON objects.id = objects_fts.rowid
-                WHERE objects_fts MATCH :query
-            """)
-            params = {"query": query}
-            if catalog_name:
-                fts_query = text("""
-                    SELECT objects.id FROM objects
-                    JOIN objects_fts ON objects.id = objects_fts.rowid
-                    WHERE objects_fts MATCH :query
-                    AND objects.catalog = :catalog
-                """)
-                params["catalog"] = catalog_name
-
-            fts_result = await session.execute(fts_query, params)
-            fts_rows = fts_result.fetchall()
-            fts_ids = [row[0] for row in fts_rows]
-            for obj_id in fts_ids:
-                fts_model: CelestialObjectModel | None = await session.get(CelestialObjectModel, obj_id)
-                if fts_model is not None:
-                    obj = db._model_to_object(fts_model)
+                result = await session.execute(desc_query)
+                desc_models = result.scalars().all()
+                for model in desc_models:
+                    obj = db._model_to_object(model)
                     if obj and obj.name is not None:
                         obj_name_lower = str(obj.name).lower()
                         if obj_name_lower not in seen_names:
                             seen_names.add(obj_name_lower)
-                    if update_positions:
-                        obj = obj.with_current_position()
-                        # Check if it matches name or common_name (should have been caught above)
-                        if str(obj.name).lower() == query_lower or (
-                            obj.common_name and str(obj.common_name).lower() == query_lower
-                        ):
-                            exact_match = (obj, "exact")
-                            break
-                        # Only add if it's a description match (not already matched above)
-                        if query_lower not in str(obj.name).lower() and (
-                            not obj.common_name or query_lower not in str(obj.common_name).lower()
-                        ):
-                            all_results.append((2, obj, "description"))
+                            if update_positions:
+                                obj = obj.with_current_position()
+                            # Check if it matches name or common_name (should have been caught above)
+                            if str(obj.name).lower() == query_lower or (
+                                obj.common_name and str(obj.common_name).lower() == query_lower
+                            ):
+                                exact_match = (obj, "exact")
+                                break
+                            # Only add if it's a description match (not already matched above)
+                            if query_lower not in str(obj.name).lower() and (
+                                not obj.common_name or query_lower not in str(obj.common_name).lower()
+                            ):
+                                all_results.append((2, obj, "description"))
 
             # If exact match found, return it
             if exact_match:

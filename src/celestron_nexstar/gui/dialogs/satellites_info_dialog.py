@@ -73,9 +73,9 @@ class SatellitesInfoDialog(QDialog):
         """Initialize the satellites info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Satellite Passes")
-        self.setMinimumWidth(700)
+        self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(900, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -274,7 +274,6 @@ class SatellitesInfoDialog(QDialog):
             f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>{title} for {location_name}</span></p>"
         )
         html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {days} days</p>")
-        html_content.append("<br>")
 
         if not passes:
             html_content.append(
@@ -383,21 +382,19 @@ class SatellitesInfoDialog(QDialog):
                 )
 
             html_content.append("</table>")
-            html_content.append("<br>")
 
         # Summary
         total_satellites = len(sorted_satellites)
         visible_count = sum(1 for p in passes if p.is_visible)
-        html_content.append("<h2>Summary</h2>")
-        html_content.append(f"<p style='color: {colors['text']};'>Total satellites: {total_satellites}</p>")
         html_content.append(
+            "<h2>Summary</h2>"
+            f"<p style='color: {colors['text']};'>Total satellites: {total_satellites}</p>"
             f"<p style='color: {colors['text']};'>Total passes: {len(passes)} ({visible_count} visible)</p>"
         )
 
         # Viewing tips
-        html_content.append("<br>")
-        html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
+            "<h2>Viewing Tips</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Satellites are visible when sunlit</li>"
             f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Look for steady moving 'stars' crossing the sky</li>"

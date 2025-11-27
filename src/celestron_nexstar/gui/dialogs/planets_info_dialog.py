@@ -32,8 +32,8 @@ class PlanetsInfoDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Planetary Events")
         self.setMinimumWidth(600)
-        self.setMinimumHeight(400)
-        self.resize(700, 500)  # Set reasonable default size
+        self.setMinimumHeight(500)
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -166,9 +166,8 @@ class PlanetsInfoDialog(QDialog):
         # Header
         html_content.append(
             f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Planetary Conjunctions for {location_name}</span></p>"
+            f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>"
         )
-        html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>")
-        html_content.append("<br>")
 
         if not events:
             html_content.append(
@@ -228,7 +227,6 @@ class PlanetsInfoDialog(QDialog):
         # Show details for visible conjunctions
         visible_events = [e for e in events if e.is_visible]
         if visible_events:
-            html_content.append("<br>")
             html_content.append("<h2>Visible Conjunctions Details</h2>")
 
             for event in visible_events[:5]:  # Show first 5
@@ -247,10 +245,8 @@ class PlanetsInfoDialog(QDialog):
                     f"<li>{event.notes}</li>"
                     "</ul>"
                 )
-                html_content.append("<br>")
 
         # Viewing tips
-        html_content.append("<br>")
         html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
@@ -259,7 +255,6 @@ class PlanetsInfoDialog(QDialog):
             f"<li style='margin-bottom: 5px;'>Some conjunctions may be visible to the naked eye</li>"
             "</ul>"
         )
-        html_content.append("<br>")
         html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Conjunctions are great photo opportunities!</p>"
         )
@@ -282,7 +277,6 @@ class PlanetsInfoDialog(QDialog):
             f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Planetary Oppositions for {location_name}</span></p>"
         )
         html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {years} years</p>")
-        html_content.append("<br>")
 
         if not events:
             html_content.append(
@@ -338,7 +332,6 @@ class PlanetsInfoDialog(QDialog):
         html_content.append("</table>")
 
         # Show details
-        html_content.append("<br>")
         html_content.append("<h2>Opposition Details</h2>")
 
         for event in events[:10]:  # Show first 10
@@ -348,28 +341,21 @@ class PlanetsInfoDialog(QDialog):
 
             html_content.append(
                 f"<p><b style='color: {colors['header']};'>{event.planet1.capitalize()}</b> - {date_display}</p>"
-            )
-            html_content.append(
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li>Elongation: {event.separation_degrees:.1f}° at {event.altitude_at_event:.0f}° altitude</li>"
                 f"<li>{event.notes}</li>"
                 "</ul>"
             )
-            html_content.append("<br>")
 
         # Viewing tips
-        html_content.append("<br>")
-        html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
+            "<h2>Viewing Tips</h2>"
             f"<ul style='margin-left: 20px; color: {colors['text']};'>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Opposition is the best time to observe outer planets</li>"
             f"<li style='margin-bottom: 5px;'>Planet is closest to Earth and brightest</li>"
             f"<li style='margin-bottom: 5px;'>Planet is visible all night (rises at sunset, sets at sunrise)</li>"
             f"<li style='margin-bottom: 5px;'>Best viewing with telescope for detail</li>"
             "</ul>"
-        )
-        html_content.append("<br>")
-        html_content.append(
             f"<p style='color: {colors['text_dim']};'>💡 Tip: Plan your observing sessions around oppositions!</p>"
         )
 

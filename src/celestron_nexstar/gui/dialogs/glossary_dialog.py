@@ -121,9 +121,6 @@ class GlossaryDialog(QDialog):
             text_widget = getattr(self, f"{category.lower().replace(' ', '_')}_text")
 
             html_content = []
-            html_content.append(
-                f"<p style='margin-bottom: 15px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>{category}</span></p>"
-            )
 
             # Sort terms alphabetically
             sorted_terms = sorted(terms.items())

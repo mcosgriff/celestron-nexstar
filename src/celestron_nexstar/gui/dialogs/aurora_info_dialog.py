@@ -29,8 +29,8 @@ class AuroraInfoDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Aurora Borealis Visibility")
         self.setMinimumWidth(600)
-        self.setMinimumHeight(400)
-        self.resize(700, 600)  # Set reasonable default size
+        self.setMinimumHeight(500)
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -174,11 +174,8 @@ class AuroraInfoDialog(QDialog):
             location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
             html_content.append(
                 f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Aurora Borealis Visibility for {location_name}</span></p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Northern Lights visibility based on geomagnetic activity (Kp index)</p>"
             )
-            html_content.append("<br>")
 
             if forecast is None:
                 html_content.append(
@@ -200,7 +197,6 @@ class AuroraInfoDialog(QDialog):
                 html_content.append(
                     f"<p style='color: {colors['text_dim']}; font-size: 12pt;'>○ Aurora Borealis is not visible tonight</p>"
                 )
-            html_content.append("<br>")
 
             # Detailed information table
             html_content.append("<h2>Forecast Details</h2>")
@@ -416,7 +412,6 @@ class AuroraInfoDialog(QDialog):
             html_content.append("</table>")
 
             # Viewing tips
-            html_content.append("<br>")
             html_content.append("<h2>Viewing Tips</h2>")
             if forecast.is_visible:
                 html_content.append(
@@ -479,14 +474,9 @@ class AuroraInfoDialog(QDialog):
                 if tips:
                     html_content.append(f"<ul style='margin-left: 20px;'>{''.join(tips)}</ul>")
 
-            html_content.append("<br>")
             html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Aurora activity can change quickly. Check again in 30-60 minutes for updates.</p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Even if not visible now, geomagnetic storms can develop rapidly.</p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Use 'nexstar space-weather status' for detailed space weather conditions.</p>"
             )
 

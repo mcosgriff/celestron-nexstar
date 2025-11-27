@@ -31,6 +31,7 @@ class ObjectInfoDialog(QDialog):
         self.setWindowTitle(f"Object Information: {object_name}")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
+        self.resize(600, 700)  # Default width for all info dialogs
 
         self.object_name = object_name
 

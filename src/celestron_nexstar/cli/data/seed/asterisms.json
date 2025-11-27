@@ -8,7 +8,12 @@
     "parent_constellation": "Ursa Major",
     "description": "Seven bright stars forming a ladle shape. Use the pointer stars (Dubhe and Merak) to find Polaris",
     "stars": "Dubhe,Merak,Phecda,Megrez,Alioth,Mizar,Alkaid",
-    "season": "Spring"
+    "season": "Spring",
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Big_Dipper",
+    "cultural_info": "Known as the Plough in UK/Ireland, Great Wagon (Großer Wagen) in German, Göncöl's Wagon (Göncölszekér) in Hungarian, and Otava in Finnish. In many cultures, it's seen as a bear, plough, wagon, or ladle. Mentioned in Homer's Iliad as 'the Bear, which men also call the Wain'.",
+    "guidepost_info": "The front two stars (Merak and Dubhe) point to Polaris, the North Star. This makes it extremely useful for celestial navigation. Extend the line from Merak through Dubhe about five times the distance between them to find Polaris.",
+    "historical_notes": "Mentioned in Book XVIII of Homer's Iliad. Used as a political symbol by Irish Republican movements (Starry Plough). In Latin, these seven stars were known as the 'Seven Oxen' (septentriones).",
+    "shape_description": "Four stars form a bowl (or body), three stars form a handle (or head)"
   },
   {
     "name": "Little Dipper",
@@ -30,7 +35,12 @@
     "parent_constellation": null,
     "description": "Large triangle formed by three of the brightest stars in the summer sky",
     "stars": "Vega,Deneb,Altair",
-    "season": "Summer"
+    "season": "Summer",
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Summer_Triangle",
+    "cultural_info": "Modern asterism recognized in the 1950s. Spans three constellations: Lyra (Vega), Cygnus (Deneb), and Aquila (Altair). Each star is the brightest in its respective constellation.",
+    "guidepost_info": "Visible in summer evenings in the northern hemisphere. Helps locate the Milky Way band, which passes through the triangle. Each vertex is a bright first-magnitude star: Vega (0.03 mag), Deneb (1.25 mag), and Altair (0.76 mag). The triangle is high overhead during summer months.",
+    "historical_notes": "Popularized by British astronomer Patrick Moore in the 1950s. While the stars have been known for millennia, the asterism as a distinct pattern is a modern concept.",
+    "shape_description": "Large triangle formed by three first-magnitude stars, spanning about 50 degrees across the sky"
   },
   {
     "name": "Winter Triangle",
@@ -111,14 +121,19 @@
   },
   {
     "name": "Orion's Belt",
-    "alt_names": "The Belt,Three Kings",
+    "alt_names": "The Belt,Three Kings,Three Sisters,Jacob's Staff",
     "ra_hours": 5.6,
     "dec_degrees": -1.2,
     "size_degrees": 3.0,
     "parent_constellation": "Orion",
     "description": "Three bright stars in a straight line. Points to Sirius and Aldebaran",
     "stars": "Alnitak,Alnilam,Mintaka",
-    "season": "Winter"
+    "season": "Winter",
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Orion%27s_Belt",
+    "cultural_info": "Known as the Three Kings, Three Sisters, or Jacob's Staff. In ancient Egypt, the three stars aligned with the three pyramids of Giza. In Chinese astronomy, they are part of the White Tiger constellation.",
+    "guidepost_info": "Points to Sirius (down and left) and Aldebaran (up and right). The belt points down to Sirius, the brightest star in the night sky. Extending the belt upward leads to Aldebaran in Taurus. The belt also helps locate the Orion Nebula (M42) below it.",
+    "historical_notes": "The three stars align with the three pyramids of Giza in ancient Egypt. This alignment was likely intentional, as the pyramids were built around 2500 BCE when the stars were in this position.",
+    "shape_description": "Three bright stars in a nearly straight line, evenly spaced"
   },
   {
     "name": "Sickle of Leo",

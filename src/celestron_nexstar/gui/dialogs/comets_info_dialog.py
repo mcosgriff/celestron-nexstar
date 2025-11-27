@@ -72,7 +72,7 @@ class CometsInfoDialog(QDialog):
         self.setWindowTitle("Comet Visibility")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(800, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -284,7 +284,6 @@ class CometsInfoDialog(QDialog):
                 content_parts.append("</table>")
 
                 # Show details
-                content_parts.append("<br>")
                 content_parts.append("<h2>Comet Details</h2>")
 
                 for vis in comets[:10]:  # Show first 10
@@ -317,7 +316,6 @@ class CometsInfoDialog(QDialog):
                     content_parts.append(f"<li>{vis.comet.notes}</li>")
                     content_parts.append(f"<li>{vis.notes}</li>")
                     content_parts.append("</ul>")
-                    content_parts.append("<br>")
 
                 return content_parts
 
@@ -326,9 +324,8 @@ class CometsInfoDialog(QDialog):
             html_content.extend(async_content)
 
             # Viewing tips
-            html_content.append("<br>")
-            html_content.append("<h2>Viewing Tips</h2>")
             html_content.append(
+                "<h2>Viewing Tips</h2>"
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Magnitude < 6.0: Potentially visible to naked eye under dark skies</li>"
                 f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Magnitude 6.0-8.0: Visible with binoculars</li>"
@@ -336,9 +333,6 @@ class CometsInfoDialog(QDialog):
                 f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Comets are best viewed away from city lights</li>"
                 f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>Comet brightness can change unpredictably due to outbursts</li>"
                 "</ul>"
-            )
-            html_content.append("<br>")
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>💡 Tip: Comet visibility is highly variable - check regularly for updates!</p>"
             )
 

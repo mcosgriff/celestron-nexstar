@@ -30,7 +30,7 @@ class SpaceWeatherInfoDialog(QDialog):
         self.setWindowTitle("Space Weather Conditions")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(800, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -160,11 +160,8 @@ class SpaceWeatherInfoDialog(QDialog):
             # Header
             html_content.append(
                 f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Space Weather Conditions</span></p>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Data from NOAA Space Weather Prediction Center</p>"
             )
-            html_content.append("<br>")
 
             # NOAA Scales Table
             html_content.append("<h2>NOAA Space Weather Scales</h2>")
@@ -208,7 +205,6 @@ class SpaceWeatherInfoDialog(QDialog):
             )
 
             html_content.append("</table>")
-            html_content.append("<br>")
 
             # Geomagnetic Activity
             html_content.append("<h2>Geomagnetic Activity</h2>")
@@ -246,12 +242,11 @@ class SpaceWeatherInfoDialog(QDialog):
             )
 
             html_content.append("</table>")
-            html_content.append("<br>")
 
             # Solar Wind
-            html_content.append("<h2>Solar Wind</h2>")
-            html_content.append("<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>")
             html_content.append(
+                "<h2>Solar Wind</h2>"
+                "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
                 f"<tr style='background-color: {colors['header']}; color: white;'>"
                 "<th style='padding: 8px; text-align: left;'>Parameter</th>"
                 "<th style='padding: 8px; text-align: right;'>Value</th>"
@@ -300,12 +295,11 @@ class SpaceWeatherInfoDialog(QDialog):
             )
 
             html_content.append("</table>")
-            html_content.append("<br>")
 
             # Solar Activity
-            html_content.append("<h2>Solar Activity</h2>")
-            html_content.append("<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>")
             html_content.append(
+                "<h2>Solar Activity</h2>"
+                "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
                 f"<tr style='background-color: {colors['header']}; color: white;'>"
                 "<th style='padding: 8px; text-align: left;'>Parameter</th>"
                 "<th style='padding: 8px; text-align: right;'>Value</th>"
@@ -331,15 +325,12 @@ class SpaceWeatherInfoDialog(QDialog):
             )
 
             html_content.append("</table>")
-            html_content.append("<br>")
 
             # Alerts
             if conditions.alerts:
-                html_content.append("<h2>Space Weather Alerts</h2>")
                 html_content.append(
+                    "<h2>Space Weather Alerts</h2>"
                     f"<div style='border: 2px solid {colors['yellow']}; padding: 10px; background-color: rgba(255, 193, 7, 0.1);'>"
-                )
-                html_content.append(
                     f"<p style='color: {colors['yellow']}; font-weight: bold; margin-top: 0;'>Active Alerts:</p>"
                 )
                 for alert in conditions.alerts:
@@ -369,9 +360,8 @@ class SpaceWeatherInfoDialog(QDialog):
                 f"<li>Negative Bz values enhance aurora activity</li>"
                 f"<li>Use 'nexstar aurora tonight' for detailed aurora forecast</li>"
                 "</ul>"
+                "</div>"
             )
-            html_content.append("</div>")
-            html_content.append("<br>")
 
             # Last updated
             if conditions.last_updated:

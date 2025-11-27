@@ -32,7 +32,7 @@ class ISSInfoDialog(QDialog):
         self.setWindowTitle("ISS Visible Passes")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(800, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -162,17 +162,18 @@ class ISSInfoDialog(QDialog):
             # Build HTML content
             html_content = []
             html_content.append(
-                f"<style>h2 {{ color: {colors['header']}; margin-top: 1em; margin-bottom: 0.5em; }}</style>"
+                f"<style>"
+                f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
+                f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
+                f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
+                f"</style>"
             )
 
             location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
-            html_content.append(
-                f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>ISS Visible Passes for {location_name}</span></p>"
-            )
+            html_content.append(f"<h1>ISS Visible Passes for {location_name}</h1>")
             html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Searching next {days} days (minimum altitude: {min_altitude:.0f}°)</p>"
             )
-            html_content.append("<br>")
 
             if not iss_passes:
                 html_content.append(
@@ -246,7 +247,6 @@ class ISSInfoDialog(QDialog):
             # Show details for excellent passes
             excellent_passes = [p for p in visible_passes if p.max_altitude_deg >= 50]
             if excellent_passes:
-                html_content.append("<br>")
                 html_content.append("<h2>Excellent Passes (≥50° altitude)</h2>")
                 for iss_pass in excellent_passes[:5]:  # Show first 5
                     rise_time_str = self._format_local_time(iss_pass.rise_time, location.latitude, location.longitude)
@@ -259,20 +259,18 @@ class ISSInfoDialog(QDialog):
 
                     html_content.append(f"<p><b style='color: {colors['header']};'>{date_str}</b></p>")
                     html_content.append(
-                        f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+                        f"<ul style='margin-left: 20px; color: {colors['text']}; margin-top: 0.5em; margin-bottom: 1em;'>"
                         f"<li>Rise: {rise_time_str} from {azimuth_to_compass_8point(iss_pass.rise_azimuth_deg)}</li>"
                         f"<li>Max: {max_time_str} at {iss_pass.max_altitude_deg:.0f}° ({azimuth_to_compass_8point(iss_pass.max_azimuth_deg)})</li>"
                         f"<li>Set: {set_time_str} to {azimuth_to_compass_8point(iss_pass.set_azimuth_deg)}</li>"
                         f"<li>Duration: {duration_min}m {iss_pass.duration_seconds % 60}s | Quality: <span style='color: {colors['green']};'>{quality}</span></li>"
                         "</ul>"
                     )
-                    html_content.append("<br>")
 
             # Viewing tips
-            html_content.append("<br>")
             html_content.append("<h2>Viewing Tips</h2>")
             html_content.append(
-                f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+                f"<ul style='margin-left: 20px; color: {colors['text']}; margin-top: 0.5em;'>"
                 f"<li style='color: {colors['green']}; margin-bottom: 5px;'>ISS is visible to naked eye - no equipment needed!</li>"
                 f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Look for a bright, steady-moving 'star' crossing the sky</li>"
                 f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>ISS moves faster than aircraft and doesn't blink</li>"
@@ -280,9 +278,8 @@ class ISSInfoDialog(QDialog):
                 f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>Use binoculars for enhanced viewing of solar panels</li>"
                 "</ul>"
             )
-            html_content.append("<br>")
             html_content.append(
-                f"<p style='color: {colors['text_dim']};'>💡 Tip: ISS is the third brightest object in the sky (after Sun and Moon)!</p>"
+                f"<p style='color: {colors['text_dim']}; margin-top: 1em;'>💡 Tip: ISS is the third brightest object in the sky (after Sun and Moon)!</p>"
             )
 
             self.info_text.setHtml("\n".join(html_content))

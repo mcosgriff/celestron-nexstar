@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, TypeVar, cast
 
 import deal
 from rich.console import Console
@@ -35,9 +35,24 @@ from celestron_nexstar.api.core.exceptions import (
     DatabaseRebuildError,
     DatabaseRestoreError,
 )
-from celestron_nexstar.api.database.models import CelestialObjectModel, EphemerisFileModel, MetadataModel
+from celestron_nexstar.api.database.models import (
+    CelestialObjectModel,
+    CelestialObjectModelProtocol,
+    ClusterModel,
+    DoubleStarModel,
+    EphemerisFileModel,
+    GalaxyModel,
+    MetadataModel,
+    MoonModel,
+    NebulaModel,
+    PlanetModel,
+    StarModel,
+)
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 
+
+# Type variable for model classes that have CelestialObjectMixin
+_ModelType = TypeVar("_ModelType", bound=CelestialObjectModelProtocol)
 
 console = Console()
 
@@ -151,6 +166,35 @@ class DatabaseStats:
 
 class CatalogDatabase:
     """Interface to the SQLite catalog database using SQLAlchemy ORM."""
+
+    # Mapping from object_type to model class
+    # Cast to Protocol type so mypy understands the attributes
+    # These models all inherit from CelestialObjectMixin which matches the Protocol
+    _TYPE_TO_MODEL: ClassVar[dict[CelestialObjectType, type[CelestialObjectModelProtocol]]] = {
+        CelestialObjectType.STAR: cast(type[CelestialObjectModelProtocol], StarModel),
+        CelestialObjectType.DOUBLE_STAR: cast(type[CelestialObjectModelProtocol], DoubleStarModel),
+        CelestialObjectType.GALAXY: cast(type[CelestialObjectModelProtocol], GalaxyModel),
+        CelestialObjectType.NEBULA: cast(type[CelestialObjectModelProtocol], NebulaModel),
+        CelestialObjectType.CLUSTER: cast(type[CelestialObjectModelProtocol], ClusterModel),
+        CelestialObjectType.PLANET: cast(type[CelestialObjectModelProtocol], PlanetModel),
+        CelestialObjectType.MOON: cast(type[CelestialObjectModelProtocol], MoonModel),
+    }
+
+    @classmethod
+    def _get_model_class(cls, object_type: CelestialObjectType | str) -> type[CelestialObjectModelProtocol]:
+        """Get the model class for a given object type."""
+        if isinstance(object_type, str):
+            object_type = CelestialObjectType(object_type)
+        # Type ignore: CelestialObjectModel may not fully match protocol, but is compatible at runtime
+        return cls._TYPE_TO_MODEL.get(object_type, CelestialObjectModel)  # type: ignore[return-value]
+
+    @classmethod
+    def _get_table_name(cls, object_type: CelestialObjectType | str) -> str:
+        """Get the table name for a given object type."""
+        if isinstance(object_type, str):
+            object_type = CelestialObjectType(object_type)
+        model_class = cls._get_model_class(object_type)
+        return str(model_class.__tablename__)
 
     def __init__(self, db_path: Path | str | None = None):
         """
@@ -518,32 +562,47 @@ class CatalogDatabase:
         # Ensure FTS table exists before inserting (triggers depend on it)
         await self.ensure_fts_table()
 
-        # Convert object_type to string if needed
-        if isinstance(object_type, CelestialObjectType):
-            object_type = object_type.value
-
-        model = CelestialObjectModel(
-            name=name,
-            common_name=common_name,
-            catalog=catalog,
-            catalog_number=catalog_number,
-            ra_hours=ra_hours,
-            dec_degrees=dec_degrees,
-            magnitude=magnitude,
-            object_type=object_type,
-            size_arcmin=size_arcmin,
-            description=description,
-            constellation=constellation,
-            is_dynamic=is_dynamic,
-            ephemeris_name=ephemeris_name,
-            parent_planet=parent_planet,
-        )
+        # Get the correct model class for this object type
+        object_type_enum = CelestialObjectType(object_type) if isinstance(object_type, str) else object_type
+        model_class = self._get_model_class(object_type_enum)
 
         async with self._AsyncSession() as session:
+            from sqlalchemy import select
+
+            # Check if object with this name already exists
+            existing = await session.scalar(select(model_class).where(model_class.name == name))
+            if existing:
+                # Object already exists, return its ID
+                # At runtime, existing.id is an int, not Mapped[int]
+                return existing.id  # type: ignore[return-value]
+
+            # Create model instance with common fields
+            model_kwargs = {
+                "name": name,
+                "common_name": common_name,
+                "catalog": catalog,
+                "catalog_number": catalog_number,
+                "ra_hours": ra_hours,
+                "dec_degrees": dec_degrees,
+                "magnitude": magnitude,
+                "size_arcmin": size_arcmin,
+                "description": description,
+                "constellation": constellation,
+            }
+
+            # Add dynamic fields for planets and moons
+            if object_type_enum in (CelestialObjectType.PLANET, CelestialObjectType.MOON):
+                model_kwargs["is_dynamic"] = is_dynamic
+                model_kwargs["ephemeris_name"] = ephemeris_name
+                if object_type_enum == CelestialObjectType.MOON:
+                    model_kwargs["parent_planet"] = parent_planet
+
+            model = model_class(**model_kwargs)
             session.add(model)
             await session.commit()
             await session.refresh(model)
-            return model.id
+            # At runtime, model.id is an int, not Mapped[int]
+            return model.id  # type: ignore[return-value]
 
     async def insert_objects_batch(
         self,
@@ -565,34 +624,90 @@ class CatalogDatabase:
             return 0
 
         async with self._AsyncSession() as session:
-            models = []
+            from sqlalchemy import select
+
+            # Pre-fetch existing names for each model type to avoid duplicates
+            existing_names_by_type: dict[type, set[str]] = {}
+
+            # Group objects by type first
+            objects_by_type: dict[type, list[dict[str, Any]]] = {}
             for obj in objects:
-                # Convert object_type to string if needed
+                # Get object type and model class
                 object_type = obj.get("object_type")
-                if isinstance(object_type, CelestialObjectType):
-                    object_type = object_type.value
+                if isinstance(object_type, str):
+                    object_type_enum = CelestialObjectType(object_type)
+                elif isinstance(object_type, CelestialObjectType):
+                    object_type_enum = object_type
+                else:
+                    continue  # Skip invalid types
 
-                model = CelestialObjectModel(
-                    name=obj["name"],
-                    common_name=obj.get("common_name"),
-                    catalog=obj["catalog"],
-                    catalog_number=obj.get("catalog_number"),
-                    ra_hours=obj["ra_hours"],
-                    dec_degrees=obj["dec_degrees"],
-                    magnitude=obj.get("magnitude"),
-                    object_type=object_type,
-                    size_arcmin=obj.get("size_arcmin"),
-                    description=obj.get("description"),
-                    constellation=obj.get("constellation"),
-                    is_dynamic=obj.get("is_dynamic", False),
-                    ephemeris_name=obj.get("ephemeris_name"),
-                    parent_planet=obj.get("parent_planet"),
-                )
-                models.append(model)
+                model_class = self._get_model_class(object_type_enum)
+                if model_class not in objects_by_type:
+                    objects_by_type[model_class] = []
+                objects_by_type[model_class].append(obj)
 
-            session.add_all(models)
+            # Pre-fetch existing names for each model type
+            for model_class in objects_by_type:
+                result = await session.execute(select(model_class.name))
+                existing_names_by_type[model_class] = {row[0] for row in result.all()}
+
+            # Group objects by type for batch insertion, skipping duplicates
+            models_by_type: dict[type, list[Any]] = {}
+            for model_class, obj_list in objects_by_type.items():
+                existing_names = existing_names_by_type.get(model_class, set())
+                for obj in obj_list:
+                    obj_name = obj["name"]
+
+                    # Skip if name already exists
+                    if obj_name in existing_names:
+                        continue
+
+                    # Create model instance with common fields
+                    model_kwargs = {
+                        "name": obj_name,
+                        "common_name": obj.get("common_name"),
+                        "catalog": obj["catalog"],
+                        "catalog_number": obj.get("catalog_number"),
+                        "ra_hours": obj["ra_hours"],
+                        "dec_degrees": obj["dec_degrees"],
+                        "magnitude": obj.get("magnitude"),
+                        "size_arcmin": obj.get("size_arcmin"),
+                        "description": obj.get("description"),
+                        "constellation": obj.get("constellation"),
+                    }
+
+                    # Get object type for dynamic fields
+                    object_type = obj.get("object_type")
+                    if isinstance(object_type, str):
+                        object_type_enum = CelestialObjectType(object_type)
+                    elif isinstance(object_type, CelestialObjectType):
+                        object_type_enum = object_type
+                    else:
+                        continue
+
+                    # Add dynamic fields for planets and moons
+                    if object_type_enum in (CelestialObjectType.PLANET, CelestialObjectType.MOON):
+                        model_kwargs["is_dynamic"] = obj.get("is_dynamic", True)  # Default to True for planets/moons
+                        model_kwargs["ephemeris_name"] = obj.get("ephemeris_name")
+                        if object_type_enum == CelestialObjectType.MOON:
+                            model_kwargs["parent_planet"] = obj.get("parent_planet")
+
+                    model = model_class(**model_kwargs)
+                    if model_class not in models_by_type:
+                        models_by_type[model_class] = []
+                    models_by_type[model_class].append(model)
+                    # Track this name as existing to avoid duplicates within the same batch
+                    existing_names.add(obj_name)
+
+            # Insert all models grouped by type
+            total_inserted = 0
+            for _model_class, models in models_by_type.items():
+                if models:
+                    session.add_all(models)
+                    total_inserted += len(models)
+
             await session.commit()
-            return len(models)
+            return total_inserted
 
     async def get_existing_objects_set(
         self,
@@ -613,22 +728,22 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            query = select(
-                CelestialObjectModel.name, CelestialObjectModel.common_name, CelestialObjectModel.catalog_number
-            )
-            if catalog:
-                query = query.where(CelestialObjectModel.catalog == catalog)
-
-            result = await session.execute(query)
-            rows = result.all()
-
-            # Build set of (name, common_name, catalog_number) tuples
             existing_set: set[tuple[str, str | None, int | None]] = set()
-            for name, common_name, catalog_number in rows:
-                existing_set.add((name, common_name, catalog_number))
-                # Also add common_name as a key if it exists
-                if common_name:
-                    existing_set.add((common_name, common_name, catalog_number))
+            # Query all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                query = select(model_class.name, model_class.common_name, model_class.catalog_number)
+                if catalog:
+                    query = query.where(model_class.catalog == catalog)
+
+                result = await session.execute(query)
+                rows = result.all()
+
+                # Build set of (name, common_name, catalog_number) tuples
+                for name, common_name, catalog_number in rows:
+                    existing_set.add((name, common_name, catalog_number))
+                    # Also add common_name as a key if it exists
+                    if common_name:
+                        existing_set.add((common_name, common_name, catalog_number))
 
             return existing_set
 
@@ -637,13 +752,39 @@ class CatalogDatabase:
         lambda result: result is None or isinstance(result, CelestialObject),
         message="Must return CelestialObject or None",
     )
-    async def get_by_id(self, object_id: int) -> CelestialObject | None:
-        """Get object by ID."""
+    async def get_by_id(
+        self, object_id: int, object_type: CelestialObjectType | str | None = None
+    ) -> CelestialObject | None:
+        """
+        Get object by ID.
+
+        Args:
+            object_id: Object ID
+            object_type: Optional object type to speed up lookup (searches all tables if not provided)
+        """
         async with self._AsyncSession() as session:
-            model = await session.get(CelestialObjectModel, object_id)
-            if model is None:
+            # If object_type is provided, query the specific table
+            if object_type:
+                if isinstance(object_type, str):
+                    object_type = CelestialObjectType(object_type)
+                model_class = self._get_model_class(object_type)
+                model = await session.get(model_class, object_id)
+                if model:
+                    return self._model_to_object(model)
                 return None
-            return self._model_to_object(model)
+
+            # Otherwise, search across all tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                model = await session.get(model_class, object_id)
+                if model:
+                    return self._model_to_object(model)
+
+            # Fallback to old model for backward compatibility
+            model = await session.get(CelestialObjectModel, object_id)
+            if model:
+                return self._model_to_object(model)
+
+            return None
 
     @deal.pre(lambda self, name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
     @deal.post(
@@ -666,15 +807,41 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            # Check name field first (most common case)
-            stmt = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(name)).limit(1)
-            result = await session.execute(stmt)
+            # Search across all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                # Check name field first
+                stmt = select(model_class).where(model_class.name.ilike(name)).limit(1)
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if model:
+                    return self._model_to_object(model)
+
+                # Check common_name field
+                stmt = (
+                    select(model_class)
+                    .where(
+                        model_class.common_name.isnot(None),
+                        model_class.common_name.ilike(name),
+                    )
+                    .limit(1)
+                )
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if model:
+                    return self._model_to_object(model)
+
+            # Fallback to old model for backward compatibility
+            # Type ignore: CelestialObjectModel doesn't fully match Protocol but is compatible
+            old_model_stmt: Any = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(name)).limit(1)
+            result = await session.execute(old_model_stmt)
+            model = result.scalar_one_or_none()
+            if model:
+                return self._model_to_object(model)
             model = result.scalar_one_or_none()
             if model:
                 return self._model_to_object(model)
 
-            # If not found in name, check common_name field (exact match only)
-            stmt = (
+            old_model_stmt = (
                 select(CelestialObjectModel)
                 .where(
                     CelestialObjectModel.common_name.isnot(None),
@@ -718,7 +885,10 @@ class CatalogDatabase:
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
     async def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
-        Fuzzy search using FTS5.
+        Search across all type-specific tables using LIKE queries.
+
+        Note: FTS5 search is no longer available since we split the objects table.
+        This method now performs case-insensitive LIKE searches across all tables.
 
         Args:
             query: Search query
@@ -732,52 +902,57 @@ class CatalogDatabase:
         if not query:
             return []
 
-        # Ensure FTS table exists
-        await self.ensure_fts_table()
-
         async with self._AsyncSession() as session:
-            # FTS5 search requires raw SQL
-            # FTS5 query syntax: simple word queries work directly
-            # For multi-word queries, FTS5 uses AND by default
-            # Escape special characters that FTS5 treats as operators
-            fts_query = query.strip()
+            from sqlalchemy import select
 
-            # FTS5 special characters: " AND OR NOT ( ) [ ] { } * : ^
-            # If query contains these, we need to escape or quote them
-            # For simple word searches, just use the word directly
-            try:
-                result = await session.execute(
-                    text("""
-                        SELECT objects.id FROM objects
-                        JOIN objects_fts ON objects.id = objects_fts.rowid
-                        WHERE objects_fts MATCH :query
-                        ORDER BY rank
-                        LIMIT :limit
-                    """),
-                    {"query": fts_query, "limit": limit},
+            all_models: list[Any] = []
+            query.lower()
+
+            # Search across all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                # Search in name
+                stmt = select(model_class).where(model_class.name.ilike(f"%{query}%")).limit(limit)
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                all_models.extend(models)
+
+                # Search in common_name
+                stmt = (
+                    select(model_class)
+                    .where(
+                        model_class.common_name.isnot(None),
+                        model_class.common_name.ilike(f"%{query}%"),
+                    )
+                    .limit(limit)
                 )
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                all_models.extend(models)
 
-                # Get IDs and fetch models
-                rows = result.fetchall()
-                object_ids = [row[0] for row in rows]
-                objects = []
-                for obj_id in object_ids:
-                    model = await session.get(CelestialObjectModel, obj_id)
-                    if model:
-                        objects.append(self._model_to_object(model))
+                # Search in description
+                stmt = (
+                    select(model_class)
+                    .where(
+                        model_class.description.isnot(None),
+                        model_class.description.ilike(f"%{query}%"),
+                    )
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                all_models.extend(models)
 
-                return objects
-            except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
-                # SQLAlchemyError: database errors, FTS table issues
-                # RuntimeError: async/await errors
-                # AttributeError: missing session/model attributes
-                # ValueError: invalid query format
-                # TypeError: wrong argument types
-                # KeyError: missing keys in results
-                # IndexError: missing array indices
-                logger.error(f"FTS5 search failed for query '{query}': {e}")
-                # Return empty list - no fallback
-                return []
+            # Convert to objects and deduplicate by ID
+            seen_ids = set()
+            objects = []
+            for model in all_models:
+                if model.id not in seen_ids:
+                    seen_ids.add(model.id)
+                    objects.append(self._model_to_object(model))
+                    if len(objects) >= limit:
+                        break
+
+            return objects
 
     @deal.pre(lambda self, catalog, limit: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
@@ -787,15 +962,24 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            stmt = (
-                select(CelestialObjectModel)
-                .where(CelestialObjectModel.catalog == catalog)
-                .order_by(CelestialObjectModel.catalog_number, CelestialObjectModel.name)
-                .limit(limit)
+            all_models: list[Any] = []
+            # Query all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                stmt = (
+                    select(model_class)
+                    .where(model_class.catalog == catalog)
+                    .order_by(model_class.catalog_number, model_class.name)
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                all_models.extend(models)
+
+            # Sort by catalog_number and name, then limit
+            all_models.sort(
+                key=lambda m: (m.catalog_number if m.catalog_number is not None else float("inf"), m.name or "")
             )
-            result = await session.execute(stmt)
-            models = result.scalars().all()
-            return [self._model_to_object(model) for model in models]
+            return [self._model_to_object(model) for model in all_models[:limit]]
 
     @deal.pre(
         lambda self, catalog, catalog_number: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty"
@@ -816,13 +1000,17 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import func, select
 
-            count = await session.scalar(
-                select(func.count(CelestialObjectModel.id)).where(
-                    CelestialObjectModel.catalog == catalog,
-                    CelestialObjectModel.catalog_number == catalog_number,
+            # Check across all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                count = await session.scalar(
+                    select(func.count(model_class.id)).where(
+                        model_class.catalog == catalog,
+                        model_class.catalog_number == catalog_number,
+                    )
                 )
-            )
-            return (count or 0) > 0
+                if (count or 0) > 0:
+                    return True
+            return False
 
     @deal.pre(
         lambda self, *args, **kwargs: kwargs.get("limit", 1000) > 0,
@@ -857,38 +1045,73 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            stmt = select(CelestialObjectModel)
+            # Convert object_type to enum if string
+            object_type_enum = CelestialObjectType(object_type) if isinstance(object_type, str) else object_type  # type: ignore[assignment]
 
-            # Build filters
-            if catalog:
-                stmt = stmt.where(CelestialObjectModel.catalog == catalog)
+            # Determine which tables to query
+            model_classes: list[type[CelestialObjectModelProtocol]]
+            if object_type_enum:
+                # Query specific table
+                model_classes = [self._get_model_class(object_type_enum)]
+            elif is_dynamic is not None:
+                # is_dynamic only applies to planets and moons
+                if is_dynamic:
+                    model_classes = [
+                        cast(type[CelestialObjectModelProtocol], PlanetModel),
+                        cast(type[CelestialObjectModelProtocol], MoonModel),
+                    ]
+                else:
+                    # Query all non-dynamic tables
+                    model_classes = [
+                        cast(type[CelestialObjectModelProtocol], StarModel),
+                        cast(type[CelestialObjectModelProtocol], DoubleStarModel),
+                        cast(type[CelestialObjectModelProtocol], GalaxyModel),
+                        cast(type[CelestialObjectModelProtocol], NebulaModel),
+                        cast(type[CelestialObjectModelProtocol], ClusterModel),
+                    ]
+            else:
+                # Query all tables
+                model_classes = list(self._TYPE_TO_MODEL.values())
 
-            if object_type:
-                if isinstance(object_type, CelestialObjectType):
-                    object_type = object_type.value
-                stmt = stmt.where(CelestialObjectModel.object_type == object_type)
+            all_models: list[Any] = []
+            for model_class in model_classes:
+                stmt = select(model_class)
 
-            if max_magnitude is not None:
-                stmt = stmt.where(CelestialObjectModel.magnitude <= max_magnitude)
+                # Build filters
+                if catalog:
+                    stmt = stmt.where(model_class.catalog == catalog)
 
-            if min_magnitude is not None:
-                stmt = stmt.where(CelestialObjectModel.magnitude >= min_magnitude)
+                if max_magnitude is not None:
+                    # Include objects with NULL magnitude when filtering by specific object type
+                    if object_type_enum:
+                        stmt = stmt.where((model_class.magnitude <= max_magnitude) | (model_class.magnitude.is_(None)))
+                    else:
+                        stmt = stmt.where(model_class.magnitude <= max_magnitude)
 
-            if constellation:
-                stmt = stmt.where(CelestialObjectModel.constellation.ilike(constellation))
+                if min_magnitude is not None:
+                    stmt = stmt.where(model_class.magnitude >= min_magnitude)
 
-            if is_dynamic is not None:
-                stmt = stmt.where(CelestialObjectModel.is_dynamic == is_dynamic)
+                if constellation:
+                    stmt = stmt.where(model_class.constellation.ilike(constellation))
 
-            # Order and limit
-            stmt = stmt.order_by(
-                CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc()
-            ).limit(limit)
+                # is_dynamic filter (only for planets and moons)
+                # Type ignore: Protocol includes is_dynamic but mypy needs help with the check
+                if is_dynamic is not None and model_class in (PlanetModel, MoonModel):  # type: ignore[comparison-overlap]
+                    stmt = stmt.where(model_class.is_dynamic == is_dynamic)  # type: ignore[attr-defined]
 
-            result = await session.execute(stmt)
-            models = result.scalars().all()
+                # Order and limit
+                stmt = stmt.order_by(model_class.magnitude.asc().nulls_last(), model_class.name.asc()).limit(limit)
 
-            return [self._model_to_object(model) for model in models]
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                all_models.extend(models)
+
+            # Convert all models to objects
+            objects = [self._model_to_object(model) for model in all_models]
+
+            # Sort by magnitude and name, then limit
+            objects.sort(key=lambda x: (x.magnitude if x.magnitude is not None else float("inf"), x.name or ""))
+            return objects[:limit]
 
     async def get_moons_by_parent_planet(self, planet_name: str) -> list[CelestialObject]:
         """
@@ -903,13 +1126,10 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            from celestron_nexstar.api.core.enums import CelestialObjectType
-
             stmt = (
-                select(CelestialObjectModel)
-                .where(CelestialObjectModel.parent_planet == planet_name)
-                .where(CelestialObjectModel.object_type == CelestialObjectType.MOON.value)
-                .order_by(CelestialObjectModel.magnitude.asc().nulls_last(), CelestialObjectModel.name.asc())
+                select(MoonModel)
+                .where(MoonModel.parent_planet == planet_name)
+                .order_by(MoonModel.magnitude.asc().nulls_last(), MoonModel.name.asc())
             )
 
             result = await session.execute(stmt)
@@ -923,10 +1143,15 @@ class CatalogDatabase:
         async with self._AsyncSession() as session:
             from sqlalchemy import select
 
-            stmt = select(CelestialObjectModel.catalog).distinct().order_by(CelestialObjectModel.catalog)
-            result = await session.execute(stmt)
-            catalogs = result.scalars().all()
-            return list(catalogs)
+            catalog_set: set[str] = set()
+            # Query all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                stmt = select(model_class.catalog).distinct()
+                result = await session.execute(stmt)
+                catalogs = result.scalars().all()
+                catalog_set.update(catalogs)
+
+            return sorted(catalog_set)
 
     @deal.pre(lambda self, prefix, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
@@ -954,31 +1179,33 @@ class CatalogDatabase:
             # Use a UNION-like approach with separate queries, then combine
             names_set = set()
 
-            # Query name field
-            name_query = (
-                select(CelestialObjectModel.name)
-                .distinct()
-                .filter(func.lower(CelestialObjectModel.name).like(f"{prefix_lower}%"))
-                .order_by(func.lower(CelestialObjectModel.name))
-                .limit(limit)
-            )
-            name_result = await session.execute(name_query)
-            name_results = name_result.fetchall()
-            for row in name_results:
-                if row[0]:
-                    names_set.add(row[0])
-
-            # Query common_name field
-            common_name_query = (
-                select(CelestialObjectModel.common_name)
-                .distinct()
-                .filter(
-                    CelestialObjectModel.common_name.isnot(None),
-                    func.lower(CelestialObjectModel.common_name).like(f"{prefix_lower}%"),
+            # Query across all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                # Query name field
+                name_query = (
+                    select(model_class.name)
+                    .distinct()
+                    .filter(func.lower(model_class.name).like(f"{prefix_lower}%"))
+                    .order_by(func.lower(model_class.name))
+                    .limit(limit)
                 )
-                .order_by(func.lower(CelestialObjectModel.common_name))
-                .limit(limit)
-            )
+                name_result = await session.execute(name_query)
+                name_results = name_result.fetchall()
+                for row in name_results:
+                    if row[0]:
+                        names_set.add(row[0])
+
+                # Query common_name field
+                common_name_query = (
+                    select(model_class.common_name)
+                    .distinct()
+                    .filter(
+                        model_class.common_name.isnot(None),
+                        func.lower(model_class.common_name).like(f"{prefix_lower}%"),
+                    )
+                    .order_by(func.lower(model_class.common_name))
+                    .limit(limit)
+                )
             # Fix type incompatibility: Row[tuple[str | None]], be explicit with Optional[str]
             common_name_result = await session.execute(common_name_query)
             common_name_results: Sequence[Row[tuple[str | None]]] = common_name_result.fetchall()
@@ -1012,42 +1239,57 @@ class CatalogDatabase:
         from sqlalchemy import func, select
 
         async with self._AsyncSession() as session:
-            # Total count
-            total_result = await session.execute(select(func.count(CelestialObjectModel.id)))
-            total = total_result.scalar_one() or 0
+            # Total count - sum across all tables
+            total = 0
+            for model_class in self._TYPE_TO_MODEL.values():
+                result = await session.execute(select(func.count(model_class.id)))
+                total += result.scalar_one() or 0
 
-            # By catalog
-            catalog_result = await session.execute(
-                select(CelestialObjectModel.catalog, func.count(CelestialObjectModel.id)).group_by(
-                    CelestialObjectModel.catalog
+            # By catalog - query all tables
+            by_catalog: dict[str, int] = {}
+            for model_class in self._TYPE_TO_MODEL.values():
+                result = await session.execute(
+                    select(model_class.catalog, func.count(model_class.id)).group_by(model_class.catalog)
                 )
-            )
-            catalog_rows = catalog_result.all()
-            by_catalog = {row[0]: row[1] for row in catalog_rows if row[0] and row[1] > 0}
+                for row in result.all():
+                    catalog_name = row[0]
+                    count = row[1]
+                    if catalog_name:
+                        by_catalog[catalog_name] = by_catalog.get(catalog_name, 0) + count
 
-            # By type
-            type_result = await session.execute(
-                select(CelestialObjectModel.object_type, func.count(CelestialObjectModel.id)).group_by(
-                    CelestialObjectModel.object_type
+            # By type - count each table
+            by_type: dict[str, int] = {}
+            for obj_type, model_class in self._TYPE_TO_MODEL.items():
+                result = await session.execute(select(func.count(model_class.id)))
+                count = result.scalar_one() or 0
+                by_type[obj_type.value] = count
+
+            # Magnitude range - get min/max across all tables
+            min_mags: list[float] = []
+            max_mags: list[float] = []
+            for model_class in self._TYPE_TO_MODEL.values():
+                result = await session.execute(
+                    select(func.min(model_class.magnitude), func.max(model_class.magnitude)).where(
+                        model_class.magnitude.isnot(None)
+                    )
                 )
-            )
-            type_rows = type_result.all()
-            by_type = {row[0]: row[1] for row in type_rows}
+                mag_row: Any = result.first()
+                if mag_row is not None and mag_row[0] is not None and mag_row[1] is not None:
+                    min_mags.append(float(mag_row[0]))
+                    max_mags.append(float(mag_row[1]))
 
-            # Magnitude range
-            mag_result = await session.execute(
-                select(func.min(CelestialObjectModel.magnitude), func.max(CelestialObjectModel.magnitude)).where(
-                    CelestialObjectModel.magnitude.isnot(None)
+            mag_range = (min(min_mags) if min_mags else None, max(max_mags) if max_mags else None)
+
+            # Dynamic objects - count from planets and moons
+            dynamic = 0
+            for model_class in (
+                cast(type[CelestialObjectModelProtocol], PlanetModel),
+                cast(type[CelestialObjectModelProtocol], MoonModel),
+            ):
+                result = await session.execute(
+                    select(func.count(model_class.id)).where(model_class.is_dynamic.is_(True))  # type: ignore[attr-defined]
                 )
-            )
-            mag_row = mag_result.first()
-            mag_range = (mag_row[0], mag_row[1]) if mag_row and mag_row[0] is not None else (None, None)
-
-            # Dynamic objects
-            dynamic_result = await session.execute(
-                select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.is_dynamic.is_(True))
-            )
-            dynamic = dynamic_result.scalar_one() or 0
+                dynamic += result.scalar_one() or 0
 
             # Version and last updated from metadata table
             version_model = await session.get(MetadataModel, "version")
@@ -1068,11 +1310,37 @@ class CatalogDatabase:
                 last_updated=last_updated,
             )
 
-    def _model_to_object(self, model: CelestialObjectModel) -> CelestialObject:
+    def _model_to_object(self, model: Any) -> CelestialObject:
         """Convert SQLAlchemy model to CelestialObject."""
+        # Determine object type from model class
+        if isinstance(model, StarModel):
+            object_type = CelestialObjectType.STAR
+        elif isinstance(model, DoubleStarModel):
+            object_type = CelestialObjectType.DOUBLE_STAR
+        elif isinstance(model, GalaxyModel):
+            object_type = CelestialObjectType.GALAXY
+        elif isinstance(model, NebulaModel):
+            object_type = CelestialObjectType.NEBULA
+        elif isinstance(model, ClusterModel):
+            object_type = CelestialObjectType.CLUSTER
+        elif isinstance(model, PlanetModel):
+            object_type = CelestialObjectType.PLANET
+        elif isinstance(model, MoonModel):
+            object_type = CelestialObjectType.MOON
+        elif isinstance(model, CelestialObjectModel):
+            # Fallback for old model
+            object_type = CelestialObjectType(model.object_type)
+        else:
+            raise ValueError(f"Unknown model type: {type(model)}")
+
         # Ensure name and common_name are strings (handle cases where DB has integers)
         name = str(model.name) if model.name is not None else None
         common_name = str(model.common_name) if model.common_name is not None else None
+
+        # Get parent_planet (only for moons, or from old model)
+        parent_planet = None
+        if isinstance(model, (MoonModel, CelestialObjectModel)):
+            parent_planet = model.parent_planet
 
         obj = CelestialObject(
             name=name,
@@ -1080,16 +1348,21 @@ class CatalogDatabase:
             ra_hours=model.ra_hours,
             dec_degrees=model.dec_degrees,
             magnitude=model.magnitude,
-            object_type=CelestialObjectType(model.object_type),
+            object_type=object_type,
             catalog=model.catalog,
             description=model.description,
-            parent_planet=model.parent_planet,
+            parent_planet=parent_planet,
             constellation=model.constellation,
         )
 
-        # Handle dynamic objects
-        ephemeris_name = str(model.ephemeris_name) if model.ephemeris_name else str(name) if name else ""
-        if model.is_dynamic and is_dynamic_object(ephemeris_name):
+        # Handle dynamic objects (planets and moons)
+        is_dynamic = False
+        ephemeris_name = None
+        if isinstance(model, (PlanetModel, MoonModel, CelestialObjectModel)):
+            is_dynamic = model.is_dynamic
+            ephemeris_name = str(model.ephemeris_name) if model.ephemeris_name else str(name) if name else ""
+
+        if is_dynamic and ephemeris_name and is_dynamic_object(ephemeris_name):
             try:
                 # Convert to lowercase for get_planetary_position (it expects lowercase planet names)
                 planet_name = ephemeris_name.lower()

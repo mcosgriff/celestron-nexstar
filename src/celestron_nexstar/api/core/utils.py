@@ -52,7 +52,8 @@ def configure_astropy_iers() -> None:
 
     This function:
     1. Enables automatic downloading of the latest IERS data when needed
-    2. Suppresses warnings about IERS data validity for dates beyond the current data range
+    2. Attempts to refresh IERS data if it's outdated
+    3. Suppresses warnings about IERS data validity for dates beyond the current data range
        (these warnings are not critical for most applications as precision is only affected
        at the arcsec level, which is acceptable for most telescope control applications)
 
@@ -63,14 +64,44 @@ def configure_astropy_iers() -> None:
         # Astropy will automatically download the latest IERS data when needed
         iers.conf.auto_download = True
 
+        # Try to refresh IERS data if it's outdated
+        # This helps ensure we have the most recent data available
+        try:
+            # Check if we can access the IERS table and refresh it
+            # This will download the latest data if available
+            iers_table = iers.IERS_Auto.open()
+            if iers_table:
+                # Force a refresh by checking for updates
+                # The IERS_Auto class will automatically download newer data if available
+                logger.debug("IERS data table loaded successfully")
+        except Exception as refresh_error:
+            # If refresh fails, that's okay - astropy will use cached data
+            logger.debug(f"Could not refresh IERS data (will use cached): {refresh_error}")
+
         # Suppress the specific warning about IERS data validity
         # This warning appears when calculating positions for dates beyond the current IERS data range
         # For telescope control applications, the precision loss (arcsec level) is acceptable
+        # Use multiple patterns to catch variations in the warning message
         warnings.filterwarnings(
             "ignore",
             message=".*Tried to get polar motions for times after IERS data is valid.*",
             category=UserWarning,
-            module="astropy.coordinates.builtin_frames.utils",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*polar motions for times after IERS data is valid.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*IERS data is valid.*",
+            category=UserWarning,
+        )
+        # Also catch the more general warning format
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Defaulting to polar motion from the 50-yr mean.*",
+            category=UserWarning,
         )
 
         logger.debug("Astropy IERS configuration applied successfully")

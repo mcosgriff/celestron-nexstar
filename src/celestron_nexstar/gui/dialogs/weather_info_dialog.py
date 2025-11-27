@@ -31,6 +31,7 @@ class WeatherInfoDialog(QDialog):
         self.setWindowTitle("Current Weather")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -160,7 +161,6 @@ class WeatherInfoDialog(QDialog):
             html_content.append(
                 f"<p><span style='color: {colors['cyan']}; font-size: 14pt; font-weight: bold;'>Current Weather: {location_name}</span></p>"
             )
-            html_content.append("<br>")
 
             if weather.error:
                 html_content.append(
@@ -245,7 +245,6 @@ class WeatherInfoDialog(QDialog):
                 )
 
             # Observing Conditions Assessment
-            html_content.append("<br>")
             html_content.append("<h2>Observing Conditions</h2>")
             status, warning = assess_observing_conditions(weather)
 
@@ -270,7 +269,6 @@ class WeatherInfoDialog(QDialog):
                 html_content.append(f"<p style='color: {colors['text_dim']};'>{warning}</p>")
 
             # Seeing Conditions
-            html_content.append("<br>")
             html_content.append("<h2>Seeing Conditions</h2>")
             seeing_score = calculate_seeing_conditions(weather)
 

@@ -1050,7 +1050,7 @@ def _show_tonight_content(
     _show_conditions_content(output_console)
     output_console.print("\n" + "=" * 80 + "\n")
     # Show objects
-    _show_objects_content(output_console, target_type, limit, best_for_seeing)
+    _show_objects_content(output_console, target_type, None, limit, best_for_seeing)
 
 
 @app.command("plan", rich_help_panel="Complete Plans")
@@ -1078,7 +1078,7 @@ def show_plan(
         file_console = create_file_console()
         _show_conditions_content(file_console)
         file_console.print("\n" + "=" * 80 + "\n")
-        _show_objects_content(file_console, target_type, limit, best_for_seeing)
+        _show_objects_content(file_console, target_type, None, limit, best_for_seeing)
         content = file_console.file.getvalue()
         file_console.file.close()
 
@@ -1088,7 +1088,7 @@ def show_plan(
 
     _show_conditions_content(console)
     console.print("\n" + "=" * 80 + "\n")
-    _show_objects_content(console, target_type, limit, best_for_seeing)
+    _show_objects_content(console, target_type, None, limit, best_for_seeing)
 
 
 def _select_object_type_interactive() -> str | None:

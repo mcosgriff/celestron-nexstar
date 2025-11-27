@@ -65,6 +65,11 @@ class Asterism:
     hemisphere: str  # Visibility
     member_stars: list[str]  # Notable stars in the asterism
     description: str  # How to find and what it looks like
+    wikipedia_url: str | None = None  # Wikipedia or reference URL
+    cultural_info: str | None = None  # Cultural and mythological information
+    guidepost_info: str | None = None  # How to use as a guidepost (e.g., points to Polaris)
+    historical_notes: str | None = None  # Historical references and significance
+    shape_description: str | None = None  # What the pattern looks like (e.g., "bowl and handle")
 
 
 # NOTE: Constellation data is now stored in database seed files.

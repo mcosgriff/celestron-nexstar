@@ -38,7 +38,7 @@ def check_database_setup() -> None:
             "The database needs to be initialized before use.",
         )
 
-    # Check if schema exists (objects table)
+    # Check if schema exists (check for new type-specific tables)
     try:
         import asyncio
 
@@ -51,7 +51,15 @@ def check_database_setup() -> None:
 
         existing_tables = asyncio.run(_check_tables())
 
-        if "objects" not in existing_tables:
+        # Check for new type-specific tables (after refactor)
+        # At least one of these should exist if schema is set up
+        required_tables = ["stars", "planets", "moons", "galaxies", "nebulae", "clusters", "double_stars"]
+        has_schema = any(table in existing_tables for table in required_tables)
+
+        # Also check for old objects table (for backward compatibility during migration)
+        has_old_schema = "objects" in existing_tables
+
+        if not has_schema and not has_old_schema:
             raise _show_setup_error(
                 "Database schema is missing.",
                 "The database file exists but the schema has not been created.",
@@ -60,15 +68,51 @@ def check_database_setup() -> None:
         # Check if there's any catalog data
         from sqlalchemy import func, select
 
-        from celestron_nexstar.api.database.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import (
+            ClusterModel,
+            DoubleStarModel,
+            GalaxyModel,
+            MoonModel,
+            NebulaModel,
+            PlanetModel,
+            StarModel,
+        )
 
+        # Count objects across all type-specific tables
+        total_count = 0
         with db._get_session_sync() as session:
-            result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
-            if result == 0:
-                raise _show_setup_error(
-                    "Database is empty.",
-                    "The database schema exists but no catalog data has been imported.",
-                )
+            for model_class in [
+                StarModel,
+                DoubleStarModel,
+                GalaxyModel,
+                NebulaModel,
+                ClusterModel,
+                PlanetModel,
+                MoonModel,
+            ]:
+                try:
+                    # Type ignore: model_class is guaranteed to have 'id' attribute from CelestialObjectMixin
+                    result = session.scalar(select(func.count(model_class.id))) or 0  # type: ignore[attr-defined]
+                    total_count += result
+                except Exception:
+                    # Table might not exist yet, skip it
+                    pass
+
+            # Also check old objects table if it exists (for backward compatibility)
+            if has_old_schema:
+                try:
+                    from celestron_nexstar.api.database.models import CelestialObjectModel
+
+                    result = session.scalar(select(func.count(CelestialObjectModel.id))) or 0
+                    total_count += result
+                except Exception:
+                    pass
+
+        if total_count == 0:
+            raise _show_setup_error(
+                "Database is empty.",
+                "The database schema exists but no catalog data has been imported.",
+            )
 
     except typer.Exit:
         # Re-raise typer.Exit from _show_setup_error

@@ -72,9 +72,9 @@ class MeteorsInfoDialog(QDialog):
         """Initialize the meteors info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Meteor Shower Predictions")
-        self.setMinimumWidth(700)
+        self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(900, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -203,15 +203,16 @@ class MeteorsInfoDialog(QDialog):
 
         html_content = []
         html_content.append(
-            f"<style>h2 {{ color: {colors['header']}; margin-top: 1em; margin-bottom: 0.5em; }}</style>"
+            f"<style>"
+            f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
+            f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
+            f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
+            f"</style>"
         )
 
         # Header
-        html_content.append(
-            f"<p><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>{title} for {location_name}</span></p>"
-        )
+        html_content.append(f"<h1>{title} for {location_name}</h1>")
         html_content.append(f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>")
-        html_content.append("<br>")
 
         if not predictions:
             html_content.append(
@@ -275,7 +276,6 @@ class MeteorsInfoDialog(QDialog):
         html_content.append("</table>")
 
         # Show details
-        html_content.append("<br>")
         html_content.append("<h2>Prediction Details</h2>")
 
         for pred in predictions[:10]:  # Show first 10
@@ -285,7 +285,7 @@ class MeteorsInfoDialog(QDialog):
 
             html_content.append(f"<p><b style='color: {colors['header']};'>{pred.shower.name}</b> - {date_display}</p>")
             html_content.append(
-                f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+                f"<ul style='margin-left: 20px; color: {colors['text']}; margin-top: 0.5em; margin-bottom: 1em;'>"
                 f"<li>Peak ZHR: {pred.zhr_peak} → Adjusted: {pred.zhr_adjusted:.0f} (moon impact)</li>"
                 f"<li>Moon: {pred.moon_illumination:.0%} illuminated at {pred.moon_altitude:.0f}° altitude</li>"
                 f"<li>Radiant: {pred.radiant_altitude:.0f}° altitude</li>"
@@ -305,23 +305,18 @@ class MeteorsInfoDialog(QDialog):
                 f"<li>Quality: <span style='color: {quality_color}; font-weight: bold;'>{pred.viewing_quality.capitalize()}</span> - {pred.notes}</li>"
             )
             html_content.append("</ul>")
-            html_content.append("<br>")
 
         # Viewing tips
-        html_content.append("<br>")
-        html_content.append("<h2>Viewing Tips</h2>")
         html_content.append(
-            f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+            "<h2>Viewing Tips</h2>"
+            f"<ul style='margin-left: 20px; color: {colors['text']}; margin-top: 0.5em;'>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>ZHR = Zenithal Hourly Rate (meteors per hour under ideal conditions)</li>"
             f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Adjusted ZHR accounts for moonlight interference</li>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Best viewing: After midnight when radiant is highest</li>"
             f"<li style='margin-bottom: 5px;'>Don't stare at the radiant - meteors appear throughout the sky</li>"
             f"<li style='margin-bottom: 5px;'>Give your eyes 20+ minutes to adapt to darkness</li>"
             "</ul>"
-        )
-        html_content.append("<br>")
-        html_content.append(
-            f"<p style='color: {colors['text_dim']};'>💡 Tip: Use 'nexstar meteors best' to find showers with minimal moonlight!</p>"
+            f"<p style='color: {colors['text_dim']}; margin-top: 1em;'>💡 Tip: Use 'nexstar meteors best' to find showers with minimal moonlight!</p>"
         )
 
         return html_content

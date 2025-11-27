@@ -99,7 +99,7 @@ class ObjectsLoaderThread(QThread):
         try:
             import asyncio
 
-            from celestron_nexstar.api.astronomy.constellations import get_visible_constellations
+            from celestron_nexstar.api.astronomy.constellations import get_visible_asterisms, get_visible_constellations
             from celestron_nexstar.api.core.enums import CelestialObjectType
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
@@ -111,7 +111,7 @@ class ObjectsLoaderThread(QThread):
             # Special handling for constellation type: show constellations
             if obj_type == CelestialObjectType.CONSTELLATION:
                 # Load visible constellations
-                async def _load_constellations():
+                async def _load_constellations() -> list[Any]:
                     db = get_database()
                     async with db._AsyncSession() as session:
                         return await get_visible_constellations(
@@ -125,6 +125,22 @@ class ObjectsLoaderThread(QThread):
                 constellations = asyncio.run(_load_constellations())
                 # Convert to list of constellation names for display
                 objects = [const[0].name for const in constellations]  # const[0] is the Constellation object
+            elif obj_type == CelestialObjectType.ASTERISM:
+                # Load visible asterisms
+                async def _load_asterisms() -> list[Any]:
+                    db = get_database()
+                    async with db._AsyncSession() as session:
+                        return await get_visible_asterisms(
+                            session,
+                            conditions.latitude,
+                            conditions.longitude,
+                            conditions.timestamp,
+                            min_altitude_deg=20.0,
+                        )
+
+                asterisms = asyncio.run(_load_asterisms())
+                # Convert to list of asterism names for display
+                objects = [asterism[0].name for asterism in asterisms]  # asterism[0] is the Asterism object
             else:
                 # Get recommended objects for this type
                 objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
@@ -170,23 +186,23 @@ class MainWindow(QMainWindow):
             is_dark = brightness < 128
 
         # Map icon names to FontAwesome icon names
-        # Using FontAwesome 5 Solid (fa5s) icons
+        # Prefer outline versions where available
         icon_map: dict[str, str] = {
             # Telescope operations
-            "link": "mdi.lan-connect",
-            "link_off": "mdi.lan-disconnect",
-            "my_location": "fa5s.map-marker-alt",
-            "tune": "fa5s.cog",
+            "link": "mdi.lan-connect",  # No outline version available
+            "link_off": "mdi.lan-disconnect",  # No outline version available
+            "my_location": "fa5s.map-marker-alt",  # FontAwesome Regular (outline)
+            "tune": "mdi.cog-outline",
             "crosshairs": "mdi.crosshairs-gps",
             # Planning tools
-            "catalog": "mdi.folder",
-            "weather": "mdi.weather-cloudy",
-            "checklist": "mdi.check-circle",
+            "catalog": "mdi.folder-outline",
+            "weather": "mdi.weather-cloudy",  # No outline version available
+            "checklist": "mdi.check-circle-outline",
             "time_slots": "mdi.clock-outline",
             "quick_reference": "mdi.book-open-variant",
             "transit_times": "mdi.transit-connection",
             "glossary": "mdi.book-open-page-variant",
-            "settings": "mdi.cog",
+            "settings": "mdi.cog-outline",
             # Celestial objects (using alpha-box-outline pattern)
             "aurora": "mdi.alpha-a-box-outline",
             "binoculars": "mdi.alpha-b-box-outline",
@@ -203,15 +219,15 @@ class MainWindow(QMainWindow):
             "variables": "mdi.alpha-v-box-outline",
             "zodiacal": "mdi.alpha-z-box-outline",
             # Legacy
-            "event": "fa5s.calendar",
-            "menu_book": "fa5s.book",
+            "event": "fa5s.calendar",  # FontAwesome Regular (outline)
+            "menu_book": "fa5s.book",  # FontAwesome Regular (outline)
             # Table controls
             "refresh": "mdi.refresh",
-            "info": "mdi.information",
-            "download": "mdi.download",
-            "close": "mdi.close",
+            "info": "mdi.information-outline",
+            "download": "mdi.download-outline",
+            "close": "mdi.close-outline",
             # Communication
-            "console": "mdi.console",
+            "console": "mdi.console",  # No outline version available
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -223,9 +239,35 @@ class MainWindow(QMainWindow):
             if fa_icon_name:
                 # Use theme-appropriate color for icons
                 icon_color = "#ffffff" if is_dark else "#000000"
-                icon = qta.icon(fa_icon_name, color=icon_color)
-                if not icon.isNull():
-                    return QIcon(icon)  # Cast to QIcon to satisfy type checker
+
+                # Try the specified icon first
+                try:
+                    icon = qta.icon(fa_icon_name, color=icon_color)
+                    if not icon.isNull():
+                        return QIcon(icon)  # Cast to QIcon to satisfy type checker
+                except (ValueError, KeyError, AttributeError):
+                    # Icon doesn't exist, try fallback
+                    pass
+
+                # If icon failed and it's a Material Design icon without -outline, try outline version
+                if fa_icon_name.startswith("mdi.") and not fa_icon_name.endswith("-outline"):
+                    outline_name = f"{fa_icon_name}-outline"
+                    try:
+                        icon = qta.icon(outline_name, color=icon_color)
+                        if not icon.isNull():
+                            return QIcon(icon)
+                    except (ValueError, KeyError, AttributeError, TypeError):
+                        pass
+
+                # If icon failed and it's FontAwesome Solid (fa5s), try Regular (fa5r) outline version
+                if fa_icon_name.startswith("fa5s."):
+                    regular_name = fa_icon_name.replace("fa5s.", "fa5r.", 1)
+                    try:
+                        icon = qta.icon(regular_name, color=icon_color)
+                        if not icon.isNull():
+                            return QIcon(icon)
+                    except (ValueError, KeyError, AttributeError, TypeError):
+                        pass
         except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
             # Log the error for debugging
             import logging
@@ -254,7 +296,8 @@ class MainWindow(QMainWindow):
         self.telescope: NexStarTelescope | None = None
 
         # Cache for loaded objects data (key: obj_type_str, value: list of objects)
-        self._objects_cache: dict[str, list[RecommendedObject]] = {}
+        # Can be list[RecommendedObject] or list[str] for constellations/asterisms
+        self._objects_cache: dict[str, list[RecommendedObject] | list[str]] = {}
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
@@ -795,10 +838,13 @@ class MainWindow(QMainWindow):
     def _create_objects_table(self, obj_type: CelestialObjectType) -> QTableWidget:
         """Create a table widget displaying objects of the specified type."""
         table = QTableWidget()
-        # For constellation tab, show simple constellation list
+        # For constellation and asterism tabs, show simple name list
         if obj_type == CelestialObjectType.CONSTELLATION:
             table.setColumnCount(1)
             table.setHorizontalHeaderLabels(["Constellation"])
+        elif obj_type == CelestialObjectType.ASTERISM:
+            table.setColumnCount(1)
+            table.setHorizontalHeaderLabels(["Asterism"])
         # For star tab, add a Constellation column
         elif obj_type == CelestialObjectType.STAR:
             table.setColumnCount(10)
@@ -815,6 +861,8 @@ class MainWindow(QMainWindow):
         header = table.horizontalHeader()
         if obj_type == CelestialObjectType.CONSTELLATION:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Constellation name
+        elif obj_type == CelestialObjectType.ASTERISM:
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Asterism name
         else:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
             header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
@@ -874,7 +922,12 @@ class MainWindow(QMainWindow):
         if obj_type_str in self._objects_cache:
             objects = self._objects_cache[obj_type_str]
             if objects:
-                self._populate_table(table, objects)
+                # Type ignore: objects can be list[str] for constellations/asterisms
+                # but this method only handles list[RecommendedObject]
+                if obj_type_str in ("constellation", "asterism"):
+                    # These are handled separately in _on_tab_changed
+                    return
+                self._populate_table(table, objects)  # type: ignore[arg-type]
             return
 
         # Check if already loading
@@ -917,15 +970,20 @@ class MainWindow(QMainWindow):
             # Error occurred, already logged in thread
             return
 
-        # Cache the data
+        # Cache the data (even if empty, to indicate data was loaded)
         self._objects_cache[obj_type_str] = objects
 
         # Populate table (must be done on main thread)
         if objects:
             if obj_type_str == "constellation":
                 self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
+            elif obj_type_str == "asterism":
+                self._populate_constellation_table(table, objects)  # type: ignore[arg-type]  # Use same format as constellations
             else:
                 self._populate_table(table, objects)  # type: ignore[arg-type]
+        else:
+            # Data was loaded but no objects match criteria - show message
+            self._show_no_data_message(table, obj_type_str)
 
     def _populate_table(self, table: QTableWidget, objects: list[RecommendedObject]) -> None:
         """Populate table with objects data (must be called on main thread)."""
@@ -1022,22 +1080,122 @@ class MainWindow(QMainWindow):
             table.setProperty("sort_column", 0)
             table.setProperty("sort_order", Qt.SortOrder.DescendingOrder)
 
+    def _show_no_data_message(self, table: QTableWidget, obj_type_str: str) -> None:
+        """Show a message when data was loaded but no objects match criteria."""
+        # Temporarily disable sorting
+        table.setSortingEnabled(False)
+
+        # Get human-readable type name
+        type_name = obj_type_str.replace("_", " ").title()
+
+        # Get original column count (preserve table structure)
+        original_cols = table.columnCount()
+        if original_cols == 0:
+            # If no columns, set to 1 for the message
+            table.setColumnCount(1)
+            original_cols = 1
+
+        # Set table to show one row with message
+        table.setRowCount(1)
+
+        # Create a message item
+        message = f"No {type_name} objects match the current criteria.\n\n"
+        message += "This could be due to:\n"
+        message += "• Objects are below the horizon (< 20° altitude)\n"
+        message += "• Objects are too faint for current conditions\n"
+        message += "• No objects of this type are currently visible\n"
+        message += "• Filter text is hiding all results"
+
+        message_item = QTableWidgetItem(message)
+        message_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
+        table.setItem(0, 0, message_item)
+
+        # Center align the message
+        item = table.item(0, 0)
+        if item:
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        # Make the message row span all columns
+        if original_cols > 1:
+            table.setSpan(0, 0, 1, original_cols)
+
+        # Set row height to accommodate message
+        table.setRowHeight(0, 120)
+
+        # Re-enable sorting (though it won't do much with one row)
+        table.setSortingEnabled(True)
+
+    def _show_no_data_message_alt(self, table: QTableWidget, obj_type_str: str) -> None:
+        """Show a message when data was loaded but no objects match criteria."""
+        # Temporarily disable sorting
+        table.setSortingEnabled(False)
+
+        # Get human-readable type name
+        type_name = obj_type_str.replace("_", " ").title()
+
+        # Set table to show one row with message
+        table.setRowCount(1)
+        # Keep original column count
+        original_cols = table.columnCount()
+        if original_cols == 0:
+            table.setColumnCount(1)
+
+        # Create a message item
+        message = f"No {type_name} objects match the current criteria.\n\n"
+        message += "This could be due to:\n"
+        message += "• Objects are below the horizon (< 20° altitude)\n"
+        message += "• Objects are too faint for current conditions\n"
+        message += "• No objects of this type are currently visible\n"
+        message += "• Filter text is hiding all results"
+
+        message_item = QTableWidgetItem(message)
+        message_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
+        table.setItem(0, 0, message_item)
+
+        # Center align the message
+        item = table.item(0, 0)
+        if item:
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        # Make the message row span all columns
+        if original_cols > 1:
+            table.setSpan(0, 0, 1, original_cols)
+
+        # Set row height to accommodate message
+        table.setRowHeight(0, 120)
+
+        # Re-enable sorting (though it won't do much with one row)
+        table.setSortingEnabled(True)
+
     def _populate_constellation_table(self, table: QTableWidget, constellation_names: list[str]) -> None:
         """Populate table with constellation names (must be called on main thread)."""
         if not constellation_names:
+            # Show no data message for constellations/asterisms
+            obj_type_str = table.property("object_type")
+            if obj_type_str:
+                self._show_no_data_message(table, obj_type_str)
             return
+
+        # Sort constellation names alphabetically (A-Z)
+        sorted_names = sorted(constellation_names, key=str.lower)
 
         # Temporarily disable sorting while populating to improve performance
         table.setSortingEnabled(False)
 
-        table.setRowCount(len(constellation_names))
+        table.setRowCount(len(sorted_names))
 
-        for row, constellation_name in enumerate(constellation_names):
+        for row, constellation_name in enumerate(sorted_names):
             # Constellation name
             table.setItem(row, 0, QTableWidgetItem(constellation_name))
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
+
+        # Set default sort indicator on Constellation column (A-Z ascending)
+        header = table.horizontalHeader()
+        header.setSortIndicator(0, Qt.SortOrder.AscendingOrder)
+        table.setProperty("sort_column", 0)
+        table.setProperty("sort_order", Qt.SortOrder.AscendingOrder)
 
     def _create_table_toolbar(self) -> None:
         """Create toolbar for table controls in the top toolbar area."""
@@ -1209,7 +1367,7 @@ class MainWindow(QMainWindow):
 
         row = selected_rows[0].row()
 
-        # Check if this is the constellation tab
+        # Check if this is the constellation or asterism tab
         obj_type = current_table.property("object_type")
         if obj_type == "constellation":
             # Get constellation name from column 0
@@ -1232,9 +1390,21 @@ class MainWindow(QMainWindow):
             # Show constellation info dialog
             from celestron_nexstar.gui.dialogs.constellation_info_dialog import ConstellationInfoDialog
 
-            dialog = ConstellationInfoDialog(self, constellation_name)
+            constellation_dialog = ConstellationInfoDialog(self, constellation_name)
             progress.close()
-            dialog.exec()
+            constellation_dialog.exec()
+        elif obj_type == "asterism":
+            # Get asterism name from the table
+            name_item = current_table.item(row, 0)
+            if not name_item:
+                return
+            asterism_name = name_item.text()
+
+            # Show asterism info dialog
+            from celestron_nexstar.gui.dialogs.asterism_info_dialog import AsterismInfoDialog
+
+            asterism_dialog = AsterismInfoDialog(self, asterism_name)
+            asterism_dialog.exec()
         else:
             # Get object name from the Name column (column 1)
             name_item = current_table.item(row, 1)
@@ -1257,9 +1427,9 @@ class MainWindow(QMainWindow):
             # Show info dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
 
-            dialog = ObjectInfoDialog(self, object_name)
+            obj_dialog = ObjectInfoDialog(self, object_name)
             progress.close()
-            dialog.exec()
+            obj_dialog.exec()
 
     def _on_sort_changed(self, table: QTableWidget, logical_index: int, order: Qt.SortOrder) -> None:
         """Handle sort indicator change - track sort column and order."""
@@ -1332,9 +1502,14 @@ class MainWindow(QMainWindow):
             return
 
         tab_widget = self.tab_widget.widget(index)
-        if isinstance(tab_widget, QTableWidget) and tab_widget.rowCount() == 0:
-            # Check if table is empty (not yet loaded)
-            self._load_objects_table(tab_widget)
+        if isinstance(tab_widget, QTableWidget):
+            obj_type_str = tab_widget.property("object_type")
+            # Check if data has been loaded (is in cache) vs not loaded yet
+            if obj_type_str and obj_type_str not in self._objects_cache and tab_widget.rowCount() == 0:
+                # Not loaded yet - load it
+                self._load_objects_table(tab_widget)
+            # If data is in cache but table is empty, it means no data matches criteria
+            # (the _show_no_data_message will have been called)
 
     def _create_status_bar(self) -> None:
         """Create the status bar with GPS, date/time, and telescope position."""

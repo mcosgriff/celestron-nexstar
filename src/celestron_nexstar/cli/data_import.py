@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import csv
 import json
+import ssl
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -657,7 +659,7 @@ KNOWN_STAR_CONSTELLATIONS: dict[str, str] = {
 
 
 def _find_constellation_by_coordinates(
-    ra_hours: float, dec_degrees: float, constellations: list, star_name: str | None = None
+    ra_hours: float, dec_degrees: float, constellations: list[Any], star_name: str | None = None
 ) -> str | None:
     """
     Find constellation for a star based on coordinates.
@@ -1486,6 +1488,36 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         # Extract season
                         season = properties.get("season") or properties.get("Season")
 
+                        # Extract extended information fields
+                        wikipedia_url = (
+                            properties.get("wikipedia_url")
+                            or properties.get("wikipedia")
+                            or properties.get("url")
+                            or properties.get("reference_url")
+                        )
+                        cultural_info = (
+                            properties.get("cultural_info")
+                            or properties.get("cultural")
+                            or properties.get("mythology")
+                            or properties.get("mythological_info")
+                        )
+                        guidepost_info = (
+                            properties.get("guidepost_info")
+                            or properties.get("guidepost")
+                            or properties.get("navigation_info")
+                            or properties.get("finding_info")
+                        )
+                        historical_notes = (
+                            properties.get("historical_notes")
+                            or properties.get("history")
+                            or properties.get("historical")
+                        )
+                        shape_description = (
+                            properties.get("shape_description")
+                            or properties.get("shape")
+                            or properties.get("appearance")
+                        )
+
                         # Create asterism model
                         asterism = AsterismModel(
                             name=name,
@@ -1497,6 +1529,11 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             description=description,
                             stars=stars,
                             season=season,
+                            wikipedia_url=wikipedia_url,
+                            cultural_info=cultural_info,
+                            guidepost_info=guidepost_info,
+                            historical_notes=historical_notes,
+                            shape_description=shape_description,
                         )
 
                         all_asterisms.append(asterism)
@@ -1553,6 +1590,310 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
         return imported, skipped
 
     return _run_async_safe(_import())
+
+
+def download_wds_catalog(output_path: Path) -> bool:
+    """
+    Download the Washington Double Star Catalog (WDS) from US Naval Observatory.
+
+    Args:
+        output_path: Where to save the WDS catalog file
+
+    Returns:
+        True if successful
+    """
+    # WDS catalog is available from US Naval Observatory
+    # The main catalog file is wdsweb_sum.txt (or wdsweb_summ2.txt)
+    # Try multiple possible URLs (in order of preference)
+    urls = [
+        "https://astro.gsu.edu/wds/Webtextfiles/wdsweb_summ2.txt",  # Georgia State University mirror (most reliable)
+        "https://www.astro.gsu.edu/wds/wdsweb_sum.txt",  # Alternative GSU URL
+        "https://www.usno.navy.mil/static/files/astrometry/wds/wdsweb_sum.txt",
+        "https://www.usno.navy.mil/USNO/astrometry/optical-IR-prod/wds/WDS/wdsweb_sum.txt",
+    ]
+
+    # Create a request with User-Agent header to avoid 403 errors
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    # Create SSL context that doesn't verify certificates (some servers have invalid certs)
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    for url in urls:
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(f"Downloading WDS catalog from {url.split('/')[-2]}...", total=None)
+
+                request = urllib.request.Request(url, headers=req_headers)
+                with urllib.request.urlopen(request, timeout=30, context=ssl_context) as response:
+                    data = response.read()
+
+                output_path.write_bytes(data)
+                progress.update(task, completed=True)
+
+            console.print(f"[green]✓[/green] Downloaded {len(data):,} bytes to {output_path}")
+            return True
+
+        except urllib.error.HTTPError as e:
+            if e.code == 403:
+                console.print(f"[yellow]⚠[/yellow] Access denied for {url}, trying next URL...")
+                continue
+            else:
+                console.print(f"[yellow]⚠[/yellow] HTTP {e.code} for {url}, trying next URL...")
+                continue
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Error with {url}: {e}, trying next URL...")
+            continue
+
+    console.print("[red]✗[/red] All download attempts failed.")
+    console.print("[yellow]Please download the WDS catalog manually:[/yellow]")
+    console.print("[dim]1. Visit: https://astro.gsu.edu/wds/Webtextfiles/wdsweb_summ2.txt[/dim]")
+    console.print("[dim]   (or https://www.usno.navy.mil/USNO/astrometry/optical-IR-prod/wds/WDS/)[/dim]")
+    console.print(f"[dim]2. Save the file as: {output_path}[/dim]")
+    console.print("[dim]3. Run the import command again[/dim]")
+    return False
+
+
+def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
+    """
+    Import Washington Double Star Catalog (WDS) data.
+
+    WDS format is a fixed-width text file. The catalog is available from:
+    https://www.usno.navy.mil/USNO/astrometry/optical-IR-prod/wds/WDS/
+
+    Args:
+        wds_path: Path to WDS catalog text file
+        mag_limit: Maximum magnitude to import (fainter objects are skipped)
+        verbose: Show detailed progress
+
+    Returns:
+        (imported_count, skipped_count)
+    """
+    db = get_database()
+
+    # Pre-fetch existing objects for deduplication
+    console.print("[dim]Loading existing WDS objects for deduplication...[/dim]")
+    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog="wds"))
+    console.print(f"[dim]Found {len(existing_objects):,} existing WDS objects[/dim]")
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    # WDS catalog format (fixed-width columns):
+    # Columns 1-10: WDS designation (e.g., "00013+1539")
+    # Columns 11-18: Discoverer designation
+    # Columns 19-28: RA (hours, minutes, seconds)
+    # Columns 29-37: Dec (degrees, arcminutes, arcseconds)
+    # Columns 38-42: First magnitude
+    # Columns 43-47: Second magnitude
+    # Columns 48-52: Separation (arcseconds)
+    # Columns 53-56: Position angle (degrees)
+    # Columns 57-61: Epoch of observation
+    # Columns 62-66: Number of observations
+    # And more...
+
+    if not wds_path.exists():
+        console.print(f"[red]✗[/red] File not found: {wds_path}")
+        raise FileNotFoundError(f"WDS catalog not found: {wds_path}")
+
+    # Read WDS catalog file
+    all_objects: list[dict[str, Any]] = []
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        # First pass: count lines
+        with open(wds_path, encoding="utf-8", errors="ignore") as f:
+            total_lines = sum(1 for _ in f)
+
+        task = progress.add_task(f"Processing WDS catalog (mag ≤ {mag_limit})...", total=total_lines)
+
+        with open(wds_path, encoding="utf-8", errors="ignore") as f:
+            for line_num, line in enumerate(f, 1):
+                if len(line.strip()) < 10:  # Skip very short lines
+                    progress.advance(task)
+                    continue
+
+                try:
+                    # Parse fixed-width format
+                    wds_designation = line[0:10].strip()
+                    discoverer = line[10:18].strip()
+
+                    # Skip header lines or invalid entries
+                    if not wds_designation or wds_designation.startswith("#") or "WDS" in wds_designation.upper():
+                        progress.advance(task)
+                        continue
+
+                    # Parse RA (hours, minutes, seconds)
+                    ra_h_str = line[18:21].strip()
+                    ra_m_str = line[21:24].strip()
+                    ra_s_str = line[24:28].strip()
+
+                    try:
+                        ra_h = float(ra_h_str) if ra_h_str else 0.0
+                        ra_m = float(ra_m_str) if ra_m_str else 0.0
+                        ra_s = float(ra_s_str) if ra_s_str else 0.0
+                        ra_hours = ra_h + (ra_m / 60.0) + (ra_s / 3600.0)
+                    except (ValueError, TypeError):
+                        skipped += 1
+                        progress.advance(task)
+                        continue
+
+                    # Parse Dec (degrees, arcminutes, arcseconds)
+                    dec_sign = line[28:29].strip()
+                    dec_d_str = line[29:32].strip()
+                    dec_m_str = line[32:35].strip()
+                    dec_s_str = line[35:38].strip()
+
+                    try:
+                        dec_d = float(dec_d_str) if dec_d_str else 0.0
+                        dec_m = float(dec_m_str) if dec_m_str else 0.0
+                        dec_s = float(dec_s_str) if dec_s_str else 0.0
+                        dec_degrees = dec_d + (dec_m / 60.0) + (dec_s / 3600.0)
+                        if dec_sign == "-":
+                            dec_degrees = -dec_degrees
+                    except (ValueError, TypeError):
+                        skipped += 1
+                        progress.advance(task)
+                        continue
+
+                    # Parse magnitudes
+                    mag1_str = line[37:42].strip()
+                    mag2_str = line[42:47].strip()
+
+                    magnitude = None
+                    try:
+                        if mag1_str:
+                            mag1 = float(mag1_str)
+                            if mag2_str:
+                                mag2 = float(mag2_str)
+                                # Use brighter magnitude
+                                magnitude = min(mag1, mag2)
+                            else:
+                                magnitude = mag1
+                    except (ValueError, TypeError):
+                        pass
+
+                    # Filter by magnitude
+                    if magnitude is not None and magnitude > mag_limit:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
+
+                    # Parse separation and position angle
+                    sep_str = line[47:52].strip()
+                    pa_str = line[52:56].strip()
+
+                    separation = None
+                    position_angle = None
+                    try:
+                        if sep_str:
+                            separation = float(sep_str)
+                        if pa_str:
+                            position_angle = float(pa_str)
+                    except (ValueError, TypeError):
+                        pass
+
+                    # Build name (use WDS designation as primary name)
+                    name = wds_designation
+                    common_name = discoverer if discoverer else None
+
+                    # Build description
+                    description_parts = []
+                    if discoverer:
+                        description_parts.append(f"Discoverer: {discoverer}")
+                    if separation is not None:
+                        description_parts.append(f'Separation: {separation:.2f}"')
+                    if position_angle is not None:
+                        description_parts.append(f"PA: {position_angle:.1f}°")
+                    if mag1_str and mag2_str:
+                        description_parts.append(f"Magnitudes: {mag1_str}, {mag2_str}")
+                    description = "; ".join(description_parts) if description_parts else "Double star from WDS"
+
+                    # Add to collection
+                    all_objects.append(
+                        {
+                            "name": name,
+                            "catalog": "wds",
+                            "ra_hours": ra_hours,
+                            "dec_degrees": dec_degrees,
+                            "object_type": CelestialObjectType.DOUBLE_STAR,
+                            "magnitude": magnitude,
+                            "common_name": common_name,
+                            "catalog_number": None,  # WDS doesn't use numeric catalog numbers
+                            "size_arcmin": separation / 60.0 if separation else None,  # Convert arcsec to arcmin
+                            "description": description,
+                            "constellation": None,  # Could be determined from coordinates if needed
+                        }
+                    )
+
+                except Exception as e:
+                    errors += 1
+                    if verbose:
+                        console.print(f"[yellow]Warning: Error processing line {line_num}: {e}[/yellow]")
+
+                progress.advance(task)
+
+    # Deduplicate
+    console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
+    seen_keys: set[tuple[str, str | None, int | None]] = set()
+    deduplicated_objects: list[dict[str, Any]] = []
+    for obj in all_objects:
+        key = (obj["name"], obj.get("common_name"), obj.get("catalog_number"))
+        if key not in seen_keys and key not in existing_objects:
+            name_key = (obj["name"], None, None)
+            if name_key not in existing_objects:
+                seen_keys.add(key)
+                deduplicated_objects.append(obj)
+            else:
+                skipped += 1
+        else:
+            skipped += 1
+
+    console.print(f"[dim]After deduplication: {len(deduplicated_objects):,} unique objects to import[/dim]")
+
+    # Batch insert
+    batch_size = 1000
+    num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Importing WDS catalog...", total=num_batches)
+
+        for i in range(0, len(deduplicated_objects), batch_size):
+            batch = deduplicated_objects[i : i + batch_size]
+            try:
+                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                imported += batch_imported
+                progress.advance(task)
+            except Exception as e:
+                if verbose:
+                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                errors += len(batch)
+                progress.advance(task)
+
+    if errors > 0:
+        console.print(f"[yellow]⚠[/yellow] {errors} errors occurred during import")
+
+    return imported, skipped
 
 
 # Registry of available data sources
@@ -1665,6 +2006,15 @@ DATA_SOURCES: dict[str, DataSource] = {
         attribution="Olaf Frohn and Diego Hernangómez",
         importer=lambda path, mag, verbose: import_celestial_local_group(path, mag, verbose),
     ),
+    "wds": DataSource(
+        name="Washington Double Star Catalog (WDS)",
+        description="Washington Double Star Catalog from US Naval Observatory",
+        url="https://www.usno.navy.mil/USNO/astrometry/optical-IR-prod/wds/WDS/",
+        objects_available=150000,  # Approximate - WDS contains over 150,000 double stars
+        license="Public Domain",
+        attribution="US Naval Observatory",
+        importer=lambda path, mag, verbose: import_wds_catalog(path, mag, verbose),
+    ),
 }
 
 
@@ -1722,6 +2072,8 @@ def list_data_sources() -> None:
             imported = _run_async_safe(_count())
         elif source_id == "celestial_local_group":
             imported = stats.objects_by_catalog.get("local_group", 0)
+        elif source_id == "wds":
+            imported = stats.objects_by_catalog.get("wds", 0)
         else:
             imported = 0
 
@@ -1797,6 +2149,41 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
             traceback.print_exc()
             return False
 
+    # Handle WDS catalog
+    if source_id == "wds":
+        cache_dir = get_cache_dir()
+        cache_path = cache_dir / "wdsweb_summ2.txt"  # Use summ2 version (more complete)
+        if not cache_path.exists() or force_download:
+            if force_download and cache_path.exists():
+                console.print("[dim]Force re-download: removing cached WDS catalog...[/dim]")
+                cache_path.unlink()
+            console.print("Downloading WDS catalog from US Naval Observatory...")
+            if not download_wds_catalog(cache_path):
+                return False
+
+        # Import WDS data
+        console.print(f"\nImporting with magnitude limit: {mag_limit}")
+        try:
+            imported, skipped = source.importer(cache_path, mag_limit, False)
+        except Exception as e:
+            console.print(f"[red]✗[/red] Import failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return False
+
+        console.print("\n[green]✓[/green] Import complete!")
+        console.print(f"  Imported: [green]{imported:,}[/green]")
+        console.print(f"  Skipped:  [yellow]{skipped:,}[/yellow] (too faint or invalid)")
+
+        # Show updated stats
+        db = get_database()
+
+        stats = _run_async_safe(db.get_stats())
+        console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
+
+        return True
+
     # Download data for remote sources
     # Determine file path and download method based on source
     if source_id.startswith("celestial_"):
@@ -1849,28 +2236,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True
-    elif source_id == "custom":
-        # Custom YAML doesn't need downloading - import directly
-        console.print(f"\nImporting with magnitude limit: {mag_limit}")
-        try:
-            imported, skipped = source.importer(Path(""), mag_limit, False)
-        except Exception as e:
-            console.print(f"[red]✗[/red] Import failed: {e}")
-            import traceback
 
-            traceback.print_exc()
-            return False
-
-        console.print("\n[green]✓[/green] Import complete!")
-        console.print(f"  Imported: [green]{imported:,}[/green]")
-        console.print(f"  Skipped:  [yellow]{skipped:,}[/yellow] (too faint or invalid)")
-
-        # Show updated stats
-        db = get_database()
-        stats = _run_async_safe(db.get_stats())
-        console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
-
-        return True
-    else:
-        console.print(f"[red]✗[/red] No downloader for {source_id}")
-        return False
+    # If we get here, the source wasn't handled
+    console.print(f"[red]✗[/red] No downloader for {source_id}")
+    return False

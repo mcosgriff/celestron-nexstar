@@ -10,12 +10,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 if TYPE_CHECKING:
@@ -29,6 +29,29 @@ class Base(DeclarativeBase):
     """Base class for all database models."""
 
     pass
+
+
+# Protocol to describe the interface of models with CelestialObjectMixin
+# This helps mypy understand the attributes available on these models
+class CelestialObjectModelProtocol(Protocol):
+    """Protocol describing the interface of celestial object models."""
+
+    id: Mapped[int]
+    name: Mapped[str]
+    common_name: Mapped[str | None]
+    catalog: Mapped[str]
+    catalog_number: Mapped[int | None]
+    ra_hours: Mapped[float]
+    dec_degrees: Mapped[float]
+    magnitude: Mapped[float | None]
+    size_arcmin: Mapped[float | None]
+    description: Mapped[str | None]
+    constellation: Mapped[str | None]
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    __tablename__: str
+    # Optional attributes that some models have
+    is_dynamic: Mapped[bool]  # For planets and moons
 
 
 class CelestialObjectModel(Base):
@@ -76,10 +99,8 @@ class CelestialObjectModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
-    # Relationships
-    observations: Mapped[list[ObservationModel]] = relationship(
-        "ObservationModel", back_populates="celestial_object", cascade="all, delete-orphan"
-    )
+    # Note: Observations now use polymorphic reference (object_type + object_id)
+    # No direct relationship defined
 
     # Composite indexes
     __table_args__ = (
@@ -93,6 +114,167 @@ class CelestialObjectModel(Base):
     def __repr__(self) -> str:
         """String representation of the object."""
         return f"<CelestialObject(id={self.id}, name='{self.name}', type='{self.object_type}')>"
+
+
+# Base mixin for common celestial object fields
+class CelestialObjectMixin:
+    """Mixin class with common fields for all celestial object types."""
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Object identification
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    common_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    catalog: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    catalog_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Position (J2000 epoch for fixed objects)
+    ra_hours: Mapped[float] = mapped_column(Float, nullable=False)
+    dec_degrees: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Physical properties
+    magnitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    size_arcmin: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Metadata
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    constellation: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class StarModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for stars."""
+
+    __tablename__ = "stars"
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_star_catalog_number", "catalog", "catalog_number"),
+        Index("idx_star_magnitude", "magnitude"),
+        Index("idx_star_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the star."""
+        return f"<Star(id={self.id}, name='{self.name}')>"
+
+
+class DoubleStarModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for double/multiple star systems."""
+
+    __tablename__ = "double_stars"
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_double_star_catalog_number", "catalog", "catalog_number"),
+        Index("idx_double_star_magnitude", "magnitude"),
+        Index("idx_double_star_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the double star."""
+        return f"<DoubleStar(id={self.id}, name='{self.name}')>"
+
+
+class GalaxyModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for galaxies."""
+
+    __tablename__ = "galaxies"
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_galaxy_catalog_number", "catalog", "catalog_number"),
+        Index("idx_galaxy_magnitude", "magnitude"),
+        Index("idx_galaxy_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the galaxy."""
+        return f"<Galaxy(id={self.id}, name='{self.name}')>"
+
+
+class NebulaModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for nebulae."""
+
+    __tablename__ = "nebulae"
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_nebula_catalog_number", "catalog", "catalog_number"),
+        Index("idx_nebula_magnitude", "magnitude"),
+        Index("idx_nebula_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the nebula."""
+        return f"<Nebula(id={self.id}, name='{self.name}')>"
+
+
+class ClusterModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for star clusters."""
+
+    __tablename__ = "clusters"
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_cluster_catalog_number", "catalog", "catalog_number"),
+        Index("idx_cluster_magnitude", "magnitude"),
+        Index("idx_cluster_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the cluster."""
+        return f"<Cluster(id={self.id}, name='{self.name}')>"
+
+
+class PlanetModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for planets."""
+
+    __tablename__ = "planets"
+
+    # Dynamic object support
+    is_dynamic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    ephemeris_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_planet_ephemeris_name", "ephemeris_name"),
+        Index("idx_planet_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the planet."""
+        return f"<Planet(id={self.id}, name='{self.name}')>"
+
+
+class MoonModel(Base, CelestialObjectMixin):
+    """SQLAlchemy model for moons."""
+
+    __tablename__ = "moons"
+
+    # Dynamic object support
+    is_dynamic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    ephemeris_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_planet: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
+    # Composite indexes
+    __table_args__ = (
+        Index("idx_moon_parent_planet", "parent_planet"),
+        Index("idx_moon_ephemeris_name", "ephemeris_name"),
+        Index("idx_moon_position", "ra_hours", "dec_degrees"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the moon."""
+        return f"<Moon(id={self.id}, name='{self.name}', parent='{self.parent_planet}')>"
 
 
 class MetadataModel(Base):
@@ -121,6 +303,9 @@ class ObservationModel(Base):
 
     Tracks user observations of celestial objects including date, time,
     viewing conditions, and notes.
+
+    Uses polymorphic reference (object_type + object_id) to reference
+    objects in type-specific tables.
     """
 
     __tablename__ = "observations"
@@ -128,8 +313,9 @@ class ObservationModel(Base):
     # Primary key
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Foreign key to celestial object
-    object_id: Mapped[int] = mapped_column(Integer, ForeignKey("objects.id"), nullable=False, index=True)
+    # Polymorphic reference to celestial object (object_type + object_id)
+    object_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    object_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
 
     # Observation details
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -165,17 +351,20 @@ class ObservationModel(Base):
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
-    # Relationships
-    celestial_object: Mapped[CelestialObjectModel] = relationship("CelestialObjectModel", back_populates="observations")
+    # Note: No relationship defined - using polymorphic reference (object_type + object_id)
+    # to reference objects in type-specific tables
 
     # Composite indexes
     __table_args__ = (
-        Index("idx_object_observed", "object_id", "observed_at"),  # For querying observations by object and date
+        Index(
+            "idx_object_observed", "object_type", "object_id", "observed_at"
+        ),  # For querying observations by object and date
+        Index("idx_observations_object_ref", "object_type", "object_id"),  # For polymorphic reference lookups
     )
 
     def __repr__(self) -> str:
         """String representation of observation."""
-        return f"<Observation(id={self.id}, object_id={self.object_id}, observed_at='{self.observed_at}')>"
+        return f"<Observation(id={self.id}, object_type='{self.object_type}', object_id={self.object_id}, observed_at='{self.observed_at}')>"
 
 
 class UserPreferenceModel(Base):
@@ -513,6 +702,17 @@ class AsterismModel(Base):
     stars: Mapped[str | None] = mapped_column(Text, nullable=True)  # Component stars (comma-separated)
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season
 
+    # Extended information
+    wikipedia_url: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Wikipedia or reference URL
+    cultural_info: Mapped[str | None] = mapped_column(Text, nullable=True)  # Cultural and mythological information
+    guidepost_info: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # How to use as a guidepost (e.g., points to Polaris)
+    historical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)  # Historical references and significance
+    shape_description: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # What the pattern looks like (e.g., "bowl and handle")
+
     # Composite indexes for position-based queries
     __table_args__ = (
         Index("idx_asterism_position", "ra_hours", "dec_degrees"),
@@ -551,6 +751,11 @@ class AsterismModel(Base):
             hemisphere=hemisphere,
             member_stars=member_stars,
             description=self.description or "",
+            wikipedia_url=self.wikipedia_url,
+            cultural_info=self.cultural_info,
+            guidepost_info=self.guidepost_info,
+            historical_notes=self.historical_notes,
+            shape_description=self.shape_description,
         )
 
     def __repr__(self) -> str:

@@ -72,7 +72,7 @@ class NakedEyeInfoDialog(QDialog):
         self.setWindowTitle("Naked-Eye Stargazing Tonight")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.resize(800, 700)  # Set reasonable default size
+        self.resize(600, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -212,7 +212,6 @@ class NakedEyeInfoDialog(QDialog):
             html_content.append(
                 f"<p style='color: {colors['text_dim']};'>Sunset: {sunset_str} | Sunrise: {sunrise_str}</p>"
             )
-            html_content.append("<br>")
 
             # Load async content using safe async runner
             async def _load_async_content() -> list[str]:
@@ -231,7 +230,6 @@ class NakedEyeInfoDialog(QDialog):
                 content_parts.append(
                     f"<p style='color: {colors['text_dim']};'>Bright satellite passes visible without equipment</p>"
                 )
-                content_parts.append("<br>")
 
                 if iss_passes:
                     visible_passes = []
@@ -305,8 +303,6 @@ class NakedEyeInfoDialog(QDialog):
                         f"<p><span style='color: {colors['yellow']};'>No visible ISS passes in the next 7 days</span></p>"
                     )
 
-                content_parts.append("<br>")
-
                 # Meteor Showers
                 from celestron_nexstar.api.astronomy.meteor_showers import (
                     get_active_showers,
@@ -319,17 +315,14 @@ class NakedEyeInfoDialog(QDialog):
                     active_showers = await get_active_showers(db_session, now)
                     peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
 
-                content_parts.append("<h2>Active Meteor Showers</h2>")
                 content_parts.append(
+                    "<h2>Active Meteor Showers</h2>"
                     f"<p style='color: {colors['text_dim']};'>Best observed with naked eye - no equipment needed!</p>"
                 )
-                content_parts.append("<br>")
 
                 if active_showers:
                     content_parts.append(
                         "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
-                    )
-                    content_parts.append(
                         f"<tr style='background-color: {colors['header']}; color: white;'>"
                         "<th style='padding: 8px; text-align: left;'>Shower</th>"
                         "<th style='padding: 8px; text-align: left;'>Status</th>"
@@ -382,8 +375,6 @@ class NakedEyeInfoDialog(QDialog):
                     content_parts.append(
                         f"<p><span style='color: {colors['yellow']};'>No major meteor showers currently active</span></p>"
                     )
-
-                content_parts.append("<br>")
 
                 # Prominent Constellations
                 from celestron_nexstar.api.astronomy.constellations import (
@@ -487,19 +478,16 @@ class NakedEyeInfoDialog(QDialog):
                     else:  # 12, 1, 2
                         return "Winter"
 
-                content_parts.append("<h2>Prominent Constellations (Tonight)</h2>")
                 content_parts.append(
+                    "<h2>Prominent Constellations (Tonight)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Easy-to-spot constellations for beginners</p>"
                 )
-                content_parts.append("<br>")
 
                 if fully_visible:
                     current_season = _get_current_season(now)
 
                     content_parts.append(
                         "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
-                    )
-                    content_parts.append(
                         f"<tr style='background-color: {colors['header']}; color: white;'>"
                         "<th style='padding: 8px; text-align: left;'>Constellation</th>"
                         "<th style='padding: 8px; text-align: right;'>Direction</th>"
@@ -543,19 +531,14 @@ class NakedEyeInfoDialog(QDialog):
 
                 # Partially visible constellations
                 if partially_visible:
-                    content_parts.append("<br>")
-                    content_parts.append("<h2>Constellations Partially Visible</h2>")
                     content_parts.append(
+                        "<h2>Constellations Partially Visible</h2>"
                         f"<p style='color: {colors['text_dim']};'>Some stars visible, but whole constellation is low in the sky</p>"
                     )
-                    content_parts.append("<br>")
-
                     current_season = _get_current_season(now)
 
                     content_parts.append(
                         "<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>"
-                    )
-                    content_parts.append(
                         f"<tr style='background-color: {colors['header']}; color: white;'>"
                         "<th style='padding: 8px; text-align: left;'>Constellation</th>"
                         "<th style='padding: 8px; text-align: right;'>Direction</th>"
@@ -588,14 +571,11 @@ class NakedEyeInfoDialog(QDialog):
 
                     content_parts.append("</table>")
 
-                content_parts.append("<br>")
-
                 # Bright Stars
-                content_parts.append("<h2>Bright Stars (Tonight)</h2>")
                 content_parts.append(
+                    "<h2>Bright Stars (Tonight)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Naked-eye visible stars (magnitude ≤ 6.0)</p>"
                 )
-                content_parts.append("<br>")
 
                 # Get visible stars
                 visible_stars_list = []
@@ -659,14 +639,11 @@ class NakedEyeInfoDialog(QDialog):
                         f"<p><span style='color: {colors['yellow']};'>No bright stars currently visible</span></p>"
                     )
 
-                content_parts.append("<br>")
-
                 # Visible Asterisms
-                content_parts.append("<h2>Star Patterns to Find (Asterisms)</h2>")
                 content_parts.append(
+                    "<h2>Star Patterns to Find (Asterisms)</h2>"
                     f"<p style='color: {colors['text_dim']};'>Famous patterns that are easy to recognize</p>"
                 )
-                content_parts.append("<br>")
 
                 async with get_db_session() as db_session:
                     visible_asterisms = await get_visible_asterisms(
@@ -744,9 +721,8 @@ class NakedEyeInfoDialog(QDialog):
             html_content.extend(async_content)
 
             # Viewing tips
-            html_content.append("<br>")
-            html_content.append("<h2>Stargazing Tips (No Equipment Needed)</h2>")
             html_content.append(
+                "<h2>Stargazing Tips (No Equipment Needed)</h2>"
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li style='margin-bottom: 5px;'>Find a dark location away from city lights</li>"
                 f"<li style='margin-bottom: 5px;'>Allow 20-30 minutes for your eyes to fully adapt to darkness</li>"

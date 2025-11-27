@@ -147,9 +147,10 @@ class CatalogSearchWindow(QMainWindow):
             is_dark = brightness < 128
 
         # Map icon names to FontAwesome icon names
+        # Prefer outline versions where available
         icon_map: dict[str, str] = {
-            "info": "mdi6.information",
-            "close": "fa6s.eraser",
+            "info": "mdi.information-outline",
+            "close": "mdi.close-outline",
         }
 
         # Try FontAwesome icons via qtawesome first
