@@ -7,12 +7,13 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import logging
 import threading
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QCursor, QGuiApplication, QIcon, QMouseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QProgressDialog,
     QSizeGrip,
     QSizePolicy,
@@ -45,6 +47,8 @@ from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPa
 if TYPE_CHECKING:
     from celestron_nexstar import NexStarTelescope
     from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+
+logger = logging.getLogger(__name__)
 
 
 def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
@@ -150,9 +154,6 @@ class ObjectsLoaderThread(QThread):
 
         except Exception as e:
             # Emit None to indicate error
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.error(f"Error loading objects for type {self.obj_type_str}: {e}", exc_info=True)
             self.data_loaded.emit(self.obj_type_str, None)
 
@@ -203,6 +204,9 @@ class MainWindow(QMainWindow):
             "transit_times": "mdi.transit-connection",
             "glossary": "mdi.book-open-page-variant",
             "settings": "mdi.cog-outline",
+            "star": "mdi.star",
+            "favorite": "mdi.star",
+            "bookmark": "mdi.bookmark",
             # Celestial objects (using alpha-box-outline pattern)
             "aurora": "mdi.alpha-a-box-outline",
             "binoculars": "mdi.alpha-b-box-outline",
@@ -270,9 +274,6 @@ class MainWindow(QMainWindow):
                         pass
         except (ImportError, AttributeError, ValueError, TypeError, KeyError) as e:
             # Log the error for debugging
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.debug(f"qtawesome icon failed for '{icon_name}': {e}")
 
         # Try theme icons as fallback
@@ -582,6 +583,14 @@ class MainWindow(QMainWindow):
         self.catalog_action.setStatusTip("Open catalog search window")
         self.catalog_action.triggered.connect(self._on_catalog)
         self.catalog_action.setIcon(catalog_icon)
+
+        # Favorites button
+        favorites_icon = self._create_icon("star", ["star", "bookmark", "favorite"])
+        self.favorites_action = left_toolbar.addAction(favorites_icon, "Favorites")
+        self.favorites_action.setToolTip("FAVORITES")
+        self.favorites_action.setStatusTip("View favorite objects")
+        self.favorites_action.triggered.connect(self._on_favorites)
+        self.favorites_action.setIcon(favorites_icon)
 
         # Weather button
         weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
@@ -902,6 +911,10 @@ class MainWindow(QMainWindow):
         # Connect double-click to copy cell text
         table.itemDoubleClicked.connect(self._on_cell_double_clicked)
 
+        # Enable context menu for favorites
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table.customContextMenuRequested.connect(lambda pos: self._on_table_context_menu(table, pos))
+
         # Load data asynchronously (will be populated when tab is shown)
         # Store the object type for later loading
         table.setProperty("object_type", obj_type.value)
@@ -1013,10 +1026,26 @@ class MainWindow(QMainWindow):
             priority_stars = "★" * (6 - obj_rec.priority)
             table.setItem(row, 0, QTableWidgetItem(priority_stars))
 
-            # Name
+            # Name (with favorite indicator)
             obj = obj_rec.obj
             display_name = obj.common_name or obj.name
-            table.setItem(row, 1, QTableWidgetItem(display_name))
+
+            # Check if favorite and add star indicator
+            try:
+                import asyncio
+
+                from celestron_nexstar.api.favorites import is_favorite
+
+                is_fav = asyncio.run(is_favorite(obj.name))
+                if is_fav:
+                    display_name = f"★ {display_name}"
+            except Exception:
+                pass  # If check fails, just show name without star
+
+            name_item = QTableWidgetItem(display_name)
+            # Store object name in item data for context menu
+            name_item.setData(Qt.ItemDataRole.UserRole, obj.name)
+            table.setItem(row, 1, name_item)
 
             # Type
             table.setItem(row, 2, QTableWidgetItem(obj.object_type.value))
@@ -1185,8 +1214,25 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(sorted_names))
 
         for row, constellation_name in enumerate(sorted_names):
-            # Constellation name
-            table.setItem(row, 0, QTableWidgetItem(constellation_name))
+            # Constellation name (with favorite indicator)
+            display_name = constellation_name
+
+            # Check if favorite and add star indicator
+            try:
+                import asyncio
+
+                from celestron_nexstar.api.favorites import is_favorite
+
+                is_fav = asyncio.run(is_favorite(constellation_name))
+                if is_fav:
+                    display_name = f"★ {display_name}"
+            except Exception:
+                pass  # If check fails, just show name without star
+
+            name_item = QTableWidgetItem(display_name)
+            # Store object name in item data for context menu
+            name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
+            table.setItem(row, 0, name_item)
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
@@ -1374,7 +1420,12 @@ class MainWindow(QMainWindow):
             name_item = current_table.item(row, 0)
             if not name_item:
                 return
-            constellation_name = name_item.text()
+            # Try to get from UserRole data first (clean name without star)
+            constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not constellation_name:
+                # Fallback: extract from display text (remove star if present)
+                display_text = name_item.text()
+                constellation_name = display_text.removeprefix("★ ").strip()
 
             # Show loading dialog
             progress = QProgressDialog(f"Loading information for {constellation_name}...", "Cancel", 0, 0, self)
@@ -1398,7 +1449,12 @@ class MainWindow(QMainWindow):
             name_item = current_table.item(row, 0)
             if not name_item:
                 return
-            asterism_name = name_item.text()
+            # Try to get from UserRole data first (clean name without star)
+            asterism_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not asterism_name:
+                # Fallback: extract from display text (remove star if present)
+                display_text = name_item.text()
+                asterism_name = display_text.removeprefix("★ ").strip()
 
             # Show asterism info dialog
             from celestron_nexstar.gui.dialogs.asterism_info_dialog import AsterismInfoDialog
@@ -1411,7 +1467,12 @@ class MainWindow(QMainWindow):
             if not name_item:
                 return
 
-            object_name = name_item.text()
+            # Try to get from UserRole data first (clean name without star)
+            object_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not object_name:
+                # Fallback: extract from display text (remove star if present)
+                display_text = name_item.text()
+                object_name = display_text.removeprefix("★ ").strip()
 
             # Show loading dialog
             progress = QProgressDialog(f"Loading information for {object_name}...", "Cancel", 0, 0, self)
@@ -1435,6 +1496,145 @@ class MainWindow(QMainWindow):
         """Handle sort indicator change - track sort column and order."""
         table.setProperty("sort_column", logical_index)
         table.setProperty("sort_order", order)
+
+    def _on_table_context_menu(self, table: QTableWidget, position: QPoint) -> None:
+        """Handle context menu request on table."""
+        item = table.itemAt(position)
+        if not item:
+            return
+
+        # Get the row
+        row = item.row()
+
+        # Determine which column has the name based on object type
+        obj_type = table.property("object_type")
+        name_item = table.item(row, 0) if obj_type in ("constellation", "asterism") else table.item(row, 1)
+
+        if not name_item:
+            return
+
+        # Try to get from UserRole data first (clean name without star)
+        object_name = name_item.data(Qt.ItemDataRole.UserRole)
+        if not object_name:
+            # Fallback: try to extract from display text (remove star if present)
+            display_text = name_item.text()
+            object_name = display_text.removeprefix("★ ").strip()
+
+        if not object_name:
+            return
+
+        # Check if favorite
+        import asyncio
+
+        from celestron_nexstar.api.favorites import is_favorite
+
+        try:
+            is_fav = asyncio.run(is_favorite(object_name))
+        except Exception:
+            is_fav = False
+
+        # Create context menu
+        menu = QMenu(self)
+
+        # Info action
+        info_action = menu.addAction("Show Info")
+        info_action.triggered.connect(lambda: self._on_context_menu_info(table, row))
+
+        menu.addSeparator()
+
+        # Favorite/Unfavorite action
+        if is_fav:
+            fav_action = menu.addAction("★ Remove from Favorites")
+            fav_action.triggered.connect(lambda: self._on_context_menu_unfavorite(object_name, table))
+        else:
+            fav_action = menu.addAction("☆ Add to Favorites")
+            fav_action.triggered.connect(lambda: self._on_context_menu_favorite(object_name, table))
+
+        # Show menu at cursor position
+        menu.exec(table.mapToGlobal(position))
+
+    def _on_context_menu_info(self, table: QTableWidget, row: int) -> None:
+        """Handle context menu info action."""
+        # Determine which column has the name based on object type
+        obj_type = table.property("object_type")
+        name_item = table.item(row, 0) if obj_type in ("constellation", "asterism") else table.item(row, 1)
+
+        if not name_item:
+            return
+
+        # Try to get from UserRole data first (clean name without star)
+        object_name = name_item.data(Qt.ItemDataRole.UserRole)
+        if not object_name:
+            # Fallback: try to extract from display text
+            display_text = name_item.text()
+            object_name = display_text.removeprefix("★ ").strip()
+
+        if object_name:
+            # Use the existing info dialog functionality
+            if obj_type == "constellation":
+                from celestron_nexstar.gui.dialogs.constellation_info_dialog import ConstellationInfoDialog
+
+                constellation_dialog = ConstellationInfoDialog(self, object_name)
+                constellation_dialog.exec()
+            elif obj_type == "asterism":
+                from celestron_nexstar.gui.dialogs.asterism_info_dialog import AsterismInfoDialog
+
+                asterism_dialog = AsterismInfoDialog(self, object_name)
+                asterism_dialog.exec()
+            else:
+                from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+
+                obj_dialog = ObjectInfoDialog(self, object_name)
+                obj_dialog.exec()
+            # Refresh table in case favorite status changed
+            self._refresh_table_favorites(table)
+
+    def _on_context_menu_favorite(self, object_name: str, table: QTableWidget) -> None:
+        """Handle context menu add to favorites action."""
+        import asyncio
+
+        from celestron_nexstar.api.favorites import add_favorite
+
+        try:
+            # Get object type from table property
+            obj_type = table.property("object_type")
+            success = asyncio.run(add_favorite(object_name, obj_type))
+            if success:
+                self._show_toast(f"Added '{object_name}' to favorites")
+                # Refresh the table to show the star indicator
+                self._refresh_table_favorites(table)
+        except Exception as e:
+            logger.error(f"Error adding favorite: {e}", exc_info=True)
+
+    def _on_context_menu_unfavorite(self, object_name: str, table: QTableWidget) -> None:
+        """Handle context menu remove from favorites action."""
+        import asyncio
+
+        from celestron_nexstar.api.favorites import remove_favorite
+
+        try:
+            success = asyncio.run(remove_favorite(object_name))
+            if success:
+                self._show_toast(f"Removed '{object_name}' from favorites")
+                # Refresh the table to remove the star indicator
+                self._refresh_table_favorites(table)
+        except Exception as e:
+            logger.error(f"Error removing favorite: {e}", exc_info=True)
+
+    def _refresh_table_favorites(self, table: QTableWidget) -> None:
+        """Refresh favorite indicators in a table."""
+        obj_type_str = table.property("object_type")
+        if not obj_type_str:
+            return
+
+        # Reload the table data
+        if obj_type_str in self._objects_cache:
+            objects = self._objects_cache[obj_type_str]
+            if objects:
+                if obj_type_str in ("constellation", "asterism"):
+                    self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
+                else:
+                    self._populate_table(table, objects)  # type: ignore[arg-type]
 
     def _on_cell_double_clicked(self, item: QTableWidgetItem) -> None:
         """Handle cell double-click - copy cell text to clipboard."""
@@ -1575,9 +1775,6 @@ class MainWindow(QMainWindow):
             self.datetime_label.setText(time_str)
         except Exception as e:
             # Log error for debugging
-            import logging
-
-            logger = logging.getLogger(__name__)
             logger.debug(f"Error updating date/time: {e}", exc_info=True)
             # Fallback to simple time display
             try:
@@ -1687,6 +1884,13 @@ class MainWindow(QMainWindow):
     def _on_weather(self) -> None:
         """Handle weather button click."""
         dialog = WeatherInfoDialog(self)
+        dialog.exec()
+
+    def _on_favorites(self) -> None:
+        """Handle favorites button click."""
+        from celestron_nexstar.gui.dialogs.favorites_dialog import FavoritesDialog
+
+        dialog = FavoritesDialog(self)
         dialog.exec()
 
     def _on_checklist(self) -> None:

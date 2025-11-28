@@ -401,6 +401,37 @@ class UserPreferenceModel(Base):
         return f"<UserPreference(key='{self.key}', category='{self.category}')>"
 
 
+class FavoriteModel(Base):
+    """
+    SQLAlchemy model for user's favorite celestial objects.
+
+    Stores favorite objects with fast indexed lookups by object name.
+    """
+
+    __tablename__ = "favorites"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Object name (indexed for fast lookups)
+    object_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+    # Optional object type (for categorization)
+    object_type: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+
+    # Unique constraint on object_name to prevent duplicates
+    __table_args__ = (Index("ix_favorites_object_name_unique", "object_name", unique=True),)
+
+    def __repr__(self) -> str:
+        """String representation of favorite."""
+        return f"<Favorite(id={self.id}, object_name='{self.object_name}', object_type='{self.object_type}')>"
+
+
 class LightPollutionGridModel(Base):
     """
     SQLAlchemy model for light pollution grid data.

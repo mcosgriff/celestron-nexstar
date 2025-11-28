@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.api.favorites import add_favorite, is_favorite, remove_favorite
+
 
 if TYPE_CHECKING:
     pass
@@ -34,6 +36,7 @@ class ObjectInfoDialog(QDialog):
         self.resize(600, 700)  # Default width for all info dialogs
 
         self.object_name = object_name
+        self.object_type: str | None = None  # Will be set when object info is loaded
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -44,13 +47,32 @@ class ObjectInfoDialog(QDialog):
         self.info_text.setAcceptRichText(True)
         layout.addWidget(self.info_text)
 
-        # Add button box
+        # Add button box with favorite toggle
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(self.accept)
+
+        # Add favorite/unfavorite button
+        self.favorite_button = button_box.addButton("", QDialogButtonBox.ButtonRole.ActionRole)
+        self.favorite_button.setCheckable(True)
+        self.favorite_button.clicked.connect(self._on_favorite_toggled)
+        # Will be updated after object info is loaded
+
         layout.addWidget(button_box)
 
-        # Load object information
+        # Load object information (this will also update favorite button)
         self._load_object_info()
+
+        # Update favorite button after object info is loaded
+        # Use QTimer to ensure it runs after the dialog is shown
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._update_favorite_button)
+
+        # Update favorite button after object info is loaded
+        # Use a timer to ensure object info is loaded first
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(100, self._update_favorite_button)
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -514,9 +536,55 @@ class ObjectInfoDialog(QDialog):
             html_content = "".join(html_parts)
             self.info_text.setHtml(html_content)
 
+            # Store object type for favorite button
+            if hasattr(obj, "object_type") and obj.object_type:
+                self.object_type = obj.object_type.value
+            else:
+                self.object_type = None
+
         except Exception as e:
             logger.error(f"Error loading object info for '{self.object_name}': {e}", exc_info=True)
             colors = self._get_theme_colors()
             self.info_text.setHtml(
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load object information: {e}</p>"
             )
+            self.object_type = None
+
+        # Update favorite button after loading
+        self._update_favorite_button()
+
+    def _update_favorite_button(self) -> None:
+        """Update the favorite button state and icon."""
+        try:
+            is_fav = asyncio.run(is_favorite(self.object_name))
+            self.favorite_button.setChecked(is_fav)
+
+            # Set button text and tooltip
+            if is_fav:
+                self.favorite_button.setText("★ Unfavorite")
+                self.favorite_button.setToolTip("Remove from favorites")
+            else:
+                self.favorite_button.setText("☆ Favorite")
+                self.favorite_button.setToolTip("Add to favorites")
+        except Exception as e:
+            logger.error(f"Error updating favorite button: {e}", exc_info=True)
+
+    def _on_favorite_toggled(self) -> None:
+        """Handle favorite button toggle."""
+        try:
+            is_checked = self.favorite_button.isChecked()
+
+            if is_checked:
+                # Add to favorites
+                success = asyncio.run(add_favorite(self.object_name, self.object_type))
+                if success:
+                    self._update_favorite_button()
+            else:
+                # Remove from favorites
+                success = asyncio.run(remove_favorite(self.object_name))
+                if success:
+                    self._update_favorite_button()
+        except Exception as e:
+            logger.error(f"Error toggling favorite: {e}", exc_info=True)
+            # Reset button state on error
+            self._update_favorite_button()
