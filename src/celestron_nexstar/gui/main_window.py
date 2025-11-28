@@ -182,6 +182,17 @@ class FavoriteTableWidgetItem(QTableWidgetItem):
         return self_val < other_val
 
 
+class VisibilityTableWidgetItem(QTableWidgetItem):
+    """Custom QTableWidgetItem for visibility column that sorts by visibility status."""
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        """Compare items for sorting - Visible (0) < Marginal (1) < Not Visible (2)."""
+        # Get sort value from UserRole + 1 (0 = Visible, 1 = Marginal, 2 = Not Visible)
+        self_val = self.data(Qt.ItemDataRole.UserRole + 1) or 0
+        other_val = other.data(Qt.ItemDataRole.UserRole + 1) or 0
+        return self_val < other_val
+
+
 class MainWindow(QMainWindow):
     """Main application window for telescope control."""
 
@@ -324,6 +335,62 @@ class MainWindow(QMainWindow):
             item = FavoriteTableWidgetItem("")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
 
+        return item
+
+    def _determine_visibility_status(self, altitude: float, visibility_probability: float) -> tuple[str, str]:
+        """
+        Determine visibility status based on altitude and visibility probability.
+
+        Returns:
+            Tuple of (status, color) where status is "Visible", "Marginal", or "Not Visible"
+            and color is "green", "yellow", or "red"
+        """
+        # Consider both altitude and visibility probability
+        if altitude >= 20.0 and visibility_probability >= 0.5:
+            return ("Visible", "green")
+        elif altitude >= 10.0 and visibility_probability >= 0.3:
+            return ("Marginal", "yellow")
+        else:
+            return ("Not Visible", "red")
+
+    def _create_visibility_item(self, altitude: float, visibility_probability: float) -> VisibilityTableWidgetItem:
+        """Create a VisibilityTableWidgetItem with visibility indicator icon."""
+        status, _color = self._determine_visibility_status(altitude, visibility_probability)
+
+        try:
+            import qtawesome as qta  # type: ignore[import-not-found,import-untyped]
+
+            if status == "Visible":
+                # Green checkmark
+                icon = qta.icon("mdi.check-circle", color="#4caf50")  # Green
+                if icon.isNull():
+                    icon = self._create_icon("check-circle", ["check-circle", "check", "dialog-ok"])
+            elif status == "Marginal":
+                # Yellow warning
+                icon = qta.icon("mdi.alert-circle", color="#ffc107")  # Yellow/Amber
+                if icon.isNull():
+                    icon = self._create_icon("dialog-warning", ["warning", "alert"])
+            else:  # Not Visible
+                # Red X
+                icon = qta.icon("mdi.close-circle", color="#f44336")  # Red
+                if icon.isNull():
+                    icon = self._create_icon("dialog-cancel", ["cancel", "close"])
+
+            item = VisibilityTableWidgetItem(QIcon(icon), status)
+        except Exception:
+            # Fallback to text-only with color
+            if status == "Visible":
+                icon = self._create_icon("check-circle", ["check-circle", "check", "dialog-ok"])
+            elif status == "Marginal":
+                icon = self._create_icon("dialog-warning", ["warning", "alert"])
+            else:
+                icon = self._create_icon("dialog-cancel", ["cancel", "close"])
+            item = VisibilityTableWidgetItem(QIcon(icon), status)
+
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        # Store status for sorting: 0 = Visible, 1 = Marginal, 2 = Not Visible
+        sort_value = 0 if status == "Visible" else (1 if status == "Marginal" else 2)
+        item.setData(Qt.ItemDataRole.UserRole + 1, sort_value)
         return item
 
     def __init__(self, theme: FusionTheme | None = None) -> None:
@@ -635,6 +702,23 @@ class MainWindow(QMainWindow):
         self.observation_log_action.setStatusTip("View and manage observation logs")
         self.observation_log_action.triggered.connect(self._on_observation_log)
 
+        dashboard_icon = self._create_icon("dashboard", ["view-dashboard", "chart-line", "monitor-dashboard"])
+        self.dashboard_action = planning_menu.addAction(dashboard_icon, "Live Dashboard")
+        self.dashboard_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.dashboard_action.setToolTip("LIVE DASHBOARD")
+        self.dashboard_action.setStatusTip("View real-time observing conditions dashboard")
+        self.dashboard_action.triggered.connect(self._on_live_dashboard)
+
+        planning_menu.addSeparator()
+
+        # Equipment Manager
+        equipment_icon = self._create_icon("settings", ["cog", "tools", "wrench"])
+        self.equipment_action = planning_menu.addAction(equipment_icon, "Equipment Manager")
+        self.equipment_action.setIconVisibleInMenu(True)
+        self.equipment_action.setToolTip("EQUIPMENT MANAGER")
+        self.equipment_action.setStatusTip("Manage eyepieces, filters, and cameras")
+        self.equipment_action.triggered.connect(self._on_equipment_manager)
+
         planning_menu.addSeparator()
 
         weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
@@ -804,6 +888,18 @@ class MainWindow(QMainWindow):
         )
         self.align_action.setIcon(self._create_icon("my_location", ["edit-find", "system-search", "find-location"]))
         # Planning tools
+        if hasattr(self, "favorites_action"):
+            self.favorites_action.setIcon(self._create_icon("star", ["star", "bookmark", "favorite"]))
+        if hasattr(self, "observation_log_action"):
+            self.observation_log_action.setIcon(
+                self._create_icon("menu_book", ["book-open-variant", "book", "document"])
+            )
+        if hasattr(self, "dashboard_action"):
+            self.dashboard_action.setIcon(
+                self._create_icon("dashboard", ["view-dashboard", "chart-line", "monitor-dashboard"])
+            )
+        if hasattr(self, "equipment_action"):
+            self.equipment_action.setIcon(self._create_icon("settings", ["cog", "tools", "wrench"]))
         self.weather_action.setIcon(
             self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
         )
@@ -954,7 +1050,7 @@ class MainWindow(QMainWindow):
             table.setHorizontalHeaderLabels(["Asterism", "Favorite"])
         # For star tab, add a Constellation column
         elif obj_type == CelestialObjectType.STAR:
-            table.setColumnCount(11)
+            table.setColumnCount(12)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -963,6 +1059,7 @@ class MainWindow(QMainWindow):
                     "Constellation",
                     "Mag",
                     "Alt",
+                    "Visibility",
                     "Transit",
                     "Moon Sep",
                     "Chance",
@@ -971,9 +1068,21 @@ class MainWindow(QMainWindow):
                 ]
             )
         else:
-            table.setColumnCount(10)
+            table.setColumnCount(11)
             table.setHorizontalHeaderLabels(
-                ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips", "Favorite"]
+                [
+                    "Priority",
+                    "Name",
+                    "Type",
+                    "Mag",
+                    "Alt",
+                    "Visibility",
+                    "Transit",
+                    "Moon Sep",
+                    "Chance",
+                    "Tips",
+                    "Favorite",
+                ]
             )
 
         # Set column widths - all columns are resizable with minimum width based on header text
@@ -992,6 +1101,7 @@ class MainWindow(QMainWindow):
                 "Constellation",
                 "Mag",
                 "Alt",
+                "Visibility",
                 "Transit",
                 "Moon Sep",
                 "Chance",
@@ -1005,6 +1115,7 @@ class MainWindow(QMainWindow):
                 "Type",
                 "Mag",
                 "Alt",
+                "Visibility",
                 "Transit",
                 "Moon Sep",
                 "Chance",
@@ -1153,6 +1264,19 @@ class MainWindow(QMainWindow):
         # Check if this is the star tab (needs constellation column)
         is_star_tab = table.property("object_type") == "star"
 
+        # Check all favorites in a single batch query (much more efficient)
+        from celestron_nexstar.api.favorites import are_favorites
+
+        object_names = [obj_rec.obj.name for obj_rec in objects]
+        try:
+            favorite_dict = asyncio.run(are_favorites(object_names))
+            # Convert dict to list in same order as objects
+            favorite_statuses = [favorite_dict.get(name, False) for name in object_names]
+        except Exception:
+            # If batch check fails, fall back to all False
+            favorite_statuses = [False] * len(objects)
+
+        # Now populate table with all data
         for row, obj_rec in enumerate(objects):
             # Priority (stars)
             priority_stars = "★" * (6 - obj_rec.priority)
@@ -1186,6 +1310,10 @@ class MainWindow(QMainWindow):
             alt_text = f"{obj_rec.altitude:.0f}°"
             table.setItem(row, 4 + col_offset, QTableWidgetItem(alt_text))
 
+            # Visibility indicator
+            visibility_item = self._create_visibility_item(obj_rec.altitude, obj_rec.visibility_probability)
+            table.setItem(row, 5 + col_offset, visibility_item)
+
             # Transit time
             best_time = obj_rec.best_viewing_time
             if best_time.tzinfo is None:
@@ -1195,36 +1323,28 @@ class MainWindow(QMainWindow):
                 time_str = local_time.strftime("%I:%M %p")
             else:
                 time_str = best_time.strftime("%I:%M %p UTC")
-            table.setItem(row, 5 + col_offset, QTableWidgetItem(time_str))
+            table.setItem(row, 6 + col_offset, QTableWidgetItem(time_str))
 
             # Moon separation
             moon_sep_text = "-"
             if obj_rec.moon_separation_deg is not None:
                 moon_sep_text = f"{obj_rec.moon_separation_deg:.0f}°"
-            table.setItem(row, 6 + col_offset, QTableWidgetItem(moon_sep_text))
+            table.setItem(row, 7 + col_offset, QTableWidgetItem(moon_sep_text))
 
             # Visibility probability
             prob = obj_rec.visibility_probability
             prob_text = f"{prob:.0%}"
-            table.setItem(row, 7 + col_offset, QTableWidgetItem(prob_text))
+            table.setItem(row, 8 + col_offset, QTableWidgetItem(prob_text))
 
             # Tips
             tips_text = "; ".join(obj_rec.viewing_tips[:2]) if obj_rec.viewing_tips else ""
             if len(tips_text) > 50:
                 tips_text = tips_text[:47] + "..."
-            table.setItem(row, 8 + col_offset, QTableWidgetItem(tips_text))
+            table.setItem(row, 9 + col_offset, QTableWidgetItem(tips_text))
 
-            # Favorite (check/X icon)
-            favorite_col = 9 + col_offset  # Last column
-            try:
-                import asyncio
-
-                from celestron_nexstar.api.favorites import is_favorite
-
-                is_fav = asyncio.run(is_favorite(obj.name))
-            except Exception:
-                # If check fails, default to not favorite
-                is_fav = False
+            # Favorite (check/X icon) - use pre-fetched result
+            favorite_col = 10 + col_offset  # Last column
+            is_fav = favorite_statuses[row]
             favorite_item = self._create_favorite_item(is_fav)
             # Store object name in item data for context menu
             favorite_item.setData(Qt.ItemDataRole.UserRole, obj.name)
@@ -1364,6 +1484,18 @@ class MainWindow(QMainWindow):
 
         table.setRowCount(len(sorted_names))
 
+        # Check all favorites in a single batch query (much more efficient)
+        from celestron_nexstar.api.favorites import are_favorites
+
+        try:
+            favorite_dict = asyncio.run(are_favorites(sorted_names))
+            # Convert dict to list in same order as sorted_names
+            favorite_statuses = [favorite_dict.get(name, False) for name in sorted_names]
+        except Exception:
+            # If batch check fails, fall back to all False
+            favorite_statuses = [False] * len(sorted_names)
+
+        # Now populate table with all data
         for row, constellation_name in enumerate(sorted_names):
             # Constellation name (no star indicator - we have a dedicated favorites column)
             name_item = QTableWidgetItem(constellation_name)
@@ -1371,16 +1503,8 @@ class MainWindow(QMainWindow):
             name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
             table.setItem(row, 0, name_item)
 
-            # Favorite (check/X icon)
-            try:
-                import asyncio
-
-                from celestron_nexstar.api.favorites import is_favorite
-
-                is_fav = asyncio.run(is_favorite(constellation_name))
-            except Exception:
-                # If check fails, default to not favorite
-                is_fav = False
+            # Favorite (check/X icon) - use pre-fetched result
+            is_fav = favorite_statuses[row]
             favorite_item = self._create_favorite_item(is_fav)
             # Store object name in item data for context menu
             favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
@@ -2084,6 +2208,20 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.gui.dialogs.observation_log_dialog import ObservationLogDialog
 
         dialog = ObservationLogDialog(self)
+        dialog.exec()
+
+    def _on_live_dashboard(self) -> None:
+        """Handle live dashboard button click."""
+        from celestron_nexstar.gui.dialogs.live_dashboard_dialog import LiveDashboardDialog
+
+        dialog = LiveDashboardDialog(self)
+        dialog.exec()
+
+    def _on_equipment_manager(self) -> None:
+        """Handle equipment manager button click."""
+        from celestron_nexstar.gui.dialogs.equipment_manager_dialog import EquipmentManagerDialog
+
+        dialog = EquipmentManagerDialog(self)
         dialog.exec()
 
     def _on_checklist(self) -> None:

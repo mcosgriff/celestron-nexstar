@@ -99,28 +99,37 @@ This document tracks potential features and enhancements for the Celestron NexSt
 - Compare magnitude, size, difficulty, etc.
 - Help choose between similar objects
 
-### ⬜ Observation Log/Journal
+### ✅ Observation Log/Journal
 
-- Record observations with photos/notes
-- Searchable history
-- Statistics (objects observed, hours logged)
-- Export to standard formats (CSV, JSON)
+- ✅ Record observations with photos/notes
+- ✅ Searchable history
+- ✅ Statistics (objects observed, hours logged)
+- ✅ View, edit, and delete observations
+- ✅ Context menu integration to log observations
+- ✅ Weather conditions and equipment tracking
+- ⬜ Export to standard formats (CSV, JSON) (future enhancement)
 
-### ⬜ Equipment Manager
+### ✅ Equipment Manager
 
-- Catalog eyepieces, filters, cameras
-- Calculate field of view for combinations
-- Track equipment usage
+- ✅ Catalog eyepieces, filters, cameras
+- ✅ Database storage with usage tracking
+- ✅ Field of view calculation API
+- ✅ Equipment Manager dialog with tabs for each equipment type
+- ✅ View, add, edit, and delete equipment
+- ⬜ Add/edit dialogs for equipment (future enhancement)
+- ⬜ Enhanced FOV calculator UI (future enhancement)
 
 ---
 
 ## Real-Time Features
 
-### ⬜ Live Data Dashboard
+### ✅ Live Data Dashboard
 
-- Real-time weather, seeing conditions, moon phase
-- Space weather alerts
-- Visibility indicators for current objects
+- ✅ Real-time weather, seeing conditions, moon phase
+- ✅ Space weather alerts
+- ✅ Auto-refresh every 60 seconds
+- ✅ Manual refresh button
+- ✅ Color-coded indicators for conditions
 
 ### ⬜ Notifications/Alerts
 
@@ -194,6 +203,13 @@ This document tracks potential features and enhancements for the Celestron NexSt
 - Dockable panels
 - Multiple monitor support
 
+### ✅ Resizable Table Columns
+
+- ✅ All table columns are resizable
+- ✅ Minimum column widths based on header text
+- ✅ Columns auto-size to content on initial load
+- ✅ User can manually resize to preferred widths
+
 ### ⬜ Search Improvements
 
 - Recent searches
@@ -222,15 +238,18 @@ These features are prioritized for quick implementation:
 - ✅ Context menu integration
 - ✅ Star indicators in tables
 
-### ⬜ Observation Log
+### ✅ Observation Log
 
-- Basic note-taking per object
-- Simple text-based logging
+- ✅ Basic note-taking per object
+- ✅ Detailed observation logging with conditions, equipment, and ratings
+- ✅ View and manage observation history
+- ✅ Context menu integration
 
-### ⬜ Live Dashboard
+### ✅ Live Dashboard
 
-- Real-time conditions widget
-- Weather, moon phase, space weather
+- ✅ Real-time conditions widget
+- ✅ Weather, moon phase, space weather
+- ✅ Auto-refresh functionality
 
 ### ⬜ Goto Queue
 
@@ -255,4 +274,4 @@ These features are prioritized for quick implementation:
 
 ## Last Updated
 
-2025-11-27
+2025-02-01

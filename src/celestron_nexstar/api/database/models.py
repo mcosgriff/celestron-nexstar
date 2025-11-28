@@ -160,6 +160,9 @@ class StarModel(Base, CelestialObjectMixin):
         Index("idx_star_catalog_number", "catalog", "catalog_number"),
         Index("idx_star_magnitude", "magnitude"),
         Index("idx_star_position", "ra_hours", "dec_degrees"),
+        Index(
+            "idx_star_constellation_magnitude", "constellation", "magnitude"
+        ),  # For filtering by constellation and sorting by magnitude
     )
 
     def __repr__(self) -> str:
@@ -177,6 +180,9 @@ class DoubleStarModel(Base, CelestialObjectMixin):
         Index("idx_double_star_catalog_number", "catalog", "catalog_number"),
         Index("idx_double_star_magnitude", "magnitude"),
         Index("idx_double_star_position", "ra_hours", "dec_degrees"),
+        Index(
+            "idx_double_star_constellation_magnitude", "constellation", "magnitude"
+        ),  # For filtering by constellation and sorting by magnitude
     )
 
     def __repr__(self) -> str:
@@ -194,6 +200,9 @@ class GalaxyModel(Base, CelestialObjectMixin):
         Index("idx_galaxy_catalog_number", "catalog", "catalog_number"),
         Index("idx_galaxy_magnitude", "magnitude"),
         Index("idx_galaxy_position", "ra_hours", "dec_degrees"),
+        Index(
+            "idx_galaxy_constellation_magnitude", "constellation", "magnitude"
+        ),  # For filtering by constellation and sorting by magnitude
     )
 
     def __repr__(self) -> str:
@@ -211,6 +220,9 @@ class NebulaModel(Base, CelestialObjectMixin):
         Index("idx_nebula_catalog_number", "catalog", "catalog_number"),
         Index("idx_nebula_magnitude", "magnitude"),
         Index("idx_nebula_position", "ra_hours", "dec_degrees"),
+        Index(
+            "idx_nebula_constellation_magnitude", "constellation", "magnitude"
+        ),  # For filtering by constellation and sorting by magnitude
     )
 
     def __repr__(self) -> str:
@@ -228,6 +240,9 @@ class ClusterModel(Base, CelestialObjectMixin):
         Index("idx_cluster_catalog_number", "catalog", "catalog_number"),
         Index("idx_cluster_magnitude", "magnitude"),
         Index("idx_cluster_position", "ra_hours", "dec_degrees"),
+        Index(
+            "idx_cluster_constellation_magnitude", "constellation", "magnitude"
+        ),  # For filtering by constellation and sorting by magnitude
     )
 
     def __repr__(self) -> str:
@@ -1343,6 +1358,142 @@ class RSSFeedModel(Base):
     def __repr__(self) -> str:
         """String representation of the article."""
         return f"<RSSFeed(id={self.id}, title='{self.title[:50]}...', published={self.published_date})>"
+
+
+class EyepieceModel(Base):
+    """
+    SQLAlchemy model for eyepieces.
+
+    Stores eyepiece specifications for field of view calculations.
+    """
+
+    __tablename__ = "eyepieces"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Eyepiece specifications
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    focal_length_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    apparent_fov_deg: Mapped[float] = mapped_column(Float, nullable=False, default=50.0)
+    barrel_size_mm: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1.25" = 31.75mm, 2" = 50.8mm
+    manufacturer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Usage tracking
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_eyepieces_name", "name"),
+        Index("ix_eyepieces_focal_length", "focal_length_mm"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of eyepiece."""
+        return f"<Eyepiece(id={self.id}, name='{self.name}', focal_length={self.focal_length_mm}mm)>"
+
+
+class FilterModel(Base):
+    """
+    SQLAlchemy model for filters.
+
+    Stores filter information for light pollution and color enhancement.
+    """
+
+    __tablename__ = "filters"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Filter specifications
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    filter_type: Mapped[str] = mapped_column(String(50), nullable=False)  # UHC, O-III, H-beta, color, etc.
+    barrel_size_mm: Mapped[float | None] = mapped_column(Float, nullable=True)  # 1.25" = 31.75mm, 2" = 50.8mm
+    manufacturer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    transmission_percent: Mapped[float | None] = mapped_column(Float, nullable=True)  # Light transmission percentage
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Usage tracking
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_filters_name", "name"),
+        Index("ix_filters_type", "filter_type"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of filter."""
+        return f"<Filter(id={self.id}, name='{self.name}', type='{self.filter_type}')>"
+
+
+class CameraModel(Base):
+    """
+    SQLAlchemy model for cameras.
+
+    Stores camera specifications for astrophotography and field of view calculations.
+    """
+
+    __tablename__ = "cameras"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Camera specifications
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    sensor_width_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    sensor_height_mm: Mapped[float] = mapped_column(Float, nullable=False)
+    pixel_width_um: Mapped[float | None] = mapped_column(Float, nullable=True)  # Pixel size in micrometers
+    pixel_height_um: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resolution_width: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Pixels
+    resolution_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    camera_type: Mapped[str] = mapped_column(String(50), nullable=False, default="DSLR")  # DSLR, CCD, CMOS, etc.
+    manufacturer: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Usage tracking
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_cameras_name", "name"),
+        Index("ix_cameras_type", "camera_type"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of camera."""
+        return f"<Camera(id={self.id}, name='{self.name}', type='{self.camera_type}')>"
 
 
 @asynccontextmanager

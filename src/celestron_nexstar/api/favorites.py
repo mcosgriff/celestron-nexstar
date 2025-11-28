@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "add_favorite",
+    "are_favorites",
     "clear_favorites",
     "get_favorites",
     "is_favorite",
@@ -159,6 +160,41 @@ async def get_favorites() -> list[dict[str, str | None]]:
     except Exception as e:
         logger.error(f"Error getting favorites: {e}", exc_info=True)
         return []
+
+
+async def are_favorites(object_names: list[str]) -> dict[str, bool]:
+    """
+    Check if multiple objects are favorites in a single database query.
+
+    This is much more efficient than calling is_favorite() multiple times,
+    especially for large lists, as it uses a single session and query.
+
+    Args:
+        object_names: List of object names to check
+
+    Returns:
+        Dictionary mapping object names to their favorite status (True/False)
+    """
+    if not object_names:
+        return {}
+
+    try:
+        db = get_database()
+        async with db._AsyncSession() as session:
+            from sqlalchemy import select
+
+            # Single query with IN clause for all objects
+            stmt = select(FavoriteModel.object_name).where(FavoriteModel.object_name.in_(object_names))
+            result = await session.execute(stmt)
+            favorite_names = {row[0] for row in result.all()}
+
+            # Build result dict - True if in favorites, False otherwise
+            return {name: name in favorite_names for name in object_names}
+
+    except Exception as e:
+        logger.error(f"Error checking favorites batch: {e}", exc_info=True)
+        # Return all False on error
+        return dict.fromkeys(object_names, False)
 
 
 async def clear_favorites() -> bool:

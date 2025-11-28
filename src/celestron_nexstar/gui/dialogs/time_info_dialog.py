@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
     QLabel,
     QVBoxLayout,
     QWidget,
@@ -43,72 +44,45 @@ class TimeInfoDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # Create form layout for information
-        form_layout = QFormLayout()
-
-        # Current time (local)
+        # Time information (at top, not in groupbox)
+        time_form = QFormLayout()
         self.local_time_label = QLabel()
-        form_layout.addRow("Local Time:", self.local_time_label)
+        time_form.addRow("Local Time:", self.local_time_label)
 
-        # UTC time
         self.utc_time_label = QLabel()
-        form_layout.addRow("UTC Time:", self.utc_time_label)
+        time_form.addRow("UTC Time:", self.utc_time_label)
 
-        # Add separator
-        separator = QLabel("─" * 30)
-        # Theme-aware separator color
-        from PySide6.QtGui import QGuiApplication, QPalette
+        layout.addLayout(time_form)
 
-        app = QGuiApplication.instance()
-        if app and isinstance(app, QGuiApplication):
-            palette = app.palette()
-            window_color = palette.color(QPalette.ColorRole.Window)
-            brightness = window_color.lightness()
-            is_dark = brightness < 128
-            separator_color = "#999999" if is_dark else "#666666"
-            separator.setStyleSheet(f"color: {separator_color};")
-        form_layout.addRow("", separator)
-
-        # Sun information
-        sun_header = QLabel("<b>Sun</b>")
-        form_layout.addRow("", sun_header)
-
+        # Sun information in groupbox
+        sun_group = QGroupBox("Sun")
+        sun_layout = QFormLayout()
         self.sunrise_label = QLabel()
-        form_layout.addRow("Sunrise:", self.sunrise_label)
+        sun_layout.addRow("Sunrise:", self.sunrise_label)
 
         self.sunset_label = QLabel()
-        form_layout.addRow("Sunset:", self.sunset_label)
+        sun_layout.addRow("Sunset:", self.sunset_label)
 
-        # Add separator
-        separator2 = QLabel("─" * 30)
-        # Theme-aware separator color (reuse same logic)
-        app = QGuiApplication.instance()
-        if app and isinstance(app, QGuiApplication):
-            palette = app.palette()
-            window_color = palette.color(QPalette.ColorRole.Window)
-            brightness = window_color.lightness()
-            is_dark = brightness < 128
-            separator_color = "#999999" if is_dark else "#666666"
-            separator2.setStyleSheet(f"color: {separator_color};")
-        form_layout.addRow("", separator2)
+        sun_group.setLayout(sun_layout)
+        layout.addWidget(sun_group)
 
-        # Moon information
-        moon_header = QLabel("<b>Moon</b>")
-        form_layout.addRow("", moon_header)
-
+        # Moon information in groupbox
+        moon_group = QGroupBox("Moon")
+        moon_layout = QFormLayout()
         self.moonrise_label = QLabel()
-        form_layout.addRow("Moonrise:", self.moonrise_label)
+        moon_layout.addRow("Moonrise:", self.moonrise_label)
 
         self.moonset_label = QLabel()
-        form_layout.addRow("Moonset:", self.moonset_label)
+        moon_layout.addRow("Moonset:", self.moonset_label)
 
         self.moon_phase_label = QLabel()
-        form_layout.addRow("Phase:", self.moon_phase_label)
+        moon_layout.addRow("Phase:", self.moon_phase_label)
 
         self.moon_illumination_label = QLabel()
-        form_layout.addRow("Illumination:", self.moon_illumination_label)
+        moon_layout.addRow("Illumination:", self.moon_illumination_label)
 
-        layout.addLayout(form_layout)
+        moon_group.setLayout(moon_layout)
+        layout.addWidget(moon_group)
 
         # Buttons
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

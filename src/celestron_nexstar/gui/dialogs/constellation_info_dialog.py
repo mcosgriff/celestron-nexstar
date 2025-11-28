@@ -26,6 +26,26 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class DoubleClickableTextEdit(QTextEdit):
+    """QTextEdit that supports custom double-click handling."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the text edit."""
+        super().__init__(parent)
+        self._double_click_handler: Any = None
+
+    def set_double_click_handler(self, handler: Any) -> None:
+        """Set the handler function to call on double-click."""
+        self._double_click_handler = handler
+
+    def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
+        """Override double-click event to call custom handler if set."""
+        if self._double_click_handler:
+            self._double_click_handler(event)
+        else:
+            super().mouseDoubleClickEvent(event)
+
+
 def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
     """
     Run an async coroutine from a sync context, handling both cases:
@@ -81,12 +101,11 @@ class ConstellationInfoDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Create scrollable text area with rich HTML formatting
-        self.info_text = QTextEdit()
+        self.info_text = DoubleClickableTextEdit()
         self.info_text.setReadOnly(True)
         self.info_text.setAcceptRichText(True)
         # Handle double-clicks to enlarge SVG
-        # Store handler reference (will be called via event filter)
-        self._double_click_handler = self._on_text_double_click
+        self.info_text.set_double_click_handler(self._on_text_double_click)
         layout.addWidget(self.info_text)
 
         # Add button box
@@ -128,29 +147,41 @@ class ConstellationInfoDialog(QDialog):
         colors = self._get_theme_colors()
         try:
             from celestron_nexstar.api.astronomy.constellations import get_prominent_constellations
-            from celestron_nexstar.api.core.enums import CelestialObjectType
-            from celestron_nexstar.api.core.utils import format_dec, format_ra
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.utils import format_dec, format_ra, ra_dec_to_alt_az
             from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.optics import get_current_configuration
+            from celestron_nexstar.api.observation.visibility import assess_visibility
 
-            # Get conditions and recommended stars outside async context
-            # (both use asyncio.run internally)
+            # Get conditions once (needed for visibility calculations)
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
-            all_recommended_stars = planner.get_recommended_objects(
-                conditions, CelestialObjectType.STAR, max_results=1000, best_for_seeing=False
-            )
+            location = get_observer_location()
+            config = get_current_configuration()
 
-            # Create a map of star names to recommended objects
-            star_map = {}
-            for rec in all_recommended_stars:
-                star_map[rec.obj.name] = rec
-                if rec.obj.common_name:
-                    star_map[rec.obj.common_name] = rec
-
-            async def _load_data() -> tuple[dict[str, Any], list[Any]]:
+            async def _load_data() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 db = get_database()
                 async with db._AsyncSession() as session:
+                    # Get sky brightness from light pollution
+                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    # Map Bortle class to SkyBrightness (matching observation_planner.py)
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,  # Suburban/urban transition
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
                     # Get constellation info
                     constellations = await get_prominent_constellations(session)
                     constellation = None
@@ -167,15 +198,65 @@ class ConstellationInfoDialog(QDialog):
                         object_type="star", constellation=self.constellation_name, limit=100
                     )
 
-                    # Match stars to their recommended objects (from outside async context)
+                    # Calculate visibility for each star directly (much faster than getting all recommended objects)
+                    # Note: stars are already CelestialObject instances from filter_objects
                     star_data = []
                     for star in stars:
-                        rec = star_map.get(star.name) or star_map.get(star.common_name or "")
-                        if rec:
-                            star_data.append(rec)
+                        # Calculate visibility info (sky_brightness is defined in the async function scope)
+                        vis_info = assess_visibility(
+                            star,
+                            config=config,
+                            sky_brightness=sky_brightness,  # type: ignore[name-defined]  # Defined in async function scope
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
 
-                    # Sort by visibility probability (chance) descending, then by priority
-                    star_data.sort(key=lambda x: (x.visibility_probability, x.priority), reverse=True)
+                        # Calculate altitude/azimuth
+                        try:
+                            alt, az = ra_dec_to_alt_az(  # noqa: RUF059
+                                star.ra_hours,
+                                star.dec_degrees,
+                                location.latitude,
+                                location.longitude,
+                                conditions.timestamp,
+                            )
+                        except Exception:
+                            alt, _az = 0.0, 0.0
+
+                        # Calculate visibility probability using planner's method
+                        # (simplified version - just use observability score as probability)
+                        visibility_probability = vis_info.observability_score
+
+                        # Apply seeing and weather factors
+                        if visibility_probability > 0:
+                            # Factor in seeing conditions
+                            seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                            # Factor in cloud cover
+                            cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                            cloud_factor = 1.0 - (cloud_cover / 100.0)
+                            visibility_probability *= seeing_factor * cloud_factor
+
+                        star_data.append(
+                            {
+                                "obj": star,
+                                "apparent_magnitude": star.magnitude,
+                                "altitude": alt,
+                                "visibility_probability": visibility_probability,
+                                "vis_info": vis_info,
+                            }
+                        )
+
+                    # Sort by visibility probability descending, then by magnitude (brighter first)
+                    def sort_key(x: dict[str, Any]) -> tuple[float, float]:
+                        """Sort key function for star data."""
+                        prob = float(x["visibility_probability"])
+                        mag = x["apparent_magnitude"]
+                        mag_val = float(mag) if mag is not None else 0.0
+                        return (prob, -mag_val)
+
+                    star_data.sort(key=sort_key, reverse=True)
 
                     return {
                         "name": constellation.name,
@@ -337,17 +418,17 @@ class ConstellationInfoDialog(QDialog):
                     "</tr>"
                 )
 
-                for rec in star_data[:50]:  # Limit to top 50 stars
-                    obj = rec.obj
+                for star_info in star_data[:50]:  # Limit to top 50 stars
+                    obj = star_info["obj"]
                     display_name = obj.common_name or obj.name
-                    mag_text = f"{rec.apparent_magnitude:.2f}" if rec.apparent_magnitude else "-"
-                    alt_text = f"{rec.altitude:.0f}°"
-                    prob_text = f"{rec.visibility_probability:.0%}"
+                    mag_text = f"{star_info['apparent_magnitude']:.2f}" if star_info["apparent_magnitude"] else "-"
+                    alt_text = f"{star_info['altitude']:.0f}°"
+                    prob_text = f"{star_info['visibility_probability']:.0%}"
 
                     # Color code by visibility probability
-                    if rec.visibility_probability >= 0.8:
+                    if star_info["visibility_probability"] >= 0.8:
                         prob_color = colors["green"]
-                    elif rec.visibility_probability >= 0.5:
+                    elif star_info["visibility_probability"] >= 0.5:
                         prob_color = colors["yellow"]
                     else:
                         prob_color = colors["text_dim"]
