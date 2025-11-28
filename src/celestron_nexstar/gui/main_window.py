@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QActionGroup, QCursor, QGuiApplication, QIcon, QMouseEvent
+from PySide6.QtGui import QActionGroup, QCursor, QFontMetrics, QGuiApplication, QIcon, QMouseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -170,6 +171,17 @@ class ClickableLabel(QLabel):
         super().mousePressEvent(event)
 
 
+class FavoriteTableWidgetItem(QTableWidgetItem):
+    """Custom QTableWidgetItem for favorites column that sorts by favorite status."""
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        """Compare items for sorting - favorites (1) come before non-favorites (0)."""
+        # Get sort value from UserRole + 1 (1 = favorite, 0 = not favorite)
+        self_val = self.data(Qt.ItemDataRole.UserRole + 1) or 0
+        other_val = other.data(Qt.ItemDataRole.UserRole + 1) or 0
+        return self_val < other_val
+
+
 class MainWindow(QMainWindow):
     """Main application window for telescope control."""
 
@@ -230,6 +242,9 @@ class MainWindow(QMainWindow):
             "info": "mdi.information-outline",
             "download": "mdi.download-outline",
             "close": "mdi.close-outline",
+            "close-circle": "mdi.close-circle-outline",
+            "check-circle": "mdi.check-circle",
+            "check": "mdi.check",
             # Communication
             "console": "mdi.console",  # No outline version available
         }
@@ -285,6 +300,31 @@ class MainWindow(QMainWindow):
 
         # Fallback to empty icon (will show as blank button)
         return QIcon()
+
+    def _create_favorite_item(self, is_favorite: bool) -> FavoriteTableWidgetItem:
+        """Create a FavoriteTableWidgetItem with check icon for favorites, blank for non-favorites."""
+        if is_favorite:
+            # Create check icon for favorite (green checkmark)
+            try:
+                import qtawesome as qta  # type: ignore[import-not-found,import-untyped]
+
+                check_icon = qta.icon("mdi.check-circle", color="#4caf50")  # Green
+                if check_icon.isNull():
+                    check_icon = self._create_icon("check-circle", ["check-circle", "check", "dialog-ok"])
+                item = FavoriteTableWidgetItem(QIcon(check_icon), "")
+            except Exception:
+                # Fallback to uncolored icon
+                check_icon = self._create_icon("check-circle", ["check-circle", "check", "dialog-ok"])
+                item = FavoriteTableWidgetItem(check_icon, "")
+
+            # Center align the icon
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        else:
+            # Blank item for non-favorites (no icon, no text)
+            item = FavoriteTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        return item
 
     def __init__(self, theme: FusionTheme | None = None) -> None:
         """Initialize the main window."""
@@ -523,132 +563,174 @@ class MainWindow(QMainWindow):
             self.addToolBar(area, toolbar)
             return toolbar
 
-        # Left side toolbar - combined Telescope Operations and Planning Tools
+        # Left side toolbar - organized with QToolButton menus
         left_toolbar = create_toolbar("Left Toolbar", Qt.ToolBarArea.LeftToolBarArea)
 
-        # Telescope Operations buttons
+        # Telescope Operations menu button
+        telescope_menu = QMenu("Telescope Operations", self)
+
         connect_icon = self._create_icon("link", ["network-connect", "network-wired", "network-workgroup"])
-        self.connect_action = left_toolbar.addAction(connect_icon, "Connect")
+        self.connect_action = telescope_menu.addAction(connect_icon, "Connect")
+        self.connect_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.connect_action.setToolTip("CONNECT")
         self.connect_action.setStatusTip("Connect to telescope")
         self.connect_action.triggered.connect(self._on_connect)
-        self.connect_action.setIcon(connect_icon)
 
         disconnect_icon = self._create_icon("link_off", ["network-disconnect", "network-offline", "network-error"])
-        self.disconnect_action = left_toolbar.addAction(disconnect_icon, "Disconnect")
+        self.disconnect_action = telescope_menu.addAction(disconnect_icon, "Disconnect")
+        self.disconnect_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.disconnect_action.setToolTip("DISCONNECT")
         self.disconnect_action.setStatusTip("Disconnect from telescope")
         self.disconnect_action.triggered.connect(self._on_disconnect)
         self.disconnect_action.setEnabled(False)
-        self.disconnect_action.setIcon(disconnect_icon)
+
+        telescope_menu.addSeparator()
 
         calibrate_icon = self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
-        self.calibrate_action = left_toolbar.addAction(calibrate_icon, "Calibrate")
+        self.calibrate_action = telescope_menu.addAction(calibrate_icon, "Calibrate")
+        self.calibrate_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.calibrate_action.setToolTip("CALIBRATE")
         self.calibrate_action.setStatusTip("Calibrate telescope")
         self.calibrate_action.triggered.connect(self._on_calibrate)
         self.calibrate_action.setEnabled(False)
-        self.calibrate_action.setIcon(calibrate_icon)
 
         align_icon = self._create_icon("my_location", ["edit-find", "system-search", "find-location"])
-        self.align_action = left_toolbar.addAction(align_icon, "Align")
+        self.align_action = telescope_menu.addAction(align_icon, "Align")
+        self.align_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.align_action.setToolTip("ALIGN")
         self.align_action.setStatusTip("Align telescope")
         self.align_action.triggered.connect(self._on_align)
         self.align_action.setEnabled(False)
-        self.align_action.setIcon(align_icon)
 
-        # Communication Log button
-        log_icon = self._create_icon("console", ["terminal", "code-tags", "text-box"])
-        self.log_toggle_action = left_toolbar.addAction(log_icon, "Communication Log")
-        self.log_toggle_action.setToolTip("COMMUNICATION LOG")
-        self.log_toggle_action.setStatusTip("Toggle communication log panel")
-        self.log_toggle_action.setCheckable(True)  # Make it a toggle button
-        self.log_toggle_action.setChecked(False)  # Start unchecked (log panel hidden)
-        self.log_toggle_action.triggered.connect(self._on_toggle_log)
-        self.log_toggle_action.setIcon(log_icon)
+        telescope_button = QToolButton()
+        telescope_button.setText("Telescope")
+        telescope_button.setIcon(connect_icon)  # Use connect icon as default
+        telescope_button.setMenu(telescope_menu)
+        telescope_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        telescope_button.setToolTip("TELESCOPE OPERATIONS")
+        telescope_button.setStatusTip("Telescope connection and control operations")
+        left_toolbar.addWidget(telescope_button)
 
-        # Spacer widget to push Planning Tools to the bottom
+        # Planning Tools menu button
+        planning_menu = QMenu("Planning Tools", self)
+
+        catalog_icon = self._create_icon("catalog", ["folder", "folder-open", "database"])
+        self.catalog_action = planning_menu.addAction(catalog_icon, "Catalog")
+        self.catalog_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.catalog_action.setToolTip("CATALOG")
+        self.catalog_action.setStatusTip("Open catalog search window")
+        self.catalog_action.triggered.connect(self._on_catalog)
+
+        favorites_icon = self._create_icon("star", ["star", "bookmark", "favorite"])
+        self.favorites_action = planning_menu.addAction(favorites_icon, "Favorites")
+        self.favorites_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.favorites_action.setToolTip("FAVORITES")
+        self.favorites_action.setStatusTip("View favorite objects")
+        self.favorites_action.triggered.connect(self._on_favorites)
+
+        observation_log_icon = self._create_icon("menu_book", ["book-open-variant", "book", "document"])
+        self.observation_log_action = planning_menu.addAction(observation_log_icon, "Observation Log")
+        self.observation_log_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.observation_log_action.setToolTip("OBSERVATION LOG")
+        self.observation_log_action.setStatusTip("View and manage observation logs")
+        self.observation_log_action.triggered.connect(self._on_observation_log)
+
+        planning_menu.addSeparator()
+
+        weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
+        self.weather_action = planning_menu.addAction(weather_icon, "Weather")
+        self.weather_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.weather_action.setToolTip("WEATHER")
+        self.weather_action.setStatusTip("View current weather conditions")
+        self.weather_action.triggered.connect(self._on_weather)
+
+        checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
+        self.checklist_action = planning_menu.addAction(checklist_icon, "Checklist")
+        self.checklist_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.checklist_action.setToolTip("CHECKLIST")
+        self.checklist_action.setStatusTip("View observation checklist")
+        self.checklist_action.triggered.connect(self._on_checklist)
+
+        time_slots_icon = self._create_icon("time_slots", ["clock-outline", "timer"])
+        self.time_slots_action = planning_menu.addAction(time_slots_icon, "Time Slots")
+        self.time_slots_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.time_slots_action.setToolTip("TIME SLOTS")
+        self.time_slots_action.setStatusTip("View available time slots")
+        self.time_slots_action.triggered.connect(self._on_time_slots)
+
+        transit_times_icon = self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
+        self.transit_times_action = planning_menu.addAction(transit_times_icon, "Transit Times")
+        self.transit_times_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.transit_times_action.setToolTip("TRANSIT TIMES")
+        self.transit_times_action.setStatusTip("View transit times")
+        self.transit_times_action.triggered.connect(self._on_transit_times)
+
+        planning_menu.addSeparator()
+
+        quick_ref_icon = self._create_icon("quick_reference", ["book-open-variant", "information"])
+        self.quick_reference_action = planning_menu.addAction(quick_ref_icon, "Quick Reference")
+        self.quick_reference_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.quick_reference_action.setToolTip("QUICK REFERENCE")
+        self.quick_reference_action.setStatusTip("Open quick reference guide")
+        self.quick_reference_action.triggered.connect(self._on_quick_reference)
+
+        glossary_icon = self._create_icon("glossary", ["book-open-page-variant", "book-open-variant"])
+        self.glossary_action = planning_menu.addAction(glossary_icon, "Glossary")
+        self.glossary_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.glossary_action.setToolTip("GLOSSARY")
+        self.glossary_action.setStatusTip("View astronomical glossary")
+        self.glossary_action.triggered.connect(self._on_glossary)
+
+        planning_button = QToolButton()
+        planning_button.setText("Planning")
+        planning_button.setIcon(catalog_icon)  # Icon for the button itself
+        planning_button.setMenu(planning_menu)
+        planning_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)  # Only opens menu
+        planning_button.setToolTip("PLANNING TOOLS")
+        planning_button.setStatusTip("Observation planning and reference tools")
+        left_toolbar.addWidget(planning_button)
+
+        # Spacer widget
         spacer_widget = QWidget()
         spacer_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         spacer_widget.setMinimumHeight(1)
         left_toolbar.addWidget(spacer_widget)
 
-        # Planning Tools buttons
+        # Tools menu button (Communication Log, Settings)
+        tools_menu = QMenu("Tools", self)
 
-        # Catalog button
-        catalog_icon = self._create_icon("catalog", ["folder", "folder-open", "database"])
-        self.catalog_action = left_toolbar.addAction(catalog_icon, "Catalog")
-        self.catalog_action.setToolTip("CATALOG")
-        self.catalog_action.setStatusTip("Open catalog search window")
-        self.catalog_action.triggered.connect(self._on_catalog)
-        self.catalog_action.setIcon(catalog_icon)
+        log_icon = self._create_icon("console", ["terminal", "code-tags", "text-box"])
+        self.log_toggle_action = tools_menu.addAction(log_icon, "Communication Log")
+        self.log_toggle_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.log_toggle_action.setToolTip("COMMUNICATION LOG")
+        self.log_toggle_action.setStatusTip("Toggle communication log panel")
+        self.log_toggle_action.setCheckable(True)
+        self.log_toggle_action.setChecked(False)
+        self.log_toggle_action.triggered.connect(self._on_toggle_log)
 
-        # Favorites button
-        favorites_icon = self._create_icon("star", ["star", "bookmark", "favorite"])
-        self.favorites_action = left_toolbar.addAction(favorites_icon, "Favorites")
-        self.favorites_action.setToolTip("FAVORITES")
-        self.favorites_action.setStatusTip("View favorite objects")
-        self.favorites_action.triggered.connect(self._on_favorites)
-        self.favorites_action.setIcon(favorites_icon)
+        tools_menu.addSeparator()
 
-        # Weather button
-        weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
-        self.weather_action = left_toolbar.addAction(weather_icon, "Weather")
-        self.weather_action.setToolTip("WEATHER")
-        self.weather_action.setStatusTip("View current weather conditions")
-        self.weather_action.triggered.connect(self._on_weather)
-        self.weather_action.setIcon(weather_icon)
-
-        checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
-        self.checklist_action = left_toolbar.addAction(checklist_icon, "Checklist")
-        self.checklist_action.setToolTip("CHECKLIST")
-        self.checklist_action.setStatusTip("View observation checklist")
-        self.checklist_action.triggered.connect(self._on_checklist)
-        self.checklist_action.setIcon(checklist_icon)
-
-        time_slots_icon = self._create_icon("time_slots", ["clock-outline", "timer"])
-        self.time_slots_action = left_toolbar.addAction(time_slots_icon, "Time Slots")
-        self.time_slots_action.setToolTip("TIME SLOTS")
-        self.time_slots_action.setStatusTip("View available time slots")
-        self.time_slots_action.triggered.connect(self._on_time_slots)
-        self.time_slots_action.setIcon(time_slots_icon)
-
-        quick_ref_icon = self._create_icon("quick_reference", ["book-open-variant", "information"])
-        self.quick_reference_action = left_toolbar.addAction(quick_ref_icon, "Quick Reference")
-        self.quick_reference_action.setToolTip("QUICK REFERENCE")
-        self.quick_reference_action.setStatusTip("Open quick reference guide")
-        self.quick_reference_action.triggered.connect(self._on_quick_reference)
-        self.quick_reference_action.setIcon(quick_ref_icon)
-
-        transit_times_icon = self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
-        self.transit_times_action = left_toolbar.addAction(transit_times_icon, "Transit Times")
-        self.transit_times_action.setToolTip("TRANSIT TIMES")
-        self.transit_times_action.setStatusTip("View transit times")
-        self.transit_times_action.triggered.connect(self._on_transit_times)
-        self.transit_times_action.setIcon(transit_times_icon)
-
-        # Glossary button
-        glossary_icon = self._create_icon("glossary", ["book-open-page-variant", "book-open-variant"])
-        self.glossary_action = left_toolbar.addAction(glossary_icon, "Glossary")
-        self.glossary_action.setToolTip("GLOSSARY")
-        self.glossary_action.setStatusTip("View astronomical glossary")
-        self.glossary_action.triggered.connect(self._on_glossary)
-        self.glossary_action.setIcon(glossary_icon)
-
-        # Add separator
-        left_toolbar.addSeparator()
-
-        # Settings button
         settings_icon = self._create_icon("settings", ["cog", "settings"])
-        self.settings_action = left_toolbar.addAction(settings_icon, "Settings")
+        self.settings_action = tools_menu.addAction(settings_icon, "Settings")
+        self.settings_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.settings_action.setToolTip("SETTINGS")
         self.settings_action.setStatusTip("View and manage settings")
         self.settings_action.triggered.connect(self._on_settings)
-        self.settings_action.setIcon(settings_icon)
 
-        # Right side toolbar - combined Celestial Objects and Communication Log
+        tools_button = QToolButton()
+        tools_button.setText("Tools")
+        tools_button.setIcon(settings_icon)  # Icon for the button itself
+        tools_button.setMenu(tools_menu)
+        tools_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)  # Only opens menu
+        tools_button.setToolTip("TOOLS")
+        tools_button.setStatusTip("Application tools and settings")
+        left_toolbar.addWidget(tools_button)
+
+        # Right side toolbar - Celestial Objects menu
         right_toolbar = create_toolbar("Right Toolbar", Qt.ToolBarArea.RightToolBarArea)
+
+        # Celestial Objects menu button
+        celestial_menu = QMenu("Celestial Objects", self)
 
         # Celestial object actions (using alpha-box-outline pattern)
         celestial_objects = [
@@ -668,15 +750,20 @@ class MainWindow(QMainWindow):
             ("zodiacal", "Zodiacal", ["alpha-z-box-outline"]),
         ]
 
+        # Store planets action for default button action
+
         for obj_name, display_name, icon_names in celestial_objects:
             icon = self._create_icon(obj_name, icon_names)
-            action = right_toolbar.addAction(icon, display_name)
+            action = celestial_menu.addAction(icon, display_name)
+            action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
             action.setToolTip(display_name.upper())
             action.setStatusTip(f"View {display_name} information")
             action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
-            action.setIcon(icon)
             # Store action for later reference
             setattr(self, f"{obj_name}_action", action)
+            # Save planets action for default button
+            if obj_name == "planets":
+                pass
             # Disable buttons until API is implemented
             if obj_name == "occultations":
                 action.setEnabled(False)
@@ -690,6 +777,17 @@ class MainWindow(QMainWindow):
                 action.setEnabled(False)
                 action.setToolTip("Zodiacal (Coming Soon)")
                 action.setStatusTip("Zodiacal feature is not yet implemented")
+
+        celestial_button = QToolButton()
+        celestial_button.setText("Objects")
+        # Use planets icon for the button itself
+        planets_icon = self._create_icon("planets", ["alpha-p-box-outline"])
+        celestial_button.setIcon(planets_icon)
+        celestial_button.setMenu(celestial_menu)
+        celestial_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)  # Only opens menu
+        celestial_button.setToolTip("CELESTIAL OBJECTS")
+        celestial_button.setStatusTip("View information about celestial objects")
+        right_toolbar.addWidget(celestial_button)
 
     def _refresh_toolbar_icons(self) -> None:
         """Refresh toolbar icons after window is shown."""
@@ -847,50 +945,84 @@ class MainWindow(QMainWindow):
     def _create_objects_table(self, obj_type: CelestialObjectType) -> QTableWidget:
         """Create a table widget displaying objects of the specified type."""
         table = QTableWidget()
-        # For constellation and asterism tabs, show simple name list
+        # For constellation and asterism tabs, show name list with favorites
         if obj_type == CelestialObjectType.CONSTELLATION:
-            table.setColumnCount(1)
-            table.setHorizontalHeaderLabels(["Constellation"])
+            table.setColumnCount(2)
+            table.setHorizontalHeaderLabels(["Constellation", "Favorite"])
         elif obj_type == CelestialObjectType.ASTERISM:
-            table.setColumnCount(1)
-            table.setHorizontalHeaderLabels(["Asterism"])
+            table.setColumnCount(2)
+            table.setHorizontalHeaderLabels(["Asterism", "Favorite"])
         # For star tab, add a Constellation column
         elif obj_type == CelestialObjectType.STAR:
+            table.setColumnCount(11)
+            table.setHorizontalHeaderLabels(
+                [
+                    "Priority",
+                    "Name",
+                    "Type",
+                    "Constellation",
+                    "Mag",
+                    "Alt",
+                    "Transit",
+                    "Moon Sep",
+                    "Chance",
+                    "Tips",
+                    "Favorite",
+                ]
+            )
+        else:
             table.setColumnCount(10)
             table.setHorizontalHeaderLabels(
-                ["Priority", "Name", "Type", "Constellation", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
-            )
-        else:
-            table.setColumnCount(9)
-            table.setHorizontalHeaderLabels(
-                ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips"]
+                ["Priority", "Name", "Type", "Mag", "Alt", "Transit", "Moon Sep", "Chance", "Tips", "Favorite"]
             )
 
-        # Set column widths
+        # Set column widths - all columns are resizable with minimum width based on header text
         header = table.horizontalHeader()
+
+        # Get header labels for minimum width calculation
         if obj_type == CelestialObjectType.CONSTELLATION:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Constellation name
+            header_labels = ["Constellation", "Favorite"]
         elif obj_type == CelestialObjectType.ASTERISM:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Asterism name
+            header_labels = ["Asterism", "Favorite"]
+        elif obj_type == CelestialObjectType.STAR:
+            header_labels = [
+                "Priority",
+                "Name",
+                "Type",
+                "Constellation",
+                "Mag",
+                "Alt",
+                "Transit",
+                "Moon Sep",
+                "Chance",
+                "Tips",
+                "Favorite",
+            ]
         else:
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Priority
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Type
-            if obj_type == CelestialObjectType.STAR:
-                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Constellation
-                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Mag
-                header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Alt
-                header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Transit
-                header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
-                header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # Chance
-                header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)  # Tips
-            else:
-                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Mag
-                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Alt
-                header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Transit
-                header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Moon Sep
-                header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # Chance
-                header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)  # Tips
+            header_labels = [
+                "Priority",
+                "Name",
+                "Type",
+                "Mag",
+                "Alt",
+                "Transit",
+                "Moon Sep",
+                "Chance",
+                "Tips",
+                "Favorite",
+            ]
+
+        # Calculate minimum widths based on header text
+        font_metrics = QFontMetrics(header.font())
+        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]  # Add 20px padding
+
+        # Set all columns to Interactive mode (resizable) and set minimum widths
+        for col in range(table.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            header.setMinimumSectionSize(min_widths[col])
+
+        # Store property to track if initial resize has been done
+        table.setProperty("initial_resize_done", False)
 
         # Enable sorting
         table.setSortingEnabled(True)
@@ -1026,21 +1158,9 @@ class MainWindow(QMainWindow):
             priority_stars = "★" * (6 - obj_rec.priority)
             table.setItem(row, 0, QTableWidgetItem(priority_stars))
 
-            # Name (with favorite indicator)
+            # Name (no star indicator - we have a dedicated favorites column)
             obj = obj_rec.obj
             display_name = obj.common_name or obj.name
-
-            # Check if favorite and add star indicator
-            try:
-                import asyncio
-
-                from celestron_nexstar.api.favorites import is_favorite
-
-                is_fav = asyncio.run(is_favorite(obj.name))
-                if is_fav:
-                    display_name = f"★ {display_name}"
-            except Exception:
-                pass  # If check fails, just show name without star
 
             name_item = QTableWidgetItem(display_name)
             # Store object name in item data for context menu
@@ -1094,6 +1214,25 @@ class MainWindow(QMainWindow):
                 tips_text = tips_text[:47] + "..."
             table.setItem(row, 8 + col_offset, QTableWidgetItem(tips_text))
 
+            # Favorite (check/X icon)
+            favorite_col = 9 + col_offset  # Last column
+            try:
+                import asyncio
+
+                from celestron_nexstar.api.favorites import is_favorite
+
+                is_fav = asyncio.run(is_favorite(obj.name))
+            except Exception:
+                # If check fails, default to not favorite
+                is_fav = False
+            favorite_item = self._create_favorite_item(is_fav)
+            # Store object name in item data for context menu
+            favorite_item.setData(Qt.ItemDataRole.UserRole, obj.name)
+            # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
+            # DisplayRole is empty string so no text shows
+            favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
+            table.setItem(row, favorite_col, favorite_item)
+
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
 
@@ -1108,6 +1247,18 @@ class MainWindow(QMainWindow):
             header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
             table.setProperty("sort_column", 0)
             table.setProperty("sort_order", Qt.SortOrder.DescendingOrder)
+
+        # Resize columns to contents after initial population (one-time)
+        if not table.property("initial_resize_done"):
+            # Temporarily switch to ResizeToContents to set initial sizes
+            for col in range(table.columnCount()):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+            # Force a resize event
+            table.resizeColumnsToContents()
+            # Switch back to Interactive mode for manual resizing
+            for col in range(table.columnCount()):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            table.setProperty("initial_resize_done", True)
 
     def _show_no_data_message(self, table: QTableWidget, obj_type_str: str) -> None:
         """Show a message when data was loaded but no objects match criteria."""
@@ -1214,25 +1365,29 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(sorted_names))
 
         for row, constellation_name in enumerate(sorted_names):
-            # Constellation name (with favorite indicator)
-            display_name = constellation_name
+            # Constellation name (no star indicator - we have a dedicated favorites column)
+            name_item = QTableWidgetItem(constellation_name)
+            # Store object name in item data for context menu
+            name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
+            table.setItem(row, 0, name_item)
 
-            # Check if favorite and add star indicator
+            # Favorite (check/X icon)
             try:
                 import asyncio
 
                 from celestron_nexstar.api.favorites import is_favorite
 
                 is_fav = asyncio.run(is_favorite(constellation_name))
-                if is_fav:
-                    display_name = f"★ {display_name}"
             except Exception:
-                pass  # If check fails, just show name without star
-
-            name_item = QTableWidgetItem(display_name)
+                # If check fails, default to not favorite
+                is_fav = False
+            favorite_item = self._create_favorite_item(is_fav)
             # Store object name in item data for context menu
-            name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
-            table.setItem(row, 0, name_item)
+            favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
+            # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
+            # DisplayRole is empty string so no text shows
+            favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
+            table.setItem(row, 1, favorite_item)
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
@@ -1242,6 +1397,24 @@ class MainWindow(QMainWindow):
         header.setSortIndicator(0, Qt.SortOrder.AscendingOrder)
         table.setProperty("sort_column", 0)
         table.setProperty("sort_order", Qt.SortOrder.AscendingOrder)
+
+        # Set column resize modes and minimum widths
+        obj_type_str = table.property("object_type")
+        if obj_type_str == "constellation":
+            header_labels = ["Constellation", "Favorite"]
+        elif obj_type_str == "asterism":
+            header_labels = ["Asterism", "Favorite"]
+        else:
+            header_labels = ["Constellation", "Favorite"]  # Fallback
+
+        # Calculate minimum widths based on header text
+        font_metrics = QFontMetrics(header.font())
+        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]  # Add 20px padding
+
+        # Set all columns to Interactive mode and minimum widths
+        for col in range(table.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            header.setMinimumSectionSize(min_widths[col])
 
     def _create_table_toolbar(self) -> None:
         """Create toolbar for table controls in the top toolbar area."""
@@ -1550,6 +1723,12 @@ class MainWindow(QMainWindow):
             fav_action = menu.addAction("☆ Add to Favorites")
             fav_action.triggered.connect(lambda: self._on_context_menu_favorite(object_name, table))
 
+        menu.addSeparator()
+
+        # Log Observation action
+        log_observation_action = menu.addAction("Log Observation")
+        log_observation_action.triggered.connect(lambda: self._on_context_menu_log_observation(object_name))
+
         # Show menu at cursor position
         menu.exec(table.mapToGlobal(position))
 
@@ -1620,6 +1799,13 @@ class MainWindow(QMainWindow):
                 self._refresh_table_favorites(table)
         except Exception as e:
             logger.error(f"Error removing favorite: {e}", exc_info=True)
+
+    def _on_context_menu_log_observation(self, object_name: str) -> None:
+        """Handle context menu log observation action."""
+        from celestron_nexstar.gui.dialogs.observation_edit_dialog import ObservationEditDialog
+
+        dialog = ObservationEditDialog(self, object_name=object_name)
+        dialog.exec()
 
     def _refresh_table_favorites(self, table: QTableWidget) -> None:
         """Refresh favorite indicators in a table."""
@@ -1891,6 +2077,13 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.gui.dialogs.favorites_dialog import FavoritesDialog
 
         dialog = FavoritesDialog(self)
+        dialog.exec()
+
+    def _on_observation_log(self) -> None:
+        """Handle observation log button click."""
+        from celestron_nexstar.gui.dialogs.observation_log_dialog import ObservationLogDialog
+
+        dialog = ObservationLogDialog(self)
         dialog.exec()
 
     def _on_checklist(self) -> None:

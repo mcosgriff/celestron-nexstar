@@ -953,13 +953,14 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         # Verify that faint objects were not scored (filtered out)
         self.assertTrue(all(rec.obj.magnitude is None or rec.obj.magnitude <= 10 for rec in result))
 
+    @patch("celestron_nexstar.api.observation.planning_utils.get_object_visibility_timeline")
     @patch("celestron_nexstar.api.observation.observation_planner.get_moon_info")
     @patch("celestron_nexstar.api.observation.observation_planner.get_database")
     @patch("celestron_nexstar.api.observation.observation_planner.filter_visible_objects")
     @patch("celestron_nexstar.api.observation.observation_planner.get_current_configuration")
     @patch.object(ObservationPlanner, "_score_object")
     def test_get_recommended_objects_with_direct_object_type_filter(
-        self, mock_score_object, mock_get_config, mock_filter_visible, mock_get_db, mock_get_moon
+        self, mock_score_object, mock_get_config, mock_filter_visible, mock_get_db, mock_get_moon, mock_timeline
     ):
         """Test filtering with direct CelestialObjectType"""
         from celestron_nexstar.api.observation.optics import (
@@ -1046,6 +1047,21 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
             )
 
         mock_score_object.side_effect = score_side_effect
+
+        # Mock timeline to return that objects are visible (not never visible)
+        from celestron_nexstar.api.observation.planning_utils import ObjectVisibilityTimeline
+
+        mock_timeline_obj = ObjectVisibilityTimeline(
+            object_name="Vega",
+            rise_time=None,
+            transit_time=None,
+            set_time=None,
+            max_altitude=45.0,
+            is_circumpolar=False,
+            is_always_visible=False,
+            is_never_visible=False,
+        )
+        mock_timeline.return_value = mock_timeline_obj
 
         result = self.planner.get_recommended_objects(
             self.conditions, target_types=CelestialObjectType.STAR, max_results=10

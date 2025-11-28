@@ -8,6 +8,7 @@ capabilities to recommend what to observe tonight.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -232,9 +233,25 @@ class ObservationPlanner:
             # Nighttime: use current hour weather (rounded down)
             target_weather_time = now_utc.replace(minute=0, second=0, microsecond=0)
 
-        # Try to get weather from hourly forecast at target time, fall back to current weather
+        # Determine if we should use current weather (if after sunset and checking for "now")
+        use_current_weather = False
+        if is_dark and target_weather_time:
+            # If it's nighttime and we're checking for current hour (within 1 hour), use current weather
+            time_diff_hours = abs((target_weather_time - now_utc).total_seconds() / 3600)
+            if time_diff_hours <= 1.0:
+                use_current_weather = True
+
+        # Try to get weather from database first (if after sunset and checking for "now")
+        # Otherwise, use hourly forecast
         weather = None
-        if target_weather_time:
+        if use_current_weather:
+            # Check database for current weather first, then API if needed
+            # fetch_weather already checks database and stores if missing
+            with contextlib.suppress(Exception):
+                weather = asyncio.run(fetch_weather(observer_location))
+
+        # If not using current weather, try hourly forecast
+        if weather is None and target_weather_time:
             try:
                 from celestron_nexstar.api.location.weather import WeatherData, fetch_hourly_weather_forecast
 
@@ -267,10 +284,46 @@ class ObservationPlanner:
             except Exception:
                 pass
 
-        # Fall back to current weather if we don't have hourly forecast data
+        # Fall back to current weather if we don't have forecast data
+        # Also prefer current weather if it's significantly different and more recent
         if weather is None:
             # Run async function - this is a sync entry point, so asyncio.run() is safe
             weather = asyncio.run(fetch_weather(observer_location))
+        elif not use_current_weather:
+            # Get current weather to compare - if current weather shows clear skies (0-20%)
+            # and forecast shows heavy clouds (>80%), prefer current weather
+            # This handles cases where forecast data is stale or incorrect
+            try:
+                current_weather = asyncio.run(fetch_weather(observer_location))
+                if (
+                    current_weather
+                    and current_weather.cloud_cover_percent is not None
+                    and weather.cloud_cover_percent is not None
+                ):
+                    # If current weather is clear (0-20%) and forecast is very cloudy (>80%),
+                    # prefer current weather (forecast may be stale or incorrect)
+                    # Also check if we're checking for "now" or very near future (within 6 hours)
+                    time_diff_hours = 0.0
+                    if target_weather_time is not None:
+                        time_diff_hours = abs((target_weather_time - now_utc).total_seconds() / 3600)
+
+                    # Prefer current weather if:
+                    # 1. Current is clear (0-20%) and forecast is very cloudy (>80%), OR
+                    # 2. Current is clear (0-20%) and forecast is cloudy (>60%) and we're checking for near-term (within 6 hours)
+                    if (current_weather.cloud_cover_percent <= 20 and weather.cloud_cover_percent > 80) or (
+                        current_weather.cloud_cover_percent <= 20
+                        and weather.cloud_cover_percent > 60
+                        and time_diff_hours <= 6
+                    ):
+                        # Use current weather instead of forecast
+                        logger.info(
+                            f"Using current weather ({current_weather.cloud_cover_percent:.0f}% clouds) "
+                            f"instead of forecast ({weather.cloud_cover_percent:.0f}% clouds) "
+                            f"for time {time_diff_hours:.1f} hours away"
+                        )
+                        weather = current_weather
+            except Exception:
+                pass
 
         weather_status, weather_warning = assess_observing_conditions(weather)
         is_weather_suitable = weather_status in ("excellent", "good", "fair")
@@ -511,6 +564,7 @@ class ObservationPlanner:
 
             filtered_objects = []
             seen_coordinates = set()  # Track seen coordinates to avoid duplicates
+            seen_names = set()  # Track seen names to avoid duplicates
 
             # Check if target_types is a direct CelestialObjectType (not a list)
             is_direct_object_type = isinstance(target_types, CelestialObjectType)
@@ -521,7 +575,10 @@ class ObservationPlanner:
                 # This handles cases like M31 = NGC 224 = Andromeda Galaxy
                 coord_key = (round(obj.ra_hours, 2), round(obj.dec_degrees, 1))
 
-                if coord_key in seen_coordinates:
+                # Also check by name (normalized) to catch exact duplicates
+                name_key = (obj.name.lower().strip(), obj.common_name.lower().strip() if obj.common_name else None)
+
+                if coord_key in seen_coordinates or name_key[0] in seen_names:
                     continue  # Skip duplicate (same object, different catalog entry)
 
                 # Handle direct object type filtering (e.g., "galaxy", "star", "planet")
@@ -540,6 +597,9 @@ class ObservationPlanner:
                         # and DOUBLE_STAR != STAR
                         filtered_objects.append(obj)
                         seen_coordinates.add(coord_key)
+                        seen_names.add(name_key[0])
+                        if name_key[1]:
+                            seen_names.add(name_key[1])
                 # Handle ObservingTarget category filtering
                 elif isinstance(target_types, list) and (
                     (ObservingTarget.PLANETS in target_types and obj.object_type.value == "planet")
@@ -552,6 +612,9 @@ class ObservationPlanner:
                 ):
                     filtered_objects.append(obj)
                     seen_coordinates.add(coord_key)
+                    seen_names.add(name_key[0])
+                    if name_key[1]:
+                        seen_names.add(name_key[1])
             all_objects = filtered_objects
 
         # Filter by visibility
@@ -570,6 +633,30 @@ class ObservationPlanner:
             dt=conditions.timestamp,
         )
 
+        # Filter out objects that are never visible from this location
+        # (objects whose transit altitude is below the horizon)
+        from celestron_nexstar.api.observation.planning_utils import get_object_visibility_timeline
+
+        truly_visible_pairs = []
+        for obj, vis_info in visible_pairs:
+            try:
+                timeline = get_object_visibility_timeline(
+                    obj,
+                    observer_lat=conditions.latitude,
+                    observer_lon=conditions.longitude,
+                    start_time=conditions.timestamp,
+                    days=1,
+                )
+                # Skip objects that are never visible (transit altitude below horizon)
+                if timeline.is_never_visible:
+                    continue
+            except Exception:
+                # If timeline calculation fails, keep the object (don't filter it out)
+                pass
+            truly_visible_pairs.append((obj, vis_info))
+
+        visible_pairs = truly_visible_pairs
+
         # Filter by seeing conditions if poor seeing
         # Poor seeing (<50): Exclude very faint objects that require excellent seeing
         if conditions.seeing_score < 50:
@@ -585,7 +672,14 @@ class ObservationPlanner:
 
         # Score and rank objects (with cached moon position)
         recommendations = []
+        seen_recommendations = set()  # Track seen objects to avoid duplicates in recommendations
         for obj, vis_info in visible_pairs:
+            # Additional deduplication check - use name as key
+            obj_key = obj.name.lower().strip()
+            if obj_key in seen_recommendations:
+                continue  # Skip if we've already added this object
+            seen_recommendations.add(obj_key)
+
             rec = self._score_object(obj, conditions, vis_info, moon_ra=moon_ra, moon_dec=moon_dec)
             if rec:
                 recommendations.append(rec)
@@ -980,23 +1074,41 @@ class ObservationPlanner:
         else:
             if obj.object_type.value == "planet":
                 return 1
-            if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
+            # For good seeing, prioritize based on object type and brightness
+            if obj.object_type.value == "double_star":
+                return 1
+            if (
+                conditions.light_pollution.bortle_class.value <= 3
+                and obj.magnitude
+                and obj.magnitude < 8
+                and obj.object_type.value != "star"
+            ):
+                # Only apply to non-stars here (stars handled below)
                 return 2
 
-        # Priority 2: Bright objects in dark skies
-        if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
-            return 2
+        # Priority 3: Objects well positioned (high altitude) - check before star-specific logic
+        if vis_info.altitude_deg and vis_info.altitude_deg > 60:
+            return 3
 
         # Priority 2-3: Bright stars (navigation stars, bright named stars)
+        # Handle stars separately with more granular priority
         if obj.object_type.value == "star":
+            # Check for bright stars in dark skies first (priority 2)
+            if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
+                return 2
             if obj.magnitude and obj.magnitude < 2.0:  # Very bright stars (1st magnitude and brighter)
                 return 2
             elif (obj.magnitude and obj.magnitude < 4.0) or obj.common_name:  # Bright stars (2nd-3rd magnitude)
                 return 3
+            elif obj.magnitude and obj.magnitude < 6.0:  # Moderately bright stars
+                return 4
+            else:
+                # Faint stars or stars without magnitude
+                return 5
 
-        # Priority 3: Objects well positioned (high altitude)
-        if vis_info.altitude_deg and vis_info.altitude_deg > 60:
-            return 3
+        # Priority 2: Bright objects in dark skies (non-stars)
+        if conditions.light_pollution.bortle_class.value <= 3 and obj.magnitude and obj.magnitude < 8:
+            return 2
 
         # Priority 4: Messier objects
         if obj.catalog == "messier":
