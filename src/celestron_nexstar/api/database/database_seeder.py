@@ -260,6 +260,16 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
         }
         filtered_item = {k: v for k, v in item.items() if k in model_fields}
 
+        # If common_name is null but description starts with "The [Name] -", extract it
+        if not filtered_item.get("common_name") and item.get("description"):
+            import re
+
+            description = item["description"]
+            # Match pattern like "The Hunter -" or "The Great Dog -"
+            match = re.match(r"^(The [^-]+) -", description)
+            if match:
+                filtered_item["common_name"] = match.group(1)
+
         # Create new constellation
         constellation = ConstellationModel(**filtered_item)
         db_session.add(constellation)

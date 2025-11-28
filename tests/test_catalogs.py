@@ -323,9 +323,9 @@ class TestSearchObjects(unittest.TestCase):
     def test_search_objects_exact_match_name(self, mock_get_db):
         """Test search_objects finds exact match by name"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.database.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import GalaxyModel
 
-        mock_model = MagicMock(spec=CelestialObjectModel)
+        mock_model = MagicMock(spec=GalaxyModel)
         mock_model.name = "M31"
         mock_model.common_name = "Andromeda Galaxy"
         mock_model.ra_hours = 0.7117
@@ -341,11 +341,24 @@ class TestSearchObjects(unittest.TestCase):
 
         self.mock_db._model_to_object.return_value = self.mock_obj
         # Mock the async execute result - search_objects uses result.scalars().all()
-        mock_scalars = MagicMock()
-        mock_scalars.all.return_value = [mock_model]
-        mock_result = MagicMock()
-        mock_result.scalars.return_value = mock_scalars
-        self.mock_session.execute = AsyncMock(return_value=mock_result)
+        # search_objects searches: StarModel, DoubleStarModel, GalaxyModel, NebulaModel,
+        # ClusterModel, PlanetModel, MoonModel, then AsterismModel, then ConstellationModel
+        # We need to return empty for all except GalaxyModel
+        mock_scalars_match = MagicMock()
+        mock_scalars_match.all.return_value = [mock_model]
+        mock_result_match = MagicMock()
+        mock_result_match.scalars.return_value = mock_scalars_match
+
+        mock_scalars_empty = MagicMock()
+        mock_scalars_empty.all.return_value = []
+        mock_result_empty = MagicMock()
+        mock_result_empty.scalars.return_value = mock_scalars_empty
+
+        # Return empty for all model types except GalaxyModel (7th call, index 6)
+        # Then empty for AsterismModel, then empty for ConstellationModel
+        self.mock_session.execute = AsyncMock(
+            side_effect=[mock_result_empty] * 6 + [mock_result_match] + [mock_result_empty] * 2
+        )
 
         result = asyncio.run(search_objects("M31"))
 
@@ -394,14 +407,14 @@ class TestSearchObjects(unittest.TestCase):
     def test_search_objects_substring_match_name(self, mock_get_db):
         """Test search_objects finds substring matches in name"""
         mock_get_db.return_value = self.mock_db
-        from celestron_nexstar.api.database.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import GalaxyModel
 
-        mock_model = MagicMock(spec=CelestialObjectModel)
+        mock_model = MagicMock(spec=GalaxyModel)
         mock_model.name = "M31"
         mock_model.common_name = None
         self.mock_db._model_to_object.return_value = self.mock_obj
-        # First call returns empty (no exact match), second call returns substring match in name
-        # The function makes: exact query, name query, common_name query, FTS query
+        # search_objects searches across multiple model types
+        # For substring match, it searches: exact (all models empty), then name substring (all models)
         mock_scalars_empty = MagicMock()
         mock_scalars_empty.all.return_value = []
         mock_scalars_match = MagicMock()
@@ -410,9 +423,16 @@ class TestSearchObjects(unittest.TestCase):
         mock_result_empty.scalars.return_value = mock_scalars_empty
         mock_result_match = MagicMock()
         mock_result_match.scalars.return_value = mock_scalars_match
-        # search_objects does: exact query (empty), name query (match), common_name query (empty), FTS (empty)
+        # search_objects makes many queries:
+        # - Exact match: 7 model types + ConstellationModel + AsterismModel = 9 queries (all empty)
+        # - Name substring: 7 model types + ConstellationModel + AsterismModel = 9 queries (match on 7th, GalaxyModel)
+        # - Common name: 7 model types + ConstellationModel = 8 queries (all empty)
+        # - Alt names: AsterismModel = 1 query (empty)
+        # - Description: 7 model types + ConstellationModel + AsterismModel = 9 queries (all empty)
+        # Total: 9 + 9 + 8 + 1 + 9 = 36 queries
+        # Match on query 16 (9 exact + 6 empty name + 1 match)
         self.mock_session.execute = AsyncMock(
-            side_effect=[mock_result_empty, mock_result_match, mock_result_empty, mock_result_empty]
+            side_effect=[mock_result_empty] * 15 + [mock_result_match] + [mock_result_empty] * 20
         )
 
         result = asyncio.run(search_objects("M3"))

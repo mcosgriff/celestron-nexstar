@@ -107,7 +107,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
         """Test getting altitude/azimuth for a fixed object"""
         mock_get_location.return_value = MagicMock(latitude=40.0, longitude=-100.0)
         mock_is_dynamic.return_value = False
-        mock_ra_dec_to_alt_az.return_value = (45.0, 180.0)
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec_to_alt_az.return_value = (180.0, 45.0)
 
         alt, az = get_object_altitude_azimuth(self.test_obj)
 
@@ -126,7 +127,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
         mock_get_location.return_value = MagicMock(latitude=40.0, longitude=-100.0)
         mock_is_dynamic.return_value = True
         mock_get_position.return_value = (12.0, 20.0)  # RA, Dec
-        mock_ra_dec_to_alt_az.return_value = (30.0, 90.0)
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec_to_alt_az.return_value = (90.0, 30.0)
 
         dynamic_obj = CelestialObject(
             name="Jupiter",
@@ -149,7 +151,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
     def test_get_object_altitude_azimuth_with_explicit_location(self, mock_is_dynamic, mock_ra_dec_to_alt_az):
         """Test getting altitude/azimuth with explicit observer location"""
         mock_is_dynamic.return_value = False
-        mock_ra_dec_to_alt_az.return_value = (50.0, 270.0)
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec_to_alt_az.return_value = (270.0, 50.0)
 
         alt, az = get_object_altitude_azimuth(self.test_obj, observer_lat=35.0, observer_lon=-120.0)
 
@@ -161,7 +164,8 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
     def test_get_object_altitude_azimuth_with_datetime(self, mock_is_dynamic, mock_ra_dec_to_alt_az):
         """Test getting altitude/azimuth with explicit datetime"""
         mock_is_dynamic.return_value = False
-        mock_ra_dec_to_alt_az.return_value = (60.0, 0.0)
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec_to_alt_az.return_value = (0.0, 60.0)
 
         test_dt = datetime(2024, 6, 15, 20, 0, tzinfo=UTC)
         alt, az = get_object_altitude_azimuth(self.test_obj, dt=test_dt)

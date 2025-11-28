@@ -656,12 +656,30 @@ class ObservationPlanner:
         Calculate the probability (0.0-1.0) of actually seeing an object given current conditions.
 
         This factors in:
+        - Daytime/nighttime (objects not visible during day except Sun)
         - Seeing conditions (0-100)
         - Cloud cover
         - Overall quality score
         - Object type sensitivity to conditions
         - Object brightness relative to limiting magnitude
         """
+        # Check if it's daytime - stars and most objects are not visible during the day
+        # (Sun is the only exception, but we don't typically check visibility for it)
+        is_daytime = False
+        try:
+            sun_info = get_sun_info(conditions.latitude, conditions.longitude, conditions.timestamp)
+            if sun_info:
+                is_daytime = sun_info.is_daytime
+        except Exception:
+            # If we can't determine, assume nighttime (conservative)
+            is_daytime = False
+
+        # During daytime, most celestial objects are not visible (sky is too bright)
+        # Only the Sun itself would be visible, but we don't check visibility for it
+        if is_daytime and obj.object_type.value != "sun":
+            daytime_explanations = ["Daytime - object not visible (sky too bright)"]
+            return (0.0, daytime_explanations)
+
         # Start with observability score (altitude, magnitude, etc.)
         prob = vis_info.observability_score
 

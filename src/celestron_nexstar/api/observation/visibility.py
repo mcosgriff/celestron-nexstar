@@ -127,7 +127,8 @@ def get_object_altitude_azimuth(
         dec_degrees = obj.dec_degrees
 
     # Convert to altitude/azimuth
-    alt_deg, az_deg = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, dt)
+    # Note: ra_dec_to_alt_az returns (azimuth, altitude), not (altitude, azimuth)
+    az_deg, alt_deg = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, dt)
 
     return alt_deg, az_deg
 

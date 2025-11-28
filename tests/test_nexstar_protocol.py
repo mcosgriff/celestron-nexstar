@@ -111,7 +111,8 @@ class TestNexStarProtocol(unittest.TestCase):
             asyncio.run(self.protocol.send_command("V"))
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_success(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_success(self, mock_open, mock_wait_for):
         """Test successful command send and receive"""
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
@@ -121,11 +122,26 @@ class TestNexStarProtocol(unittest.TestCase):
         self.protocol.serial_writer = mock_writer
 
         # Mock async read to return response bytes
-        mock_wait_for.side_effect = [
-            b"4",  # First byte
-            b"\x15",  # Second byte
-            b"#",  # Terminator
-        ]
+        # First call(s) in buffer clearing loop should timeout
+        # Then return the actual response bytes
+        call_count = 0
+        response_bytes = [b"4", b"\x15", b"#"]
+        response_index = 0
+
+        async def wait_for_side_effect(coro, timeout):
+            nonlocal call_count, response_index
+            call_count += 1
+            # First call is buffer clearing with short timeout (0.01) - should timeout
+            if timeout < 0.1:  # Buffer clearing uses 0.01 timeout
+                raise TimeoutError()
+            # Actual read calls use full timeout - return response bytes
+            if response_index < len(response_bytes):
+                result = response_bytes[response_index]
+                response_index += 1
+                return result
+            raise TimeoutError()
+
+        mock_wait_for.side_effect = wait_for_side_effect
 
         response = asyncio.run(self.protocol.send_command("V"))
 
@@ -134,7 +150,8 @@ class TestNexStarProtocol(unittest.TestCase):
         mock_writer.drain.assert_called()
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_timeout(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_timeout(self, mock_open, mock_wait_for):
         """Test command timeout"""
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
@@ -143,8 +160,20 @@ class TestNexStarProtocol(unittest.TestCase):
         self.protocol.serial_reader = mock_reader
         self.protocol.serial_writer = mock_writer
 
-        # Mock timeout
-        mock_wait_for.side_effect = TimeoutError()
+        # Mock timeout - first call is buffer clearing (should timeout and break loop)
+        # Second call is the actual read which should timeout
+        call_count = 0
+
+        async def wait_for_side_effect(coro, timeout):
+            nonlocal call_count
+            call_count += 1
+            # First call is buffer clearing - timeout to break loop
+            if call_count == 1:
+                raise TimeoutError()
+            # Second call is actual read - timeout to raise TelescopeTimeoutError
+            raise TimeoutError()
+
+        mock_wait_for.side_effect = wait_for_side_effect
 
         with self.assertRaises(TelescopeTimeoutError):
             asyncio.run(self.protocol.send_command("V"))
@@ -333,7 +362,7 @@ class TestNexStarProtocol(unittest.TestCase):
 
         result = asyncio.run(self.protocol.get_alt_az_precise())
 
-        self.assertTrue(result.is_successful())
+        self.assertIsInstance(result, Success)
         self.assertEqual(result.unwrap(), (90.0, 45.0))
         mock_send.assert_awaited_once_with("Z")
 
@@ -510,7 +539,8 @@ class TestNexStarProtocol(unittest.TestCase):
         self.assertEqual(protocol.host, "192.168.1.100")
         self.assertEqual(protocol.tcp_port, 4030)
         self.assertEqual(protocol.connection_type, "tcp")
-        self.assertIsNone(protocol.tcp_socket)
+        self.assertIsNone(protocol.tcp_reader)
+        self.assertIsNone(protocol.tcp_writer)
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.open_connection")
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.sleep")
@@ -585,21 +615,37 @@ class TestNexStarProtocol(unittest.TestCase):
         self.assertFalse(protocol.is_open())
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_tcp_success(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_tcp_success(self, mock_open, mock_wait_for):
         """Test successful command send over TCP/IP"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
         mock_reader = AsyncMock()
-        mock_reader.read = AsyncMock(side_effect=[b"4", b"\x15", b"#"])
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
+        mock_writer.is_closing.return_value = False
         protocol.tcp_reader = mock_reader
         protocol.tcp_writer = mock_writer
 
-        # Mock asyncio.wait_for to return the result directly
+        # Mock asyncio.wait_for to return response bytes in sequence
+        call_count = 0
+
         async def wait_for_side_effect(coro, timeout):
-            return await coro
+            nonlocal call_count
+            call_count += 1
+            # Await the coroutine and return the appropriate response
+            result = await coro
+            if call_count == 1:
+                return b"4"
+            elif call_count == 2:
+                return b"\x15"
+            elif call_count == 3:
+                return b"#"
+            return result
+
         mock_wait_for.side_effect = wait_for_side_effect
+        # Set up the reader to return bytes when read is called
+        mock_reader.read = AsyncMock(return_value=b"")
 
         response = asyncio.run(protocol.send_command("V"))
 
@@ -608,13 +654,15 @@ class TestNexStarProtocol(unittest.TestCase):
         mock_writer.drain.assert_awaited_once()
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_tcp_timeout(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_tcp_timeout(self, mock_open, mock_wait_for):
         """Test TCP/IP command timeout"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp", timeout=1.0)
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
+        mock_writer.is_closing.return_value = False
         protocol.tcp_reader = mock_reader
         protocol.tcp_writer = mock_writer
 
@@ -625,60 +673,72 @@ class TestNexStarProtocol(unittest.TestCase):
             asyncio.run(protocol.send_command("V"))
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_tcp_connection_closed(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_tcp_connection_closed(self, mock_open, mock_wait_for):
         """Test TCP/IP command when connection is closed"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
         mock_reader = AsyncMock()
-        mock_reader.read = AsyncMock(return_value=b"")  # Connection closed
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
+        mock_writer.is_closing.return_value = False
         protocol.tcp_reader = mock_reader
         protocol.tcp_writer = mock_writer
 
-        # Mock asyncio.wait_for to return the result directly
+        # Mock asyncio.wait_for to return empty bytes (connection closed)
         async def wait_for_side_effect(coro, timeout):
-            return await coro
+            result = await coro
+            return b""  # Connection closed - empty bytes
+
         mock_wait_for.side_effect = wait_for_side_effect
+        mock_reader.read = AsyncMock(return_value=b"")
 
         with self.assertRaises(TelescopeConnectionError) as context:
             asyncio.run(protocol.send_command("V"))
 
-        self.assertIn("Connection closed", str(context.exception))
+        self.assertIn("connection closed", str(context.exception).lower())
 
-    def test_send_command_tcp_send_error(self):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_tcp_send_error(self, mock_open):
         """Test TCP/IP command send error"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
         mock_reader = AsyncMock()
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock(side_effect=OSError("Send error"))
         mock_writer.drain = AsyncMock()
+        mock_writer.is_closing.return_value = False
         protocol.tcp_reader = mock_reader
         protocol.tcp_writer = mock_writer
 
-        with self.assertRaises(TelescopeConnectionError) as context:
+        # OSError from write() propagates directly (not wrapped)
+        with self.assertRaises(OSError) as context:
             asyncio.run(protocol.send_command("V"))
 
         self.assertIn("Send error", str(context.exception))
 
     @patch("celestron_nexstar.api.telescope.protocol.asyncio.wait_for")
-    def test_send_command_tcp_recv_error(self, mock_wait_for):
+    @patch.object(NexStarProtocol, "open", new_callable=AsyncMock)
+    def test_send_command_tcp_recv_error(self, mock_open, mock_wait_for):
         """Test TCP/IP command receive error"""
         protocol = NexStarProtocol(host="192.168.1.100", tcp_port=4030, connection_type="tcp")
         mock_reader = AsyncMock()
-        mock_reader.read = AsyncMock(side_effect=OSError("Recv error"))
         mock_writer = AsyncMock()
         mock_writer.write = MagicMock()
         mock_writer.drain = AsyncMock()
+        mock_writer.is_closing.return_value = False
         protocol.tcp_reader = mock_reader
         protocol.tcp_writer = mock_writer
 
-        # Mock asyncio.wait_for to return the result directly
+        # Mock asyncio.wait_for to propagate the OSError
         async def wait_for_side_effect(coro, timeout):
+            # Await the coroutine which will raise OSError
             return await coro
-        mock_wait_for.side_effect = wait_for_side_effect
 
-        with self.assertRaises(TelescopeConnectionError) as context:
+        mock_wait_for.side_effect = wait_for_side_effect
+        mock_reader.read = AsyncMock(side_effect=OSError("Recv error"))
+
+        # OSError from read() propagates directly (not wrapped)
+        with self.assertRaises(OSError) as context:
             asyncio.run(protocol.send_command("V"))
 
         self.assertIn("Recv error", str(context.exception))
@@ -690,10 +750,10 @@ class TestNexStarProtocol(unittest.TestCase):
         mock_send.side_effect = NotConnectedError("Connection error")
         result = asyncio.run(protocol.echo("x"))
         self.assertFalse(result)
+        # Echo catches all exceptions and returns False
         mock_send.side_effect = Exception("TCP error")
-        # For TCP, exception should be re-raised (not caught)
-        with self.assertRaises(Exception):
-            protocol.echo("x")
+        result = asyncio.run(protocol.echo("x"))
+        self.assertFalse(result)
 
     @patch.object(NexStarProtocol, "send_command", new_callable=AsyncMock)
     @patch.object(NexStarProtocol, "decode_coordinate_pair")

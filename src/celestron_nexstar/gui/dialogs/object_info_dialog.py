@@ -412,23 +412,65 @@ class ObjectInfoDialog(QDialog):
                         )
                         if timeline.transit_time:
                             time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
-                            html_parts.append(
-                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Transit (highest): <span style='color: {colors['cyan']};'>{time_str}</span></p>"
+
+                            # Check if transit is during daytime (object won't be visible)
+                            is_daytime_at_transit = False
+                            try:
+                                from celestron_nexstar.api.astronomy.solar_system import get_sun_info
+
+                                sun_info = get_sun_info(location.latitude, location.longitude, timeline.transit_time)
+                                if sun_info:
+                                    is_daytime_at_transit = sun_info.is_daytime
+                            except Exception:
+                                pass
+
+                            transit_warning = (
+                                " <span style='color: {warn_color}; font-style: italic;'>(Daytime - not visible)</span>".format(
+                                    warn_color=colors["yellow"]
+                                )
+                                if is_daytime_at_transit
+                                else ""
                             )
+
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                                f"Maximum altitude: <span style='color: {colors['green']};'>{timeline.max_altitude:.1f}°</span></p>"
+                                f"Transit (highest): <span style='color: {colors['cyan']};'>{time_str}</span>{transit_warning}</p>"
+                            )
+                            transit_color = colors["yellow"] if is_daytime_at_transit else colors["green"]
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"Maximum altitude: <span style='color: {transit_color};'>{timeline.max_altitude:.1f}°</span></p>"
                             )
                     else:
                         # Show rise, transit, and set times
                         # Always show transit if available (even for circumpolar objects that aren't marked as always_visible)
                         if timeline.transit_time:
                             time_str = format_local_time(timeline.transit_time, location.latitude, location.longitude)
+
+                            # Check if transit is during daytime (object won't be visible)
+                            is_daytime_at_transit = False
+                            try:
+                                from celestron_nexstar.api.astronomy.solar_system import get_sun_info
+
+                                sun_info = get_sun_info(location.latitude, location.longitude, timeline.transit_time)
+                                if sun_info:
+                                    is_daytime_at_transit = sun_info.is_daytime
+                            except Exception:
+                                pass
+
+                            transit_color = colors["yellow"] if is_daytime_at_transit else colors["green"]
+                            transit_warning = (
+                                " <span style='color: {warn_color}; font-style: italic;'>(Daytime - not visible)</span>".format(
+                                    warn_color=colors["yellow"]
+                                )
+                                if is_daytime_at_transit
+                                else ""
+                            )
+
                             html_parts.append(
                                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
                                 f"<span style='color: {colors['cyan']};'>Transit (Highest):</span> <span style='color: {colors['text']};'>{time_str}</span> "
-                                f"<span style='color: {colors['green']};'>({timeline.max_altitude:.1f}°)</span></p>"
+                                f"<span style='color: {transit_color};'>({timeline.max_altitude:.1f}°)</span>{transit_warning}</p>"
                             )
 
                         if timeline.rise_time:

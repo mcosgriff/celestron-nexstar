@@ -622,12 +622,13 @@ class TestGetObjectVisibilityTimeline(unittest.TestCase):
         # High latitude observer, object near pole
         mock_location.return_value = ObserverLocation(latitude=80.0, longitude=-100.0)
         mock_lst.return_value = 12.0
-        mock_ra_dec.return_value = (85.0, 0.0)  # altitude, azimuth
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec.return_value = (0.0, 85.0)  # (azimuth, altitude) - altitude 85° at transit
         # Always above horizon
         mock_alt_az.side_effect = [
-            (85.0, 180.0),  # Initial check
-            (85.0, 0.0),  # Transit
-            (85.0, 180.0),  # Later check
+            (85.0, 180.0),  # Initial check (altitude, azimuth)
+            (85.0, 0.0),  # Transit (altitude, azimuth)
+            (85.0, 180.0),  # Later check (altitude, azimuth)
         ]
 
         obj = CelestialObject(
@@ -657,14 +658,15 @@ class TestGetObjectVisibilityTimeline(unittest.TestCase):
         mock_location.return_value = ObserverLocation(latitude=40.0, longitude=-100.0)
         mock_lst.return_value = 12.0
         # Transit altitude is below horizon
-        mock_ra_dec.return_value = (-10.0, 0.0)  # Below horizon at transit
+        # ra_dec_to_alt_az returns (azimuth, altitude)
+        mock_ra_dec.return_value = (0.0, -10.0)  # (azimuth, altitude) - altitude -10° at transit (below horizon)
         # All altitude checks return negative (below horizon)
         mock_alt_az.side_effect = [
-            (-5.0, 180.0),  # Initial check - below horizon
-            (-10.0, 0.0),  # Transit - below horizon (max altitude is negative)
-            (-5.0, 180.0),  # Later check - below horizon
-            (-5.0, 180.0),  # Additional checks for rise/set
-            (-5.0, 180.0),
+            (-5.0, 180.0),  # Initial check - below horizon (altitude, azimuth)
+            (-10.0, 0.0),  # Transit - below horizon (altitude, azimuth) (max altitude is negative)
+            (-5.0, 180.0),  # Later check - below horizon (altitude, azimuth)
+            (-5.0, 180.0),  # Additional checks for rise/set (altitude, azimuth)
+            (-5.0, 180.0),  # (altitude, azimuth)
         ]
 
         obj = CelestialObject(

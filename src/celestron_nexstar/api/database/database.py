@@ -185,8 +185,11 @@ class CatalogDatabase:
         """Get the model class for a given object type."""
         if isinstance(object_type, str):
             object_type = CelestialObjectType(object_type)
-        # Type ignore: CelestialObjectModel may not fully match protocol, but is compatible at runtime
-        return cls._TYPE_TO_MODEL.get(object_type, CelestialObjectModel)  # type: ignore[return-value]
+        # Don't fallback to CelestialObjectModel - the objects table no longer exists
+        # Raise an error if object type is not found
+        if object_type not in cls._TYPE_TO_MODEL:
+            raise ValueError(f"Unknown object type: {object_type}. Supported types: {list(cls._TYPE_TO_MODEL.keys())}")
+        return cls._TYPE_TO_MODEL[object_type]
 
     @classmethod
     def _get_table_name(cls, object_type: CelestialObjectType | str) -> str:
@@ -779,11 +782,7 @@ class CatalogDatabase:
                 if model:
                     return self._model_to_object(model)
 
-            # Fallback to old model for backward compatibility
-            model = await session.get(CelestialObjectModel, object_id)
-            if model:
-                return self._model_to_object(model)
-
+            # No fallback to old model - the objects table no longer exists
             return None
 
     @deal.pre(lambda self, name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
@@ -830,29 +829,97 @@ class CatalogDatabase:
                 if model:
                     return self._model_to_object(model)
 
-            # Fallback to old model for backward compatibility
-            # Type ignore: CelestialObjectModel doesn't fully match Protocol but is compatible
-            old_model_stmt: Any = select(CelestialObjectModel).where(CelestialObjectModel.name.ilike(name)).limit(1)
-            result = await session.execute(old_model_stmt)
-            model = result.scalar_one_or_none()
-            if model:
-                return self._model_to_object(model)
-            model = result.scalar_one_or_none()
-            if model:
-                return self._model_to_object(model)
+            # Check asterisms
+            from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+            from celestron_nexstar.api.core.enums import CelestialObjectType
+            from celestron_nexstar.api.database.models import AsterismModel
 
-            old_model_stmt = (
-                select(CelestialObjectModel)
+            asterism_stmt = select(AsterismModel).where(AsterismModel.name.ilike(name)).limit(1)
+            result = await session.execute(asterism_stmt)
+            asterism_model_raw = result.scalar_one_or_none()
+            if asterism_model_raw:
+                # Type cast: we know this is AsterismModel from the select
+                asterism_model: AsterismModel = asterism_model_raw  # type: ignore[assignment]
+                # Convert AsterismModel to CelestialObject
+                alt_names_list = []
+                if asterism_model.alt_names:
+                    alt_names_list = [n.strip() for n in asterism_model.alt_names.split(",")]
+                common_name = alt_names_list[0] if alt_names_list else None
+
+                return CelestialObject(
+                    name=asterism_model.name,
+                    common_name=common_name,
+                    ra_hours=asterism_model.ra_hours,
+                    dec_degrees=asterism_model.dec_degrees,
+                    magnitude=None,
+                    object_type=CelestialObjectType.ASTERISM,
+                    catalog="asterisms",
+                    description=asterism_model.description,
+                    parent_planet=None,
+                    constellation=asterism_model.parent_constellation,
+                )
+
+            # Check asterism alt_names
+            asterism_alt_stmt = (
+                select(AsterismModel)
                 .where(
-                    CelestialObjectModel.common_name.isnot(None),
-                    CelestialObjectModel.common_name.ilike(name),
+                    AsterismModel.alt_names.isnot(None),
+                    AsterismModel.alt_names.ilike(f"%{name}%"),
                 )
                 .limit(1)
             )
-            result = await session.execute(stmt)
-            model = result.scalar_one_or_none()
-            if model:
-                return self._model_to_object(model)
+            result = await session.execute(asterism_alt_stmt)
+            asterism_model_alt_raw = result.scalar_one_or_none()
+            if asterism_model_alt_raw:
+                # Type cast: we know this is AsterismModel from the select
+                asterism_model_alt: AsterismModel = asterism_model_alt_raw  # type: ignore[assignment]
+                alt_names_list = []
+                if asterism_model_alt.alt_names:
+                    alt_names_list = [n.strip() for n in asterism_model_alt.alt_names.split(",")]
+                common_name = alt_names_list[0] if alt_names_list else None
+
+                return CelestialObject(
+                    name=asterism_model_alt.name,
+                    common_name=common_name,
+                    ra_hours=asterism_model_alt.ra_hours,
+                    dec_degrees=asterism_model_alt.dec_degrees,
+                    magnitude=None,
+                    object_type=CelestialObjectType.ASTERISM,
+                    catalog="asterisms",
+                    description=asterism_model_alt.description,
+                    parent_planet=None,
+                    constellation=asterism_model_alt.parent_constellation,
+                )
+
+            # Check constellations
+            from celestron_nexstar.api.database.models import ConstellationModel
+
+            constellation_stmt = (
+                select(ConstellationModel)
+                .where(
+                    (ConstellationModel.name.ilike(name))
+                    | (ConstellationModel.abbreviation.ilike(name))
+                    | (ConstellationModel.common_name.ilike(name))
+                )
+                .limit(1)
+            )
+            result = await session.execute(constellation_stmt)
+            constellation_model_raw = result.scalar_one_or_none()
+            if constellation_model_raw:
+                # Type cast: we know this is ConstellationModel from the select
+                constellation_model: ConstellationModel = constellation_model_raw  # type: ignore[assignment]
+                return CelestialObject(
+                    name=constellation_model.name,
+                    common_name=constellation_model.common_name,
+                    ra_hours=constellation_model.ra_hours,
+                    dec_degrees=constellation_model.dec_degrees,
+                    magnitude=None,
+                    object_type=CelestialObjectType.CONSTELLATION,
+                    catalog="constellations",
+                    description=constellation_model.mythology,
+                    parent_planet=None,
+                    constellation=None,
+                )
 
             return None
 

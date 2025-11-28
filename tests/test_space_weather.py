@@ -94,10 +94,14 @@ class TestSpaceWeatherConditions(unittest.TestCase):
 class TestGetSolarWindData(unittest.TestCase):
     """Test suite for get_solar_wind_data function"""
 
+    @patch("celestron_nexstar.api.events.space_weather._get_from_cache")
     @patch("celestron_nexstar.api.events.space_weather.aiohttp.ClientSession")
-    def test_get_solar_wind_data_success(self, mock_session_class):
+    def test_get_solar_wind_data_success(self, mock_session_class, mock_get_cache):
         """Test successful solar wind data fetch"""
-        # Mock async context manager
+        # Mock cache to return None (no cached data)
+        mock_get_cache.return_value = None
+
+        # Mock async context manager for session
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -123,9 +127,17 @@ class TestGetSolarWindData(unittest.TestCase):
             ["time_tag", "bt", "bz", "phi", "theta"],
             ["2024-06-15T12:00:00Z", "8.5", "-3.2", "45.0", "10.0"],
         ])
+        mock_mag_response.raise_for_status = MagicMock()
 
-        # session.get() returns coroutines that resolve to the response objects
-        mock_session.get = AsyncMock(side_effect=[mock_plasma_response, mock_mag_response])
+        # session.get() returns coroutines that resolve to async context managers
+        # The coroutines resolve to the response objects which are used as context managers
+        async def mock_get_plasma(*args, **kwargs):
+            return mock_plasma_response
+
+        async def mock_get_mag(*args, **kwargs):
+            return mock_mag_response
+
+        mock_session.get = MagicMock(side_effect=[mock_get_plasma(), mock_get_mag()])
 
         result = asyncio.run(get_solar_wind_data())
 
@@ -139,9 +151,13 @@ class TestGetSolarWindData(unittest.TestCase):
         self.assertEqual(result["solar_wind_bt"], 8.5)
         self.assertEqual(result["solar_wind_bz"], -3.2)
 
+    @patch("celestron_nexstar.api.events.space_weather._get_from_cache")
     @patch("celestron_nexstar.api.events.space_weather.aiohttp.ClientSession")
-    def test_get_solar_wind_data_empty_response(self, mock_session_class):
+    def test_get_solar_wind_data_empty_response(self, mock_session_class, mock_get_cache):
         """Test solar wind data fetch with empty response"""
+        # Mock cache to return None (no cached data)
+        mock_get_cache.return_value = None
+
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -149,41 +165,57 @@ class TestGetSolarWindData(unittest.TestCase):
 
         # For empty response, we need to mock both plasma and mag responses
         mock_plasma_response = AsyncMock()
+        mock_plasma_response.__aenter__ = AsyncMock(return_value=mock_plasma_response)
+        mock_plasma_response.__aexit__ = AsyncMock(return_value=None)
         mock_plasma_response.status = 200
         mock_plasma_response.json = AsyncMock(return_value=[])
         mock_plasma_response.raise_for_status = MagicMock()
 
         mock_mag_response = AsyncMock()
+        mock_mag_response.__aenter__ = AsyncMock(return_value=mock_mag_response)
+        mock_mag_response.__aexit__ = AsyncMock(return_value=None)
         mock_mag_response.status = 200
         mock_mag_response.json = AsyncMock(return_value=[])
 
-        call_count = [0]
-        def mock_get(*args, **kwargs):
-            call_count[0] += 1
-            mock_context = AsyncMock()
-            if call_count[0] == 1:
-                mock_context.__aenter__ = AsyncMock(return_value=mock_plasma_response)
-            else:
-                mock_context.__aenter__ = AsyncMock(return_value=mock_mag_response)
-            mock_context.__aexit__ = AsyncMock(return_value=None)
-            return mock_context
-        mock_session.get = mock_get
+        # session.get() returns coroutines that resolve to async context managers
+        async def mock_get_plasma(*args, **kwargs):
+            return mock_plasma_response
+
+        async def mock_get_mag(*args, **kwargs):
+            return mock_mag_response
+
+        mock_session.get = MagicMock(side_effect=[mock_get_plasma(), mock_get_mag()])
 
         result = asyncio.run(get_solar_wind_data())
 
         self.assertIsInstance(result, dict)
-        self.assertEqual(result, {})
+        # When data is empty, function returns dict with None values, not empty dict
+        self.assertEqual(result, {
+            "solar_wind_speed": None,
+            "solar_wind_bt": None,
+            "solar_wind_bz": None,
+            "solar_wind_density": None,
+        })
 
+    @patch("celestron_nexstar.api.events.space_weather._get_from_cache")
     @patch("celestron_nexstar.api.events.space_weather.aiohttp.ClientSession")
-    def test_get_solar_wind_data_error(self, mock_session_class):
+    def test_get_solar_wind_data_error(self, mock_session_class, mock_get_cache):
         """Test solar wind data fetch with error"""
+        # Mock cache to return None (no cached data)
+        mock_get_cache.return_value = None
+
         import aiohttp
 
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
-        mock_session.get = AsyncMock(side_effect=aiohttp.ClientError("Network error"))
+
+        # session.get() returns coroutines, so we need to make them raise errors
+        async def mock_get_error(*args, **kwargs):
+            raise aiohttp.ClientError("Network error")
+
+        mock_session.get = MagicMock(side_effect=[mock_get_error(), mock_get_error()])
 
         result = asyncio.run(get_solar_wind_data())
 
@@ -210,7 +242,7 @@ class TestGetGoesXrayData(unittest.TestCase):
             {"time_tag": "2024-06-15T11:00:00Z", "flux": "1.0e-6", "class": "C5.0"},
         ])
         mock_response.raise_for_status = MagicMock()
-        
+
         mock_get_context = AsyncMock()
         mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
         mock_get_context.__aexit__ = AsyncMock(return_value=None)
@@ -268,9 +300,13 @@ class TestGetGoesXrayData(unittest.TestCase):
 class TestGetKpApData(unittest.TestCase):
     """Test suite for get_kp_ap_data function"""
 
+    @patch("celestron_nexstar.api.events.space_weather._get_from_cache")
     @patch("celestron_nexstar.api.events.space_weather.aiohttp.ClientSession")
-    def test_get_kp_ap_data_success(self, mock_session_class):
+    def test_get_kp_ap_data_success(self, mock_session_class, mock_get_cache):
         """Test successful Kp/Ap data fetch"""
+        # Mock cache to return None (no cached data)
+        mock_get_cache.return_value = None
+
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
@@ -279,6 +315,8 @@ class TestGetKpApData(unittest.TestCase):
         # In aiohttp, session.get() returns an async context manager directly
         # When used in "async with session.get(...) as response:", it enters the context
         mock_response = AsyncMock()
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=[
             ["time_tag", "kp", "observed"],
@@ -286,12 +324,9 @@ class TestGetKpApData(unittest.TestCase):
             ["2024-06-15 11:00:00", "2.5", "observed"],
         ])
         mock_response.raise_for_status = MagicMock()
-        
+
         # session.get() returns an async context manager that yields the response
-        mock_get_context = AsyncMock()
-        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_get_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_get_context)
+        mock_session.get = MagicMock(return_value=mock_response)
 
         result = asyncio.run(get_kp_ap_data())
 
@@ -299,9 +334,13 @@ class TestGetKpApData(unittest.TestCase):
         self.assertIn("kp_index", result)
         self.assertEqual(result["kp_index"], 3.0)
 
+    @patch("celestron_nexstar.api.events.space_weather._get_from_cache")
     @patch("celestron_nexstar.api.events.space_weather.aiohttp.ClientSession")
-    def test_get_kp_ap_data_error(self, mock_session_class):
+    def test_get_kp_ap_data_error(self, mock_session_class, mock_get_cache):
         """Test Kp/Ap data fetch with error"""
+        # Mock cache to return None (no cached data)
+        mock_get_cache.return_value = None
+
         import aiohttp
 
         mock_session = AsyncMock()
@@ -309,7 +348,11 @@ class TestGetKpApData(unittest.TestCase):
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
         # session.get() should raise an error when called
-        mock_session.get = MagicMock(side_effect=aiohttp.ClientError("Network error"))
+        # Since session.get() is used in "async with", we need to make it raise when entered
+        mock_error_context = AsyncMock()
+        mock_error_context.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Network error"))
+        mock_error_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get = MagicMock(return_value=mock_error_context)
 
         result = asyncio.run(get_kp_ap_data())
 

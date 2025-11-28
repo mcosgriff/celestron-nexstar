@@ -163,7 +163,8 @@ def get_object_visibility_timeline(
             transit_time += timedelta(hours=24)
 
     # Get altitude at transit
-    transit_alt, _ = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, transit_time)
+    # Note: ra_dec_to_alt_az returns (azimuth, altitude), not (altitude, azimuth)
+    _, transit_alt = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, transit_time)
     max_altitude = transit_alt
 
     # Check if always visible or never visible
