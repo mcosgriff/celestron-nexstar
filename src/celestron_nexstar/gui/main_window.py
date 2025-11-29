@@ -144,8 +144,8 @@ class ObjectsLoaderThread(QThread):
                         )
 
                 asterisms = asyncio.run(_load_asterisms())
-                # Convert to list of asterism names for display
-                objects = [asterism[0].name for asterism in asterisms]  # asterism[0] is the Asterism object
+                # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
+                objects = asterisms  # Keep full objects for asterisms
             else:
                 # Get recommended objects for this type
                 objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
@@ -220,6 +220,8 @@ class MainWindow(QMainWindow):
             "crosshairs": "mdi.crosshairs-gps",
             # Planning tools
             "catalog": "mdi.folder-outline",
+            "dashboard": "mdi.view-dashboard-outline",
+            "list": "mdi.playlist-play",
             "weather": "mdi.weather-cloudy",  # No outline version available
             "checklist": "mdi.check-circle-outline",
             "time_slots": "mdi.clock-outline",
@@ -258,6 +260,11 @@ class MainWindow(QMainWindow):
             "check": "mdi.check",
             # Communication
             "console": "mdi.console",  # No outline version available
+            "chart": "mdi.chart-line",
+            "graph": "mdi.chart-timeline-variant",
+            "analytics": "mdi.chart-box",
+            "compare": "mdi.compare",
+            "diff": "mdi.diff",
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -397,6 +404,7 @@ class MainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         self._catalog_window = None  # Store reference to catalog window
+        self._goto_queue_window = None  # Store reference to goto queue window
         self.setWindowTitle("Celestron NexStar Telescope Control")
         self.setMinimumSize(800, 600)
 
@@ -406,6 +414,7 @@ class MainWindow(QMainWindow):
         # Cache for loaded objects data (key: obj_type_str, value: list of objects)
         # Can be list[RecommendedObject] or list[str] for constellations/asterisms
         self._objects_cache: dict[str, list[RecommendedObject] | list[str]] = {}
+        self._asterism_objects_cache: dict[str, Any] = {}  # Cache asterism objects for member_stars access
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
@@ -669,6 +678,17 @@ class MainWindow(QMainWindow):
         self.align_action.triggered.connect(self._on_align)
         self.align_action.setEnabled(False)
 
+        telescope_menu.addSeparator()
+
+        # Tracking History action
+        tracking_icon = self._create_icon("chart", ["chart-line", "graph", "analytics"])
+        self.tracking_history_action = telescope_menu.addAction(tracking_icon, "Tracking History Graph")
+        self.tracking_history_action.setIconVisibleInMenu(True)
+        self.tracking_history_action.setToolTip("TRACKING HISTORY")
+        self.tracking_history_action.setStatusTip("View real-time tracking history graph")
+        self.tracking_history_action.triggered.connect(self._on_tracking_history)
+        self.tracking_history_action.setEnabled(False)
+
         telescope_button = QToolButton()
         telescope_button.setText("Telescope")
         telescope_button.setIcon(connect_icon)  # Use connect icon as default
@@ -687,6 +707,14 @@ class MainWindow(QMainWindow):
         self.catalog_action.setToolTip("CATALOG")
         self.catalog_action.setStatusTip("Open catalog search window")
         self.catalog_action.triggered.connect(self._on_catalog)
+
+        # Goto Queue action
+        queue_icon = self._create_icon("list", ["view-list", "format-list-bulleted", "playlist-play", "list"])
+        self.goto_queue_action = planning_menu.addAction(queue_icon, "Goto Queue / Sequence")
+        self.goto_queue_action.setIconVisibleInMenu(True)
+        self.goto_queue_action.setToolTip("GOTO QUEUE")
+        self.goto_queue_action.setStatusTip("Open goto queue/sequence window")
+        self.goto_queue_action.triggered.connect(self._on_goto_queue)
 
         favorites_icon = self._create_icon("star", ["star", "bookmark", "favorite"])
         self.favorites_action = planning_menu.addAction(favorites_icon, "Favorites")
@@ -764,6 +792,16 @@ class MainWindow(QMainWindow):
         self.glossary_action.setToolTip("GLOSSARY")
         self.glossary_action.setStatusTip("View astronomical glossary")
         self.glossary_action.triggered.connect(self._on_glossary)
+
+        planning_menu.addSeparator()
+
+        # Object Comparison Tool
+        compare_icon = self._create_icon("compare", ["compare", "view-split-vertical", "diff"])
+        self.compare_action = planning_menu.addAction(compare_icon, "Compare Objects")
+        self.compare_action.setIconVisibleInMenu(True)
+        self.compare_action.setToolTip("COMPARE OBJECTS")
+        self.compare_action.setStatusTip("Compare objects side-by-side")
+        self.compare_action.triggered.connect(self._on_compare_objects)
 
         planning_button = QToolButton()
         planning_button.setText("Planning")
@@ -887,6 +925,8 @@ class MainWindow(QMainWindow):
             self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
         )
         self.align_action.setIcon(self._create_icon("my_location", ["edit-find", "system-search", "find-location"]))
+        if hasattr(self, "tracking_history_action"):
+            self.tracking_history_action.setIcon(self._create_icon("chart", ["chart-line", "graph", "analytics"]))
         # Planning tools
         if hasattr(self, "favorites_action"):
             self.favorites_action.setIcon(self._create_icon("star", ["star", "bookmark", "favorite"]))
@@ -910,6 +950,8 @@ class MainWindow(QMainWindow):
             self._create_icon("transit_times", ["transit-connection", "arrow-right-bold"])
         )
         self.glossary_action.setIcon(self._create_icon("glossary", ["book-open-page-variant", "book-open-variant"]))
+        if hasattr(self, "compare_action"):
+            self.compare_action.setIcon(self._create_icon("compare", ["compare", "view-split-vertical", "diff"]))
         self.settings_action.setIcon(self._create_icon("settings", ["cog", "settings"]))
         # Celestial objects (using alpha-box-outline pattern)
         for obj_name in [
@@ -940,6 +982,11 @@ class MainWindow(QMainWindow):
         # Catalog button
         if hasattr(self, "catalog_action"):
             self.catalog_action.setIcon(self._create_icon("catalog", ["folder", "folder-open", "folder-documents"]))
+        # Goto Queue button
+        if hasattr(self, "goto_queue_action"):
+            self.goto_queue_action.setIcon(
+                self._create_icon("list", ["view-list", "format-list-bulleted", "playlist-play", "list"])
+            )
         # Table toolbar buttons
         if hasattr(self, "refresh_action"):
             self.refresh_action.setIcon(self._create_icon("refresh", ["view-refresh", "reload"]))
@@ -1043,11 +1090,11 @@ class MainWindow(QMainWindow):
         table = QTableWidget()
         # For constellation and asterism tabs, show name list with favorites
         if obj_type == CelestialObjectType.CONSTELLATION:
-            table.setColumnCount(2)
-            table.setHorizontalHeaderLabels(["Constellation", "Favorite"])
+            table.setColumnCount(3)
+            table.setHorizontalHeaderLabels(["Constellation", "Visible Stars", "Favorite"])
         elif obj_type == CelestialObjectType.ASTERISM:
-            table.setColumnCount(2)
-            table.setHorizontalHeaderLabels(["Asterism", "Favorite"])
+            table.setColumnCount(3)
+            table.setHorizontalHeaderLabels(["Asterism", "Visible Stars", "Favorite"])
         # For star tab, add a Constellation column
         elif obj_type == CelestialObjectType.STAR:
             table.setColumnCount(12)
@@ -1090,9 +1137,9 @@ class MainWindow(QMainWindow):
 
         # Get header labels for minimum width calculation
         if obj_type == CelestialObjectType.CONSTELLATION:
-            header_labels = ["Constellation", "Favorite"]
+            header_labels = ["Constellation", "Visible Stars", "Favorite"]
         elif obj_type == CelestialObjectType.ASTERISM:
-            header_labels = ["Asterism", "Favorite"]
+            header_labels = ["Asterism", "Visible Stars", "Favorite"]
         elif obj_type == CelestialObjectType.STAR:
             header_labels = [
                 "Priority",
@@ -1226,16 +1273,30 @@ class MainWindow(QMainWindow):
             # Error occurred, already logged in thread
             return
 
-        # Cache the data (even if empty, to indicate data was loaded)
-        self._objects_cache[obj_type_str] = objects
-
         # Populate table (must be done on main thread)
         if objects:
             if obj_type_str == "constellation":
+                # Cache the names for constellations
+                self._objects_cache[obj_type_str] = objects  # type: ignore[assignment]
                 self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
             elif obj_type_str == "asterism":
-                self._populate_constellation_table(table, objects)  # type: ignore[arg-type]  # Use same format as constellations
+                # For asterisms, objects is list of tuples (Asterism, alt, az)
+                # Extract just the names for the table population and cache
+                if isinstance(objects, list) and objects and isinstance(objects[0], tuple):
+                    asterism_names = [asterism[0].name for asterism in objects]  # type: ignore[index,union-attr]
+                    # Store names in cache (for refresh operations)
+                    self._objects_cache[obj_type_str] = asterism_names  # type: ignore[assignment]
+                    self._populate_constellation_table(table, asterism_names)  # type: ignore[arg-type]
+                    # Store full objects in separate cache for member_stars access
+                    self._asterism_objects_cache = {asterism[0].name: asterism[0] for asterism in objects}  # type: ignore[index,union-attr]
+                else:
+                    asterism_names = []
+                    self._objects_cache[obj_type_str] = asterism_names
+                    self._populate_constellation_table(table, asterism_names)
+                    self._asterism_objects_cache = {}
             else:
+                # Cache the data (even if empty, to indicate data was loaded)
+                self._objects_cache[obj_type_str] = objects
                 self._populate_table(table, objects)  # type: ignore[arg-type]
         else:
             # Data was loaded but no objects match criteria - show message
@@ -1419,7 +1480,21 @@ class MainWindow(QMainWindow):
         if original_cols > 1:
             table.setSpan(0, 0, 1, original_cols)
 
-        # Set row height to accommodate message
+        # Set column widths to prevent horizontal scrolling
+        # Make columns stretch to fill available space without exceeding table width
+        header = table.horizontalHeader()
+        if original_cols > 1:
+            # Set all columns to stretch mode so they fill the table width
+            for col in range(original_cols):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+        else:
+            # Single column - make it stretch
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        # Enable word wrapping for the table to handle long messages
+        table.setWordWrap(True)
+
+        # Set row height to accommodate message (with word wrapping)
         table.setRowHeight(0, 120)
 
         # Re-enable sorting (though it won't do much with one row)
@@ -1467,6 +1542,178 @@ class MainWindow(QMainWindow):
         # Re-enable sorting (though it won't do much with one row)
         table.setSortingEnabled(True)
 
+    def _count_visible_stars_for_asterisms_batch(
+        self, asterism_names: list[str], asterism_objects: dict[str, Any]
+    ) -> dict[str, int]:
+        """Count the number of visible component stars for multiple asterisms in a single batch operation."""
+        try:
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.optics import get_current_configuration
+            from celestron_nexstar.api.observation.visibility import assess_visibility
+
+            async def _count_all_stars() -> dict[str, int]:
+                db = get_database()
+                location = get_observer_location()
+                config = get_current_configuration()
+                planner = ObservationPlanner()
+                conditions = planner.get_tonight_conditions()
+
+                async with db._AsyncSession() as session:
+                    # Get sky brightness from light pollution (once for all asterisms)
+                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    # Map Bortle class to SkyBrightness
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
+
+                    # Count visible stars for each asterism
+                    counts: dict[str, int] = {}
+                    for asterism_name in asterism_names:
+                        asterism = asterism_objects.get(asterism_name)
+                        if not asterism or not asterism.member_stars:
+                            counts[asterism_name] = 0
+                            continue
+
+                        visible_count = 0
+                        # Look up each member star by name
+                        for star_name in asterism.member_stars:
+                            # Try to find the star in the database
+                            star = await db.get_by_name(star_name.strip())
+                            if not star:
+                                continue
+
+                            # Calculate visibility info
+                            vis_info = assess_visibility(
+                                star,
+                                config=config,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
+                            )
+
+                            # Calculate visibility probability
+                            visibility_probability = vis_info.observability_score
+
+                            # Apply seeing and weather factors
+                            if visibility_probability > 0:
+                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                                cloud_factor = 1.0 - (cloud_cover / 100.0)
+                                visibility_probability *= seeing_factor * cloud_factor
+
+                            # Count as visible if probability > 0
+                            if visibility_probability > 0:
+                                visible_count += 1
+
+                        counts[asterism_name] = visible_count
+
+                    return counts
+
+            result = _run_async_safe(_count_all_stars())
+            return result if isinstance(result, dict) else dict.fromkeys(asterism_names, 0)
+        except Exception as e:
+            logger.debug(f"Error counting visible stars for asterisms: {e}")
+            # Return zeros for all asterisms on error
+            return dict.fromkeys(asterism_names, 0)
+
+    def _count_visible_stars_batch(self, constellation_names: list[str]) -> dict[str, int]:
+        """Count the number of visible stars for multiple constellations in a single batch operation."""
+        try:
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.optics import get_current_configuration
+            from celestron_nexstar.api.observation.visibility import assess_visibility
+
+            async def _count_all_stars() -> dict[str, int]:
+                db = get_database()
+                location = get_observer_location()
+                config = get_current_configuration()
+                planner = ObservationPlanner()
+                conditions = planner.get_tonight_conditions()
+
+                async with db._AsyncSession() as session:
+                    # Get sky brightness from light pollution (once for all constellations)
+                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    # Map Bortle class to SkyBrightness
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
+
+                    # Count stars for each constellation
+                    counts: dict[str, int] = {}
+                    for constellation_name in constellation_names:
+                        # Get stars in this constellation
+                        stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
+
+                        visible_count = 0
+                        for star in stars:
+                            # Calculate visibility info
+                            vis_info = assess_visibility(
+                                star,
+                                config=config,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
+                            )
+
+                            # Calculate visibility probability
+                            visibility_probability = vis_info.observability_score
+
+                            # Apply seeing and weather factors
+                            if visibility_probability > 0:
+                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                                cloud_factor = 1.0 - (cloud_cover / 100.0)
+                                visibility_probability *= seeing_factor * cloud_factor
+
+                            # Count as visible if probability > 0
+                            if visibility_probability > 0:
+                                visible_count += 1
+
+                        counts[constellation_name] = visible_count
+
+                    return counts
+
+            result = _run_async_safe(_count_all_stars())
+            return result if isinstance(result, dict) else dict.fromkeys(constellation_names, 0)
+        except Exception as e:
+            logger.debug(f"Error counting visible stars: {e}")
+            # Return zeros for all constellations on error
+            return dict.fromkeys(constellation_names, 0)
+
     def _populate_constellation_table(self, table: QTableWidget, constellation_names: list[str]) -> None:
         """Populate table with constellation names (must be called on main thread)."""
         if not constellation_names:
@@ -1495,6 +1742,28 @@ class MainWindow(QMainWindow):
             # If batch check fails, fall back to all False
             favorite_statuses = [False] * len(sorted_names)
 
+        # Check if this is a constellation table (has 3 columns) or asterism table (has 3 columns now)
+        is_constellation_table = table.columnCount() == 3
+        obj_type_str = table.property("object_type")
+        is_asterism_table = obj_type_str == "asterism"
+
+        # Count visible stars for all constellations/asterisms in a single batch operation (much more efficient)
+        visible_star_counts: dict[str, int] = {}
+        if is_constellation_table:
+            try:
+                if is_asterism_table:
+                    # For asterisms, use the cached asterism objects to access member_stars
+                    visible_star_counts = self._count_visible_stars_for_asterisms_batch(
+                        sorted_names, self._asterism_objects_cache
+                    )
+                else:
+                    # For constellations, count stars by constellation name
+                    visible_star_counts = self._count_visible_stars_batch(sorted_names)
+            except Exception as e:
+                logger.debug(f"Error counting visible stars: {e}")
+                # Fall back to zeros for all
+                visible_star_counts = dict.fromkeys(sorted_names, 0)
+
         # Now populate table with all data
         for row, constellation_name in enumerate(sorted_names):
             # Constellation name (no star indicator - we have a dedicated favorites column)
@@ -1503,15 +1772,24 @@ class MainWindow(QMainWindow):
             name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
             table.setItem(row, 0, name_item)
 
-            # Favorite (check/X icon) - use pre-fetched result
-            is_fav = favorite_statuses[row]
-            favorite_item = self._create_favorite_item(is_fav)
-            # Store object name in item data for context menu
-            favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
-            # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
-            # DisplayRole is empty string so no text shows
-            favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
-            table.setItem(row, 1, favorite_item)
+            if is_constellation_table:
+                # Get visible star count from pre-calculated batch result
+                visible_count = visible_star_counts.get(constellation_name, 0)
+                stars_item = QTableWidgetItem(str(visible_count))
+                stars_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                # Store count as numeric value for proper sorting
+                stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
+                table.setItem(row, 1, stars_item)
+
+                # Favorite (check/X icon) - use pre-fetched result
+                is_fav = favorite_statuses[row]
+                favorite_item = self._create_favorite_item(is_fav)
+                # Store object name in item data for context menu
+                favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
+                # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
+                # DisplayRole is empty string so no text shows
+                favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
+                table.setItem(row, 2, favorite_item)
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
@@ -1525,11 +1803,11 @@ class MainWindow(QMainWindow):
         # Set column resize modes and minimum widths
         obj_type_str = table.property("object_type")
         if obj_type_str == "constellation":
-            header_labels = ["Constellation", "Favorite"]
+            header_labels = ["Constellation", "Visible Stars", "Favorite"]
         elif obj_type_str == "asterism":
-            header_labels = ["Asterism", "Favorite"]
+            header_labels = ["Asterism", "Visible Stars", "Favorite"]
         else:
-            header_labels = ["Constellation", "Favorite"]  # Fallback
+            header_labels = ["Constellation", "Visible Stars", "Favorite"]  # Fallback
 
         # Calculate minimum widths based on header text
         font_metrics = QFontMetrics(header.font())
@@ -1611,6 +1889,8 @@ class MainWindow(QMainWindow):
             obj_type_str = current_table.property("object_type")
             if obj_type_str and obj_type_str in self._objects_cache:
                 del self._objects_cache[obj_type_str]
+            if obj_type_str == "asterism":
+                self._asterism_objects_cache.clear()
 
             # Clear table
             current_table.setRowCount(0)
@@ -1849,6 +2129,16 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
+        # Add to Queue action
+        add_to_queue_action = menu.addAction("Add to Goto Queue")
+        add_to_queue_action.triggered.connect(lambda: self._on_context_menu_add_to_queue(table, row))
+
+        # Compare Objects action
+        compare_action = menu.addAction("Compare Objects")
+        compare_action.triggered.connect(lambda: self._on_context_menu_compare_objects(table, row))
+
+        menu.addSeparator()
+
         # Log Observation action
         log_observation_action = menu.addAction("Log Observation")
         log_observation_action.triggered.connect(lambda: self._on_context_menu_log_observation(object_name))
@@ -1923,6 +2213,58 @@ class MainWindow(QMainWindow):
                 self._refresh_table_favorites(table)
         except Exception as e:
             logger.error(f"Error removing favorite: {e}", exc_info=True)
+
+    def _on_context_menu_add_to_queue(self, table: QTableWidget, row: int) -> None:
+        """Handle context menu add to queue action."""
+        # Get object name
+        obj_type = table.property("object_type")
+        name_item = table.item(row, 0) if obj_type in ("constellation", "asterism") else table.item(row, 1)
+
+        if not name_item:
+            return
+
+        object_name = name_item.data(Qt.ItemDataRole.UserRole)
+        if not object_name:
+            display_text = name_item.text()
+            object_name = display_text.removeprefix("★ ").strip()
+
+        if not object_name:
+            return
+
+        # Get the CelestialObject
+        import asyncio
+
+        from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
+
+        try:
+            matches = asyncio.run(get_object_by_name(object_name))
+            if not matches:
+                from PySide6.QtWidgets import QMessageBox
+
+                QMessageBox.warning(self, "Object Not Found", f"Could not find object: {object_name}")
+                return
+
+            obj = matches[0].with_current_position()
+
+            # Open or get goto queue window
+            if not hasattr(self, "_goto_queue_window") or self._goto_queue_window is None:
+                self._on_goto_queue()
+
+            # Add object to queue
+            # Update telescope reference if needed
+            if self._goto_queue_window is not None:
+                if self._goto_queue_window.telescope != self.telescope:
+                    self._goto_queue_window.telescope = self.telescope
+                self._goto_queue_window.add_object(obj)
+                self._goto_queue_window.show()
+                self._goto_queue_window.raise_()
+                self._goto_queue_window.activateWindow()
+
+        except Exception as e:
+            logger.error(f"Error adding object to queue: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to add object to queue: {e}")
 
     def _on_context_menu_log_observation(self, object_name: str) -> None:
         """Handle context menu log observation action."""
@@ -2149,6 +2491,8 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setEnabled(True)
         self.align_action.setEnabled(True)
         self.calibrate_action.setEnabled(True)
+        if hasattr(self, "tracking_history_action"):
+            self.tracking_history_action.setEnabled(True)
 
     def _on_disconnect(self) -> None:
         """Handle disconnect button click."""
@@ -2162,16 +2506,29 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setEnabled(False)
         self.align_action.setEnabled(False)
         self.calibrate_action.setEnabled(False)
+        if hasattr(self, "tracking_history_action"):
+            self.tracking_history_action.setEnabled(False)
 
     def _on_align(self) -> None:
         """Handle align button click."""
-        # TODO: Open alignment dialog
-        pass
+        from celestron_nexstar.gui.dialogs.alignment_assistant_dialog import AlignmentAssistantDialog
+
+        dialog = AlignmentAssistantDialog(self, telescope=self.telescope)
+        dialog.exec()
 
     def _on_calibrate(self) -> None:
         """Handle calibrate button click."""
-        # TODO: Open calibration dialog
-        pass
+        from celestron_nexstar.gui.dialogs.calibration_assistant_dialog import CalibrationAssistantDialog
+
+        dialog = CalibrationAssistantDialog(self, telescope=self.telescope)
+        dialog.exec()
+
+    def _on_tracking_history(self) -> None:
+        """Handle tracking history button click."""
+        from celestron_nexstar.gui.dialogs.tracking_history_dialog import TrackingHistoryDialog
+
+        dialog = TrackingHistoryDialog(self, telescope=self.telescope)
+        dialog.exec()
 
     def _on_planning(self) -> None:
         """Handle planning button click - opens planning window."""
@@ -2190,6 +2547,22 @@ class MainWindow(QMainWindow):
         self._catalog_window.show()
         self._catalog_window.raise_()
         self._catalog_window.activateWindow()
+
+    def _on_goto_queue(self) -> None:
+        """Handle goto queue button click - open goto queue window."""
+        from celestron_nexstar.gui.windows.goto_queue_window import GotoQueueWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_goto_queue_window") or self._goto_queue_window is None:
+            self._goto_queue_window = GotoQueueWindow(self, telescope=self.telescope)
+            self._goto_queue_window.destroyed.connect(lambda: setattr(self, "_goto_queue_window", None))
+        else:
+            # Update telescope reference if it changed
+            self._goto_queue_window.telescope = self.telescope
+
+        self._goto_queue_window.show()
+        self._goto_queue_window.raise_()
+        self._goto_queue_window.activateWindow()
 
     def _on_weather(self) -> None:
         """Handle weather button click."""
@@ -2279,6 +2652,46 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.gui.dialogs.glossary_dialog import GlossaryDialog
 
         dialog = GlossaryDialog(self)
+        dialog.exec()
+
+    def _on_compare_objects(self) -> None:
+        """Handle compare objects button click."""
+        from celestron_nexstar.gui.dialogs.object_comparison_dialog import ObjectComparisonDialog
+
+        dialog = ObjectComparisonDialog(self)
+        dialog.exec()
+
+    def _on_context_menu_compare_objects(self, table: QTableWidget, row: int) -> None:
+        """Handle context menu compare objects action."""
+        # Get all selected rows, or fall back to the clicked row if none selected
+        selected_indices = table.selectionModel().selectedRows()
+        rows_to_process = [idx.row() for idx in selected_indices] if selected_indices else [row]
+
+        obj_type = table.property("object_type")
+        object_names = []
+
+        # Extract object names from all selected rows
+        for row_num in rows_to_process:
+            name_item = table.item(row_num, 0) if obj_type in ("constellation", "asterism") else table.item(row_num, 1)
+
+            if not name_item:
+                continue
+
+            object_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not object_name:
+                display_text = name_item.text()
+                object_name = display_text.removeprefix("★ ").strip()
+
+            if object_name and object_name not in object_names:
+                object_names.append(object_name)
+
+        if not object_names:
+            return
+
+        # Open comparison dialog with all selected objects
+        from celestron_nexstar.gui.dialogs.object_comparison_dialog import ObjectComparisonDialog
+
+        dialog = ObjectComparisonDialog(self, initial_objects=object_names)
         dialog.exec()
 
     def _on_settings(self) -> None:

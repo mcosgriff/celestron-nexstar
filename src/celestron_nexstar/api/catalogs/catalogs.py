@@ -8,6 +8,7 @@ Dynamically calculates positions for solar system objects.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -259,6 +260,114 @@ class _AllCatalogsProxy:
 ALL_CATALOGS = _AllCatalogsProxy()
 
 
+def _parse_coordinate_query(query: str) -> tuple[float, float] | None:
+    """
+    Parse coordinate query in various formats.
+
+    Supported formats:
+    - Compact: "02246+1541" (RA: 02h24m36s, Dec: +15°41')
+    - Compact: "02246-1541" (RA: 02h24m36s, Dec: -15°41')
+    - Standard: "02:24:36 +15:41:00" or "02h24m36s +15d41m00s"
+    - Decimal: "2.41 15.68" (RA in hours, Dec in degrees)
+
+    Args:
+        query: Query string that might contain coordinates
+
+    Returns:
+        Tuple of (ra_hours, dec_degrees) or None if not a coordinate query
+    """
+    query = query.strip()
+
+    # Try compact format: HHMMSS±DDMM (e.g., "02246+1541" or "022436+154100")
+    compact_match = re.match(r"^(\d{4,6})([+-])(\d{4,6})$", query)
+    if compact_match:
+        ra_str = compact_match.group(1)
+        dec_sign = compact_match.group(2)
+        dec_str = compact_match.group(3)
+
+        try:
+            # Parse RA: HHMMSS, HHMMM (5 digits with decimal minutes), or HHMM
+            if len(ra_str) == 6:  # HHMMSS
+                ra_h = int(ra_str[0:2])
+                ra_m = int(ra_str[2:4])
+                ra_s = int(ra_str[4:6])
+                ra_hours = ra_h + ra_m / 60.0 + ra_s / 3600.0
+            elif len(ra_str) == 5:  # HHMMM (e.g., "02246" = 02h 24.6m)
+                ra_h = int(ra_str[0:2])
+                ra_m = int(ra_str[2:4])
+                ra_m_decimal = int(ra_str[4:5])  # Last digit is decimal minutes
+                ra_hours = ra_h + (ra_m + ra_m_decimal / 10.0) / 60.0
+            elif len(ra_str) == 4:  # HHMM
+                ra_h = int(ra_str[0:2])
+                ra_m = int(ra_str[2:4])
+                ra_hours = ra_h + ra_m / 60.0
+            else:
+                return None
+
+            # Parse Dec: ±DDMMSS or ±DDMM
+            if len(dec_str) == 6:  # DDMMSS
+                dec_d = int(dec_str[0:2])
+                dec_m = int(dec_str[2:4])
+                dec_s = int(dec_str[4:6])
+            elif len(dec_str) == 4:  # DDMM
+                dec_d = int(dec_str[0:2])
+                dec_m = int(dec_str[2:4])
+                dec_s = 0
+            else:
+                return None
+
+            dec_degrees = dec_d + dec_m / 60.0 + dec_s / 3600.0
+            if dec_sign == "-":
+                dec_degrees = -dec_degrees
+
+            return ra_hours, dec_degrees
+        except (ValueError, IndexError):
+            return None
+
+    # Try standard format: "HH:MM:SS ±DD:MM:SS" or "HHhMMmSSs ±DDdMMmSSs"
+    standard_match = re.match(
+        r"^(\d{1,2})[:h]\s*(\d{1,2})[:m]\s*(\d{1,2}(?:\.\d+)?)[:s]?\s*([+-]?)(\d{1,2})[:d°]\s*(\d{1,2})[:m']\s*(\d{1,2}(?:\.\d+)?)[:s\"]?$",
+        query,
+        re.IGNORECASE,
+    )
+    if standard_match:
+        try:
+            ra_h = int(standard_match.group(1))
+            ra_m = int(standard_match.group(2))
+            ra_s_float = float(standard_match.group(3))
+            dec_sign = standard_match.group(4) or "+"
+            dec_d = int(standard_match.group(5))
+            dec_m = int(standard_match.group(6))
+            dec_s_float = float(standard_match.group(7))
+
+            ra_hours = ra_h + ra_m / 60.0 + ra_s_float / 3600.0
+            dec_degrees = dec_d + dec_m / 60.0 + dec_s_float / 3600.0
+
+            ra_hours = ra_h + ra_m / 60.0 + ra_s / 3600.0
+            dec_degrees = dec_d + dec_m / 60.0 + dec_s / 3600.0
+            if dec_sign == "-":
+                dec_degrees = -dec_degrees
+
+            return ra_hours, dec_degrees
+        except (ValueError, IndexError):
+            return None
+
+    # Try decimal format: "RA Dec" (two numbers)
+    decimal_match = re.match(r"^([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)$", query)
+    if decimal_match:
+        try:
+            ra_hours = float(decimal_match.group(1))
+            dec_degrees = float(decimal_match.group(2))
+
+            # Validate ranges
+            if 0 <= ra_hours < 24 and -90 <= dec_degrees <= 90:
+                return ra_hours, dec_degrees
+        except (ValueError, IndexError):
+            return None
+
+    return None
+
+
 # type: ignore[misc,arg-type]
 @deal.pre(lambda catalog_name: catalog_name and len(catalog_name) > 0, message="Catalog name required")
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
@@ -315,22 +424,25 @@ async def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
 ) -> list[tuple[CelestialObject, str]]:
     """
-    Search for objects by name, common name, or description using database search.
+    Search for objects by name, common name, description, or coordinates using database search.
 
     Searches only the database, prioritizing exact matches.
+
+    If the query is a coordinate (e.g., "02246+1541" or "02:24:36 +15:41:00"), searches for objects
+    near those coordinates. Otherwise, searches by name, common name, or description.
 
     If an exact match is found (case-insensitive), only that match is returned.
     Otherwise, returns matches sorted by match quality.
 
     Args:
-        query: Search query string
+        query: Search query string (name, description, or coordinates)
         catalog_name: Optional catalog to search within (None = search all)
         max_l_dist: Maximum Levenshtein distance for fuzzy matching (unused, kept for compatibility)
         update_positions: Update planetary positions to current time (default: True)
 
     Returns:
         List of tuples (CelestialObject, match_type) sorted by match quality.
-        Match types: "exact", "name", "alias", "description"
+        Match types: "exact", "name", "alias", "description", "coordinate"
     """
     from sqlalchemy import select
 
@@ -339,6 +451,36 @@ async def search_objects(
     # Ensure query is a string
     query = str(query) if query is not None else ""
     query_lower = query.lower()
+
+    # Check if query is a coordinate
+    coord_result = _parse_coordinate_query(query)
+    if coord_result is not None:
+        ra_hours, dec_degrees = coord_result
+        try:
+            db = get_database()
+            # Search for objects within 5 arcminutes of the coordinates
+            coord_results = await db.search_by_coordinates(ra_hours, dec_degrees, radius_arcmin=5.0, limit=50)
+
+            # Convert to expected format: (CelestialObject, match_type)
+            # Use separation in arcminutes as part of match type for sorting
+            results = []
+            for obj, separation_arcmin in coord_results:
+                if update_positions:
+                    obj = obj.with_current_position()
+                # Format match type with distance for display
+                if separation_arcmin < 0.1:
+                    match_type = "coordinate (exact)"
+                elif separation_arcmin < 1.0:
+                    match_type = f"coordinate ({separation_arcmin:.2f}' away)"
+                else:
+                    match_type = f"coordinate ({separation_arcmin:.1f}' away)"
+                results.append((obj, match_type))
+
+            return results
+        except Exception as e:
+            logger.error(f"Error during coordinate search: {e}", exc_info=True)
+            # Fall through to regular search if coordinate search fails
+
     all_results: list[tuple[int, CelestialObject, str]] = []  # (score, object, match_type)
     exact_match = None
 

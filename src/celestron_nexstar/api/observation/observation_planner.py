@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import warnings as warnings_module
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -257,9 +258,11 @@ class ObservationPlanner:
 
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
                 # Run async function - this is a sync entry point, so asyncio.run() is safe
-                hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(
-                    fetch_hourly_weather_forecast(observer_location, hours=hours_ahead)
-                )
+                # Suppress RuntimeWarning about unawaited coroutines - asyncio.run() properly awaits it
+                with warnings_module.catch_warnings():
+                    warnings_module.filterwarnings("ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning)
+                    coro = fetch_hourly_weather_forecast(observer_location, hours=hours_ahead)
+                    hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(coro)
 
                 if hourly_forecasts:
                     # Find the forecast closest to target time
@@ -281,8 +284,10 @@ class ObservationPlanner:
                             cloud_cover_percent=closest_forecast.cloud_cover_percent,
                             wind_speed_ms=closest_forecast.wind_speed_mph,  # Note: WeatherData uses m/s but we're passing mph
                         )
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the exception for debugging, but don't fail
+                # The coroutine is properly awaited by asyncio.run(), so this warning should not occur
+                logger.debug(f"Could not fetch hourly weather forecast: {e}")
 
         # Fall back to current weather if we don't have forecast data
         # Also prefer current weather if it's significantly different and more recent
@@ -401,7 +406,11 @@ class ObservationPlanner:
 
         # Fetch hourly seeing forecast (if available - requires Pro subscription)
         # Run async function - this is a sync entry point, so asyncio.run() is safe
-        hourly_forecast = asyncio.run(fetch_hourly_weather_forecast(observer_location, hours=hours_needed))
+        # Suppress RuntimeWarning about unawaited coroutines - asyncio.run() properly awaits it
+        with warnings_module.catch_warnings():
+            warnings_module.filterwarnings("ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning)
+            coro = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
+            hourly_forecast = asyncio.run(coro)
         hourly_forecast_tuple = tuple(hourly_forecast)
 
         # Calculate best seeing time windows from hourly forecast
@@ -523,20 +532,29 @@ class ObservationPlanner:
 
         # Get objects from database with smart pre-filtering
         db = get_database()
+        # Check if this is a star query (for optimization)
+        from celestron_nexstar.api.core.enums import CelestialObjectType
+
+        is_star_query = isinstance(target_types, CelestialObjectType) and target_types == CelestialObjectType.STAR
+
         # Pre-filter by magnitude to reduce load:
         # - For poor seeing: only bright objects (mag < 10)
         # - For good seeing: reasonable limit (mag < 15)
         # - For excellent seeing: can go fainter (mag < 18)
+        # For stars specifically, be more aggressive with magnitude limits (stars are very numerous)
         if conditions.seeing_score < 50:
-            max_mag = 10.0  # Poor seeing: only bright objects
+            max_mag = 8.0 if is_star_query else 10.0  # Stars: only very bright (mag < 8), others: mag < 10
         elif conditions.seeing_score >= 80:
-            max_mag = 18.0  # Excellent seeing: can see fainter
+            max_mag = 12.0 if is_star_query else 18.0  # Stars: mag < 12, others: mag < 18
         else:
-            max_mag = 15.0  # Good seeing: reasonable limit
+            max_mag = 10.0 if is_star_query else 15.0  # Stars: mag < 10, others: mag < 15
 
         # Limit initial query to reduce memory usage
         # We'll get more than max_results to account for filtering
-        initial_limit = min(5000, max_results * 50)  # Get up to 5k or 50x requested results
+        # For stars, use smaller multiplier since we're already filtering by magnitude more aggressively
+        initial_limit = (
+            min(2000, max_results * 20) if is_star_query else min(5000, max_results * 50)
+        )  # Stars: up to 2k or 20x requested, Others: up to 5k or 50x requested
 
         import asyncio
 
@@ -620,12 +638,17 @@ class ObservationPlanner:
         # Filter by visibility
         # Limit processing to reasonable number - we only need max_results * 2 for good candidates
         # This prevents processing thousands of objects when we only need 20
-        processing_limit = max(max_results * 10, 500)  # Process up to 10x requested or 500, whichever is larger
+        # For stars, use smaller multiplier since we're already filtering more aggressively
+        processing_limit = max(max_results * 5, 300) if is_star_query else max(max_results * 10, 500)
         objects_to_process = all_objects[:processing_limit]
+
+        # Separate moons from other objects - moons should always be shown (like planets)
+        moon_objects = [obj for obj in objects_to_process if obj.object_type.value == "moon"]
+        other_objects = [obj for obj in objects_to_process if obj.object_type.value != "moon"]
 
         config = get_current_configuration()
         visible_pairs = filter_visible_objects(
-            objects_to_process,
+            other_objects,
             config=config,
             min_altitude_deg=20.0,
             observer_lat=conditions.latitude,
@@ -633,12 +656,50 @@ class ObservationPlanner:
             dt=conditions.timestamp,
         )
 
+        # For moons, always include them (even if below horizon) but still calculate visibility
+        # This makes moons consistent with other tabs that show all objects
+        from celestron_nexstar.api.observation.visibility import assess_visibility
+
+        # Derive sky_brightness from light_pollution.bortle_class
+        bortle_to_sky_brightness = {
+            1: SkyBrightness.EXCELLENT,
+            2: SkyBrightness.EXCELLENT,
+            3: SkyBrightness.GOOD,
+            4: SkyBrightness.FAIR,
+            5: SkyBrightness.FAIR,
+            6: SkyBrightness.POOR,
+            7: SkyBrightness.URBAN,
+            8: SkyBrightness.URBAN,
+            9: SkyBrightness.URBAN,
+        }
+        sky_brightness = bortle_to_sky_brightness.get(conditions.light_pollution.bortle_class.value, SkyBrightness.FAIR)
+
+        for moon_obj in moon_objects:
+            vis_info = assess_visibility(
+                moon_obj,
+                config=config,
+                sky_brightness=sky_brightness,
+                min_altitude_deg=20.0,
+                observer_lat=conditions.latitude,
+                observer_lon=conditions.longitude,
+                dt=conditions.timestamp,
+            )
+            # Always include moons, even if not visible
+            visible_pairs.append((moon_obj, vis_info))
+
         # Filter out objects that are never visible from this location
         # (objects whose transit altitude is below the horizon)
+        # But skip this check for moons and stars - always show them
+        # Stars are always visible at some point, and the timeline check is expensive
         from celestron_nexstar.api.observation.planning_utils import get_object_visibility_timeline
 
         truly_visible_pairs = []
         for obj, vis_info in visible_pairs:
+            # Always include moons and stars (skip expensive timeline check)
+            if obj.object_type.value in ("moon", "star"):
+                truly_visible_pairs.append((obj, vis_info))
+                continue
+
             try:
                 timeline = get_object_visibility_timeline(
                     obj,

@@ -199,27 +199,38 @@ class CatalogDatabase:
         model_class = cls._get_model_class(object_type)
         return str(model_class.__tablename__)
 
-    def __init__(self, db_path: Path | str | None = None):
+    def __init__(self, db_path: Path | str | None = None, use_memory: bool = False):
         """
         Initialize database connection.
 
         Args:
             db_path: Path to database file (default: ~/.config/celestron-nexstar/catalogs.db)
+            use_memory: If True, load database into memory for faster queries (requires existing database)
         """
         if db_path is None:
             db_path = self._get_default_db_path()
 
         self.db_path = Path(db_path)
+        self.use_memory = use_memory
+        self._source_db_path = self.db_path if use_memory else None
 
         # Use aiosqlite for async SQLite support
         # SQLite URL format for async: sqlite+aiosqlite:///
+        # For in-memory databases, use :memory: (see https://sqlite.org/inmemorydb.html)
+        if use_memory:
+            # Use shared cache for in-memory database so multiple connections can access it
+            # See: https://sqlite.org/inmemorydb.html#sharedmemdb
+            db_url = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
+        else:
+            db_url = f"sqlite+aiosqlite:///{self.db_path}"
+
         # Optimize connection pooling for SQLite:
         # - pool_size: SQLite doesn't use traditional pooling, but this sets max connections
         # - max_overflow: Additional connections beyond pool_size
         # - pool_pre_ping: Verify connections before using (prevents stale connections)
         # - pool_recycle: Recycle connections after this many seconds (not critical for SQLite)
         self._engine = create_async_engine(
-            f"sqlite+aiosqlite:///{self.db_path}",
+            db_url,
             echo=False,  # Set to True for SQL debugging
             future=True,
             pool_size=10,  # Maximum number of connections to maintain
@@ -233,6 +244,15 @@ class CatalogDatabase:
             expire_on_commit=False,
         )
         self._configure_optimizations()
+
+        # If using memory mode, copy the existing database into memory
+        if use_memory and self._source_db_path and self._source_db_path.exists():
+            # This will be called asynchronously when needed
+            self._memory_loaded = False
+            self._memory_dirty = False  # Track if in-memory DB has been modified
+        else:
+            self._memory_loaded = True  # Not using memory or no source DB
+            self._memory_dirty = False
 
     def _get_default_db_path(self) -> Path:
         """Get path to database file in user config directory."""
@@ -256,8 +276,101 @@ class CatalogDatabase:
             cursor.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
             cursor.close()
 
+        # Hook into commit events to track writes when using in-memory mode
+        # Note: This tracks commits on the sync engine (used by async engine under the hood)
+        if self.use_memory:
+
+            @event.listens_for(self._engine.sync_engine, "commit")
+            def mark_dirty(conn: Any) -> None:
+                """Mark in-memory database as dirty when commits occur."""
+                self._memory_dirty = True
+
+    async def _load_database_into_memory(self) -> None:
+        """
+        Load the source database into the in-memory database.
+
+        Uses SQLite's backup API for efficient copying.
+        See: https://sqlite.org/inmemorydb.html
+        """
+        if not self.use_memory or self._memory_loaded:
+            return
+
+        if not self._source_db_path or not self._source_db_path.exists():
+            logger.warning(f"Source database not found: {self._source_db_path}, using empty in-memory database")
+            self._memory_loaded = True
+            return
+
+        try:
+            import aiosqlite
+
+            # Connect to source database (file-based)
+            async with (
+                aiosqlite.connect(str(self._source_db_path)) as source_conn,
+                # Connect to destination database (in-memory with shared cache)
+                # Use the same shared memory name that SQLAlchemy uses
+                aiosqlite.connect("file:memdb1?mode=memory&cache=shared") as dest_conn,
+            ):
+                # Use SQLite backup API to copy database
+                # This is much faster than copying row by row
+                await source_conn.backup(dest_conn)
+                await dest_conn.commit()
+
+            logger.info(f"Loaded database into memory from {self._source_db_path}")
+            self._memory_loaded = True
+            self._memory_dirty = False
+        except Exception as e:
+            logger.error(f"Failed to load database into memory: {e}", exc_info=True)
+            # Fall back to file-based database
+            self.use_memory = False
+            self._memory_loaded = True
+
+    async def _sync_memory_to_file(self) -> None:
+        """
+        Sync the in-memory database back to the file database.
+
+        Uses SQLite's backup API in reverse to copy from memory to file.
+        This should be called after write operations when using in-memory mode.
+        See: https://sqlite.org/inmemorydb.html
+        """
+        if not self.use_memory or not self._memory_dirty or not self._source_db_path:
+            return
+
+        if not self._memory_loaded:
+            # Database not loaded into memory yet, nothing to sync
+            return
+
+        try:
+            import aiosqlite
+
+            # Connect to source database (in-memory)
+            async with (
+                aiosqlite.connect("file:memdb1?mode=memory&cache=shared") as source_conn,
+                # Connect to destination database (file-based)
+                aiosqlite.connect(str(self._source_db_path)) as dest_conn,
+            ):
+                # Use SQLite backup API to copy from memory to file
+                # This efficiently copies the entire database
+                await source_conn.backup(dest_conn)
+                await dest_conn.commit()
+
+            logger.debug(f"Synced in-memory database to file: {self._source_db_path}")
+            self._memory_dirty = False
+        except Exception as e:
+            logger.error(f"Failed to sync in-memory database to file: {e}", exc_info=True)
+
+    async def sync_to_file(self) -> None:
+        """
+        Manually trigger a sync from in-memory database to file.
+
+        This is useful if you want to ensure data is persisted immediately.
+        """
+        await self._sync_memory_to_file()
+
     async def _get_session(self) -> AsyncSession:
         """Get a new async database session."""
+        # Ensure database is loaded into memory if using memory mode
+        if self.use_memory and not self._memory_loaded:
+            await self._load_database_into_memory()
         return self._AsyncSession()
 
     @contextmanager
@@ -272,8 +385,11 @@ class CatalogDatabase:
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
+        # For sync engine, handle in-memory databases
+        db_url = "sqlite:///file:memdb1?mode=memory&cache=shared" if self.use_memory else f"sqlite:///{self.db_path}"
+
         sync_engine = create_engine(
-            f"sqlite:///{self.db_path}",
+            db_url,
             connect_args={"check_same_thread": False},
             echo=False,
         )
@@ -297,6 +413,9 @@ class CatalogDatabase:
     @deal.post(lambda result: result is None, message="Close must complete")
     async def close(self) -> None:
         """Close database connection."""
+        # If using in-memory mode and database has been modified, sync back to file
+        if self.use_memory and self._memory_dirty:
+            await self._sync_memory_to_file()
         await self._engine.dispose()
 
     def __enter__(self) -> CatalogDatabase:
@@ -1021,6 +1140,93 @@ class CatalogDatabase:
 
             return objects
 
+    @deal.pre(lambda self, ra_hours, dec_degrees, radius_arcmin: 0 <= ra_hours < 24, message="RA must be 0-24 hours")  # type: ignore[misc,arg-type]
+    @deal.pre(
+        lambda self, ra_hours, dec_degrees, radius_arcmin: -90 <= dec_degrees <= 90,
+        message="Dec must be -90 to +90 degrees",
+    )  # type: ignore[misc,arg-type]
+    @deal.pre(lambda self, ra_hours, dec_degrees, radius_arcmin: radius_arcmin > 0, message="Radius must be positive")  # type: ignore[misc,arg-type]
+    @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
+    async def search_by_coordinates(
+        self, ra_hours: float, dec_degrees: float, radius_arcmin: float = 5.0, limit: int = 50
+    ) -> list[tuple[CelestialObject, float]]:
+        """
+        Search for objects near given coordinates.
+
+        Args:
+            ra_hours: Right ascension in hours (0-24)
+            dec_degrees: Declination in degrees (-90 to +90)
+            radius_arcmin: Search radius in arcminutes (default: 5.0)
+            limit: Maximum number of results to return (default: 50)
+
+        Returns:
+            List of tuples (CelestialObject, angular_separation_arcmin) sorted by distance
+        """
+        from sqlalchemy import select
+
+        from celestron_nexstar.api.core.utils import angular_separation
+
+        # Convert radius from arcminutes to degrees
+        radius_deg = radius_arcmin / 60.0
+
+        # Approximate bounding box for initial filtering (faster than calculating separation for all objects)
+        # Account for RA wrap-around and declination limits
+        # RA range in degrees (approximate, accounting for declination)
+        cos_dec = abs(max(0.1, abs(dec_degrees)))  # Avoid division by zero
+        ra_range_deg = radius_deg / cos_dec if cos_dec > 0.1 else radius_deg
+        ra_range_hours = ra_range_deg / 15.0
+
+        ra_min = (ra_hours - ra_range_hours) % 24.0
+        ra_max = (ra_hours + ra_range_hours) % 24.0
+        dec_min = max(-90.0, dec_degrees - radius_deg)
+        dec_max = min(90.0, dec_degrees + radius_deg)
+
+        async with self._AsyncSession() as session:
+            all_results: list[tuple[CelestialObject, float]] = []
+
+            # Search across all type-specific tables
+            for model_class in self._TYPE_TO_MODEL.values():
+                # Use bounding box for initial filtering
+                # Handle RA wrap-around (e.g., 23h to 1h)
+                if ra_min <= ra_max:
+                    # Normal case: no wrap-around
+                    stmt = (
+                        select(model_class)
+                        .where(
+                            model_class.ra_hours.between(ra_min, ra_max),
+                            model_class.dec_degrees.between(dec_min, dec_max),
+                        )
+                        .limit(limit * 5)  # Get more candidates for accurate filtering
+                    )
+                else:
+                    # Wrap-around case: RA range crosses 0h
+                    stmt = (
+                        select(model_class)
+                        .where(
+                            (model_class.ra_hours >= ra_min) | (model_class.ra_hours <= ra_max),
+                            model_class.dec_degrees.between(dec_min, dec_max),
+                        )
+                        .limit(limit * 5)  # Get more candidates for accurate filtering
+                    )
+
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+
+                # Calculate accurate angular separation and filter
+                for model in models:
+                    obj = self._model_to_object(model)
+                    separation_deg = angular_separation(ra_hours, dec_degrees, obj.ra_hours, obj.dec_degrees)
+                    separation_arcmin = separation_deg * 60.0
+
+                    if separation_arcmin <= radius_arcmin:
+                        all_results.append((obj, separation_arcmin))
+
+            # Sort by angular separation (closest first)
+            all_results.sort(key=lambda x: x[1])
+
+            # Limit results
+            return all_results[:limit]
+
     @deal.pre(lambda self, catalog, limit: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
@@ -1470,16 +1676,27 @@ _database_instance: CatalogDatabase | None = None
 
 
 @deal.post(lambda result: result is not None, message="Database instance must be returned")
-def get_database() -> CatalogDatabase:
+def get_database(use_memory: bool | None = None) -> CatalogDatabase:
     """
     Get the global database instance.
+
+    Args:
+        use_memory: If True, load database into memory for faster queries.
+                    Requires an existing database file. If None, checks
+                    CELESTRON_USE_MEMORY_DB environment variable. Default: False.
 
     Returns:
         Singleton database instance
     """
     global _database_instance
     if _database_instance is None:
-        _database_instance = CatalogDatabase()
+        # Check environment variable if use_memory not explicitly set
+        if use_memory is None:
+            import os
+
+            use_memory = os.getenv("CELESTRON_USE_MEMORY_DB", "false").lower() in ("true", "1", "yes")
+
+        _database_instance = CatalogDatabase(use_memory=use_memory)
     return _database_instance
 
 

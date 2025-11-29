@@ -71,33 +71,55 @@ This document tracks potential features and enhancements for the Celestron NexSt
 
 ## Telescope Control Enhancements
 
-### ⬜ Goto Queue/Sequence
+### ✅ Goto Queue/Sequence
 
-- Queue multiple objects for automatic slewing
-- Auto-advance after a timer
-- Sequence planning for efficient observing
+- ✅ Queue multiple objects for automatic slewing
+- ✅ Auto-advance after a configurable timer (10-3600 seconds, default 60s)
+- ✅ Sequence planning for efficient observing (optimizes order by proximity)
+- ✅ Queue management window with drag-and-drop reordering
+- ✅ Start/Pause/Stop/Skip controls
+- ✅ Status indicators (Current, Done, Pending)
+- ✅ Save/Load queue to/from JSON files
+- ✅ Integration with main window (context menu "Add to Goto Queue")
+- ✅ Automatic slew completion detection
+- ✅ Greedy nearest-neighbor algorithm for sequence optimization
+- ✅ Considers object altitude for optimal starting point
 
-### ⬜ Tracking History Graph
+### ✅ Tracking History Graph
 
-- Real-time graph of telescope position (RA/Dec or Alt/Az)
-- Visualize tracking accuracy
-- Export tracking data
+- ✅ Real-time graph of telescope position (RA/Dec or Alt/Az)
+- ✅ Visualize tracking accuracy (drift calculation and display)
+- ✅ Export tracking data (CSV and JSON formats)
+- ✅ Dual coordinate system support (switch between Alt/Az and RA/Dec)
+- ✅ Real-time updates with configurable refresh rate
+- ✅ Clear history functionality
+- ✅ Automatic PositionTracker integration
+- ✅ Matplotlib-based visualization with dual subplots
 
-### ⬜ Alignment Assistant
+### ✅ Alignment Assistant
 
-- Step-by-step alignment wizard
-- Visual guides for star selection
-- Alignment quality indicators
+- ✅ Step-by-step alignment wizard
+- ✅ Visual guides for star selection
+- ✅ Alignment quality indicators
+- ✅ Support for SkyAlign (3 objects), Two-Star, and One-Star alignment
+- ✅ Object suggestions with quality scoring
+- ✅ Integration with telescope sync/goto commands
+- ✅ Progress tracking and step-by-step instructions
 
 ---
 
 ## Data and Information
 
-### ⬜ Object Comparison Tool
+### ✅ Object Comparison Tool
 
-- Side-by-side comparison of objects
-- Compare magnitude, size, difficulty, etc.
-- Help choose between similar objects
+- ✅ Side-by-side comparison of objects
+- ✅ Compare magnitude, size, difficulty, visibility, observability, etc.
+- ✅ Help choose between similar objects
+- ✅ Visual indicators (green=best, red=worst) for comparable attributes
+- ✅ Search and add objects to comparison
+- ✅ Remove individual objects or clear all
+- ✅ Real-time visibility and difficulty assessment
+- ✅ Integration with main window (menu and context menu)
 
 ### ✅ Observation Log/Journal
 
@@ -251,10 +273,13 @@ These features are prioritized for quick implementation:
 - ✅ Weather, moon phase, space weather
 - ✅ Auto-refresh functionality
 
-### ⬜ Goto Queue
+### ✅ Goto Queue
 
-- Simple object queue
-- Manual advance through queue
+- ✅ Queue management window with full controls
+- ✅ Automatic slewing with configurable delay
+- ✅ Sequence optimization for efficient observing
+- ✅ Save/Load queue persistence
+- ✅ Context menu integration
 
 ### ⬜ Dark Sky Mode
 
@@ -275,3 +300,38 @@ These features are prioritized for quick implementation:
 ## Last Updated
 
 2025-02-01
+
+### Recent Updates
+
+- **2025-02-01**: ✅ Completed Object Comparison Tool feature
+  - Side-by-side comparison table with key metrics
+  - Visual indicators for best/worst values
+  - Search and add objects functionality
+  - Real-time visibility and difficulty assessment
+  - Integration with context menus
+
+- **2025-02-01**: ✅ Completed Tracking History Graph feature
+  - Real-time position tracking with matplotlib graphs
+  - Dual coordinate system support (Alt/Az and RA/Dec)
+  - Tracking accuracy visualization (drift calculation)
+  - Export functionality (CSV and JSON)
+  - Integration with PositionTracker API
+  - Clear history and real-time updates
+
+- **2025-02-01**: ✅ Completed Alignment Assistant feature
+  - Step-by-step wizard for SkyAlign, Two-Star, and One-Star alignment
+  - Visual guides with object positions and quality indicators
+  - Integration with telescope sync/goto commands
+  - Object suggestions with quality scoring
+
+- **2025-02-01**: ✅ Completed Calibration Assistant feature
+  - Step-by-step backlash calibration wizard
+  - Visual guides with color-coded feedback
+  - Axis-specific instructions (Azimuth, Altitude, or Both)
+
+- **2025-02-01**: ✅ Completed Goto Queue/Sequence feature
+  - Full queue management with drag-and-drop reordering
+  - Auto-advance timer with configurable delay
+  - Sequence optimization algorithm
+  - Save/Load queue persistence
+  - Integration with main window context menus
