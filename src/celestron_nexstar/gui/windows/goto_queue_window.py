@@ -227,6 +227,20 @@ class GotoQueueWindow(QMainWindow):
         self._update_status()
         self.queue_changed.emit()
 
+    def add_objects(self, objects: list[CelestialObject], notes: str = "") -> None:
+        """Add multiple objects to the queue."""
+        if not objects:
+            return
+
+        now = datetime.now(UTC)
+        for obj in objects:
+            queued_obj = QueuedObject(object=obj, added_at=now, notes=notes)
+            self.queue.append(queued_obj)
+
+        self._update_queue_table()
+        self._update_status()
+        self.queue_changed.emit()
+
     def _update_queue_table(self) -> None:
         """Update the queue table display."""
         self.queue_table.setRowCount(len(self.queue))

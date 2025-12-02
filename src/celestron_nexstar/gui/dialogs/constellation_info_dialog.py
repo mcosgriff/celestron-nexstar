@@ -10,9 +10,11 @@ from collections.abc import Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QTextBrowser,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -26,17 +28,53 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class DoubleClickableTextEdit(QTextEdit):
-    """QTextEdit that supports custom double-click handling."""
+class DoubleClickableTextBrowser(QTextBrowser):
+    """QTextBrowser that supports custom double-click handling and link clicks."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Initialize the text edit."""
+        """Initialize the text browser."""
         super().__init__(parent)
         self._double_click_handler: Any = None
+        self._link_click_handler: Any = None
+        self._saved_source: QUrl | None = None
+        # Connect to anchorClicked signal for link handling
+        self.anchorClicked.connect(self._on_anchor_clicked)
 
     def set_double_click_handler(self, handler: Any) -> None:
         """Set the handler function to call on double-click."""
         self._double_click_handler = handler
+
+    def set_link_click_handler(self, handler: Any) -> None:
+        """Set the handler function to call on link click."""
+        self._link_click_handler = handler
+
+    def set_source(self, url: QUrl | str, type: Any = None) -> None:
+        """Override setSource to prevent navigation to starinfo:// URLs."""
+        url_str = url.toString() if isinstance(url, QUrl) else url
+        if url_str.startswith("starinfo://"):
+            # Don't navigate to starinfo:// URLs - we handle them via anchorClicked
+            # Store the current source to prevent clearing
+            if self._saved_source is None:
+                self._saved_source = self.source()
+            return
+        # For other URLs, use default behavior
+        self._saved_source = None  # Clear saved source for valid URLs
+        super().setSource(url, type)
+
+    def _on_anchor_clicked(self, url: QUrl) -> None:
+        """Handle anchor clicks."""
+        url_str = url.toString()
+        if url_str.startswith("starinfo://") and self._link_click_handler:
+            # Handle star info links ourselves - don't let QTextBrowser navigate
+            self._link_click_handler(url_str)
+            # Don't call setSource for starinfo links to avoid warnings
+        else:
+            # For other links (like http/https), use default behavior (open in browser)
+            # Only if it's a valid external URL
+            if url_str.startswith(("http://", "https://")):
+                from PySide6.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(url)
 
     def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
         """Override double-click event to call custom handler if set."""
@@ -101,11 +139,13 @@ class ConstellationInfoDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Create scrollable text area with rich HTML formatting
-        self.info_text = DoubleClickableTextEdit()
-        self.info_text.setReadOnly(True)
-        self.info_text.setAcceptRichText(True)
+        # Use QTextBrowser for better link support
+        self.info_text = DoubleClickableTextBrowser()
+        self.info_text.setOpenExternalLinks(False)  # Handle links ourselves
         # Handle double-clicks to enlarge SVG
         self.info_text.set_double_click_handler(self._on_text_double_click)
+        # Handle link clicks for star info buttons
+        self.info_text.set_link_click_handler(self._on_link_clicked)
         layout.addWidget(self.info_text)
 
         # Add button box
@@ -409,9 +449,14 @@ class ConstellationInfoDialog(QDialog):
                 html_parts.append(
                     "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
                 )
+                # Use theme-aware colors for table header background and borders
+                header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
+                border_color = colors["text_dim"]
+
                 html_parts.append(
-                    "<tr style='background-color: rgba(255, 193, 7, 0.2);'>"
+                    f"<tr style='background-color: {header_bg};'>"
                     "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Name</th>"
+                    "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
                     "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Mag</th>"
                     "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Alt</th>"
                     "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Chance</th>"
@@ -433,12 +478,17 @@ class ConstellationInfoDialog(QDialog):
                     else:
                         prob_color = colors["text_dim"]
 
+                    # Create info button link
+                    star_name_encoded = display_name.replace('"', "&quot;").replace("'", "&#39;")
+                    info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
+
                     html_parts.append(
                         f"<tr>"
-                        f"<td style='padding: 5px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);'>{display_name}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.1);'>{mag_text}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.1);'>{alt_text}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.1);'>"
+                        f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{display_name}</td>"
+                        f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{alt_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>"
                         f"<span style='color: {prob_color};'>{prob_text}</span></td>"
                         f"</tr>"
                     )
@@ -483,13 +533,11 @@ class ConstellationInfoDialog(QDialog):
                 return
 
         # Call original double-click handler for normal text selection
-        from PySide6.QtWidgets import QTextEdit
 
         QTextEdit.mouseDoubleClickEvent(self.info_text, event)
 
     def _show_enlarged_svg(self) -> None:
         """Show the constellation SVG in a larger dialog."""
-        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QScrollArea, QSizePolicy, QVBoxLayout
 
         # Try to import QSvgWidget (it's in QtSvgWidgets in PySide6)
@@ -684,3 +732,35 @@ class ConstellationInfoDialog(QDialog):
 
         # Show dialog
         dialog.exec()
+
+    def _on_link_clicked(self, url: str) -> None:
+        """Handle link clicks - open star info dialog."""
+        if url.startswith("starinfo://"):
+            star_name = url.replace("starinfo://", "")
+            # Decode HTML entities
+            star_name = star_name.replace("&quot;", '"').replace("&#39;", "'")
+            try:
+                # Prevent QTextBrowser from clearing content by reloading immediately
+                # Use QTimer to ensure it happens after Qt processes the click event
+                from PySide6.QtCore import QTimer
+
+                def prevent_clear() -> None:
+                    """Reload content to prevent clearing and ensure clean HTML."""
+                    self._load_constellation_info()
+
+                # Reload after a short delay to ensure Qt has processed the click
+                # This ensures we always have fresh, clean HTML without rgba colors
+                QTimer.singleShot(10, prevent_clear)
+
+                from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+
+                dialog = ObjectInfoDialog(self, star_name)
+                dialog.exec()
+
+                # Reload content after dialog closes to ensure it's fresh and clean
+                # This prevents any issues with rgba colors or other HTML parsing problems
+                self._load_constellation_info()
+            except Exception as e:
+                logger.error(f"Error opening star info dialog: {e}", exc_info=True)
+                # Reload HTML content on error
+                self._load_constellation_info()

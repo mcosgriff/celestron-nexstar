@@ -260,7 +260,9 @@ class ObservationPlanner:
                 # Run async function - this is a sync entry point, so asyncio.run() is safe
                 # Suppress RuntimeWarning about unawaited coroutines - asyncio.run() properly awaits it
                 with warnings_module.catch_warnings():
-                    warnings_module.filterwarnings("ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning)
+                    warnings_module.filterwarnings(
+                        "ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning
+                    )
                     coro = fetch_hourly_weather_forecast(observer_location, hours=hours_ahead)
                     hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(coro)
 

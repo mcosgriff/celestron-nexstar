@@ -638,10 +638,15 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                     result = await session.execute(stmt)
                     all_location_forecasts = result.scalars().all()
 
-                    # Delete forecasts that are stale
-                    for forecast in all_location_forecasts:
-                        if _is_forecast_stale(forecast, now_db):
-                            await session.delete(forecast)
+                    # Collect IDs of stale forecasts for bulk delete
+                    stale_ids = [f.id for f in all_location_forecasts if _is_forecast_stale(f, now_db)]
+
+                    # Bulk delete stale forecasts to avoid row count warnings
+                    if stale_ids:
+                        from sqlalchemy import delete
+
+                        delete_stmt = delete(WeatherForecastModel).where(WeatherForecastModel.id.in_(stale_ids))
+                        await session.execute(delete_stmt)
 
                     # Insert new forecasts
                     for forecast_item in forecasts_to_store:

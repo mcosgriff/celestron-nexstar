@@ -327,10 +327,14 @@ class SpaceWeatherInfoDialog(QDialog):
             html_content.append("</table>")
 
             # Alerts
+            # Use theme-aware background colors (approximating rgba transparency with solid colors)
+            alert_bg = "#fff9e6" if not self._is_dark_theme() else "#4a3d1a"
+            info_bg = "#f5f5f5" if not self._is_dark_theme() else "#2a2a2a"
+
             if conditions.alerts:
                 html_content.append(
                     "<h2>Space Weather Alerts</h2>"
-                    f"<div style='border: 2px solid {colors['yellow']}; padding: 10px; background-color: rgba(255, 193, 7, 0.1);'>"
+                    f"<div style='border: 2px solid {colors['yellow']}; padding: 10px; background-color: {alert_bg};'>"
                     f"<p style='color: {colors['yellow']}; font-weight: bold; margin-top: 0;'>Active Alerts:</p>"
                 )
                 for alert in conditions.alerts:
@@ -341,7 +345,7 @@ class SpaceWeatherInfoDialog(QDialog):
             # Information panel
             html_content.append("<h2>Information</h2>")
             html_content.append(
-                f"<div style='border: 1px solid {colors['text_dim']}; padding: 10px; background-color: rgba(158, 158, 158, 0.1);'>"
+                f"<div style='border: 1px solid {colors['text_dim']}; padding: 10px; background-color: {info_bg};'>"
             )
             html_content.append(
                 f"<p style='color: {colors['text']}; font-weight: bold; margin-top: 0;'>About NOAA Scales:</p>"

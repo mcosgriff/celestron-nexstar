@@ -9,10 +9,11 @@ import threading
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QTextEdit,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +24,50 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+class LinkClickableTextBrowser(QTextBrowser):
+    """QTextBrowser that supports link click handling."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the text browser."""
+        super().__init__(parent)
+        self._link_click_handler: Any = None
+        self._saved_source: QUrl | None = None
+        # Connect to anchorClicked signal for link handling
+        self.anchorClicked.connect(self._on_anchor_clicked)
+
+    def set_link_click_handler(self, handler: Any) -> None:
+        """Set the handler function to call on link click."""
+        self._link_click_handler = handler
+
+    def set_source(self, url: QUrl | str, type: Any = None) -> None:
+        """Override setSource to prevent navigation to starinfo:// URLs."""
+        url_str = url.toString() if isinstance(url, QUrl) else url
+        if url_str.startswith("starinfo://"):
+            # Don't navigate to starinfo:// URLs - we handle them via anchorClicked
+            # Store the current source to prevent clearing
+            if self._saved_source is None:
+                self._saved_source = self.source()
+            return
+        # For other URLs, use default behavior
+        self._saved_source = None  # Clear saved source for valid URLs
+        super().setSource(url, type)
+
+    def _on_anchor_clicked(self, url: QUrl) -> None:
+        """Handle anchor clicks."""
+        url_str = url.toString()
+        if url_str.startswith("starinfo://") and self._link_click_handler:
+            # Handle star info links ourselves - don't let QTextBrowser navigate
+            self._link_click_handler(url_str)
+            # Don't call setSource for starinfo links to avoid warnings
+        else:
+            # For other links (like http/https), use default behavior (open in browser)
+            # Only if it's a valid external URL
+            if url_str.startswith(("http://", "https://")):
+                from PySide6.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(url)
 
 
 def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
@@ -79,9 +124,11 @@ class AsterismInfoDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Create scrollable text area with rich HTML formatting
-        self.info_text = QTextEdit()
-        self.info_text.setReadOnly(True)
-        self.info_text.setAcceptRichText(True)
+        # Use QTextBrowser for better link support
+        self.info_text = LinkClickableTextBrowser()
+        self.info_text.setOpenExternalLinks(False)  # Handle links ourselves
+        # Handle link clicks for star info buttons
+        self.info_text.set_link_click_handler(self._on_link_clicked)
         layout.addWidget(self.info_text)
 
         # Add button box
@@ -233,8 +280,32 @@ class AsterismInfoDialog(QDialog):
                 html_parts.append(
                     f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Component Stars:</p>"
                 )
-                stars_str = ", ".join(asterism.member_stars)
-                html_parts.append(f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>{stars_str}</p>")
+                # Create a table with info buttons
+                html_parts.append(
+                    "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
+                )
+                # Use theme-aware colors for table header background and borders
+                header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
+                border_color = colors["text_dim"]
+
+                html_parts.append(
+                    f"<tr style='background-color: {header_bg};'>"
+                    "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
+                    "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
+                    "</tr>"
+                )
+
+                for star_name in asterism.member_stars:
+                    star_name_encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
+                    info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
+                    html_parts.append(
+                        f"<tr>"
+                        f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{star_name}</td>"
+                        f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                        f"</tr>"
+                    )
+
+                html_parts.append("</table>")
 
             # Wikipedia link
             if hasattr(asterism, "wikipedia_url") and asterism.wikipedia_url:
@@ -255,3 +326,35 @@ class AsterismInfoDialog(QDialog):
             self.info_text.setHtml(
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load asterism information: {e}</p>"
             )
+
+    def _on_link_clicked(self, url: str) -> None:
+        """Handle link clicks - open star info dialog."""
+        if url.startswith("starinfo://"):
+            star_name = url.replace("starinfo://", "")
+            # Decode HTML entities
+            star_name = star_name.replace("&quot;", '"').replace("&#39;", "'")
+            try:
+                # Prevent QTextBrowser from clearing content by restoring immediately
+                # Use QTimer to ensure it happens after Qt processes the click event
+                from PySide6.QtCore import QTimer
+
+                def prevent_clear() -> None:
+                    """Reload content to prevent clearing and ensure clean HTML."""
+                    self._load_asterism_info()
+
+                # Reload after a short delay to ensure Qt has processed the click
+                # This ensures we always have fresh, clean HTML without rgba colors
+                QTimer.singleShot(10, prevent_clear)
+
+                from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+
+                dialog = ObjectInfoDialog(self, star_name)
+                dialog.exec()
+
+                # Reload content after dialog closes to ensure it's fresh and clean
+                # This prevents any issues with rgba colors or other HTML parsing problems
+                self._load_asterism_info()
+            except Exception as e:
+                logger.error(f"Error opening star info dialog: {e}", exc_info=True)
+                # Reload HTML content on error
+                self._load_asterism_info()

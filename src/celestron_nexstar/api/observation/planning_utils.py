@@ -144,23 +144,28 @@ def get_object_visibility_timeline(
     is_circumpolar = dec_abs > (90 - lat_abs)
 
     # Calculate transit time (when object is highest)
+    # Transit occurs when LST = RA (hour angle = 0)
     lst_hours = calculate_lst(observer_lon, start_time)
-    ha_hours = lst_hours - ra_hours
 
-    # Normalize hour angle
-    while ha_hours > 12:
-        ha_hours -= 24
-    while ha_hours < -12:
-        ha_hours += 24
+    # Calculate time until next transit when LST = RA
+    # LST increases at approximately 15.041 degrees per hour (360/23.9345)
+    # Convert to hours: LST increases by 1 hour per sidereal hour
+    # But sidereal hours are shorter than solar hours by factor 0.9973
 
-    time_diff_hours = ha_hours * 0.9973
+    # Find the difference in LST needed to reach RA
+    lst_diff_hours = ra_hours - lst_hours
+
+    # Normalize to 0-24 range (find next transit)
+    while lst_diff_hours < 0:
+        lst_diff_hours += 24.0
+    while lst_diff_hours >= 24.0:
+        lst_diff_hours -= 24.0
+
+    # Convert sidereal hours to solar hours
+    # Sidereal day is 23.9345 hours, so 1 sidereal hour = 23.9345/24 = 0.9973 solar hours
+    time_diff_hours = lst_diff_hours * (23.9345 / 24.0)
+
     transit_time = start_time + timedelta(hours=time_diff_hours)
-
-    if abs(time_diff_hours) > 12:
-        if time_diff_hours > 0:
-            transit_time -= timedelta(hours=24)
-        else:
-            transit_time += timedelta(hours=24)
 
     # Get altitude at transit
     # Note: ra_dec_to_alt_az returns (azimuth, altitude), not (altitude, azimuth)

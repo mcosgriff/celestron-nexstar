@@ -46,6 +46,9 @@ class SpaceEventType(StrEnum):
     ASTEROID_FLYBY = "asteroid_flyby"
     SOLSTICE = "solstice"
     EQUINOX = "equinox"
+    MOON_PHASE = "moon_phase"
+    MOON_POSITION = "moon_position"
+    CONJUNCTION = "conjunction"
     OTHER = "other"
 
 
@@ -210,9 +213,24 @@ def get_upcoming_events(
                 notes=db_event.viewing_notes,
             )
 
+            # Handle invalid enum values gracefully
+            event_type_str = db_event.event_type
+            try:
+                event_type = SpaceEventType(event_type_str)
+            except ValueError:
+                # Map old/invalid event types to valid ones
+                event_type_map = {
+                    "planetary": SpaceEventType.PLANETARY_OPPOSITION,
+                    "eclipse": SpaceEventType.LUNAR_ECLIPSE,  # Default to lunar
+                    "opposition": SpaceEventType.PLANETARY_OPPOSITION,
+                    "elongation": SpaceEventType.PLANETARY_ELONGATION,
+                }
+                event_type = event_type_map.get(event_type_str, SpaceEventType.OTHER)
+                logger.debug(f"Mapped invalid event type '{event_type_str}' to '{event_type.value}'")
+
             event = SpaceEvent(
                 name=db_event.name,
-                event_type=SpaceEventType(db_event.event_type),
+                event_type=event_type,
                 date=db_event.date,
                 description=db_event.description,
                 viewing_requirements=req,

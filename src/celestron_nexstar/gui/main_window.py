@@ -737,6 +737,14 @@ class MainWindow(QMainWindow):
         self.dashboard_action.setStatusTip("View real-time observing conditions dashboard")
         self.dashboard_action.triggered.connect(self._on_live_dashboard)
 
+        # Astronomical Calendar
+        calendar_icon = self._create_icon("event", ["calendar", "calendar-month", "calendar-outline"])
+        self.calendar_action = planning_menu.addAction(calendar_icon, "Astronomical Calendar")
+        self.calendar_action.setIconVisibleInMenu(True)
+        self.calendar_action.setToolTip("ASTRONOMICAL CALENDAR")
+        self.calendar_action.setStatusTip("View astronomical events calendar")
+        self.calendar_action.triggered.connect(self._on_astronomical_calendar)
+
         planning_menu.addSeparator()
 
         # Equipment Manager
@@ -2129,9 +2137,19 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
-        # Add to Queue action
-        add_to_queue_action = menu.addAction("Add to Goto Queue")
+        # Add to Queue action (supports multiple selections)
+        selected_count = len(table.selectionModel().selectedRows()) if table.selectionModel().selectedRows() else 0
+        if selected_count > 1:
+            add_to_queue_action = menu.addAction(f"Add {selected_count} Objects to Goto Queue")
+        else:
+            add_to_queue_action = menu.addAction("Add to Goto Queue")
         add_to_queue_action.triggered.connect(lambda: self._on_context_menu_add_to_queue(table, row))
+
+        # Add All Stars to Queue action (for constellations and asterisms only)
+        obj_type = table.property("object_type")
+        if obj_type in ("constellation", "asterism"):
+            add_stars_action = menu.addAction("Add All Stars to Goto Queue")
+            add_stars_action.triggered.connect(lambda: self._on_context_menu_add_all_stars_to_queue(table, row))
 
         # Compare Objects action
         compare_action = menu.addAction("Compare Objects")
@@ -2216,6 +2234,86 @@ class MainWindow(QMainWindow):
 
     def _on_context_menu_add_to_queue(self, table: QTableWidget, row: int) -> None:
         """Handle context menu add to queue action."""
+        # Get all selected rows (or just the right-clicked row if no selection)
+        selected_rows = table.selectionModel().selectedRows()
+        rows_to_add = [row] if not selected_rows else [r.row() for r in selected_rows]
+
+        # Collect object names from selected rows
+        obj_type = table.property("object_type")
+        object_names: list[str] = []
+
+        for r in rows_to_add:
+            name_item = table.item(r, 0) if obj_type in ("constellation", "asterism") else table.item(r, 1)
+            if not name_item:
+                continue
+
+            object_name = name_item.data(Qt.ItemDataRole.UserRole)
+            if not object_name:
+                display_text = name_item.text()
+                object_name = display_text.removeprefix("★ ").strip()
+
+            if object_name:
+                object_names.append(object_name)
+
+        if not object_names:
+            return
+
+        # Get the CelestialObjects
+        import asyncio
+
+        from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
+
+        try:
+            objects_to_add = []
+            not_found = []
+
+            for object_name in object_names:
+                matches = asyncio.run(get_object_by_name(object_name))
+                if not matches:
+                    not_found.append(object_name)
+                else:
+                    obj = matches[0].with_current_position()
+                    objects_to_add.append(obj)
+
+            # Show warning for objects not found
+            if not_found:
+                from PySide6.QtWidgets import QMessageBox
+
+                QMessageBox.warning(
+                    self, "Objects Not Found", f"Could not find the following objects:\n{', '.join(not_found)}"
+                )
+
+            if not objects_to_add:
+                return
+
+            # Open or get goto queue window
+            if not hasattr(self, "_goto_queue_window") or self._goto_queue_window is None:
+                self._on_goto_queue()
+
+            # Add objects to queue
+            # Update telescope reference if needed
+            if self._goto_queue_window is not None:
+                if self._goto_queue_window.telescope != self.telescope:
+                    self._goto_queue_window.telescope = self.telescope
+
+                # Use add_objects for multiple, add_object for single (for efficiency)
+                if len(objects_to_add) > 1:
+                    self._goto_queue_window.add_objects(objects_to_add)
+                else:
+                    self._goto_queue_window.add_object(objects_to_add[0])
+
+                self._goto_queue_window.show()
+                self._goto_queue_window.raise_()
+                self._goto_queue_window.activateWindow()
+
+        except Exception as e:
+            logger.error(f"Error adding objects to queue: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to add objects to queue: {e}")
+
+    def _on_context_menu_add_all_stars_to_queue(self, table: QTableWidget, row: int) -> None:
+        """Handle context menu add all stars to queue action for constellations/asterisms."""
         # Get object name
         obj_type = table.property("object_type")
         name_item = table.item(row, 0) if obj_type in ("constellation", "asterism") else table.item(row, 1)
@@ -2231,40 +2329,68 @@ class MainWindow(QMainWindow):
         if not object_name:
             return
 
-        # Get the CelestialObject
         import asyncio
 
+        from PySide6.QtWidgets import QMessageBox
+
         from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
+        from celestron_nexstar.api.database.database import get_database
 
         try:
-            matches = asyncio.run(get_object_by_name(object_name))
-            if not matches:
-                from PySide6.QtWidgets import QMessageBox
+            stars_to_add = []
 
-                QMessageBox.warning(self, "Object Not Found", f"Could not find object: {object_name}")
+            if obj_type == "asterism":
+                # Get asterism from cache to access member_stars
+                asterism = self._asterism_objects_cache.get(object_name)
+                if not asterism or not asterism.member_stars:
+                    QMessageBox.information(self, "No Stars", f"Asterism '{object_name}' has no member stars defined.")
+                    return
+
+                # Look up each star by name
+                for star_name in asterism.member_stars:
+                    star_name = star_name.strip()
+                    if not star_name:
+                        continue
+                    matches = asyncio.run(get_object_by_name(star_name))
+                    if matches:
+                        obj = matches[0].with_current_position()
+                        stars_to_add.append(obj)
+
+            elif obj_type == "constellation":
+                # Query database for all stars in this constellation
+                db = get_database()
+                stars = asyncio.run(db.filter_objects(object_type="star", constellation=object_name, limit=200))
+                for star in stars:
+                    star = star.with_current_position()
+                    stars_to_add.append(star)
+
+            if not stars_to_add:
+                QMessageBox.information(self, "No Stars Found", f"No stars found for {obj_type} '{object_name}'.")
                 return
-
-            obj = matches[0].with_current_position()
 
             # Open or get goto queue window
             if not hasattr(self, "_goto_queue_window") or self._goto_queue_window is None:
                 self._on_goto_queue()
 
-            # Add object to queue
-            # Update telescope reference if needed
+            # Add all stars to queue
             if self._goto_queue_window is not None:
                 if self._goto_queue_window.telescope != self.telescope:
                     self._goto_queue_window.telescope = self.telescope
-                self._goto_queue_window.add_object(obj)
+
+                self._goto_queue_window.add_objects(stars_to_add)
                 self._goto_queue_window.show()
                 self._goto_queue_window.raise_()
                 self._goto_queue_window.activateWindow()
 
-        except Exception as e:
-            logger.error(f"Error adding object to queue: {e}", exc_info=True)
-            from PySide6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self,
+                    "Stars Added",
+                    f"Added {len(stars_to_add)} star(s) from {obj_type} '{object_name}' to the goto queue.",
+                )
 
-            QMessageBox.critical(self, "Error", f"Failed to add object to queue: {e}")
+        except Exception as e:
+            logger.error(f"Error adding stars to queue: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to add stars to queue: {e}")
 
     def _on_context_menu_log_observation(self, object_name: str) -> None:
         """Handle context menu log observation action."""
@@ -2588,6 +2714,15 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.gui.dialogs.live_dashboard_dialog import LiveDashboardDialog
 
         dialog = LiveDashboardDialog(self)
+        dialog.exec()
+
+    def _on_astronomical_calendar(self) -> None:
+        """Handle astronomical calendar button click."""
+        from celestron_nexstar.gui.dialogs.astronomical_calendar_dialog import (
+            AstronomicalCalendarDialog,
+        )
+
+        dialog = AstronomicalCalendarDialog(self)
         dialog.exec()
 
     def _on_equipment_manager(self) -> None:

@@ -51,7 +51,6 @@ class TimeInfoDialog(QDialog):
 
         self.utc_time_label = QLabel()
         time_form.addRow("UTC Time:", self.utc_time_label)
-        time_form.addRow("<br>")
 
         layout.addLayout(time_form)
 

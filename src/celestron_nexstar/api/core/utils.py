@@ -67,12 +67,10 @@ def configure_astropy_iers() -> None:
         # Try to refresh IERS data if it's outdated
         # This helps ensure we have the most recent data available
         try:
-            # Check if we can access the IERS table and refresh it
-            # This will download the latest data if available
+            # IERS_Auto will automatically download newer data if available
+            # Opening it will trigger a download if the cache is stale
             iers_table = iers.IERS_Auto.open()
             if iers_table:
-                # Force a refresh by checking for updates
-                # The IERS_Auto class will automatically download newer data if available
                 logger.debug("IERS data table loaded successfully")
         except Exception as refresh_error:
             # If refresh fails, that's okay - astropy will use cached data
@@ -81,27 +79,48 @@ def configure_astropy_iers() -> None:
         # Suppress the specific warning about IERS data validity
         # This warning appears when calculating positions for dates beyond the current IERS data range
         # For telescope control applications, the precision loss (arcsec level) is acceptable
-        # Use multiple patterns to catch variations in the warning message
+        # The warning can come from different modules, so we catch it broadly
         warnings.filterwarnings(
             "ignore",
             message=".*Tried to get polar motions for times after IERS data is valid.*",
-            category=UserWarning,
         )
         warnings.filterwarnings(
             "ignore",
             message=".*polar motions for times after IERS data is valid.*",
-            category=UserWarning,
         )
         warnings.filterwarnings(
             "ignore",
             message=".*IERS data is valid.*",
-            category=UserWarning,
         )
-        # Also catch the more general warning format
         warnings.filterwarnings(
             "ignore",
             message=".*Defaulting to polar motion from the 50-yr mean.*",
-            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*check your astropy.utils.iers.conf.iers_auto_url.*",
+        )
+        # Also suppress the warning from the specific module
+        warnings.filterwarnings(
+            "ignore",
+            module="astropy.coordinates.builtin_frames.utils",
+            message=".*polar motions.*",
+        )
+
+        # Suppress warnings from jplephem about unawaited coroutines
+        # These are false positives - coroutines are properly awaited via asyncio.run()
+        # jplephem's internal code detects coroutines before they're awaited, but they are properly awaited
+        warnings.filterwarnings(
+            "ignore",
+            message=".*coroutine.*was never awaited.*",
+            category=RuntimeWarning,
+        )
+        # Also suppress specifically for jplephem module
+        warnings.filterwarnings(
+            "ignore",
+            module="jplephem.*",
+            message=".*coroutine.*",
+            category=RuntimeWarning,
         )
 
         logger.debug("Astropy IERS configuration applied successfully")
