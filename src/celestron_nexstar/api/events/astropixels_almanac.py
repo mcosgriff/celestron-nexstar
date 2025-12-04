@@ -250,8 +250,22 @@ def _classify_event_type(event_name: str) -> str:
         return "moon_descending_node"
 
     # Star positions (Pleiades, Aldebaran, Pollux, Regulus, Spica, Antares)
+    # Check for star names in the event (e.g., "Pleiades 0.8°S of Moon" or "Pollux 2.9°N of Moon")
     elif any(star in event_lower for star in ["pleiades", "aldebaran", "pollux", "regulus", "spica", "antares"]):
         return "star_position"
+
+    # Planetary conjunctions with Moon or other objects
+    # Patterns like "Jupiter 3.7°S of Moon", "Venus 1.4°N of Moon", "Mars 0.2°S of Moon"
+    # These are conjunctions, not just planetary positions
+    elif any(
+        planet in event_lower for planet in ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
+    ):
+        # Check if it's a conjunction pattern (e.g., "Jupiter X°S of Moon" or "Venus X°N of Moon")
+        if "of moon" in event_lower or "of sun" in event_lower or "°n of" in event_lower or "°s of" in event_lower:
+            return "conjunction"
+        # Otherwise, it's a general planetary event
+        else:
+            return "planetary_opposition"  # Default for planetary events
 
     else:
         return "other"
@@ -634,8 +648,8 @@ async def get_cached_astropixels_events(
 
     Args:
         db_session: Database session
-        start_date: Start date
-        end_date: End date
+        start_date: Start date (in UTC)
+        end_date: End date (in UTC)
         timezone_offset: Timezone offset in hours (e.g., -7 for MST) to reconstruct local_date
 
     Returns:
@@ -645,19 +659,40 @@ async def get_cached_astropixels_events(
 
     from celestron_nexstar.api.database.models import SpaceEventModel
 
+    # Adjust query range to account for timezone offset
+    # Events stored in UTC might correspond to dates in local timezone that are
+    # outside the UTC date range. For example, Dec 31 23:00 MST = Jan 1 06:00 UTC.
+    # So we need to expand the query range by the timezone offset to capture all events.
+    query_start = start_date
+    query_end = end_date
+
+    if timezone_offset is not None:
+        # If timezone_offset is negative (e.g., -7 for MST), events late in the day
+        # in local time will be on the next day in UTC. So we need to extend the
+        # end_date by the absolute value of the offset.
+        # Similarly, events early in the day might be on the previous day in UTC.
+        offset_hours = abs(timezone_offset)
+        query_start = start_date - timedelta(hours=offset_hours)
+        query_end = end_date + timedelta(hours=offset_hours)
+
     result = await db_session.execute(
         select(SpaceEventModel)
         .where(
             and_(
                 SpaceEventModel.source == "AstroPixels",
-                SpaceEventModel.date >= start_date,
-                SpaceEventModel.date <= end_date,
+                SpaceEventModel.date >= query_start,
+                SpaceEventModel.date <= query_end,
             )
         )
         .order_by(SpaceEventModel.date)
     )
 
     models = result.scalars().all()
+
+    logger.debug(
+        f"Retrieved {len(models)} events from database (query range: {query_start} to {query_end}, "
+        f"original range: {start_date} to {end_date}, tz_offset: {timezone_offset})"
+    )
 
     events = []
     for model in models:
@@ -681,6 +716,9 @@ async def get_cached_astropixels_events(
                 # If reconstruction fails, use None (will fall back to UTC date)
                 local_date = None
 
+        # Don't filter here - return all events from the expanded query
+        # The calendar dialog will handle filtering based on the actual date range needed
+        # This ensures we don't accidentally filter out valid events due to timezone conversion issues
         events.append(
             AstroPixelsEvent(
                 date=model.date,
@@ -691,4 +729,5 @@ async def get_cached_astropixels_events(
             )
         )
 
+    logger.debug(f"Returning {len(events)} events (all events from expanded query range)")
     return events

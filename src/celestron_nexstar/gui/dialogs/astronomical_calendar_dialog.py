@@ -194,6 +194,7 @@ class AstronomicalCalendarDialog(QDialog):
             ("star_position", "Star Positions"),
             ("solstice", "Solstices"),
             ("equinox", "Equinoxes"),
+            ("other", "Other Events"),
         ]
         for event_type, label in event_types:
             checkbox = QCheckBox(label)

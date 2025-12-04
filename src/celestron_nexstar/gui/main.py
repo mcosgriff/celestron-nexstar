@@ -2,7 +2,9 @@
 Main entry point for the GUI application.
 """
 
+import logging
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
@@ -11,8 +13,48 @@ from celestron_nexstar.gui.main_window import MainWindow
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 
 
+def _setup_logging() -> None:
+    """Set up logging to file and console."""
+    # Create log directory in user's config directory
+    config_dir = Path.home() / ".config" / "celestron-nexstar"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    log_file = config_dir / "nexstar-gui.log"
+
+    # Configure logging format
+    log_format = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
+    date_format = "%Y-%m-%d %H:%M:%S"
+
+    # Set up root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    # File handler - write all logs to file
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(log_format, date_format)
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(file_handler)
+
+    # Console handler - only show INFO and above to avoid cluttering console
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter("%(levelname)-8s %(name)s: %(message)s")
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # Log where the log file is located
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging to file: {log_file}")
+
+
 def main() -> int:
     """Main entry point for the GUI application."""
+    # Set up logging first
+    _setup_logging()
+
     # Configure astropy IERS data handling early to avoid warnings
     configure_astropy_iers()
 
