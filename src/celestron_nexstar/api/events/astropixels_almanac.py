@@ -7,6 +7,7 @@ Fetches and caches events from https://astropixels.com/almanac/
 
 from __future__ import annotations
 
+import html as html_module
 import logging
 import re
 from dataclasses import dataclass
@@ -194,33 +195,64 @@ def _classify_event_type(event_name: str) -> str:
     """Classify event type based on event name."""
     event_lower = event_name.lower()
 
+    # Moon phases
     if "full moon" in event_lower or "new moon" in event_lower or "quarter" in event_lower:
         return "moon_phase"
+
+    # Meteor showers
     elif "meteor" in event_lower or "shower" in event_lower:
         return "meteor_shower"
+
+    # Eclipses
     elif "lunar eclipse" in event_lower or ("eclipse" in event_lower and "lunar" in event_lower):
         return "lunar_eclipse"
     elif "solar eclipse" in event_lower or ("eclipse" in event_lower and "solar" in event_lower):
         return "solar_eclipse"
-    elif "eclipse" in event_lower:
-        # Default to lunar if not specified
-        return "lunar_eclipse"
+
+    # Solstices and equinoxes
     elif "solstice" in event_lower:
         return "solstice"
     elif "equinox" in event_lower:
         return "equinox"
-    elif "apogee" in event_lower or "perigee" in event_lower:
-        return "moon_position"
-    elif "conjunction" in event_lower:
-        return "conjunction"
+
+    # Moon positions
+    elif "perigee" in event_lower:
+        return "moon_perigee"
+    elif "apogee" in event_lower:
+        return "moon_apogee"
+
+    # Planetary positions
+    elif "perihelion" in event_lower:
+        return "planetary_perihelion"
+    elif "aphelion" in event_lower:
+        return "planetary_aphelion"
+    elif "inferior conjunction" in event_lower:
+        return "planetary_inferior_conjunction"
+    elif "superior conjunction" in event_lower:
+        return "planetary_superior_conjunction"
+    elif "greatest elongation" in event_lower or "elongation" in event_lower:
+        return "planetary_elongation"
     elif "opposition" in event_lower:
         return "planetary_opposition"
-    elif "elongation" in event_lower:
-        return "planetary_elongation"
-    elif any(
-        planet in event_lower for planet in ["mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune"]
-    ):
-        return "planetary_opposition"  # Default for planetary events
+
+    # Conjunctions (general)
+    elif "conjunction" in event_lower:
+        return "conjunction"
+
+    # Occultations
+    elif "occn" in event_lower or "occultation" in event_lower or "occults" in event_lower:
+        return "occultation"
+
+    # Moon nodes
+    elif "ascending node" in event_lower:
+        return "moon_ascending_node"
+    elif "descending node" in event_lower:
+        return "moon_descending_node"
+
+    # Star positions (Pleiades, Aldebaran, Pollux, Regulus, Spica, Antares)
+    elif any(star in event_lower for star in ["pleiades", "aldebaran", "pollux", "regulus", "spica", "antares"]):
+        return "star_position"
+
     else:
         return "other"
 
@@ -252,7 +284,7 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                 logger.error(f"Failed to fetch almanac: HTTP {response.status}")
                 return events
 
-            html = await response.text()
+            html = await response.text(encoding="utf-8")
             soup = BeautifulSoup(html, "html.parser")
 
             # Find the main table with events
@@ -288,7 +320,11 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
 
             # Parse each pre block (each represents a time period, e.g., Jan-Jun, Jul-Dec)
             for pre_block in pre_tags:
-                pre_text = pre_block.get_text()
+                # Get text and decode HTML entities to preserve special characters like °
+                # Use get_text with separator to preserve line structure
+                pre_text = pre_block.get_text(separator="\n", strip=False)
+                # Decode HTML entities if any (BeautifulSoup should handle this, but ensure UTF-8)
+                pre_text = html_module.unescape(pre_text)
                 lines = pre_text.split("\n")
 
                 logger.debug(f"Parsing pre block with {len(lines)} lines")
@@ -296,16 +332,21 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                 # Skip header lines
                 current_month = None
                 lines_processed = 0
+                skipped_lines = []  # Track skipped lines for debugging
                 for line in lines:
-                    line = line.strip()
-                    if not line:
+                    original_line = line  # Keep original for debugging (before stripping)
+                    # Don't strip yet - we need leading spaces for continuation lines
+                    line_stripped = line.strip()
+                    if not line_stripped:
                         continue
+                    # Use original_line for parsing, but line_stripped for checks
+                    line = original_line
 
-                    # Skip header lines
+                    # Skip header lines (use stripped version for checks)
                     if (
-                        line.lower().startswith("date")
-                        or line.lower().startswith("(h:m)")
-                        or "sky event" in line.lower()
+                        line_stripped.lower().startswith("date")
+                        or line_stripped.lower().startswith("(h:m)")
+                        or "sky event" in line_stripped.lower()
                     ):
                         continue
 
@@ -313,8 +354,8 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                     # Or: "    03  08     Quadrantid Meteor Shower" (continued from previous month)
                     # Pattern: Optional month abbreviation, day, time, event
 
-                    # Check if line starts with month abbreviation
-                    month_match = re.match(r"^([A-Z][a-z]{2})\s+(\d{1,2})", line)
+                    # Check if line starts with month abbreviation (use stripped version)
+                    month_match = re.match(r"^([A-Z][a-z]{2})\s+(\d{1,2})", line_stripped)
                     if month_match:
                         month_str, day_str = month_match.groups()
                         # Update current month
@@ -336,29 +377,49 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                         if not current_month:
                             continue
                         day = int(day_str)
-                        # Extract time and event from rest of line
-                        rest = line[month_match.end() :].strip()
+                        # Extract time and event from rest of line (use original line to preserve spacing)
+                        # Find the position in original line
+                        month_pos = line.find(month_str + " " + day_str)
+                        if month_pos >= 0:
+                            rest = line[month_pos + month_match.end() :].strip()
+                        else:
+                            # Fallback to stripped version
+                            rest = line_stripped[month_match.end() :].strip()
                     else:
                         # Line continues from previous month (starts with spaces and day)
                         # Match lines like "    04  16:14  FULL MOON" or "    04  04:06  Moon at Perigee"
                         # The line might have leading spaces, then day, then spaces, then time/event
-                        day_match = re.match(r"^\s+(\d{1,2})\s+(.+)", line)
+                        # Try with leading spaces first (most common case)
+                        # Use original_line here since line might have been stripped
+                        day_match = re.match(r"^\s+(\d{1,2})\s+(.+)", original_line)
                         if day_match and current_month:
                             day = int(day_match.group(1))
                             rest = day_match.group(2).strip()  # Get everything after day
                         else:
                             # Try without leading spaces (in case line was already stripped)
-                            day_match = re.match(r"^(\d{1,2})\s+(.+)", line)
+                            day_match = re.match(r"^(\d{1,2})\s+(.+)", line_stripped)
                             if day_match and current_month:
                                 day = int(day_match.group(1))
                                 rest = day_match.group(2).strip()
                             else:
+                                # If we can't parse and don't have a current_month, skip
+                                if current_month is None:
+                                    skipped_lines.append(f"No current_month: {original_line[:100]}")
+                                    continue
+                                # If we have a current_month but can't parse, log it for debugging
+                                skipped_lines.append(
+                                    f"Could not parse (current_month={current_month}): {original_line[:100]}"
+                                )
+                                logger.debug(
+                                    f"Could not parse line (no month match, current_month={current_month}): {original_line[:100]}"
+                                )
                                 continue
 
                     # Parse time and event from rest of line
                     # Format: "08:24  Event" or "08     Event" (hours only) or just "Event" (no time)
                     # The time might have multiple spaces before the event
                     # Try to match time with colon first (e.g., "16:14  FULL MOON")
+                    # Use \s+ to match one or more spaces between time and event
                     time_match = re.match(r"(\d{1,2}):(\d{2})\s+(.+)", rest)
                     if time_match:
                         hour_str, minute_str, event_text = time_match.groups()
@@ -367,6 +428,7 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                         event_name = event_text.strip()
                     else:
                         # Try to match time without colon (hours only, e.g., "08     Event")
+                        # Match one or more spaces between hour and event
                         hour_match = re.match(r"(\d{1,2})\s+(.+)", rest)
                         if hour_match:
                             hour_str, event_text = hour_match.groups()
@@ -374,6 +436,11 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
                             minute = 0
                             event_name = event_text.strip()
                         else:
+                            # No time, just event - but check if rest starts with a number (might be a time)
+                            # If rest is just whitespace or empty, skip
+                            if not rest or not rest.strip():
+                                logger.debug(f"Skipping line with empty event text: {line[:100]}")
+                                continue
                             # No time, just event
                             event_name = rest.strip()
                             hour = 12  # Default to noon
@@ -427,10 +494,15 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
 
             logger.info(f"Parsed {len(events)} events from pre-formatted data")
 
-            # Count December events
-            december_count = sum(1 for e in events if e.local_date and e.local_date.month == 12)
+            # Count December events and log them
+            december_events_list = [e for e in events if e.local_date and e.local_date.month == 12]
+            december_count = len(december_events_list)
             if december_count > 0:
                 logger.info(f"Found {december_count} events in December")
+                # Log all December events for debugging
+                for e in sorted(december_events_list, key=lambda x: x.local_date.day if x.local_date else 0):
+                    if e.local_date:
+                        logger.debug(f"  Dec {e.local_date.day:02d} {e.event_name}")
 
             logger.info(f"Parsed {len(events)} events from AstroPixels almanac for {year}")
 
@@ -492,12 +564,15 @@ async def cache_astropixels_events(
                 SpaceEventModel.date < datetime(year + 1, 1, 1, tzinfo=UTC),
             )
         )
+        await db_session.commit()  # Commit the delete before adding new events
+        logger.info(f"Deleted existing AstroPixels events for {year} (force_refresh=True)")
 
     # Store events
     added = 0
     skipped = 0
+    updated = 0
     for event in events:
-        # Check if event already exists
+        # Check if event already exists (by name and date)
         existing = await db_session.scalar(
             select(SpaceEventModel)
             .where(
@@ -509,11 +584,15 @@ async def cache_astropixels_events(
         )
 
         if not existing:
+            # Ensure text is properly encoded (UTF-8) to preserve special characters
+            event_name = event.event_name.encode("utf-8", errors="replace").decode("utf-8")
+            event_description = event.description.encode("utf-8", errors="replace").decode("utf-8")
+
             db_event = SpaceEventModel(
-                name=event.event_name,
+                name=event_name,
                 event_type=event.event_type,
                 date=event.date,
-                description=event.description,
+                description=event_description,
                 source="AstroPixels",
                 url=f"https://astropixels.com/almanac/almanac21/almanac{year}{timezone.lower()}.html",
             )
@@ -527,7 +606,13 @@ async def cache_astropixels_events(
                     f"local_date={event.local_date}, type={event.event_type}"
                 )
         else:
-            skipped += 1
+            # Update existing event's event_type in case classification changed
+            if existing.event_type != event.event_type:
+                existing.event_type = event.event_type
+                existing.description = event.description.encode("utf-8", errors="replace").decode("utf-8")
+                updated += 1
+            else:
+                skipped += 1
             # Debug logging for skipped FULL MOON events
             if "FULL MOON" in event.event_name.upper() or "full moon" in event.event_name.lower():
                 logger.debug(
@@ -536,9 +621,9 @@ async def cache_astropixels_events(
                 )
 
     await db_session.commit()
-    logger.info(f"Cached {added} AstroPixels events for {year} (skipped {skipped} duplicates)")
+    logger.info(f"Cached {added} new AstroPixels events for {year} (updated {updated}, skipped {skipped} duplicates)")
 
-    return added
+    return added + updated
 
 
 async def get_cached_astropixels_events(

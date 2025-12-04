@@ -21,15 +21,19 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QDate, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QMouseEvent
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
     QLabel,
     QProgressDialog,
     QPushButton,
-    QScrollArea,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -95,314 +99,7 @@ class CalendarEvent:
     color: str  # Hex color for highlighting
 
 
-class _ClickableDayCell(QWidget):
-    """Clickable day cell widget for calendar."""
-
-    def __init__(self, date: QDate, calendar_widget: CustomCalendarWidget) -> None:
-        """Initialize clickable day cell."""
-        super().__init__()
-        self.date = date
-        self.calendar_widget = calendar_widget
-
-    def mouse_press_event(self, event: QMouseEvent) -> None:
-        """Handle mouse press event."""
-        self.calendar_widget._on_cell_clicked(event, self.date)
-
-    def mouse_double_click_event(self, event: QMouseEvent) -> None:
-        """Handle mouse double-click event."""
-        self.calendar_widget._on_cell_double_clicked(event, self.date)
-
-
-class CustomCalendarWidget(QWidget):
-    """Custom calendar widget that displays events directly in day cells."""
-
-    date_selected = Signal(QDate)  # Signal emitted when a date is clicked
-    date_double_clicked = Signal(QDate, list)  # Signal emitted when a date is double-clicked (date, events)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """Initialize the custom calendar widget."""
-        super().__init__(parent)
-        self.events_by_date: dict[str, list[CalendarEvent]] = {}
-        self.current_date = QDate.currentDate()
-        self.selected_date = QDate.currentDate()
-        self._init_ui()
-
-    def _is_dark_theme(self) -> bool:
-        """Detect if the current theme is dark mode."""
-        from PySide6.QtGui import QGuiApplication, QPalette
-
-        app = QGuiApplication.instance()
-        if app and isinstance(app, QGuiApplication):
-            palette = app.palette()
-            window_color = palette.color(QPalette.ColorRole.Window)
-            brightness = window_color.lightness()
-            return bool(brightness < 128)
-        return False
-
-    def _get_theme_colors(self) -> dict[str, str]:
-        """Get theme-aware colors."""
-        is_dark = self._is_dark_theme()
-        if is_dark:
-            return {
-                "bg": "#1e1e1e",
-                "bg_alt": "#2d2d2d",
-                "text": "#ffffff",
-                "text_dim": "#888888",
-                "border": "#444444",
-                "border_alt": "#555555",
-                "selected_bg": "#1565C0",
-                "selected_text": "#ffffff",
-                "today": "#4CAF50",
-            }
-        else:
-            return {
-                "bg": "#ffffff",
-                "bg_alt": "#f5f5f5",
-                "text": "#000000",
-                "text_dim": "#666666",
-                "border": "#dddddd",
-                "border_alt": "#cccccc",
-                "selected_bg": "#2196F3",
-                "selected_text": "#ffffff",
-                "today": "#4CAF50",
-            }
-
-    def _init_ui(self) -> None:
-        """Initialize the UI."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Month/Year header with navigation
-        header_layout = QGridLayout()
-        header_layout.setColumnStretch(0, 1)
-        header_layout.setColumnStretch(1, 3)
-        header_layout.setColumnStretch(2, 1)
-
-        # Previous month button
-        prev_button = QPushButton("◀")
-        prev_button.setMaximumWidth(40)
-        prev_button.clicked.connect(self._previous_month)
-        header_layout.addWidget(prev_button, 0, 0)
-
-        # Month/Year label
-        colors = self._get_theme_colors()
-        self.month_label = QLabel()
-        self.month_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = QFont()
-        font.setPointSize(16)
-        font.setBold(True)
-        self.month_label.setFont(font)
-        self.month_label.setStyleSheet(f"color: {colors['text']};")
-        header_layout.addWidget(self.month_label, 0, 1)
-
-        # Next month button
-        next_button = QPushButton("▶")
-        next_button.setMaximumWidth(40)
-        next_button.clicked.connect(self._next_month)
-        header_layout.addWidget(next_button, 0, 2)
-
-        layout.addLayout(header_layout)
-
-        # Calendar grid
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        self.calendar_widget = QWidget()
-        self.calendar_layout = QGridLayout(self.calendar_widget)
-        self.calendar_layout.setSpacing(2)
-        scroll_area.setWidget(self.calendar_widget)
-
-        layout.addWidget(scroll_area)
-
-        self._update_calendar()
-
-    def _previous_month(self) -> None:
-        """Navigate to previous month."""
-        self.current_date = self.current_date.addMonths(-1)
-        self._update_calendar()
-
-    def _next_month(self) -> None:
-        """Navigate to next month."""
-        self.current_date = self.current_date.addMonths(1)
-        self._update_calendar()
-
-    def set_selected_date(self, date: QDate) -> None:
-        """Set the selected date and navigate to that month."""
-        self.selected_date = date
-        self.current_date = QDate(date.year(), date.month(), 1)
-        self._update_calendar()
-
-    def set_events(self, events_by_date: dict[str, list[CalendarEvent]]) -> None:
-        """Set events to display in the calendar."""
-        self.events_by_date = events_by_date
-        self._update_calendar()
-
-    def _update_calendar(self) -> None:
-        """Update the calendar display."""
-        # Clear existing widgets
-        while self.calendar_layout.count():
-            child = self.calendar_layout.takeAt(0)
-            widget = child.widget()
-            if widget:
-                widget.deleteLater()
-
-        # Update month/year label
-        month_name = self.current_date.toString("MMMM yyyy")
-        self.month_label.setText(month_name)
-
-        # Day headers
-        colors = self._get_theme_colors()
-        day_headers = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-        for col, day in enumerate(day_headers):
-            header = QLabel(day)
-            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            font = QFont()
-            font.setBold(True)
-            header.setFont(font)
-            header.setStyleSheet(f"color: {colors['text']}; background-color: {colors['bg_alt']}; padding: 5px;")
-            self.calendar_layout.addWidget(header, 0, col)
-
-        # Get first day of month and number of days
-        first_day = QDate(self.current_date.year(), self.current_date.month(), 1)
-        days_in_month = first_day.daysInMonth()
-        start_weekday = first_day.dayOfWeek()  # 1=Monday, 7=Sunday in Qt, but we want 0=Sunday
-
-        # Convert to 0-based Sunday=0
-        start_col = start_weekday % 7
-
-        # Get previous month's last days for padding
-        prev_month = first_day.addMonths(-1)
-        days_in_prev_month = prev_month.daysInMonth()
-
-        row = 1
-        col = 0
-
-        # Add days from previous month
-        for i in range(start_col):
-            day_num = days_in_prev_month - start_col + i + 1
-            date = QDate(prev_month.year(), prev_month.month(), day_num)
-            self._add_day_cell(date, row, col, is_current_month=False)
-            col += 1
-
-        # Add days from current month
-        for day_num in range(1, days_in_month + 1):
-            date = QDate(self.current_date.year(), self.current_date.month(), day_num)
-            self._add_day_cell(date, row, col, is_current_month=True)
-            col += 1
-            if col >= 7:
-                col = 0
-                row += 1
-
-        # Add days from next month to fill the grid
-        next_month = first_day.addMonths(1)
-        day_num = 1
-        while row < 7:  # Fill up to 6 rows
-            while col < 7:
-                date = QDate(next_month.year(), next_month.month(), day_num)
-                self._add_day_cell(date, row, col, is_current_month=False)
-                col += 1
-                day_num += 1
-            col = 0
-            row += 1
-
-    def _add_day_cell(self, date: QDate, row: int, col: int, is_current_month: bool) -> None:
-        """Add a day cell to the calendar."""
-        date_key = date.toString("yyyy-MM-dd")
-        events = self.events_by_date.get(date_key, [])
-
-        # Get theme colors
-        colors = self._get_theme_colors()
-
-        # Create clickable day cell widget
-        clickable_cell = _ClickableDayCell(date, self)
-        cell_layout = QVBoxLayout(clickable_cell)
-        cell_layout.setContentsMargins(6, 6, 6, 6)
-        cell_layout.setSpacing(3)  # Increased spacing between events
-
-        # Day number
-        day_label = QLabel(str(date.day()))
-        day_font = QFont()
-        day_font.setBold(True)
-        if date == self.selected_date:
-            day_font.setPointSize(day_font.pointSize() + 2)
-        day_label.setFont(day_font)
-
-        # Style based on current month and selection
-        if not is_current_month:
-            day_label.setStyleSheet(f"color: {colors['text_dim']};")
-        elif date == self.selected_date:
-            day_label.setStyleSheet(
-                f"color: {colors['selected_text']}; background-color: {colors['selected_bg']}; "
-                f"border: 2px solid {colors['selected_bg']}; border-radius: 3px; padding: 2px;"
-            )
-        elif date == QDate.currentDate():
-            day_label.setStyleSheet(f"color: {colors['today']}; font-weight: bold;")
-        else:
-            day_label.setStyleSheet(f"color: {colors['text']};")
-
-        cell_layout.addWidget(day_label)
-
-        # Add events (sorted by time)
-        sorted_events = sorted(events, key=lambda e: e.date if e.date else datetime.min)
-        for event in sorted_events[:5]:  # Limit to 5 events per day
-            # Format event text: "Event Name HH:MM" (event name first, then time)
-            event_text = event.title
-            time_str = ""
-            if event.date:
-                # Use local time if available, otherwise UTC
-                event_time = event.date
-                if event_time.hour < 24:  # Has time info
-                    time_str = event_time.strftime("%H:%M")
-                    # Format: "Event Name HH:MM" (event name first, then time)
-                    event_text = f"{event_text} {time_str}"
-                else:
-                    event_text = event.title
-            else:
-                event_text = event.title
-
-            event_label = QLabel(event_text)
-            event_label.setWordWrap(False)  # Don't wrap, keep on one line
-            event_font = QFont()
-            event_font.setPointSize(8)
-            event_label.setFont(event_font)
-
-            # Use theme-aware text color with better spacing
-            event_label.setStyleSheet(f"color: {colors['text']}; padding: 1px 0px; margin: 0px; line-height: 1.3;")
-
-            cell_layout.addWidget(event_label)
-
-        if len(events) > 5:
-            more_label = QLabel(f"... {len(events) - 5} more")
-            more_label.setStyleSheet(f"color: {colors['text_dim']}; font-size: 7pt; padding: 2px 0px;")
-            cell_layout.addWidget(more_label)
-
-        # Set styling for clickable cell
-        if is_current_month:
-            clickable_cell.setStyleSheet(f"border: 1px solid {colors['border']}; background-color: {colors['bg']};")
-        else:
-            clickable_cell.setStyleSheet(
-                f"border: 1px solid {colors['border_alt']}; background-color: {colors['bg_alt']};"
-            )
-
-        clickable_cell.setMinimumHeight(100)  # Ensure cells are tall enough for events
-
-        self.calendar_layout.addWidget(clickable_cell, row, col)
-
-    def _on_cell_clicked(self, event: Any, date: QDate) -> None:
-        """Handle cell click."""
-        self.selected_date = date
-        self._update_calendar()
-        self.date_selected.emit(date)
-
-    def _on_cell_double_clicked(self, event: Any, date: QDate) -> None:
-        """Handle cell double-click - open events modal."""
-        date_key = date.toString("yyyy-MM-dd")
-        events = self.events_by_date.get(date_key, [])
-
-        # Only open modal if there are events
-        if events:
-            self.date_double_clicked.emit(date, events)
+# Removed CustomCalendarWidget - no longer needed
 
 
 class AstronomicalCalendarDialog(QDialog):
@@ -416,42 +113,157 @@ class AstronomicalCalendarDialog(QDialog):
         """Initialize the astronomical calendar dialog."""
         super().__init__(parent)
         self.setWindowTitle("Astronomical Calendar")
-        self.setMinimumWidth(900)
-        self.setMinimumHeight(600)
-        self.resize(1000, 700)
+        self.setMinimumWidth(1200)
+        self.setMinimumHeight(700)
+        self.resize(1400, 800)
 
-        # Store events by date
+        # Store events by date (for calendar widget - kept for compatibility)
         self.events_by_date: dict[str, list[CalendarEvent]] = {}
+        # Store all events in a flat list (for table)
+        self.all_events: list[CalendarEvent] = []
+        # Current filter settings
+        self.filtered_date: QDate | None = None  # Filter to specific date (None = all dates)
+        self.filtered_event_types: set[str] = set()
+        self._current_month_filter: int | None = None  # Filter to specific month (None = all months)
+        self._current_year_filter: int | None = None  # Filter to specific year (None = all years)
 
-        # Create layout
-        layout = QVBoxLayout(self)
+        # Create main layout
+        main_layout = QVBoxLayout(self)
 
-        # Calendar widget (full width)
-        calendar_layout = QVBoxLayout()
-        calendar_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Custom calendar widget
-        self.calendar = CustomCalendarWidget()
-        self.calendar.date_double_clicked.connect(self._on_date_double_clicked)
-        calendar_layout.addWidget(self.calendar)
-
-        # Today button
+        # Top controls bar (Today/Show All/Current Month buttons)
+        top_controls = QHBoxLayout()
         today_button = QPushButton("Today")
         today_button.clicked.connect(self._on_today_clicked)
-        calendar_layout.addWidget(today_button)
+        top_controls.addWidget(today_button)
 
-        layout.addLayout(calendar_layout)
+        current_month_button = QPushButton("Current Month")
+        current_month_button.clicked.connect(self._on_current_month_clicked)
+        top_controls.addWidget(current_month_button)
+
+        show_all_button = QPushButton("Show All")
+        show_all_button.clicked.connect(self._on_show_all_clicked)
+        top_controls.addWidget(show_all_button)
+
+        top_controls.addStretch()
+        main_layout.addLayout(top_controls)
+
+        # Create horizontal splitter for filters (left) and table (right)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left side: Event type filters
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(5, 5, 5, 5)
+
+        filter_label = QLabel("Filter by Event Type:")
+        filter_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        left_layout.addWidget(filter_label)
+
+        # Select All / Unselect All buttons
+        select_buttons_layout = QHBoxLayout()
+        select_all_button = QPushButton("Select All")
+        select_all_button.clicked.connect(self._on_select_all_clicked)
+        select_buttons_layout.addWidget(select_all_button)
+
+        unselect_all_button = QPushButton("Unselect All")
+        unselect_all_button.clicked.connect(self._on_unselect_all_clicked)
+        select_buttons_layout.addWidget(unselect_all_button)
+        left_layout.addLayout(select_buttons_layout)
+
+        left_layout.addSpacing(10)
+
+        # Event type filters
+        self.event_type_filters: dict[str, QCheckBox] = {}
+        event_types = [
+            ("moon_phase", "Moon Phases"),
+            ("moon_perigee", "Moon at Perigee"),
+            ("moon_apogee", "Moon at Apogee"),
+            ("moon_ascending_node", "Moon at Ascending Node"),
+            ("moon_descending_node", "Moon at Descending Node"),
+            ("meteor_shower", "Meteor Showers"),
+            ("lunar_eclipse", "Lunar Eclipses"),
+            ("solar_eclipse", "Solar Eclipses"),
+            ("planetary_opposition", "Planetary Opposition"),
+            ("planetary_elongation", "Planetary Elongation"),
+            ("planetary_perihelion", "Planetary Perihelion"),
+            ("planetary_aphelion", "Planetary Aphelion"),
+            ("planetary_inferior_conjunction", "Inferior Conjunction"),
+            ("planetary_superior_conjunction", "Superior Conjunction"),
+            ("conjunction", "Conjunctions"),
+            ("occultation", "Occultations"),
+            ("star_position", "Star Positions"),
+            ("solstice", "Solstices"),
+            ("equinox", "Equinoxes"),
+        ]
+        for event_type, label in event_types:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)  # All checked by default
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            left_layout.addWidget(checkbox)
+            # Add to filtered_event_types since all are checked by default
+            self.filtered_event_types.add(event_type)
+
+        left_layout.addStretch()
+
+        # Set fixed width for left panel
+        left_widget.setMaximumWidth(250)
+        left_widget.setMinimumWidth(200)
+        splitter.addWidget(left_widget)
+
+        # Right side: Table
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Table header with info
+        table_header = QHBoxLayout()
+        table_title = QLabel("Astronomical Events")
+        table_title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        table_header.addWidget(table_title)
+        table_header.addStretch()
+        self.event_count_label = QLabel("0 events")
+        table_header.addWidget(self.event_count_label)
+        right_layout.addLayout(table_header)
+
+        # Create table
+        self.events_table = QTableWidget()
+        self.events_table.setColumnCount(5)
+        header_labels = ["Date", "Time", "Event Name", "Type", "Description"]
+        self.events_table.setHorizontalHeaderLabels(header_labels)
+
+        # Configure table
+        header = self.events_table.horizontalHeader()
+        header.setStretchLastSection(True)  # Description column stretches
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Date
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Time
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Event Name
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Type
+
+        self.events_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.events_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.events_table.setAlternatingRowColors(True)
+        self.events_table.setSortingEnabled(True)
+        self.events_table.setShowGrid(True)
+
+        right_layout.addWidget(self.events_table)
+        splitter.addWidget(right_widget)
+
+        # Set splitter proportions (filters get ~20%, table gets ~80%)
+        splitter.setSizes([250, 1150])
+
+        main_layout.addWidget(splitter)
 
         # Buttons
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
+        main_layout.addWidget(button_box)
 
         # Store progress dialog as instance variable
         self._progress_dialog: QProgressDialog | None = None
 
         # Connect signals for thread-safe UI updates
-        self._update_formatting_signal.connect(self._update_calendar_formatting)
+        self._update_formatting_signal.connect(self._update_table)
         self._close_progress_signal.connect(self._close_progress)
 
         # Load events
@@ -569,12 +381,12 @@ class AstronomicalCalendarDialog(QDialog):
                     tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)  # Default to MST
                     cached_events = await get_cached_astropixels_events(session, start_date, end_date, tz_offset)
 
-                    # Always fetch and cache to ensure we have all events (force_refresh=False to use cache if available)
+                    # Always fetch and cache to ensure we have all events (force_refresh=True to update event types)
                     logger.info(f"Fetching AstroPixels almanac for {year} ({tz_str})")
-                    await cache_astropixels_events(session, year, tz_str, force_refresh=False)
+                    await cache_astropixels_events(session, year, tz_str, force_refresh=True)
                     # Also cache next year if we're near the end of the year
                     if start_date.month >= 11:
-                        await cache_astropixels_events(session, year + 1, tz_str, force_refresh=False)
+                        await cache_astropixels_events(session, year + 1, tz_str, force_refresh=True)
 
                     # Get cached events with timezone offset
                     cached_events = await get_cached_astropixels_events(session, start_date, end_date, tz_offset)
@@ -587,15 +399,24 @@ class AstronomicalCalendarDialog(QDialog):
                         # Determine color based on event type
                         color_map = {
                             "moon_phase": "#f39c12" if "Full" in event.event_name else "#3498db",
+                            "moon_perigee": "#95a5a6",
+                            "moon_apogee": "#95a5a6",
+                            "moon_ascending_node": "#95a5a6",
+                            "moon_descending_node": "#95a5a6",
                             "meteor_shower": "#9b59b6",
                             "lunar_eclipse": "#e74c3c",
                             "solar_eclipse": "#c0392b",
                             "planetary_opposition": "#16a085",
                             "planetary_elongation": "#16a085",
+                            "planetary_perihelion": "#16a085",
+                            "planetary_aphelion": "#16a085",
+                            "planetary_inferior_conjunction": "#16a085",
+                            "planetary_superior_conjunction": "#16a085",
                             "solstice": "#27ae60",
                             "equinox": "#27ae60",
                             "conjunction": "#16a085",
-                            "moon_position": "#95a5a6",
+                            "occultation": "#e67e22",
+                            "star_position": "#9b59b6",
                             "other": "#34495e",
                         }
                         color = color_map.get(event.event_type, "#34495e")
@@ -926,17 +747,215 @@ class AstronomicalCalendarDialog(QDialog):
         )
 
         self.events_by_date[date_key].append(event)
+        # Also add to flat list for table
+        self.all_events.append(event)
 
-    def _update_calendar_formatting(self) -> None:
-        """Update calendar to display events in day cells."""
-        # Update the custom calendar widget with events
-        self.calendar.set_events(self.events_by_date)
-        logger.info(f"Updated calendar with {len(self.events_by_date)} dates with events")
+    def _update_table(self) -> None:
+        """Update table with events."""
+        logger.info(f"Updated with {len(self.events_by_date)} dates with events")
+        # Populate table
+        self._populate_table()
+
+    def _populate_table(self) -> None:
+        """Populate the events table with filtered events."""
+        # Filter events
+        filtered_events = self._filter_events()
+
+        # Disable sorting while populating
+        self.events_table.setSortingEnabled(False)
+
+        # Clear table
+        self.events_table.setRowCount(0)
+
+        # Show message if no events
+        if not filtered_events:
+            # Ensure column count and headers are correct
+            self.events_table.setColumnCount(5)
+            header_labels = ["Date", "Time", "Event Name", "Type", "Description"]
+            self.events_table.setHorizontalHeaderLabels(header_labels)
+
+            self.events_table.setRowCount(1)
+
+            # Create message item
+            if self._current_month_filter is not None and self._current_year_filter is not None:
+                month_name = QDate(self._current_year_filter, self._current_month_filter, 1).toString("MMMM yyyy")
+                message = f"No events found for {month_name}."
+            elif self.filtered_date:
+                date_str = self.filtered_date.toString("MMMM d, yyyy")
+                message = f"No events found for {date_str}."
+            else:
+                message = "No events found."
+
+            message_item = QTableWidgetItem(message)
+            message_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            message_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
+
+            # Style the message
+            font = QFont()
+            font.setPointSize(12)
+            font.setItalic(True)
+            message_item.setFont(font)
+
+            self.events_table.setItem(0, 0, message_item)
+            self.events_table.setSpan(0, 0, 1, 5)  # Span across all columns
+
+            # Update event count label
+            self.event_count_label.setText("0 events")
+
+            # Re-enable sorting
+            self.events_table.setSortingEnabled(True)
+            return
+
+        # Ensure column count and headers are correct
+        if self.events_table.columnCount() != 5:
+            self.events_table.setColumnCount(5)
+        header_labels = ["Date", "Time", "Event Name", "Type", "Description"]
+        self.events_table.setHorizontalHeaderLabels(header_labels)
+
+        # Get local timezone for display
+        try:
+            from celestron_nexstar.api.core.utils import get_local_timezone
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            location = get_observer_location()
+            tz = get_local_timezone(location.latitude, location.longitude)
+        except Exception:
+            tz = None
+
+        # Populate table
+        for event in filtered_events:
+            row = self.events_table.rowCount()
+            self.events_table.insertRow(row)
+
+            # Date column
+            if tz and event.date.tzinfo:
+                local_date = event.date.astimezone(tz)
+                date_str = local_date.strftime("%Y-%m-%d")
+            else:
+                date_str = event.date.strftime("%Y-%m-%d")
+            date_item = QTableWidgetItem(date_str)
+            date_item.setData(Qt.ItemDataRole.UserRole, event.date)  # Store datetime for sorting
+            self.events_table.setItem(row, 0, date_item)
+
+            # Time column
+            if tz and event.date.tzinfo:
+                local_time = event.date.astimezone(tz)
+                time_str = local_time.strftime("%H:%M") if local_time.hour < 24 else "All day"
+            else:
+                time_str = event.date.strftime("%H:%M") if event.date.hour < 24 else "All day"
+            time_item = QTableWidgetItem(time_str)
+            time_item.setData(Qt.ItemDataRole.UserRole, event.date)  # Store datetime for sorting
+            self.events_table.setItem(row, 1, time_item)
+
+            # Event Name column
+            name_item = QTableWidgetItem(event.title)
+            self.events_table.setItem(row, 2, name_item)
+
+            # Type column
+            type_str = event.event_type.replace("_", " ").title()
+            type_item = QTableWidgetItem(type_str)
+            self.events_table.setItem(row, 3, type_item)
+
+            # Description column
+            desc_item = QTableWidgetItem(event.description)
+            self.events_table.setItem(row, 4, desc_item)
+
+        # Re-enable sorting
+        self.events_table.setSortingEnabled(True)
+
+        # Update event count label
+        self.event_count_label.setText(f"{len(filtered_events)} event{'s' if len(filtered_events) != 1 else ''}")
+
+    def _filter_events(self) -> list[CalendarEvent]:
+        """Filter events based on current filter settings."""
+        filtered = []
+
+        # Get local timezone for date comparison
+        try:
+            from celestron_nexstar.api.core.utils import get_local_timezone
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            location = get_observer_location()
+            tz = get_local_timezone(location.latitude, location.longitude)
+        except Exception:
+            tz = None
+
+        for event in self.all_events:
+            # Filter by month/year (for Current Month button)
+            if self._current_month_filter is not None and self._current_year_filter is not None:
+                # Convert event date to local timezone for comparison
+                local_event_date = event.date.astimezone(tz) if tz and event.date.tzinfo else event.date
+
+                # Compare month and year
+                if (
+                    local_event_date.month != self._current_month_filter
+                    or local_event_date.year != self._current_year_filter
+                ):
+                    continue
+            # Filter by specific date (for Today button)
+            elif self.filtered_date is not None:
+                # Convert event date to local timezone for comparison
+                local_event_date = event.date.astimezone(tz) if tz and event.date.tzinfo else event.date
+
+                # Compare year, month, and day
+                event_qdate = QDate(local_event_date.year, local_event_date.month, local_event_date.day)
+                if event_qdate != self.filtered_date:
+                    continue
+
+            # Filter by event type
+            # Only filter if we have active filters (some checkboxes checked)
+            # If all are unchecked, show nothing (empty set means filter everything out)
+            if self.filtered_event_types:
+                if event.event_type not in self.filtered_event_types:
+                    continue
+            else:
+                # All filters unchecked - show nothing
+                continue
+
+            filtered.append(event)
+
+        return filtered
+
+    def _on_show_all_clicked(self) -> None:
+        """Handle Show All button - show all events."""
+        self.filtered_date = None
+        self._current_month_filter = None
+        self._current_year_filter = None
+        self._populate_table()
+
+    def _on_current_month_clicked(self) -> None:
+        """Handle Current Month button - show all events in the current month."""
+        today = QDate.currentDate()
+        self.filtered_date = None  # Clear date filter
+        self._current_month_filter = today.month()
+        self._current_year_filter = today.year()
+        self._populate_table()
+
+    def _on_filter_changed(self) -> None:
+        """Handle event type filter checkbox changes."""
+        # Update filtered event types
+        self.filtered_event_types = {
+            event_type for event_type, checkbox in self.event_type_filters.items() if checkbox.isChecked()
+        }
+        self._populate_table()
+
+    def _on_select_all_clicked(self) -> None:
+        """Handle Select All button - check all event type filters."""
+        for checkbox in self.event_type_filters.values():
+            checkbox.setChecked(True)
+
+    def _on_unselect_all_clicked(self) -> None:
+        """Handle Unselect All button - uncheck all event type filters."""
+        for checkbox in self.event_type_filters.values():
+            checkbox.setChecked(False)
 
     def _on_today_clicked(self) -> None:
-        """Handle Today button click - navigate to today's date."""
+        """Handle Today button click - filter to show only today's events."""
         today = QDate.currentDate()
-        self.calendar.set_selected_date(today)
+        self.filtered_date = today
+        self._current_month_filter = None  # Clear month filter
+        self._current_year_filter = None
+        self._populate_table()
 
     def _on_date_double_clicked(self, date: QDate, events: list[CalendarEvent]) -> None:
         """Handle date double-click - show events in modal."""
