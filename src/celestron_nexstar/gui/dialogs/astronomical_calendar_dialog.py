@@ -26,11 +26,13 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QProgressDialog,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -151,13 +153,14 @@ class AstronomicalCalendarDialog(QDialog):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # Left side: Event type filters
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(5, 5, 5, 5)
+        left_container = QWidget()
+        left_container_layout = QVBoxLayout(left_container)
+        left_container_layout.setContentsMargins(5, 5, 5, 5)
+        left_container_layout.setSpacing(5)
 
         filter_label = QLabel("Filter by Event Type:")
         filter_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
-        left_layout.addWidget(filter_label)
+        left_container_layout.addWidget(filter_label)
 
         # Select All / Unselect All buttons
         select_buttons_layout = QHBoxLayout()
@@ -168,21 +171,47 @@ class AstronomicalCalendarDialog(QDialog):
         unselect_all_button = QPushButton("Unselect All")
         unselect_all_button.clicked.connect(self._on_unselect_all_clicked)
         select_buttons_layout.addWidget(unselect_all_button)
-        left_layout.addLayout(select_buttons_layout)
+        left_container_layout.addLayout(select_buttons_layout)
 
-        left_layout.addSpacing(10)
+        # Scrollable area for event type filters
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
-        # Event type filters
+        # Widget containing the filter groups
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(5, 5, 5, 5)
+        left_layout.setSpacing(10)
+
+        # Event type filters grouped logically
         self.event_type_filters: dict[str, QCheckBox] = {}
-        event_types = [
+
+        # Moon Events Group
+        moon_group = QGroupBox("Moon Events")
+        moon_layout = QVBoxLayout()
+        moon_events = [
             ("moon_phase", "Moon Phases"),
             ("moon_perigee", "Moon at Perigee"),
             ("moon_apogee", "Moon at Apogee"),
             ("moon_ascending_node", "Moon at Ascending Node"),
             ("moon_descending_node", "Moon at Descending Node"),
-            ("meteor_shower", "Meteor Showers"),
-            ("lunar_eclipse", "Lunar Eclipses"),
-            ("solar_eclipse", "Solar Eclipses"),
+        ]
+        for event_type, label in moon_events:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            moon_layout.addWidget(checkbox)
+            self.filtered_event_types.add(event_type)
+        moon_group.setLayout(moon_layout)
+        left_layout.addWidget(moon_group)
+
+        # Planetary Events Group
+        planetary_group = QGroupBox("Planetary Events")
+        planetary_layout = QVBoxLayout()
+        planetary_events = [
             ("planetary_opposition", "Planetary Opposition"),
             ("planetary_elongation", "Planetary Elongation"),
             ("planetary_perihelion", "Planetary Perihelion"),
@@ -190,27 +219,95 @@ class AstronomicalCalendarDialog(QDialog):
             ("planetary_inferior_conjunction", "Inferior Conjunction"),
             ("planetary_superior_conjunction", "Superior Conjunction"),
             ("conjunction", "Conjunctions"),
-            ("occultation", "Occultations"),
-            ("star_position", "Star Positions"),
-            ("solstice", "Solstices"),
-            ("equinox", "Equinoxes"),
-            ("other", "Other Events"),
         ]
-        for event_type, label in event_types:
+        for event_type, label in planetary_events:
             checkbox = QCheckBox(label)
-            checkbox.setChecked(True)  # All checked by default
+            checkbox.setChecked(True)
             checkbox.stateChanged.connect(self._on_filter_changed)
             self.event_type_filters[event_type] = checkbox
-            left_layout.addWidget(checkbox)
-            # Add to filtered_event_types since all are checked by default
+            planetary_layout.addWidget(checkbox)
             self.filtered_event_types.add(event_type)
+        planetary_group.setLayout(planetary_layout)
+        left_layout.addWidget(planetary_group)
+
+        # Celestial Events Group
+        celestial_group = QGroupBox("Celestial Events")
+        celestial_layout = QVBoxLayout()
+        celestial_events = [
+            ("meteor_shower", "Meteor Showers"),
+            ("lunar_eclipse", "Lunar Eclipses"),
+            ("solar_eclipse", "Solar Eclipses"),
+            ("occultation", "Occultations"),
+        ]
+        for event_type, label in celestial_events:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            celestial_layout.addWidget(checkbox)
+            self.filtered_event_types.add(event_type)
+        celestial_group.setLayout(celestial_layout)
+        left_layout.addWidget(celestial_group)
+
+        # Star Events Group
+        star_group = QGroupBox("Star Events")
+        star_layout = QVBoxLayout()
+        star_events = [
+            ("star_position", "Star Positions"),
+        ]
+        for event_type, label in star_events:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            star_layout.addWidget(checkbox)
+            self.filtered_event_types.add(event_type)
+        star_group.setLayout(star_layout)
+        left_layout.addWidget(star_group)
+
+        # Seasonal Events Group
+        seasonal_group = QGroupBox("Seasonal Events")
+        seasonal_layout = QVBoxLayout()
+        seasonal_events = [
+            ("solstice", "Solstices"),
+            ("equinox", "Equinoxes"),
+        ]
+        for event_type, label in seasonal_events:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            seasonal_layout.addWidget(checkbox)
+            self.filtered_event_types.add(event_type)
+        seasonal_group.setLayout(seasonal_layout)
+        left_layout.addWidget(seasonal_group)
+
+        # Other Events Group
+        other_group = QGroupBox("Other Events")
+        other_layout = QVBoxLayout()
+        other_events = [
+            ("other", "Other Events"),
+        ]
+        for event_type, label in other_events:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.stateChanged.connect(self._on_filter_changed)
+            self.event_type_filters[event_type] = checkbox
+            other_layout.addWidget(checkbox)
+            self.filtered_event_types.add(event_type)
+        other_group.setLayout(other_layout)
+        left_layout.addWidget(other_group)
 
         left_layout.addStretch()
 
+        # Set the scrollable widget
+        scroll_area.setWidget(left_widget)
+        left_container_layout.addWidget(scroll_area)
+
         # Set fixed width for left panel
-        left_widget.setMaximumWidth(250)
-        left_widget.setMinimumWidth(200)
-        splitter.addWidget(left_widget)
+        left_container.setMaximumWidth(250)
+        left_container.setMinimumWidth(200)
+        splitter.addWidget(left_container)
 
         # Right side: Table
         right_widget = QWidget()

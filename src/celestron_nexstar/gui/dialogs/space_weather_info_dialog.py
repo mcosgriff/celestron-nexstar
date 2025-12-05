@@ -340,25 +340,18 @@ class SpaceWeatherInfoDialog(QDialog):
                 for alert in conditions.alerts:
                     html_content.append(f"<p style='color: {colors['yellow']}; margin: 5px 0;'>⚠ {alert}</p>")
                 html_content.append("</div>")
-                html_content.append("<br>")
 
             # Information panel
-            html_content.append("<h2>Information</h2>")
             html_content.append(
+                "<h2>Information</h2>"
                 f"<div style='border: 1px solid {colors['text_dim']}; padding: 10px; background-color: {info_bg};'>"
-            )
-            html_content.append(
                 f"<p style='color: {colors['text']}; font-weight: bold; margin-top: 0;'>About NOAA Scales:</p>"
-            )
-            html_content.append(
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li>R-Scale: Radio blackouts from solar flares (R1-R5)</li>"
                 f"<li>S-Scale: Solar radiation storms (S1-S5)</li>"
                 f"<li>G-Scale: Geomagnetic storms (G1-G5)</li>"
                 "</ul>"
-            )
-            html_content.append(f"<p style='color: {colors['text']}; font-weight: bold;'>Aurora Visibility:</p>")
-            html_content.append(
+                f"<p style='color: {colors['text']}; font-weight: bold;'>Aurora Visibility:</p>"
                 f"<ul style='margin-left: 20px; color: {colors['text']};'>"
                 f"<li>G3+ storms often produce visible aurora at mid-latitudes</li>"
                 f"<li>Negative Bz values enhance aurora activity</li>"

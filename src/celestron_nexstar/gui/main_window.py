@@ -644,6 +644,7 @@ class MainWindow(QMainWindow):
 
         # Telescope Operations menu button
         telescope_menu = QMenu("Telescope Operations", self)
+        self._apply_menu_styles(telescope_menu)
 
         connect_icon = self._create_icon("link", ["network-connect", "network-wired", "network-workgroup"])
         self.connect_action = telescope_menu.addAction(connect_icon, "Connect")
@@ -697,10 +698,13 @@ class MainWindow(QMainWindow):
         telescope_button.setToolTip("TELESCOPE OPERATIONS")
         telescope_button.setStatusTip("Telescope connection and control operations")
         left_toolbar.addWidget(telescope_button)
+        self.telescope_button = telescope_button  # Store reference for icon refresh
 
         # Planning Tools menu button
         planning_menu = QMenu("Planning Tools", self)
+        self._apply_menu_styles(planning_menu)
 
+        # Object Management Group
         catalog_icon = self._create_icon("catalog", ["folder", "folder-open", "database"])
         self.catalog_action = planning_menu.addAction(catalog_icon, "Catalog")
         self.catalog_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
@@ -730,6 +734,9 @@ class MainWindow(QMainWindow):
         self.observation_log_action.setStatusTip("View and manage observation logs")
         self.observation_log_action.triggered.connect(self._on_observation_log)
 
+        planning_menu.addSeparator()
+
+        # Planning & Analysis Group
         dashboard_icon = self._create_icon("dashboard", ["view-dashboard", "chart-line", "monitor-dashboard"])
         self.dashboard_action = planning_menu.addAction(dashboard_icon, "Live Dashboard")
         self.dashboard_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
@@ -744,32 +751,6 @@ class MainWindow(QMainWindow):
         self.calendar_action.setToolTip("ASTRONOMICAL CALENDAR")
         self.calendar_action.setStatusTip("View astronomical events calendar")
         self.calendar_action.triggered.connect(self._on_astronomical_calendar)
-
-        planning_menu.addSeparator()
-
-        # Equipment Manager
-        equipment_icon = self._create_icon("settings", ["cog", "tools", "wrench"])
-        self.equipment_action = planning_menu.addAction(equipment_icon, "Equipment Manager")
-        self.equipment_action.setIconVisibleInMenu(True)
-        self.equipment_action.setToolTip("EQUIPMENT MANAGER")
-        self.equipment_action.setStatusTip("Manage eyepieces, filters, and cameras")
-        self.equipment_action.triggered.connect(self._on_equipment_manager)
-
-        planning_menu.addSeparator()
-
-        weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
-        self.weather_action = planning_menu.addAction(weather_icon, "Weather")
-        self.weather_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
-        self.weather_action.setToolTip("WEATHER")
-        self.weather_action.setStatusTip("View current weather conditions")
-        self.weather_action.triggered.connect(self._on_weather)
-
-        checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
-        self.checklist_action = planning_menu.addAction(checklist_icon, "Checklist")
-        self.checklist_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
-        self.checklist_action.setToolTip("CHECKLIST")
-        self.checklist_action.setStatusTip("View observation checklist")
-        self.checklist_action.triggered.connect(self._on_checklist)
 
         time_slots_icon = self._create_icon("time_slots", ["clock-outline", "timer"])
         self.time_slots_action = planning_menu.addAction(time_slots_icon, "Time Slots")
@@ -787,6 +768,32 @@ class MainWindow(QMainWindow):
 
         planning_menu.addSeparator()
 
+        # Equipment & Conditions Group
+        # Equipment Manager
+        equipment_icon = self._create_icon("settings", ["cog", "tools", "wrench"])
+        self.equipment_action = planning_menu.addAction(equipment_icon, "Equipment Manager")
+        self.equipment_action.setIconVisibleInMenu(True)
+        self.equipment_action.setToolTip("EQUIPMENT MANAGER")
+        self.equipment_action.setStatusTip("Manage eyepieces, filters, and cameras")
+        self.equipment_action.triggered.connect(self._on_equipment_manager)
+
+        weather_icon = self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
+        self.weather_action = planning_menu.addAction(weather_icon, "Weather")
+        self.weather_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.weather_action.setToolTip("WEATHER")
+        self.weather_action.setStatusTip("View current weather conditions")
+        self.weather_action.triggered.connect(self._on_weather)
+
+        checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
+        self.checklist_action = planning_menu.addAction(checklist_icon, "Checklist")
+        self.checklist_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.checklist_action.setToolTip("CHECKLIST")
+        self.checklist_action.setStatusTip("View observation checklist")
+        self.checklist_action.triggered.connect(self._on_checklist)
+
+        planning_menu.addSeparator()
+
+        # Reference Group
         quick_ref_icon = self._create_icon("quick_reference", ["book-open-variant", "information"])
         self.quick_reference_action = planning_menu.addAction(quick_ref_icon, "Quick Reference")
         self.quick_reference_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
@@ -800,8 +807,6 @@ class MainWindow(QMainWindow):
         self.glossary_action.setToolTip("GLOSSARY")
         self.glossary_action.setStatusTip("View astronomical glossary")
         self.glossary_action.triggered.connect(self._on_glossary)
-
-        planning_menu.addSeparator()
 
         # Object Comparison Tool
         compare_icon = self._create_icon("compare", ["compare", "view-split-vertical", "diff"])
@@ -819,6 +824,7 @@ class MainWindow(QMainWindow):
         planning_button.setToolTip("PLANNING TOOLS")
         planning_button.setStatusTip("Observation planning and reference tools")
         left_toolbar.addWidget(planning_button)
+        self.planning_button = planning_button  # Store reference for icon refresh
 
         # Spacer widget
         spacer_widget = QWidget()
@@ -828,6 +834,7 @@ class MainWindow(QMainWindow):
 
         # Tools menu button (Communication Log, Settings)
         tools_menu = QMenu("Tools", self)
+        self._apply_menu_styles(tools_menu)
 
         log_icon = self._create_icon("console", ["terminal", "code-tags", "text-box"])
         self.log_toggle_action = tools_menu.addAction(log_icon, "Communication Log")
@@ -855,51 +862,108 @@ class MainWindow(QMainWindow):
         tools_button.setToolTip("TOOLS")
         tools_button.setStatusTip("Application tools and settings")
         left_toolbar.addWidget(tools_button)
+        self.tools_button = tools_button  # Store reference for icon refresh
 
         # Right side toolbar - Celestial Objects menu
         right_toolbar = create_toolbar("Right Toolbar", Qt.ToolBarArea.RightToolBarArea)
 
         # Celestial Objects menu button
         celestial_menu = QMenu("Celestial Objects", self)
+        self._apply_menu_styles(celestial_menu)
 
-        # Celestial object actions (using alpha-box-outline pattern)
-        celestial_objects = [
-            ("aurora", "Aurora", ["alpha-a-box-outline"]),
-            ("binoculars", "Binoculars", ["alpha-b-box-outline"]),
+        # Solar System Group
+        solar_system_objects = [
+            ("planets", "Planets", ["alpha-p-box-outline"]),
             ("comets", "Comets", ["alpha-c-box-outline"]),
             ("eclipse", "Eclipse", ["alpha-e-box-outline"]),
-            ("iss", "ISS", ["alpha-i-box-outline"]),
-            ("meteors", "Meteors", ["alpha-m-box-outline"]),
-            ("milky_way", "Milky Way", ["alpha-m-box-outline"]),
-            ("naked_eye", "Naked Eye", ["alpha-n-box-outline"]),
-            ("occultations", "Occultations", ["alpha-o-box-outline"]),
-            ("planets", "Planets", ["alpha-p-box-outline"]),
-            ("satellites", "Satellites", ["alpha-s-box-outline"]),
-            ("space_weather", "Space Weather", ["alpha-s-box-outline"]),
-            ("variables", "Variables", ["alpha-v-box-outline"]),
-            ("zodiacal", "Zodiacal", ["alpha-z-box-outline"]),
         ]
 
-        # Store planets action for default button action
-
-        for obj_name, display_name, icon_names in celestial_objects:
+        for obj_name, display_name, icon_names in solar_system_objects:
             icon = self._create_icon(obj_name, icon_names)
             action = celestial_menu.addAction(icon, display_name)
-            action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+            action.setIconVisibleInMenu(True)
             action.setToolTip(display_name.upper())
             action.setStatusTip(f"View {display_name} information")
             action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
-            # Store action for later reference
             setattr(self, f"{obj_name}_action", action)
-            # Save planets action for default button
-            if obj_name == "planets":
-                pass
+
+        celestial_menu.addSeparator()
+
+        # Deep Sky Group
+        deep_sky_objects = [
+            ("milky_way", "Milky Way", ["alpha-m-box-outline"]),
+            ("naked_eye", "Naked Eye", ["alpha-n-box-outline"]),
+            ("binoculars", "Binoculars", ["alpha-b-box-outline"]),
+        ]
+
+        for obj_name, display_name, icon_names in deep_sky_objects:
+            icon = self._create_icon(obj_name, icon_names)
+            action = celestial_menu.addAction(icon, display_name)
+            action.setIconVisibleInMenu(True)
+            action.setToolTip(display_name.upper())
+            action.setStatusTip(f"View {display_name} information")
+            action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
+            setattr(self, f"{obj_name}_action", action)
+
+        celestial_menu.addSeparator()
+
+        # Events & Phenomena Group
+        events_objects = [
+            ("aurora", "Aurora", ["alpha-a-box-outline"]),
+            ("meteors", "Meteors", ["alpha-m-box-outline"]),
+            ("occultations", "Occultations", ["alpha-o-box-outline"]),
+            ("iss", "ISS", ["alpha-i-box-outline"]),
+            ("satellites", "Satellites", ["alpha-s-box-outline"]),
+        ]
+
+        for obj_name, display_name, icon_names in events_objects:
+            icon = self._create_icon(obj_name, icon_names)
+            action = celestial_menu.addAction(icon, display_name)
+            action.setIconVisibleInMenu(True)
+            action.setToolTip(display_name.upper())
+            action.setStatusTip(f"View {display_name} information")
+            action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
+            setattr(self, f"{obj_name}_action", action)
             # Disable buttons until API is implemented
             if obj_name == "occultations":
                 action.setEnabled(False)
                 action.setToolTip("Occultations (Coming Soon)")
                 action.setStatusTip("Occultations feature is not yet implemented")
-            elif obj_name == "variables":
+
+        celestial_menu.addSeparator()
+
+        # Space Conditions Group
+        space_conditions_objects = [
+            ("space_weather", "Space Weather", ["alpha-s-box-outline"]),
+        ]
+
+        for obj_name, display_name, icon_names in space_conditions_objects:
+            icon = self._create_icon(obj_name, icon_names)
+            action = celestial_menu.addAction(icon, display_name)
+            action.setIconVisibleInMenu(True)
+            action.setToolTip(display_name.upper())
+            action.setStatusTip(f"View {display_name} information")
+            action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
+            setattr(self, f"{obj_name}_action", action)
+
+        celestial_menu.addSeparator()
+
+        # Advanced Group
+        advanced_objects = [
+            ("variables", "Variables", ["alpha-v-box-outline"]),
+            ("zodiacal", "Zodiacal", ["alpha-z-box-outline"]),
+        ]
+
+        for obj_name, display_name, icon_names in advanced_objects:
+            icon = self._create_icon(obj_name, icon_names)
+            action = celestial_menu.addAction(icon, display_name)
+            action.setIconVisibleInMenu(True)
+            action.setToolTip(display_name.upper())
+            action.setStatusTip(f"View {display_name} information")
+            action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
+            setattr(self, f"{obj_name}_action", action)
+            # Disable buttons until API is implemented
+            if obj_name == "variables":
                 action.setEnabled(False)
                 action.setToolTip("Variables (Coming Soon)")
                 action.setStatusTip("Variables feature is not yet implemented")
@@ -918,6 +982,7 @@ class MainWindow(QMainWindow):
         celestial_button.setToolTip("CELESTIAL OBJECTS")
         celestial_button.setStatusTip("View information about celestial objects")
         right_toolbar.addWidget(celestial_button)
+        self.celestial_button = celestial_button  # Store reference for icon refresh
 
     def _refresh_toolbar_icons(self) -> None:
         """Refresh toolbar icons after window is shown."""
@@ -926,6 +991,11 @@ class MainWindow(QMainWindow):
         self.connect_action.setIcon(
             self._create_icon("link", ["network-connect", "network-wired", "network-workgroup"])
         )
+        # Refresh toolbar button icons
+        if hasattr(self, "telescope_button"):
+            self.telescope_button.setIcon(
+                self._create_icon("link", ["network-connect", "network-wired", "network-workgroup"])
+            )
         self.disconnect_action.setIcon(
             self._create_icon("link_off", ["network-disconnect", "network-offline", "network-error"])
         )
@@ -961,6 +1031,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "compare_action"):
             self.compare_action.setIcon(self._create_icon("compare", ["compare", "view-split-vertical", "diff"]))
         self.settings_action.setIcon(self._create_icon("settings", ["cog", "settings"]))
+        # Refresh tools button icon
+        if hasattr(self, "tools_button"):
+            self.tools_button.setIcon(self._create_icon("settings", ["cog", "settings"]))
         # Celestial objects (using alpha-box-outline pattern)
         for obj_name in [
             "aurora",
@@ -984,12 +1057,18 @@ class MainWindow(QMainWindow):
                 first_letter = obj_name[0].lower()
                 fallback_icon = f"alpha-{first_letter}-box-outline"
                 action.setIcon(self._create_icon(obj_name, [fallback_icon]))
+        # Refresh celestial button icon
+        if hasattr(self, "celestial_button"):
+            self.celestial_button.setIcon(self._create_icon("planets", ["alpha-p-box-outline"]))
         # Communication log toggle
         if hasattr(self, "log_toggle_action"):
             self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
         # Catalog button
         if hasattr(self, "catalog_action"):
             self.catalog_action.setIcon(self._create_icon("catalog", ["folder", "folder-open", "folder-documents"]))
+        # Refresh planning button icon
+        if hasattr(self, "planning_button"):
+            self.planning_button.setIcon(self._create_icon("catalog", ["folder", "folder-open", "database"]))
         # Goto Queue button
         if hasattr(self, "goto_queue_action"):
             self.goto_queue_action.setIcon(
@@ -1047,13 +1126,58 @@ class MainWindow(QMainWindow):
             """
             )
 
+    def _apply_menu_styles(self, menu: QMenu) -> None:
+        """Apply theme-aware styles to a menu, including separators."""
+        from PySide6.QtGui import QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            is_dark = brightness < 128
+
+            # Set separator color based on theme
+            # Use a lighter gray for dark mode, darker gray for light mode
+            separator_color = "#555555" if is_dark else "#cccccc"
+
+            menu.setStyleSheet(
+                f"""
+                QMenu::separator {{
+                    height: 1px;
+                    background: {separator_color};
+                    margin-left: 5px;
+                    margin-right: 5px;
+                    margin-top: 3px;
+                    margin-bottom: 3px;
+                }}
+                """
+            )
+
+    def _update_menu_styles(self) -> None:
+        """Update styles for all menus when theme changes."""
+        # Find all menus attached to tool buttons
+        for toolbar in self.findChildren(QToolBar):
+            for button in toolbar.findChildren(QToolButton):
+                menu = button.menu()
+                if menu:
+                    self._apply_menu_styles(menu)
+
     def _on_system_theme_changed(self) -> None:
         """Handle system theme changes."""
         # Only update if user preference is SYSTEM
         if self.theme_mode_preference == ThemeMode.SYSTEM:
             self.theme.set_mode(ThemeMode.SYSTEM)
+            # Ensure theme is applied to app
+            from PySide6.QtWidgets import QApplication
+
+            qapp = QApplication.instance()
+            if qapp and isinstance(qapp, QApplication):
+                self.theme.apply(qapp)
             # Refresh icons to match new theme
             self._refresh_toolbar_icons()
+            # Update menu styles for separators
+            self._update_menu_styles()
             # Update textbox placeholder text colors
             if hasattr(self, "filter_textbox"):
                 self._update_textbox_placeholder_style(self.filter_textbox)

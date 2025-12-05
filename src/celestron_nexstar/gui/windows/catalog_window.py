@@ -5,12 +5,25 @@ A subwindow for searching celestial object catalogs.
 """
 
 import asyncio
+import concurrent.futures
+import json
 import logging
+import threading
 from collections import defaultdict
+from collections.abc import Coroutine
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QPalette
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QCompleter,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -22,15 +35,185 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.api.catalogs.catalogs import CelestialObject, search_objects
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_names_for_completion, search_objects
+from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import format_dec, format_ra
+from celestron_nexstar.api.database.database import get_database
+
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 logger = logging.getLogger(__name__)
 
 
+def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
+    """
+    Run an async coroutine from a sync context, handling both cases:
+    - If called from sync context: uses asyncio.run()
+    - If called from async context: creates new event loop in thread
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Check if we're in an async context
+        asyncio.get_running_loop()
+        # We're in an async context, need to use a thread with new event loop
+        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
+
+        def run_in_thread() -> None:
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result = new_loop.run_until_complete(coro)
+                future.set_result(result)
+                new_loop.close()
+            except Exception as e:
+                future.set_exception(e)
+
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+        return future.result()
+    except RuntimeError:
+        # No running loop, use asyncio.run()
+        return asyncio.run(coro)
+
+
+@dataclass
+class SearchFilters:
+    """Search filter parameters."""
+
+    min_magnitude: float | None = None
+    max_magnitude: float | None = None
+    object_types: list[CelestialObjectType] | None = None
+    catalog_name: str | None = None
+
+
+class AdvancedFiltersDialog(QDialog):
+    """Dialog for advanced search filters."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Initialize the advanced filters dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Advanced Search Filters")
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+
+        form_layout = QFormLayout()
+
+        # Magnitude range
+        magnitude_layout = QHBoxLayout()
+        self.min_mag_spinbox = QDoubleSpinBox()
+        self.min_mag_spinbox.setRange(-30.0, 30.0)
+        self.min_mag_spinbox.setSingleStep(0.1)
+        self.min_mag_spinbox.setSpecialValueText("No limit")
+        self.min_mag_spinbox.setValue(-30.0)
+        magnitude_layout.addWidget(QLabel("Min:"))
+        magnitude_layout.addWidget(self.min_mag_spinbox)
+
+        self.max_mag_spinbox = QDoubleSpinBox()
+        self.max_mag_spinbox.setRange(-30.0, 30.0)
+        self.max_mag_spinbox.setSingleStep(0.1)
+        self.max_mag_spinbox.setSpecialValueText("No limit")
+        self.max_mag_spinbox.setValue(30.0)
+        magnitude_layout.addWidget(QLabel("Max:"))
+        magnitude_layout.addWidget(self.max_mag_spinbox)
+        magnitude_layout.addStretch()
+        form_layout.addRow("Magnitude Range:", magnitude_layout)
+
+        # Object types
+        self.object_type_checkboxes: dict[CelestialObjectType, QCheckBox] = {}
+        types_layout = QVBoxLayout()
+        for obj_type in CelestialObjectType:
+            checkbox = QCheckBox(obj_type.value.replace("_", " ").title())
+            checkbox.setChecked(True)  # All checked by default
+            self.object_type_checkboxes[obj_type] = checkbox
+            types_layout.addWidget(checkbox)
+        form_layout.addRow("Object Types:", types_layout)
+
+        # Catalog filter
+        self.catalog_combo = QComboBox()
+        self.catalog_combo.setEditable(False)
+        self.catalog_combo.addItem("All Catalogs", None)
+        # Load catalogs asynchronously (will be called when dialog is shown)
+        form_layout.addRow("Catalog:", self.catalog_combo)
+
+        layout.addLayout(form_layout)
+
+        # Buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.Reset
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        reset_button = button_box.button(QDialogButtonBox.StandardButton.Reset)
+        reset_button.clicked.connect(self._reset_filters)
+        layout.addWidget(button_box)
+
+    def showEvent(self, event: object) -> None:  # noqa: N802
+        """Handle dialog show event - load catalogs."""
+        super().showEvent(event)  # type: ignore[arg-type]
+        # Load catalogs when dialog is shown
+        if self.catalog_combo.count() == 1:  # Only "All Catalogs" item
+            _run_async_safe(self._load_catalogs())
+
+    async def _load_catalogs(self) -> None:
+        """Load available catalogs."""
+        try:
+            db = get_database()
+            catalogs = await db.get_all_catalogs()
+            for catalog in sorted(catalogs):
+                self.catalog_combo.addItem(catalog, catalog)
+        except Exception as e:
+            logger.error(f"Error loading catalogs: {e}")
+
+    def _reset_filters(self) -> None:
+        """Reset all filters to default values."""
+        self.min_mag_spinbox.setValue(-30.0)
+        self.max_mag_spinbox.setValue(30.0)
+        for checkbox in self.object_type_checkboxes.values():
+            checkbox.setChecked(True)
+        self.catalog_combo.setCurrentIndex(0)
+
+    def get_filters(self) -> SearchFilters:
+        """Get current filter values."""
+        min_mag = self.min_mag_spinbox.value() if self.min_mag_spinbox.value() > -30.0 else None
+        max_mag = self.max_mag_spinbox.value() if self.max_mag_spinbox.value() < 30.0 else None
+        object_types = [obj_type for obj_type, checkbox in self.object_type_checkboxes.items() if checkbox.isChecked()]
+        catalog_name = self.catalog_combo.currentData()
+        return SearchFilters(
+            min_magnitude=min_mag,
+            max_magnitude=max_mag,
+            object_types=object_types if len(object_types) < len(CelestialObjectType) else None,
+            catalog_name=catalog_name,
+        )
+
+    def set_filters(self, filters: SearchFilters) -> None:
+        """Set filter values."""
+        self.min_mag_spinbox.setValue(filters.min_magnitude if filters.min_magnitude is not None else -30.0)
+        self.max_mag_spinbox.setValue(filters.max_magnitude if filters.max_magnitude is not None else 30.0)
+        if filters.object_types:
+            for obj_type, checkbox in self.object_type_checkboxes.items():
+                checkbox.setChecked(obj_type in filters.object_types)
+        if filters.catalog_name:
+            index = self.catalog_combo.findData(filters.catalog_name)
+            if index >= 0:
+                self.catalog_combo.setCurrentIndex(index)
+
+
 class CatalogSearchWindow(QMainWindow):
     """Window for searching celestial object catalogs."""
+
+    MAX_RECENT_SEARCHES = 20
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the catalog search window."""
@@ -39,18 +222,40 @@ class CatalogSearchWindow(QMainWindow):
         self.setMinimumWidth(1000)
         self.setMinimumHeight(600)
 
+        # Store current filters
+        self.current_filters = SearchFilters()
+
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # Search bar with info button
+        # Search bar with controls
         search_layout = QHBoxLayout()
         search_label = QLabel()
+
+        # Recent searches dropdown
+        self.recent_searches_combo = QComboBox()
+        self.recent_searches_combo.setEditable(False)
+        self.recent_searches_combo.setMaximumWidth(150)
+        self.recent_searches_combo.setToolTip("Recent searches")
+        self.recent_searches_combo.currentTextChanged.connect(self._on_recent_search_selected)
+        self._load_recent_searches()
+
+        # Search input with autocomplete
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter object name, type, or description...")
         self.search_input.textChanged.connect(self._on_search_text_changed)
+        self.search_input.returnPressed.connect(self._on_search_enter_pressed)
         self._update_textbox_placeholder_style(self.search_input)
+        self._setup_autocomplete()
+
+        # Advanced filters button
+        filters_icon = self._create_icon("filter", ["view-filter", "filter"])
+        self.filters_button = QPushButton("Filters")
+        self.filters_button.setIcon(filters_icon)
+        self.filters_button.setToolTip("Advanced filters")
+        self.filters_button.clicked.connect(self._on_filters_clicked)
 
         # Clear button
         clear_icon = self._create_icon("close", ["edit-clear", "window-close"])
@@ -59,24 +264,7 @@ class CatalogSearchWindow(QMainWindow):
         self.clear_button.setIconSize(QSize(22, 22))
         self.clear_button.setToolTip("Clear search")
         self.clear_button.clicked.connect(self._on_clear_clicked)
-        # Style to match main window toolbar buttons (no border until hover)
-        self.clear_button.setStyleSheet("""
-            QPushButton {
-                border: none;
-                padding: 4px 8px;
-                background: transparent;
-            }
-            QPushButton:hover {
-                background: rgba(128, 128, 128, 0.2);
-                border-radius: 4px;
-            }
-            QPushButton:pressed {
-                background: rgba(128, 128, 128, 0.3);
-            }
-            QPushButton:disabled {
-                opacity: 0.5;
-            }
-        """)
+        self._style_button(self.clear_button)
 
         # Info button (enabled when exactly one row is selected)
         info_icon = self._create_icon("info", ["dialog-information", "help-about"])
@@ -86,27 +274,12 @@ class CatalogSearchWindow(QMainWindow):
         self.info_button.setToolTip("Show object information")
         self.info_button.setEnabled(False)
         self.info_button.clicked.connect(self._on_info_clicked)
-        # Style to match main window toolbar buttons (no border until hover)
-        self.info_button.setStyleSheet("""
-            QPushButton {
-                border: none;
-                padding: 4px 8px;
-                background: transparent;
-            }
-            QPushButton:hover {
-                background: rgba(128, 128, 128, 0.2);
-                border-radius: 4px;
-            }
-            QPushButton:pressed {
-                background: rgba(128, 128, 128, 0.3);
-            }
-            QPushButton:disabled {
-                opacity: 0.5;
-            }
-        """)
+        self._style_button(self.info_button)
 
         search_layout.addWidget(search_label)
+        search_layout.addWidget(self.recent_searches_combo)
         search_layout.addWidget(self.search_input, stretch=1)
+        search_layout.addWidget(self.filters_button)
         search_layout.addWidget(self.clear_button)
         search_layout.addWidget(self.info_button)
         layout.addLayout(search_layout)
@@ -130,10 +303,162 @@ class CatalogSearchWindow(QMainWindow):
         self.search_timer.setSingleShot(True)
         self.search_timer.timeout.connect(self._perform_search)
 
+        # Autocomplete update timer
+        self.autocomplete_timer = QTimer()
+        self.autocomplete_timer.setSingleShot(True)
+        self.autocomplete_timer.timeout.connect(self._update_autocomplete)
+
         # Monitor system theme changes to refresh icons
         app = QGuiApplication.instance()
         if app and isinstance(app, QGuiApplication):
             app.paletteChanged.connect(self._on_theme_changed)  # type: ignore[attr-defined]
+
+    def showEvent(self, event: object) -> None:  # noqa: N802
+        """Handle window show event - refresh icons after window is shown."""
+        super().showEvent(event)  # type: ignore[arg-type]
+        # Refresh icons to ensure they match the current theme
+        self._refresh_icons()
+
+    def _setup_autocomplete(self) -> None:
+        """Set up autocomplete for search input."""
+        self.completer = QCompleter(self)
+        self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_model = QStringListModel()
+        self.completer.setModel(self.completer_model)
+        self.search_input.setCompleter(self.completer)
+
+    def _update_autocomplete(self) -> None:
+        """Update autocomplete suggestions based on current text."""
+        text = self.search_input.text().strip()
+        if len(text) < 2:  # Don't search for very short strings
+            self.completer_model.setStringList([])
+            return
+
+        try:
+            # Get suggestions asynchronously
+            suggestions = _run_async_safe(get_object_names_for_completion(prefix=text, limit=20))
+            self.completer_model.setStringList(suggestions)
+        except Exception as e:
+            logger.debug(f"Error updating autocomplete: {e}")
+
+    def _load_recent_searches(self) -> None:
+        """Load recent searches from database."""
+        try:
+            recent_searches = _run_async_safe(self._get_recent_searches())
+            self.recent_searches_combo.clear()
+            self.recent_searches_combo.addItem("Recent searches...")
+            for search in recent_searches:
+                self.recent_searches_combo.addItem(search)
+        except Exception as e:
+            logger.error(f"Error loading recent searches: {e}")
+
+    async def _get_recent_searches(self) -> list[str]:
+        """Get recent searches from database."""
+        try:
+            from celestron_nexstar.api.database.models import UserPreferenceModel
+
+            db = get_database()
+            async with db._AsyncSession() as session:
+                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
+                if pref:
+                    data = json.loads(pref.value)
+                    searches = data.get("searches", [])
+                    if isinstance(searches, list):
+                        return [str(s) for s in searches]  # Ensure all are strings
+                    return []
+        except Exception as e:
+            logger.debug(f"Error getting recent searches: {e}")
+        return []
+
+    async def _save_recent_search(self, query: str) -> None:
+        """Save a search query to recent searches."""
+        if not query or not query.strip():
+            return
+
+        try:
+            from celestron_nexstar.api.database.models import UserPreferenceModel
+            from datetime import UTC, datetime
+
+            db = get_database()
+            async with db._AsyncSession() as session:
+                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
+                searches: list[str] = []
+                if pref:
+                    data = json.loads(pref.value)
+                    searches = data.get("searches", [])
+
+                # Remove if already exists and add to front
+                query = query.strip()
+                if query in searches:
+                    searches.remove(query)
+                searches.insert(0, query)
+
+                # Limit to MAX_RECENT_SEARCHES
+                searches = searches[: self.MAX_RECENT_SEARCHES]
+
+                # Save back
+                value = json.dumps({"searches": searches})
+                if pref:
+                    pref.value = value
+                    pref.updated_at = datetime.now(UTC)
+                else:
+                    pref = UserPreferenceModel(
+                        key="catalog_recent_searches",
+                        value=value,
+                        category="catalog",
+                        description="Recent catalog search queries",
+                    )
+                    session.add(pref)
+                await session.commit()
+
+                # Reload recent searches in UI
+                self._load_recent_searches()
+        except Exception as e:
+            logger.error(f"Error saving recent search: {e}")
+
+    def _on_recent_search_selected(self, text: str) -> None:
+        """Handle recent search selection."""
+        if text and text != "Recent searches...":
+            self.search_input.setText(text)
+            self.search_input.setFocus()
+            # Reset combo to first item
+            self.recent_searches_combo.setCurrentIndex(0)
+
+    def _on_search_enter_pressed(self) -> None:
+        """Handle Enter key press in search input."""
+        query = self.search_input.text().strip()
+        if query:
+            # Save to recent searches (async, but don't wait)
+            try:
+                _run_async_safe(self._save_recent_search(query))
+            except Exception as e:
+                logger.debug(f"Error saving recent search: {e}")
+            # Perform search immediately
+            self.search_timer.stop()
+            self._perform_search()
+
+    def _on_filters_clicked(self) -> None:
+        """Handle filters button click."""
+        dialog = AdvancedFiltersDialog(self)
+        dialog.set_filters(self.current_filters)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.current_filters = dialog.get_filters()
+            # Update filters button to show active state
+            has_filters = (
+                self.current_filters.min_magnitude is not None
+                or self.current_filters.max_magnitude is not None
+                or self.current_filters.object_types is not None
+                or self.current_filters.catalog_name is not None
+            )
+            if has_filters:
+                self.filters_button.setStyleSheet("font-weight: bold;")
+            else:
+                self.filters_button.setStyleSheet("")
+            # Re-run search with new filters
+            if self.search_input.text().strip():
+                self._perform_search()
 
     def _create_icon(self, icon_name: str, fallback_theme_names: list[str] | None = None) -> QIcon:
         """Create an icon using FontAwesome icons (via qtawesome) with theme icon fallbacks."""
@@ -151,6 +476,7 @@ class CatalogSearchWindow(QMainWindow):
         icon_map: dict[str, str] = {
             "info": "mdi.information-outline",
             "close": "mdi.close-outline",
+            "filter": "mdi.filter-outline",
         }
 
         # Try FontAwesome icons via qtawesome first
@@ -182,6 +508,26 @@ class CatalogSearchWindow(QMainWindow):
 
         # Final fallback: return empty icon
         return QIcon()
+
+    def _style_button(self, button: QPushButton) -> None:
+        """Apply standard button styling."""
+        button.setStyleSheet("""
+            QPushButton {
+                border: none;
+                padding: 4px 8px;
+                background: transparent;
+            }
+            QPushButton:hover {
+                background: rgba(128, 128, 128, 0.2);
+                border-radius: 4px;
+            }
+            QPushButton:pressed {
+                background: rgba(128, 128, 128, 0.3);
+            }
+            QPushButton:disabled {
+                opacity: 0.5;
+            }
+        """)
 
     def _on_theme_changed(self) -> None:
         """Handle theme changes - refresh icons to match new theme."""
@@ -227,21 +573,53 @@ class CatalogSearchWindow(QMainWindow):
         self.clear_button.setIcon(clear_icon)
         info_icon = self._create_icon("info", ["dialog-information", "help-about"])
         self.info_button.setIcon(info_icon)
+        filters_icon = self._create_icon("filter", ["view-filter", "filter"])
+        self.filters_button.setIcon(filters_icon)
 
     def _on_search_text_changed(self, text: str) -> None:
         """Handle search text changes with debouncing."""
         # Clear previous timer
         self.search_timer.stop()
+        self.autocomplete_timer.stop()
 
         # If text is empty, clear results
         if not text.strip():
             self.results_table.clear()
             self.search_results = []
             self.info_button.setEnabled(False)
+            self.completer_model.setStringList([])
             return
 
-        # Start timer for 1 second delay (1000ms)
+        # Update autocomplete after short delay
+        self.autocomplete_timer.start(300)
+
+        # Start timer for 1 second delay (1000ms) for actual search
         self.search_timer.start(1000)
+
+    def _apply_filters(self, results: list[tuple[CelestialObject, str]]) -> list[tuple[CelestialObject, str]]:
+        """Apply current filters to search results."""
+        filtered = []
+        for obj, match_type in results:
+            # Magnitude filter
+            if self.current_filters.min_magnitude is not None and (
+                obj.magnitude is None or obj.magnitude < self.current_filters.min_magnitude
+            ):
+                continue
+            if self.current_filters.max_magnitude is not None and (
+                obj.magnitude is None or obj.magnitude > self.current_filters.max_magnitude
+            ):
+                continue
+
+            # Object type filter
+            if self.current_filters.object_types and obj.object_type not in self.current_filters.object_types:
+                continue
+
+            # Catalog filter (already applied in search_objects, but double-check)
+            if self.current_filters.catalog_name and obj.catalog != self.current_filters.catalog_name:
+                continue
+
+            filtered.append((obj, match_type))
+        return filtered
 
     def _perform_search(self) -> None:
         """Perform the actual search."""
@@ -256,8 +634,12 @@ class CatalogSearchWindow(QMainWindow):
 
             # Perform search in background
             # Use update_positions=False to avoid planetary position calculation errors
+            # Apply catalog filter if specified
+            catalog_name = self.current_filters.catalog_name
             try:
-                results = asyncio.run(search_objects(query, catalog_name=None, update_positions=False))
+                results = _run_async_safe(search_objects(query, catalog_name=catalog_name, update_positions=False))
+                # Apply other filters
+                results = self._apply_filters(results)
             except Exception as search_error:
                 # Handle search errors gracefully
                 # Check if it's an ephemeris-related error
@@ -297,6 +679,12 @@ class CatalogSearchWindow(QMainWindow):
 
             # Store results
             self.search_results = results
+
+            # Save to recent searches (after successful search)
+            try:
+                _run_async_safe(self._save_recent_search(query))
+            except Exception as e:
+                logger.debug(f"Error saving recent search: {e}")
 
             # Group results by match type
             grouped_results: defaultdict[str, list[tuple[CelestialObject, str]]] = defaultdict(list)
@@ -407,6 +795,8 @@ class CatalogSearchWindow(QMainWindow):
         self.search_results = []
         self.info_button.setEnabled(False)
         self.search_timer.stop()
+        self.autocomplete_timer.stop()
+        self.completer_model.setStringList([])
 
     def _on_selection_changed(self) -> None:
         """Handle tree selection changes."""
