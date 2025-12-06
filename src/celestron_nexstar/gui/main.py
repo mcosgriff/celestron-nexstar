@@ -6,6 +6,11 @@ import logging
 import sys
 from pathlib import Path
 
+# Configure starplot to use our standard cache directory before importing
+from celestron_nexstar.api.data.starplot_config import configure_starplot_cache
+
+configure_starplot_cache()
+
 # Import duckdb BEFORE any api imports to avoid deal import hook issues
 # This must happen before deal.activate() is called (which happens in api/__init__.py)
 # duckdb is required by starplot, and importing it early ensures it's cached before deal's hook intercepts imports

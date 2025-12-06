@@ -1676,27 +1676,22 @@ _database_instance: CatalogDatabase | None = None
 
 
 @deal.post(lambda result: result is not None, message="Database instance must be returned")
-def get_database(use_memory: bool | None = None) -> CatalogDatabase:
+def get_database() -> Any:
     """
-    Get the global database instance.
+    Get the global DuckDB database instance.
 
-    Args:
-        use_memory: If True, load database into memory for faster queries.
-                    Requires an existing database file. If None, checks
-                    CELESTRON_USE_MEMORY_DB environment variable. Default: False.
+    Always uses DuckDB (assumes it's available). No SQLite fallback.
 
     Returns:
-        Singleton database instance
+        Singleton DuckDBCatalogDatabase instance
     """
     global _database_instance
     if _database_instance is None:
-        # Check environment variable if use_memory not explicitly set
-        if use_memory is None:
-            import os
+        from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
 
-            use_memory = os.getenv("CELESTRON_USE_MEMORY_DB", "false").lower() in ("true", "1", "yes")
+        _database_instance = DuckDBCatalogDatabase()
+        logger.info("Using DuckDB database for improved performance")
 
-        _database_instance = CatalogDatabase(use_memory=use_memory)
     return _database_instance
 
 

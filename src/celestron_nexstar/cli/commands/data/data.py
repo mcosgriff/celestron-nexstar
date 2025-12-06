@@ -792,20 +792,16 @@ def seed_database(
         nexstar data seed --force
         nexstar data seed --status
     """
-    from celestron_nexstar.api.database.models import get_db_session
-
     # If status flag is set, show status and exit
     if status:
         console.print("\n[bold cyan]Seed Data Status[/bold cyan]\n")
         try:
 
-            async def _get_status() -> dict[str, int]:
-                from celestron_nexstar.api.database.database_seeder import get_seed_status
+            from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+            from celestron_nexstar.api.database.duckdb_seeder import get_seed_status
 
-                async with get_db_session() as db_session:
-                    return await get_seed_status(db_session)
-
-            status_data = asyncio.run(_get_status())
+            db = DuckDBCatalogDatabase()
+            status_data = get_seed_status(db.con)
 
             # Create a table to display status
             from rich.table import Table
@@ -909,14 +905,12 @@ def seed_database(
     console.print("\n[bold cyan]Seeding database with static reference data[/bold cyan]\n")
 
     try:
+        from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+        from celestron_nexstar.api.database.duckdb_seeder import seed_all
 
-        async def _seed_all() -> dict[str, int]:
-            from celestron_nexstar.api.database.database_seeder import seed_all
-
-            async with get_db_session() as db_session:
-                return await seed_all(db_session, force=force)
-
-        results = asyncio.run(_seed_all())
+        # Use DuckDB seeder
+        db = DuckDBCatalogDatabase()
+        results = seed_all(db.con, force=force)
 
         # Display results
         total_added = sum(results.values())
@@ -1983,380 +1977,129 @@ def rebuild(
 
 @app.command("migrate", rich_help_panel="Database Management")
 def run_migrations(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without applying changes"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done without applying changes"),
 ) -> None:
     """
-    Check for pending Alembic migrations and apply them if needed.
+    Build DuckDB database from scratch.
 
-    This command checks the current database revision against the latest migration
-    and applies any pending migrations. If the database is already up to date,
-    it will report that no migrations are needed.
+    This command:
+    1. Creates DuckDB database and runs schema migrations
+    2. Verifies starplot parquet files are available
+
+    The database is built fresh - no data is migrated from SQLite.
+    Stars and DSOs are queried directly from starplot's parquet files and database.
 
     Examples:
         nexstar data migrate
-        nexstar data migrate --dry-run  # Preview what would be migrated
+        nexstar data migrate --dry-run  # Preview what would be done
     """
-    from alembic.config import Config
-    from alembic.runtime.migration import MigrationContext
-    from alembic.script import ScriptDirectory
+    from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+    from celestron_nexstar.api.database.duckdb_migrations import get_current_version, run_migrations
 
-    from alembic import command  # type: ignore[attr-defined]
-    from celestron_nexstar.api.database.database import get_database
+    console.print("\n[bold cyan]Building DuckDB database from scratch...[/bold cyan]\n")
 
-    console.print("\n[bold cyan]Checking database migrations...[/bold cyan]\n")
+    if dry_run:
+        console.print("[bold yellow][DRY RUN] Would perform the following:[/bold yellow]")
+        console.print("  - Create DuckDB database")
+        console.print("  - Run schema migrations (create all custom tables)")
+        console.print("  - Verify starplot parquet files are available")
+        console.print("\n[dim]Run without --dry-run to perform these actions.[/dim]\n")
+        return
 
-    db = get_database()
-
-    # Check if database exists
-    if not db.db_path.exists():
-        console.print("[yellow]⚠[/yellow] Database does not exist. Creating it...")
-        # Create empty database file
-        db.db_path.parent.mkdir(parents=True, exist_ok=True)
-        db.db_path.touch()
-
-    # Configure Alembic
-    alembic_cfg = Config("alembic.ini")
-    # Always set database URL to ensure we're using the correct database
-    # Use the same database path as the database instance
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.db_path}")
-
+    # Initialize DuckDB database (this runs migrations automatically)
     try:
-        # Get current revision from database
-        # Alembic needs a sync engine, so create one
-        from sqlalchemy import create_engine
-
-        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
-        with sync_engine.connect() as connection:
-            context = MigrationContext.configure(connection)
-            current_rev: str | None | list[str] = None
-            try:
-                current_rev = context.get_current_revision()
-            except (AttributeError, RuntimeError, ValueError):
-                # AttributeError: missing Alembic context attributes
-                # RuntimeError: multiple heads or migration errors
-                # ValueError: invalid revision format
-                # Multiple heads in database - use get_current_heads() instead
-                current_heads = context.get_current_heads()
-                if len(current_heads) == 1:
-                    current_rev = current_heads[0]
-                elif len(current_heads) > 1:
-                    # Multiple heads in database - we'll need to handle this
-                    console.print(f"[yellow]⚠[/yellow] Database has multiple heads: {', '.join(current_heads)}")
-                    console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
-                    current_rev = list(current_heads)  # Keep as list for now
-                else:
-                    current_rev = None
-
-        # Get head revision(s) from script directory
-        script = ScriptDirectory.from_config(alembic_cfg)
-        try:
-            # Try to get single head first (works when there's no branching)
-            head_rev = script.get_current_head()
-        except (AttributeError, RuntimeError, ValueError):
-            # AttributeError: missing script attributes
-            # RuntimeError: multiple heads or script errors
-            # ValueError: invalid configuration
-            # Multiple heads detected - use get_heads() instead
-            try:
-                heads_list = script.get_heads()
-                if len(heads_list) == 1:
-                    head_rev = heads_list[0]
-                elif len(heads_list) > 1:
-                    # Multiple heads detected - look for a merge migration
-                    console.print("[yellow]⚠[/yellow] Multiple migration heads detected")
-                    console.print(f"[dim]Found {len(heads_list)} head(s): {', '.join(heads_list)}[/dim]")
-
-                    # Search all revisions for a merge migration that combines these heads
-                    merge_found = False
-                    for rev in script.walk_revisions():
-                        if hasattr(rev, "down_revision") and rev.down_revision:
-                            down_rev = rev.down_revision
-                            # Check if this is a merge migration (has tuple of down_revisions)
-                            if isinstance(down_rev, tuple) and len(down_rev) > 1:
-                                # Check if this merge migration combines all current heads
-                                down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
-                                heads_set = set(heads_list)
-                                if down_rev_set == heads_set:
-                                    merge_found = True
-                                    head_rev = rev.revision
-                                    console.print(f"[dim]Found merge migration: {rev.revision}[/dim]\n")
-                                    break
-
-                    if not merge_found:
-                        console.print("[dim]No merge migration found. Will attempt to upgrade all branches.[/dim]\n")
-                        # Use "heads" to upgrade all branches - Alembic will apply merge migrations if they exist
-                        head_rev = "heads"
-                else:
-                    head_rev = None
-            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                # AttributeError: missing script attributes
-                # RuntimeError: script errors
-                # ValueError: invalid configuration
-                # TypeError: wrong argument types
-                console.print(f"[red]✗[/red] Error checking migrations: {e}")
-                raise typer.Exit(code=1) from e
-
-        # Check if there are pending migrations
-        migrations_to_apply: list[str] | str = "unknown"
-        current_rev_single: str | None = (
-            (current_rev[0] if current_rev else None) if isinstance(current_rev, list) else current_rev
-        )
-
-        if current_rev_single is None:
-            console.print("[yellow]⚠[/yellow] Database has no migration history")
-            console.print("[dim]This is normal for a new database. Will apply all migrations.[/dim]\n")
-            pending = True
-            migrations_to_apply = "all migrations"
-        elif isinstance(current_rev, list):
-            # Multiple heads in database - always need to upgrade
-            pending = True
-            migrations_to_apply = "multiple branches (will be merged)"
-            console.print("[yellow]⚠[/yellow] Database has multiple heads")
-            console.print(f"[dim]Current heads: {', '.join(current_rev)}[/dim]")
-            console.print("[dim]Will attempt to upgrade to latest head(s).[/dim]\n")
-        elif head_rev is not None and head_rev != "heads" and current_rev_single == head_rev:
-            console.print("[green]✓[/green] Database is up to date")
-            console.print(f"[dim]Current revision: {current_rev_single}[/dim]\n")
-            pending = False
-        else:
-            # Get the list of revisions that need to be applied
-            pending = True
-            try:
-                # Get the upgrade path from current to head
-                # walk_revisions returns revisions in order from start to end
-                if head_rev is not None and current_rev_single is not None and head_rev != "heads":
-                    upgrade_path = list(script.walk_revisions(current_rev_single, head_rev))
-                    migrations_to_apply = [
-                        str(rev.revision) for rev in upgrade_path if rev.revision != current_rev_single
-                    ]
-                elif head_rev == "heads":
-                    # Multiple heads - can't easily determine path, will let Alembic handle it
-                    migrations_to_apply = "multiple branches (will be merged)"
-
-                    console.print("[yellow]⚠[/yellow] Database is not up to date")
-                    console.print(f"[dim]Current revision: {current_rev_single}[/dim]")
-                    console.print("[dim]Head revision: multiple branches[/dim]")
-                    console.print("[dim]Alembic will apply merge migration automatically.[/dim]\n")
-                else:
-                    migrations_to_apply = "unknown"
-            except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                # AttributeError: missing Alembic attributes
-                # RuntimeError: migration comparison errors
-                # ValueError: invalid revision format
-                # TypeError: wrong argument types
-                console.print(f"[yellow]⚠[/yellow] Could not determine upgrade path: {e}")
-                console.print(f"[dim]Current revision: {current_rev}[/dim]")
-                console.print(f"[dim]Head revision: {head_rev}[/dim]")
-                console.print("[dim]Will attempt to upgrade to head anyway.[/dim]\n")
-                migrations_to_apply = "unknown"
-
-        if not pending:
-            console.print("[bold green]No migrations needed![/bold green]\n")
-            return
-
-        if dry_run:
-            console.print("[bold yellow][DRY RUN] Would apply migrations:[/bold yellow]")
-            if isinstance(migrations_to_apply, list):
-                for rev_str in migrations_to_apply:
-                    console.print(f"  - {rev_str}")
-            else:  # str
-                console.print(f"  - {migrations_to_apply}")
-            console.print("\n[dim]Run without --dry-run to apply migrations.[/dim]\n")
-            return
-
-        # Apply migrations
-        console.print("[cyan]Applying migrations...[/cyan]\n")
-        try:
-            # Dispose of existing connections to ensure Alembic uses fresh connections
-            import asyncio
-
-            async def _dispose_engine() -> None:
-                await db._engine.dispose()
-
-            asyncio.run(_dispose_engine())
-
-            # Use upgrade to head - this will apply ALL pending migrations in sequence
-            # Alembic will automatically apply all migrations from current state to head
-            # Use the determined head_rev (which may be "heads" for multiple branches)
-            upgrade_target = head_rev if head_rev is not None else "head"
-            command.upgrade(alembic_cfg, upgrade_target)
-            console.print("\n[bold green]✓ Migrations applied successfully![/bold green]\n")
-
-            # Verify the new revision after applying migrations
-            # Get a fresh connection to ensure we see the updated state
-            asyncio.run(_dispose_engine())  # Close existing connections
-            from sqlalchemy import create_engine
-
-            sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
-            with sync_engine.connect() as connection:
-                context = MigrationContext.configure(connection)
-                try:
-                    new_rev = context.get_current_revision()
-                except (AttributeError, RuntimeError, ValueError):
-                    # AttributeError: missing Alembic context attributes
-                    # RuntimeError: multiple heads or migration errors
-                    # ValueError: invalid revision format
-                    # Multiple heads - use get_current_heads()
-                    new_heads = context.get_current_heads()
-                    new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
-                try:
-                    head_rev_after = script.get_current_head()
-                except (AttributeError, RuntimeError, ValueError):
-                    # AttributeError: missing script attributes
-                    # RuntimeError: multiple heads or script errors
-                    # ValueError: invalid configuration
-                    # Multiple heads - get the merge migration if it exists
-                    heads_list = script.get_heads()
-                    if len(heads_list) == 1:
-                        head_rev_after = heads_list[0]
-                    else:
-                        # Look for merge migration
-                        head_rev_after = None
-                        for rev in script.walk_revisions():
-                            if hasattr(rev, "down_revision") and rev.down_revision:
-                                down_rev = rev.down_revision
-                                if isinstance(down_rev, tuple) and len(down_rev) > 1:
-                                    down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
-                                    heads_set = set(heads_list)
-                                    if down_rev_set == heads_set:
-                                        head_rev_after = rev.revision
-                                        break
-                        if head_rev_after is None:
-                            head_rev_after = heads_list[0] if heads_list else None
-
-                if new_rev == head_rev_after:
-                    console.print(f"[dim]Database is now at revision: {new_rev}[/dim]\n")
-                else:
-                    console.print(f"[yellow]⚠[/yellow] Database revision: {new_rev}")
-                    console.print(f"[yellow]⚠[/yellow] Head revision: {head_rev_after}")
-                    console.print("[yellow]⚠[/yellow] Database may not be fully up to date. Run migrate again.\n")
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
-            # AttributeError: missing Alembic attributes
-            # RuntimeError: migration errors
-            # ValueError: invalid configuration or revision format
-            # TypeError: wrong argument types
-            # OSError: file I/O errors
-            # FileNotFoundError: missing alembic.ini or migration files
-            console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
-            import traceback
-
-            console.print(f"[dim]{traceback.format_exc()}[/dim]")
-            raise typer.Exit(code=1) from e
-
-    except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
-        # AttributeError: missing Alembic attributes
-        # RuntimeError: migration errors
-        # ValueError: invalid configuration
-        # TypeError: wrong argument types
-        # OSError: file I/O errors
-        # FileNotFoundError: missing alembic.ini
-        console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
+        db = DuckDBCatalogDatabase()
+        current_version = get_current_version(db.con)
+        console.print(f"[green]✓[/green] DuckDB database initialized (schema version: {current_version})")
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error initializing DuckDB database: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from e
 
+    # Verify migrations are up to date
+    console.print("\n[cyan]Verifying schema migrations...[/cyan]")
+    try:
+        run_migrations(db.con)  # This will only apply pending migrations
+        final_version = get_current_version(db.con)
+        console.print(f"[green]✓[/green] Database schema is up to date (version: {final_version})")
+    except Exception as e:
+        console.print(f"[yellow]⚠[/yellow] Error verifying migrations: {e}")
+
+    # Check starplot parquet files
+    console.print("\n[cyan]Checking starplot data files...[/cyan]")
+    if db._star_parquet_path and db._star_parquet_path.exists():
+        console.print(f"[green]✓[/green] Star catalog found: {db._star_parquet_path.name}")
+    else:
+        console.print("[yellow]⚠[/yellow] Star catalog parquet file not found")
+        console.print("[dim]Star queries will be limited. Starplot's abridged catalog should be included with the package.[/dim]")
+
+    if db._dso_db_path and db._dso_db_path.exists():
+        console.print(f"[green]✓[/green] DSO database found: {db._dso_db_path.name}")
+    else:
+        console.print("[yellow]⚠[/yellow] DSO database not found")
+        console.print("[dim]DSO queries will be limited. This is part of starplot's data.[/dim]")
+
+    console.print("\n[bold green]✓ Database build complete![/bold green]")
+    console.print(f"[dim]Database location: {db.db_path}[/dim]")
+    console.print("[dim]Note: Database is empty. Use 'nexstar data seed' to populate reference data.[/dim]\n")
+
 
 @app.command("migrate-rollback", rich_help_panel="Database Management")
 def rollback_migration(
-    revision: str = typer.Option(
-        "-1",
-        "--revision",
-        "-r",
-        help="Revision to rollback to (use '-1' for one step back, or specific revision ID)",
+    target_version: int = typer.Option(
+        0,
+        "--version",
+        "-v",
+        help="Version to rollback to (use 0 to rollback all migrations)",
     ),
 ) -> None:
     """
-    Rollback database migrations.
+    Rollback DuckDB database migrations.
 
-    This command rolls back the database to a previous migration revision.
+    This command rolls back the database to a previous migration version.
     Use with caution - this can cause data loss if migrations have been applied
     that modify or delete data.
 
     Examples:
-        nexstar data migrate-rollback          # Rollback one migration
-        nexstar data migrate-rollback -r -1    # Rollback one migration (explicit)
-        nexstar data migrate-rollback -r abc123  # Rollback to specific revision
+        nexstar data migrate-rollback          # Rollback to version 0 (all migrations)
+        nexstar data migrate-rollback -v 1     # Rollback to version 1
     """
-    from alembic.config import Config
-    from alembic.runtime.migration import MigrationContext
-    from alembic.script import ScriptDirectory
+    from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+    from celestron_nexstar.api.database.duckdb_migrations import get_current_version, rollback_migration
 
-    from alembic import command  # type: ignore[attr-defined]
-    from celestron_nexstar.api.database.database import get_database
-
-    console.print("\n[bold yellow]Rolling back database migration...[/bold yellow]\n")
-
-    db = get_database()
-
-    # Check if database exists
-    if not db.db_path.exists():
-        console.print("[yellow]⚠[/yellow] Database does not exist. Nothing to rollback.\n")
-        return
-
-    # Configure Alembic
-    alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.db_path}")
+    console.print("\n[bold cyan]Rolling back DuckDB database migrations...[/bold cyan]\n")
 
     try:
-        # Get current revision
-        from sqlalchemy import create_engine
+        db = DuckDBCatalogDatabase()
+        current_version = get_current_version(db.con)
 
-        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
-        with sync_engine.connect() as connection:
-            context = MigrationContext.configure(connection)
-            current_rev = context.get_current_revision()
-
-        if not current_rev:
-            console.print("[yellow]⚠[/yellow] No migrations have been applied. Nothing to rollback.\n")
+        if current_version == 0:
+            console.print("[yellow]⚠[/yellow] Database has no migrations applied. Nothing to rollback.\n")
             return
 
-        console.print(f"[dim]Current revision: {current_rev}[/dim]")
+        console.print(f"[dim]Current version: {current_version}[/dim]")
+        console.print(f"[dim]Target version: {target_version}[/dim]\n")
 
-        # Determine target revision
-        if revision == "-1":
-            # Get the previous revision
-            script = ScriptDirectory.from_config(alembic_cfg)
-            current = script.get_revision(current_rev)
-            if current and current.down_revision:
-                target_rev = (
-                    current.down_revision if isinstance(current.down_revision, str) else current.down_revision[0]
-                )
-            else:
-                console.print("[red]✗[/red] Cannot determine previous revision. Please specify a revision ID.\n")
-                raise typer.Exit(code=1)
-        else:
-            target_rev = revision
+        if target_version >= current_version:
+            console.print("[red]✗[/red] Target version must be less than current version.\n")
+            raise typer.Exit(code=1)
 
-        console.print(f"[dim]Rolling back to: {target_rev}[/dim]\n")
+        # Confirm rollback
+        console.print("[yellow]⚠[/yellow] WARNING: Rolling back migrations may cause data loss!")
+        console.print("[dim]Make sure you have a backup before proceeding.[/dim]\n")
+        if not typer.confirm("Are you sure you want to rollback?"):
+            console.print("[dim]Rollback cancelled.[/dim]\n")
+            return
 
-        # Confirm
-        console.print("[bold yellow]Warning:[/bold yellow] This will rollback the database schema.")
-        console.print("[bold yellow]Any data in tables that are removed will be lost![/bold yellow]\n")
-
-        # Dispose of existing connections
-        import asyncio
-
-        async def _dispose_engine() -> None:
-            await db._engine.dispose()
-
-        asyncio.run(_dispose_engine())
-
-        # Rollback
-        command.downgrade(alembic_cfg, target_rev)
-        console.print("\n[bold green]✓ Migration rolled back successfully![/bold green]\n")
-
-        # Verify the new revision
-        asyncio.run(_dispose_engine())
-        sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
-        with sync_engine.connect() as connection:
-            context = MigrationContext.configure(connection)
-            new_rev = context.get_current_revision()
-
-        console.print(f"[dim]Database is now at revision: {new_rev or 'base'}[/dim]\n")
+        # Perform rollback
+        console.print("[cyan]Rolling back migrations...[/cyan]\n")
+        rollback_migration(db.con, target_version)
+        console.print("\n[bold green]✓ Migrations rolled back successfully![/bold green]\n")
 
     except Exception as e:
-        console.print(f"\n[red]✗[/red] Error rolling back migration: {e}\n")
+        console.print(f"\n[red]✗[/red] Error rolling back migrations: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
