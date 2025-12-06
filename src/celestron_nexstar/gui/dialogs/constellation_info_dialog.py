@@ -128,9 +128,9 @@ class ConstellationInfoDialog(QDialog):
         """Initialize the constellation info dialog."""
         super().__init__(parent)
         self.setWindowTitle(f"Constellation Information: {constellation_name}")
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(1000)
         self.setMinimumHeight(500)
-        self.resize(600, 700)  # Match ObjectInfoDialog width
+        self.resize(1000, 700)  # Wider to accommodate constellation map without horizontal scrollbar
 
         self.constellation_name = constellation_name
         self.svg_path: Path | None = None  # Store SVG path for double-click viewing
@@ -202,7 +202,7 @@ class ConstellationInfoDialog(QDialog):
             location = get_observer_location()
             config = get_current_configuration()
 
-            async def _load_data() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+            async def _load_data() -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
                 db = get_database()
                 async with db._AsyncSession() as session:
                     # Get sky brightness from light pollution
@@ -222,7 +222,19 @@ class ConstellationInfoDialog(QDialog):
                     sky_brightness = bortle_to_sky_brightness.get(
                         light_pollution.bortle_class.value, SkyBrightness.FAIR
                     )
-                    # Get constellation info
+                    # Get constellation model with boundaries
+                    from sqlalchemy import select
+
+                    from celestron_nexstar.api.database.models import ConstellationModel
+
+                    stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
+                    result = await session.execute(stmt)
+                    constellation_model = result.scalar_one_or_none()
+
+                    if not constellation_model:
+                        return {}, [], None
+
+                    # Get constellation info (for display)
                     constellations = await get_prominent_constellations(session)
                     constellation = None
                     for const in constellations:
@@ -231,7 +243,15 @@ class ConstellationInfoDialog(QDialog):
                             break
 
                     if not constellation:
-                        return {}, []
+                        return {}, [], None
+
+                    # Get constellation boundaries for map generation
+                    boundaries = {
+                        "ra_min_hours": constellation_model.ra_min_hours,
+                        "ra_max_hours": constellation_model.ra_max_hours,
+                        "dec_min_degrees": constellation_model.dec_min_degrees,
+                        "dec_max_degrees": constellation_model.dec_max_degrees,
+                    }
 
                     # Get stars in this constellation
                     stars = await db.filter_objects(
@@ -298,22 +318,26 @@ class ConstellationInfoDialog(QDialog):
 
                     star_data.sort(key=sort_key, reverse=True)
 
-                    return {
-                        "name": constellation.name,
-                        "abbreviation": constellation.abbreviation,
-                        "ra_hours": constellation.ra_hours,
-                        "dec_degrees": constellation.dec_degrees,
-                        "area_sq_deg": constellation.area_sq_deg,
-                        "brightest_star": constellation.brightest_star,
-                        "magnitude": constellation.magnitude,
-                        "season": constellation.season,
-                        "hemisphere": constellation.hemisphere,
-                        "description": constellation.description,
-                    }, star_data
+                    return (
+                        {
+                            "name": constellation.name,
+                            "abbreviation": constellation.abbreviation,
+                            "ra_hours": constellation.ra_hours,
+                            "dec_degrees": constellation.dec_degrees,
+                            "area_sq_deg": constellation.area_sq_deg,
+                            "brightest_star": constellation.brightest_star,
+                            "magnitude": constellation.magnitude,
+                            "season": constellation.season,
+                            "hemisphere": constellation.hemisphere,
+                            "description": constellation.description,
+                        },
+                        star_data,
+                        boundaries,
+                    )
 
-            constellation_data, star_data = _run_async_safe(_load_data())
+            constellation_data, star_data, boundaries = _run_async_safe(_load_data())
 
-            if not constellation_data:
+            if not constellation_data or not boundaries:
                 self.info_text.setHtml(
                     f"<p style='color: {colors['error']};'><b>Error:</b> Constellation '{self.constellation_name}' not found</p>"
                 )
@@ -329,68 +353,194 @@ class ConstellationInfoDialog(QDialog):
             name_html += "</p>"
             html_parts.append(name_html)
 
-            # Try to load and display constellation SVG
+            # Generate constellation map using starplot MapPlot
+            # Based on example: https://starplot.dev/examples/map-orion/
             try:
-                import re
-                import urllib.parse
+                import base64
+                import io
 
-                from celestron_nexstar.api.astronomy.constellation_images import get_constellation_svg
+                # Generate map in background thread to avoid blocking UI
+                def _generate_map() -> bytes | None:
+                    try:
+                        from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
+                        from starplot.styles import PlotStyle, extensions
 
-                svg_path = _run_async_safe(get_constellation_svg(constellation_data["name"]))
-                if svg_path and svg_path.exists():
-                    # Store SVG path for double-click viewing
-                    self.svg_path = svg_path
+                        # Get ephemeris file path (use downloaded ephemeris if available)
+                        from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
 
-                    # Read SVG content and embed it in HTML
-                    svg_content = svg_path.read_text(encoding="utf-8")
+                        ephemeris_dir = get_ephemeris_directory()
+                        # Try to find an available ephemeris file (prefer de421 or de440)
+                        ephemeris_file = None
+                        for preferred_name in ["de421.bsp", "de440.bsp", "de421_2001.bsp"]:
+                            eph_path = ephemeris_dir / preferred_name
+                            if eph_path.exists():
+                                ephemeris_file = preferred_name
+                                break
 
-                    # Add a white background to the SVG if it doesn't have one
-                    # This ensures the SVG is visible on dark themes
-                    # Check if SVG already has a background rectangle
-                    if not re.search(
-                        r'<rect[^>]*fill\s*=\s*["\'](?:white|#fff|#ffffff|#f5f5f5|#e0e0e0)', svg_content, re.IGNORECASE
-                    ):
-                        # Find the opening <svg> tag and add a background rectangle after it
-                        svg_match = re.search(r"(<svg[^>]*>)", svg_content, re.IGNORECASE)
-                        if svg_match:
-                            # Extract viewBox or width/height to determine SVG dimensions
-                            viewbox_match = re.search(r'viewBox\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
-                            width_match = re.search(r'width\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
-                            height_match = re.search(r'height\s*=\s*["\']([^"\']+)["\']', svg_content, re.IGNORECASE)
+                        # If no preferred file found, use default (starplot will handle it)
+                        if ephemeris_file is None:
+                            ephemeris_file = "de421_2001.bsp"  # Starplot default
 
-                            # Default dimensions if not found
-                            x, y, width, height = 0, 0, 1000, 1000
+                        # Determine style based on theme
+                        is_dark = self._is_dark_theme()
+                        if is_dark:
+                            plot_style = PlotStyle().extend(extensions.BLUE_DARK, extensions.MAP)
+                        else:
+                            plot_style = PlotStyle().extend(extensions.BLUE_LIGHT, extensions.MAP)
 
-                            if viewbox_match:
-                                # Parse viewBox="x y width height"
-                                viewbox_parts = viewbox_match.group(1).split()
-                                if len(viewbox_parts) >= 4:
-                                    x, y, width, height = [float(v) for v in viewbox_parts[:4]]  # type: ignore[assignment]
-                            elif width_match and height_match:
-                                # Use width and height attributes
-                                width = float(re.sub(r"[^\d.]", "", width_match.group(1)))  # type: ignore[assignment]
-                                height = float(re.sub(r"[^\d.]", "", height_match.group(1)))  # type: ignore[assignment]
+                        # Calculate RA/Dec range from boundaries
+                        # Add padding around the constellation boundaries
+                        padding_ra = 0.5  # hours
+                        padding_dec = 2.0  # degrees
 
-                            # Add white background rectangle
-                            bg_rect = f'<rect x="{x}" y="{y}" width="{width}" height="{height}" fill="#ffffff" stroke="none"/>'
-                            svg_content = svg_content.replace(svg_match.group(1), svg_match.group(1) + bg_rect, 1)
+                        ra_min_hours = boundaries["ra_min_hours"]
+                        ra_max_hours = boundaries["ra_max_hours"]
+                        dec_min = boundaries["dec_min_degrees"] - padding_dec
+                        dec_max = boundaries["dec_max_degrees"] + padding_dec
 
-                    # URL encode the SVG content for data URI
-                    svg_encoded = urllib.parse.quote(svg_content)
-                    # Limit SVG size for display (max width 400px)
-                    # Use transparent background so it matches the QTextEdit background exactly
-                    # The SVG itself has a white background, so it will be visible
+                        # Handle RA wrap-around (e.g., constellation spans 22h to 2h)
+                        # If ra_max < ra_min, the constellation wraps around 0/24h
+                        wraps_around = ra_max_hours < ra_min_hours
+
+                        if wraps_around:
+                            # Constellation wraps around - use a range that doesn't cross 0/24
+                            # For wrapped constellations, we'll use a centered approach
+                            # Calculate the actual span (accounting for wrap)
+                            span = (24 - ra_min_hours) + ra_max_hours
+                            # Use center point and add padding
+                            center_ra = (ra_min_hours + span / 2) % 24
+                            # Create a range that fits within 0-24 without wrapping
+                            range_size = span + (padding_ra * 2)
+                            # Cap range at reasonable size (max 8 hours = 120 degrees)
+                            range_size = min(range_size, 8)
+                            ra_min = (center_ra - range_size / 2) % 24
+                            ra_max = (center_ra + range_size / 2) % 24
+                            # If still wraps, use a simpler approach
+                            if ra_min > ra_max:
+                                # Use the constellation's min/max with padding, but clamp
+                                ra_min = max(0, ra_min_hours - padding_ra)
+                                ra_max = min(24, ra_max_hours + padding_ra)
+                                # If still invalid, use default centered range
+                                if ra_min >= ra_max:
+                                    center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
+                                    ra_min = max(0, center_ra - 2)
+                                    ra_max = min(24, center_ra + 2)
+                        else:
+                            # Normal case - constellation doesn't wrap
+                            ra_min = ra_min_hours - padding_ra
+                            ra_max = ra_max_hours + padding_ra
+                            # Clamp to valid range
+                            if ra_min < 0:
+                                ra_min = 0
+                            if ra_max > 24:
+                                ra_max = 24
+
+                        # Final validation: ensure ra_min < ra_max
+                        if ra_min >= ra_max:
+                            # Fallback: use constellation center with default range
+                            if wraps_around:
+                                center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
+                            else:
+                                center_ra = (ra_min_hours + ra_max_hours) / 2
+                            range_size = 4  # 4 hours = 60 degrees
+                            ra_min = max(0, center_ra - range_size / 2)
+                            ra_max = min(24, center_ra + range_size / 2)
+                            # Final check
+                            if ra_min >= ra_max:
+                                ra_min = 0
+                                ra_max = 4  # Default 4-hour range
+
+                        # Convert RA from hours to degrees for starplot (RA * 15 = degrees)
+                        ra_min_deg = ra_min * 15
+                        ra_max_deg = ra_max * 15
+
+                        # Create map plot
+                        plot = MapPlot(
+                            projection=Miller(),
+                            ra_min=ra_min_deg,
+                            ra_max=ra_max_deg,
+                            dec_min=dec_min,
+                            dec_max=dec_max,
+                            ephemeris=ephemeris_file,  # Use downloaded ephemeris file
+                            style=plot_style,
+                            resolution=4096,  # Good quality for constellation view
+                            autoscale=False,
+                            scale=1.5,
+                        )
+
+                        # Add constellation features
+                        plot.gridlines()
+                        plot.constellations()
+                        plot.constellation_borders()
+
+                        # Add stars (magnitude < 8, labels for magnitude < 5)
+                        plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
+
+                        # Add open clusters
+                        plot.open_clusters(
+                            where=[_.size < 1, _.magnitude < 9],  # type: ignore[arg-type]
+                            where_labels=[False],
+                            true_size=False,
+                        )
+                        plot.open_clusters(
+                            where=[_.size > 1, (_.magnitude < 9) | (_.magnitude.isnull())],  # type: ignore[arg-type]
+                            where_labels=[False],
+                        )
+
+                        # Add nebula
+                        plot.nebula(where=[(_.magnitude < 9) | (_.magnitude.isnull())])  # type: ignore[arg-type]
+
+                        # Add constellation labels
+                        try:
+                            plot.constellation_labels()
+                        except RuntimeError as e:
+                            if "reentrant" not in str(e).lower() and "font" not in str(e).lower():
+                                raise
+
+                        # Add Milky Way and ecliptic
+                        # Milky way may fail for small RA/Dec ranges, so wrap in try/except
+                        try:
+                            plot.milky_way()
+                        except (ValueError, RuntimeError) as e:
+                            # Milky way may fail for small RA/Dec ranges or edge cases
+                            logger.debug(f"Could not render milky way: {e}")
+                        plot.ecliptic()
+
+                        # Export to PNG in memory
+                        img_buffer = io.BytesIO()
+                        plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
+                        img_buffer.seek(0)
+                        return img_buffer.read()
+
+                    except Exception as e:
+                        logger.error(f"Error generating constellation map: {e}", exc_info=True)
+                        return None
+
+                # Generate map in background thread
+                from concurrent.futures import ThreadPoolExecutor
+
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_generate_map)
+                    map_image_data = future.result(timeout=30)  # 30 second timeout
+
+                if map_image_data:
+                    # Convert to base64 for embedding in HTML
+                    import base64
+
+                    img_base64 = base64.b64encode(map_image_data).decode("utf-8")
                     html_parts.append(
                         f"<div style='margin: 15px 0; text-align: center; padding: 5px; background-color: transparent; display: inline-block;'>"
-                        f"<img src='data:image/svg+xml;charset=utf-8,{svg_encoded}' "
-                        f"style='max-width: 400px; max-height: 400px; width: auto; height: auto; display: block;' "
-                        f"alt='{constellation_data['name']} constellation diagram' />"
-                        f"<p style='margin-top: 5px; font-size: 0.9em; color: {colors['text_dim']};'>Double-click image to enlarge</p>"
+                        f"<img src='data:image/png;base64,{img_base64}' "
+                        f"style='max-width: 900px; max-height: 600px; width: auto; height: auto; display: block;' "
+                        f"alt='{constellation_data['name']} constellation map' />"
+                        f"<p style='margin-top: 5px; font-size: 0.9em; color: {colors['text_dim']};'>Constellation map generated with starplot</p>"
                         f"</div>"
                     )
+                else:
+                    logger.warning("Failed to generate constellation map")
             except Exception as e:
-                logger.debug(f"Could not load constellation SVG: {e}")
-                # Silently fail - SVG is optional
+                logger.debug(f"Could not generate constellation map: {e}")
+                # Silently fail - map is optional
 
             # Coordinates section
             html_parts.append(

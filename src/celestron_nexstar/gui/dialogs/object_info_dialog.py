@@ -51,6 +51,12 @@ class ObjectInfoDialog(QDialog):
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(self.accept)
 
+        # Add Optic Plot button (to the left of favorite button)
+        self.optic_plot_button = button_box.addButton("Optic Plot", QDialogButtonBox.ButtonRole.ActionRole)
+        self.optic_plot_button.clicked.connect(self._on_optic_plot_clicked)
+        self.optic_plot_button.setToolTip("Generate optic plot showing what you'll see through your telescope")
+        # Will be enabled/disabled after checking configuration
+
         # Add favorite/unfavorite button
         self.favorite_button = button_box.addButton("", QDialogButtonBox.ButtonRole.ActionRole)
         self.favorite_button.setCheckable(True)
@@ -62,11 +68,12 @@ class ObjectInfoDialog(QDialog):
         # Load object information (this will also update favorite button)
         self._load_object_info()
 
-        # Update favorite button after object info is loaded
+        # Update favorite button and check optic plot button state after object info is loaded
         # Use QTimer to ensure it runs after the dialog is shown
         from PySide6.QtCore import QTimer
 
         QTimer.singleShot(0, self._update_favorite_button)
+        QTimer.singleShot(0, self._update_optic_plot_button)
 
         # Update favorite button after object info is loaded
         # Use a timer to ensure object info is loaded first
@@ -154,6 +161,10 @@ class ObjectInfoDialog(QDialog):
 
             # Use first match (in GUI, we should have exact match from table)
             obj = matches[0]
+
+            # Store object coordinates for optic plot
+            self.object_ra_hours = obj.ra_hours
+            self.object_dec_degrees = obj.dec_degrees
 
             # If multiple matches, use the first one
             if len(matches) > 1:
@@ -550,8 +561,9 @@ class ObjectInfoDialog(QDialog):
             )
             self.object_type = None
 
-        # Update favorite button after loading
+        # Update favorite button and optic plot button after loading
         self._update_favorite_button()
+        self._update_optic_plot_button()
 
     def _update_favorite_button(self) -> None:
         """Update the favorite button state and icon."""
@@ -568,6 +580,51 @@ class ObjectInfoDialog(QDialog):
                 self.favorite_button.setToolTip("Add to favorites")
         except Exception as e:
             logger.error(f"Error updating favorite button: {e}", exc_info=True)
+
+    def _update_optic_plot_button(self) -> None:
+        """Update the optic plot button state based on configuration and object coordinates."""
+        try:
+            from celestron_nexstar.api.observation.optics import load_configuration
+
+            # Check if telescope/eyepiece is configured
+            config = load_configuration()
+            has_config = config is not None
+
+            # Check if object has coordinates
+            has_coordinates = self.object_ra_hours is not None and self.object_dec_degrees is not None
+
+            # Enable button only if both config and coordinates are available
+            self.optic_plot_button.setEnabled(has_config and has_coordinates)
+
+            if not has_config:
+                self.optic_plot_button.setToolTip("Configure telescope and eyepiece in Settings to enable optic plots")
+            elif not has_coordinates:
+                self.optic_plot_button.setToolTip("Object does not have coordinates")
+            else:
+                self.optic_plot_button.setToolTip("Generate optic plot showing what you'll see through your telescope")
+        except Exception as e:
+            logger.error(f"Error updating optic plot button: {e}", exc_info=True)
+            self.optic_plot_button.setEnabled(False)
+
+    def _on_optic_plot_clicked(self) -> None:
+        """Handle optic plot button click - open optic plot window."""
+        try:
+            if self.object_ra_hours is None or self.object_dec_degrees is None:
+                logger.warning("Cannot generate optic plot: object has no coordinates")
+                return
+
+            from celestron_nexstar.gui.windows.optic_plot_window import OpticPlotWindow
+
+            dialog = OpticPlotWindow(
+                self,
+                object_name=self.object_name,
+                object_type=self.object_type,
+                ra_hours=self.object_ra_hours,
+                dec_degrees=self.object_dec_degrees,
+            )
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening optic plot: {e}", exc_info=True)
 
     def _on_favorite_toggled(self) -> None:
         """Handle favorite button toggle."""

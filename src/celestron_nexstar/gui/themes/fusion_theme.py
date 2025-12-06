@@ -20,6 +20,7 @@ class ThemeMode(str, Enum):
     LIGHT = "light"
     DARK = "dark"
     SYSTEM = "system"  # Follow OS system theme
+    DARK_SKY = "dark_sky"  # Red-light theme for preserving night vision
 
 
 class FusionTheme:
@@ -51,7 +52,24 @@ class FusionTheme:
         palette = QPalette()
         from PySide6.QtGui import QColor
 
-        if actual_mode == ThemeMode.DARK:
+        if actual_mode == ThemeMode.DARK_SKY:
+            # Dark Sky Mode - Red-light theme for preserving night vision
+            # Use dark background with red/amber text colors
+            # Red light (wavelength ~650nm) preserves night vision better than white light
+            palette.setColor(QPalette.ColorRole.Window, QColor(20, 0, 0))  # Very dark red-black
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 100, 100))  # Soft red
+            palette.setColor(QPalette.ColorRole.Base, QColor(30, 5, 5))  # Slightly lighter dark red
+            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(25, 2, 2))
+            palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(40, 10, 10))
+            palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 120, 120))
+            palette.setColor(QPalette.ColorRole.Text, QColor(255, 120, 120))  # Red text
+            palette.setColor(QPalette.ColorRole.Button, QColor(35, 8, 8))
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 130, 130))
+            palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 150, 150))
+            palette.setColor(QPalette.ColorRole.Link, QColor(255, 140, 100))  # Orange-red links
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(150, 30, 30))  # Dark red highlight
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 150, 150))
+        elif actual_mode == ThemeMode.DARK:
             # Dark theme palette
             palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
             palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))

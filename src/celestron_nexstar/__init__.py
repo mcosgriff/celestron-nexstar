@@ -22,6 +22,18 @@ Example:
     >>> telescope.disconnect()
 """
 
+# Import duckdb BEFORE any api imports to avoid deal import hook issues
+# This must happen before deal.activate() is called (which happens in api/__init__.py)
+# duckdb is required by starplot, and importing it early ensures it's cached before deal's hook intercepts imports
+import contextlib
+
+
+with contextlib.suppress(ImportError):
+    import duckdb  # type: ignore[import-untyped]  # noqa: F401
+
+with contextlib.suppress(ImportError):
+    import starplot  # type: ignore[import-untyped]  # noqa: F401
+
 # Main telescope class
 # Coordinate converter
 from celestron_nexstar.api.catalogs.converters import CoordinateConverter

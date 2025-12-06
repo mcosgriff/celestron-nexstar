@@ -59,6 +59,10 @@ dependencies = [
     "PySide6>=6.6.0",
     "qt-material>=2.17",
     "qtawesome>=1.4.0",
+    "matplotlib>=3.10.7",
+    "matplotlib-stubs>=0.3.11",
+    "starplot>=0.7.0",
+    "ibis-framework[duckdb]",
 ]
 
 [project.optional-dependencies]

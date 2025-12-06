@@ -405,6 +405,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._catalog_window = None  # Store reference to catalog window
         self._goto_queue_window = None  # Store reference to goto queue window
+        self._sky_map_window = None  # Store reference to sky map window
+        self._zenith_star_chart_window = None  # Store reference to zenith star chart window
         self.setWindowTitle("Celestron NexStar Telescope Control")
         self.setMinimumSize(800, 600)
 
@@ -431,6 +433,9 @@ class MainWindow(QMainWindow):
         else:
             self.theme = theme
         self.theme_mode_preference = self.theme.mode  # Track user preference
+
+        # Minimal UI mode state
+        self.minimal_ui_mode = False
 
         # Create menu bar with theme toggle
         self._create_menus()
@@ -600,6 +605,23 @@ class MainWindow(QMainWindow):
         self.system_theme_action.triggered.connect(lambda: self._set_theme(ThemeMode.SYSTEM))
         self.theme_action_group.addAction(self.system_theme_action)
 
+        # Dark Sky Mode action (red-light theme)
+        self.dark_sky_theme_action = theme_menu.addAction("🔴 Dark Sky Mode")
+        self.dark_sky_theme_action.setCheckable(True)
+        self.dark_sky_theme_action.setStatusTip("Red-light theme for preserving night vision")
+        self.dark_sky_theme_action.triggered.connect(lambda: self._set_theme(ThemeMode.DARK_SKY))
+        self.theme_action_group.addAction(self.dark_sky_theme_action)
+
+        # Add separator before Minimal UI
+        view_menu.addSeparator()
+
+        # Minimal UI mode toggle
+        self.minimal_ui_action = view_menu.addAction("Minimal UI Mode")
+        self.minimal_ui_action.setCheckable(True)
+        self.minimal_ui_action.setStatusTip("Hide menus, toolbars, and status bar for minimal interface")
+        self.minimal_ui_action.setShortcut("Ctrl+M")
+        self.minimal_ui_action.triggered.connect(self._toggle_minimal_ui)
+
         # Set initial checked state based on current theme
         self._update_theme_menu_state()
 
@@ -641,6 +663,7 @@ class MainWindow(QMainWindow):
 
         # Left side toolbar - organized with QToolButton menus
         left_toolbar = create_toolbar("Left Toolbar", Qt.ToolBarArea.LeftToolBarArea)
+        self.left_toolbar = left_toolbar  # Store reference for minimal UI mode
 
         # Telescope Operations menu button
         telescope_menu = QMenu("Telescope Operations", self)
@@ -743,6 +766,22 @@ class MainWindow(QMainWindow):
         self.dashboard_action.setToolTip("LIVE DASHBOARD")
         self.dashboard_action.setStatusTip("View real-time observing conditions dashboard")
         self.dashboard_action.triggered.connect(self._on_live_dashboard)
+
+        # Sky Map
+        sky_map_icon = self._create_icon("map", ["map", "globe", "earth", "map-marker"])
+        self.sky_map_action = planning_menu.addAction(sky_map_icon, "Interactive Sky Map")
+        self.sky_map_action.setIconVisibleInMenu(True)
+        self.sky_map_action.setToolTip("SKY MAP")
+        self.sky_map_action.setStatusTip("Open interactive sky map showing stars and telescope position")
+        self.sky_map_action.triggered.connect(self._on_sky_map)
+
+        # Zenith Star Chart
+        star_chart_icon = self._create_icon("star", ["star", "star-outline", "star-circle"])
+        self.zenith_star_chart_action = planning_menu.addAction(star_chart_icon, "Zenith Star Chart")
+        self.zenith_star_chart_action.setIconVisibleInMenu(True)
+        self.zenith_star_chart_action.setToolTip("ZENITH STAR CHART")
+        self.zenith_star_chart_action.setStatusTip("Open full-sky zenith star chart view")
+        self.zenith_star_chart_action.triggered.connect(self._on_zenith_star_chart)
 
         # Astronomical Calendar
         calendar_icon = self._create_icon("event", ["calendar", "calendar-month", "calendar-outline"])
@@ -866,6 +905,7 @@ class MainWindow(QMainWindow):
 
         # Right side toolbar - Celestial Objects menu
         right_toolbar = create_toolbar("Right Toolbar", Qt.ToolBarArea.RightToolBarArea)
+        self.right_toolbar = right_toolbar  # Store reference for minimal UI mode
 
         # Celestial Objects menu button
         celestial_menu = QMenu("Celestial Objects", self)
@@ -1016,6 +1056,8 @@ class MainWindow(QMainWindow):
             self.dashboard_action.setIcon(
                 self._create_icon("dashboard", ["view-dashboard", "chart-line", "monitor-dashboard"])
             )
+        if hasattr(self, "sky_map_action"):
+            self.sky_map_action.setIcon(self._create_icon("map", ["map", "globe", "earth", "map-marker"]))
         if hasattr(self, "equipment_action"):
             self.equipment_action.setIcon(self._create_icon("settings", ["cog", "tools", "wrench"]))
         self.weather_action.setIcon(
@@ -1193,8 +1235,42 @@ class MainWindow(QMainWindow):
             self.system_theme_action.setChecked(True)
         elif self.theme_mode_preference == ThemeMode.DARK:
             self.dark_theme_action.setChecked(True)
+        elif self.theme_mode_preference == ThemeMode.DARK_SKY:
+            self.dark_sky_theme_action.setChecked(True)
         else:  # ThemeMode.LIGHT
             self.light_theme_action.setChecked(True)
+
+    def _toggle_minimal_ui(self, checked: bool) -> None:
+        """Toggle minimal UI mode - hide/show menus, toolbars, and status bar."""
+        self.minimal_ui_mode = checked
+
+        # Toggle menu bar visibility
+        if self.menuBar():
+            self.menuBar().setVisible(not checked)
+
+        # Toggle toolbars visibility
+        if hasattr(self, "left_toolbar"):
+            self.left_toolbar.setVisible(not checked)
+        if hasattr(self, "right_toolbar"):
+            self.right_toolbar.setVisible(not checked)
+        if hasattr(self, "top_toolbar"):
+            self.top_toolbar.setVisible(not checked)
+        # Hide all other toolbars
+        for toolbar in self.findChildren(QToolBar):
+            if toolbar not in [
+                getattr(self, "left_toolbar", None),
+                getattr(self, "right_toolbar", None),
+                getattr(self, "top_toolbar", None),
+            ]:
+                toolbar.setVisible(not checked)
+
+        # Toggle status bar visibility
+        if self.statusBar():
+            self.statusBar().setVisible(not checked)
+
+        # Update action checked state
+        if hasattr(self, "minimal_ui_action"):
+            self.minimal_ui_action.setChecked(checked)
 
     def _create_control_panel(self) -> QWidget:
         """Create the telescope control panel with tabs for celestial object types."""
@@ -1955,6 +2031,7 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Table Controls")
         toolbar.setMovable(False)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+        self.top_toolbar = toolbar  # Store reference for minimal UI mode
 
         # Filter textbox (left side)
         filter_label = QLabel()
@@ -2813,6 +2890,40 @@ class MainWindow(QMainWindow):
         self._goto_queue_window.show()
         self._goto_queue_window.raise_()
         self._goto_queue_window.activateWindow()
+
+    def _on_sky_map(self) -> None:
+        """Handle sky map button click - open sky map window."""
+        from celestron_nexstar.gui.windows.sky_map_window import SkyMapWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_sky_map_window") or self._sky_map_window is None:
+            self._sky_map_window = SkyMapWindow(self, telescope=self.telescope)
+            self._sky_map_window.destroyed.connect(lambda: setattr(self, "_sky_map_window", None))
+        else:
+            # Update telescope reference if it changed
+            if hasattr(self._sky_map_window, "sky_map"):
+                self._sky_map_window.sky_map.telescope = self.telescope
+
+        self._sky_map_window.show()
+        self._sky_map_window.raise_()
+        self._sky_map_window.activateWindow()
+
+    def _on_zenith_star_chart(self) -> None:
+        """Handle zenith star chart button click - open zenith star chart window."""
+        from celestron_nexstar.gui.windows.zenith_star_chart_window import ZenithStarChartWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_zenith_star_chart_window") or self._zenith_star_chart_window is None:
+            self._zenith_star_chart_window = ZenithStarChartWindow(self, telescope=self.telescope)
+            self._zenith_star_chart_window.destroyed.connect(lambda: setattr(self, "_zenith_star_chart_window", None))
+        else:
+            # Update telescope reference if it changed
+            if hasattr(self._zenith_star_chart_window, "star_chart"):
+                self._zenith_star_chart_window.star_chart.telescope = self.telescope
+
+        self._zenith_star_chart_window.show()
+        self._zenith_star_chart_window.raise_()
+        self._zenith_star_chart_window.activateWindow()
 
     def _on_weather(self) -> None:
         """Handle weather button click."""

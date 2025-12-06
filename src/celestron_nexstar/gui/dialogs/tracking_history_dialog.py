@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # type: ignore[attr-defined]
+from matplotlib.figure import Figure
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QComboBox,
@@ -26,16 +28,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
-try:
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # type: ignore[import-not-found]
-    from matplotlib.figure import Figure  # type: ignore[import-not-found]
-
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    FigureCanvas = None  # type: ignore[assignment,misc]
-    Figure = None  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
     from celestron_nexstar import NexStarTelescope
@@ -58,15 +50,6 @@ class TrackingHistoryDialog(QDialog):
         self.setWindowTitle("Tracking History Graph")
         self.setMinimumWidth(900)
         self.setMinimumHeight(600)
-
-        if not MATPLOTLIB_AVAILABLE:
-            QMessageBox.warning(
-                parent,
-                "Matplotlib Not Available",
-                "Matplotlib is required for the tracking history graph. Please install it with: pip install matplotlib",
-            )
-            self.reject()
-            return
 
         self.telescope = telescope
         self.position_tracker = position_tracker
@@ -268,7 +251,7 @@ class TrackingHistoryDialog(QDialog):
                     self.ax_az.autoscale_view()
 
                     # Format x-axis
-                    from matplotlib import dates  # type: ignore[import-not-found]
+                    from matplotlib import dates
 
                     self.ax_alt.xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
                     self.ax_az.xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
@@ -294,7 +277,7 @@ class TrackingHistoryDialog(QDialog):
                     self.ax_dec.autoscale_view()
 
                     # Format x-axis
-                    from matplotlib import dates  # type: ignore[import-not-found]
+                    from matplotlib import dates
 
                     self.ax_ra.xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))
                     self.ax_dec.xaxis.set_major_formatter(dates.DateFormatter("%H:%M:%S"))

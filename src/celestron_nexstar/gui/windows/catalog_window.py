@@ -14,7 +14,7 @@ from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QSize, Qt, QStringListModel, QTimer
+from PySide6.QtCore import QSize, QStringListModel, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -42,7 +42,7 @@ from celestron_nexstar.api.database.database import get_database
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    pass
 
 
 logger = logging.getLogger(__name__)
@@ -378,8 +378,9 @@ class CatalogSearchWindow(QMainWindow):
             return
 
         try:
-            from celestron_nexstar.api.database.models import UserPreferenceModel
             from datetime import UTC, datetime
+
+            from celestron_nexstar.api.database.models import UserPreferenceModel
 
             db = get_database()
             async with db._AsyncSession() as session:

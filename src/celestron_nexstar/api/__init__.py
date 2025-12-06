@@ -16,11 +16,13 @@ The API is organized into logical subpackages:
 - core: Core utilities and types
 """
 
-# Activate deal contracts for runtime validation
-import deal
+# Import deal for contract decorators (@deal.pre, @deal.post, etc.)
+# NOTE: We do NOT call deal.activate() because it installs an import hook that is
+# incompatible with Python 3.13 and breaks many modules (duckdb, starplot, numpy, astropy, etc.)
+# The contract decorators will still work for runtime validation without the import hook.
+# The import hook is only needed for module-level contracts (deal.module_load), which we don't use.
+import deal  # noqa: F401
 
-
-deal.activate()
 
 __all__ = [
     # Package is organized into subpackages - import directly from them:

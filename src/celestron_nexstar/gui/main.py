@@ -6,6 +6,13 @@ import logging
 import sys
 from pathlib import Path
 
+# Import duckdb BEFORE any api imports to avoid deal import hook issues
+# This must happen before deal.activate() is called (which happens in api/__init__.py)
+# duckdb is required by starplot, and importing it early ensures it's cached before deal's hook intercepts imports
+import duckdb  # type: ignore[import-untyped]  # noqa: F401
+
+# Import starplot after duckdb to ensure it can import duckdb successfully
+import starplot  # type: ignore[import-untyped]  # noqa: F401
 from PySide6.QtWidgets import QApplication
 
 from celestron_nexstar.api.core.utils import configure_astropy_iers

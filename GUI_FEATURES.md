@@ -54,6 +54,7 @@ This document tracks potential features and enhancements for the Celestron NexSt
 - Object positions overlaid
 - Click to select and goto objects
 - Constellation lines and labels
+- **Plan**: See `docs/plans/INTERACTIVE_SKY_MAP_PLAN.md` for detailed implementation plan
 
 ### ⬜ Star Chart/Planisphere View
 
@@ -213,11 +214,14 @@ This document tracks potential features and enhancements for the Celestron NexSt
 
 ## UI/UX Improvements
 
-### ⬜ Dark Sky Mode
+### ✅ Dark Sky Mode
 
-- Red-light mode for night use
-- Minimal UI mode
-- Screen dimming controls
+- ✅ Red-light theme option for preserving night vision
+- ✅ Dark red-black background with red/amber text colors
+- ✅ Optimized for night vision preservation (red light ~650nm wavelength)
+- ✅ Accessible from View → Theme → Dark Sky Mode
+- ✅ Minimal UI mode (separate toggle)
+- ⬜ Screen dimming controls (future enhancement)
 
 ### ⬜ Customizable Layouts
 
@@ -232,11 +236,13 @@ This document tracks potential features and enhancements for the Celestron NexSt
 - ✅ Columns auto-size to content on initial load
 - ✅ User can manually resize to preferred widths
 
-### ⬜ Search Improvements
+### ✅ Search Improvements
 
-- Recent searches
-- Search suggestions
-- Advanced filters (magnitude range, object type, etc.)
+- ✅ Recent searches (stores up to 20 recent queries in database)
+- ✅ Search suggestions/autocomplete (real-time suggestions as you type)
+- ✅ Advanced filters (magnitude range, object type, catalog selection)
+- ✅ Filter dialog with persistent filter state
+- ✅ Integration with catalog search window
 
 ### ⬜ Tutorial/Help System
 
@@ -281,10 +287,11 @@ These features are prioritized for quick implementation:
 - ✅ Save/Load queue persistence
 - ✅ Context menu integration
 
-### ⬜ Dark Sky Mode
+### ✅ Dark Sky Mode & Minimal UI
 
-- Red-light theme option
-- Minimal UI mode
+- ✅ Red-light theme option (Dark Sky Mode)
+- ✅ Minimal UI mode toggle (Ctrl+M)
+- ✅ Hides menus, toolbars, and status bar for clean interface
 
 ---
 
@@ -299,9 +306,28 @@ These features are prioritized for quick implementation:
 
 ## Last Updated
 
-2025-02-01
+2025-12-05
 
 ### Recent Updates
+
+- **2025-12-05**: ✅ Completed Dark Sky Mode feature
+  - Red-light theme with dark red-black background and red/amber text
+  - Optimized for night vision preservation (red light ~650nm wavelength)
+  - Accessible from View → Theme → Dark Sky Mode
+  - Custom QPalette implementation for consistent red-light appearance
+
+- **2025-12-05**: ✅ Completed Minimal UI Mode feature
+  - Toggle to hide/show menus, toolbars, and status bar
+  - Keyboard shortcut: Ctrl+M
+  - Provides clean, distraction-free interface for observing
+  - Accessible from View → Minimal UI Mode
+
+- **2025-12-05**: ✅ Completed Search Improvements feature
+  - Recent searches stored in database (up to 20 queries)
+  - Real-time search suggestions/autocomplete
+  - Advanced filters dialog (magnitude range, object type, catalog)
+  - Filter state persistence
+  - Integrated with catalog search window
 
 - **2025-02-01**: ✅ Completed Object Comparison Tool feature
   - Side-by-side comparison table with key metrics
