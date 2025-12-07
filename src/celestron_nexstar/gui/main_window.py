@@ -392,12 +392,10 @@ class ObjectsLoaderThread(QThread):
                                 name=var_star.name,
                                 common_name=var_star.designation,
                                 catalog="variable",
-                                catalog_number=None,
                                 ra_hours=var_star.ra_hours,
                                 dec_degrees=var_star.dec_degrees,
                                 magnitude=avg_mag,
                                 object_type=CelestialObjectType.VARIABLE_STAR,
-                                size_arcmin=None,
                                 description=f"{var_star.variable_type} - Mag {var_star.magnitude_min:.1f} to {var_star.magnitude_max:.1f}, Period: {var_star.period_days:.1f} days. {var_star.notes}",
                                 constellation=None,
                             )
@@ -625,6 +623,7 @@ class MainWindow(QMainWindow):
             "dashboard": "mdi.view-dashboard-outline",
             "list": "mdi.playlist-play",
             "weather": "mdi.weather-cloudy",  # No outline version available
+            "sky_darkness": "mdi.weather-night",
             "checklist": "mdi.check-circle-outline",
             "time_slots": "mdi.clock-outline",
             "quick_reference": "mdi.book-open-variant",
@@ -810,7 +809,9 @@ class MainWindow(QMainWindow):
         self._sky_map_window = None  # Store reference to sky map window
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
         self.setWindowTitle("Celestron NexStar Telescope Control")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(900, 600)  # Increased width by 100px to accommodate all tabs without scrolling
+        # Set initial size wider than minimum to ensure tabs are visible without scrolling
+        self.resize(1000, 700)
 
         # Telescope connection state
         self.telescope: NexStarTelescope | None = None
@@ -1040,6 +1041,37 @@ class MainWindow(QMainWindow):
         # Refresh toolbar icons after window is shown to ensure FontAwesome fonts are loaded
         self._refresh_toolbar_icons()
 
+    def closeEvent(self, event: Any) -> None:  # noqa: N802
+        """Handle window close event - clean up all threads."""
+        # Stop and clean up all loading threads
+        for obj_type_str, thread in list(self._loading_threads.items()):
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
+                if thread.isRunning():
+                    thread.terminate()
+                    thread.wait(1000)
+            thread.deleteLater()
+            del self._loading_threads[obj_type_str]
+
+        # Stop and clean up all visibility counting threads
+        for table, thread in list(self._visibility_threads.items()):
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
+                if thread.isRunning():
+                    thread.terminate()
+                    thread.wait(1000)
+            thread.deleteLater()
+            del self._visibility_threads[table]
+
+        # Process events to allow thread cleanup
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
+
+        super().closeEvent(event)  # type: ignore[arg-type]
+
     def _create_toolbar(self) -> None:
         """Create multiple toolbars organized by function."""
 
@@ -1226,6 +1258,13 @@ class MainWindow(QMainWindow):
         self.weather_action.setToolTip("WEATHER")
         self.weather_action.setStatusTip("View current weather conditions")
         self.weather_action.triggered.connect(self._on_weather)
+
+        sky_darkness_icon = self._create_icon("sky_darkness", ["weather-night", "moon-waxing-crescent", "star"])
+        self.sky_darkness_action = planning_menu.addAction(sky_darkness_icon, "Sky Darkness")
+        self.sky_darkness_action.setIconVisibleInMenu(True)
+        self.sky_darkness_action.setToolTip("SKY DARKNESS")
+        self.sky_darkness_action.setStatusTip("View sky darkness information (Bortle class, SQM, limiting magnitudes)")
+        self.sky_darkness_action.triggered.connect(self._on_sky_darkness)
 
         checklist_icon = self._create_icon("checklist", ["format-list-checks", "check-circle"])
         self.checklist_action = planning_menu.addAction(checklist_icon, "Checklist")
@@ -1467,6 +1506,10 @@ class MainWindow(QMainWindow):
         self.weather_action.setIcon(
             self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
         )
+        if hasattr(self, "sky_darkness_action"):
+            self.sky_darkness_action.setIcon(
+                self._create_icon("sky_darkness", ["weather-night", "moon-waxing-crescent", "star"])
+            )
         self.checklist_action.setIcon(self._create_icon("checklist", ["format-list-checks", "check-circle"]))
         self.time_slots_action.setIcon(self._create_icon("time_slots", ["clock-outline", "timer"]))
         self.quick_reference_action.setIcon(self._create_icon("quick_reference", ["book-open-variant", "information"]))
@@ -1880,6 +1923,15 @@ class MainWindow(QMainWindow):
         # Create and start worker thread
         thread = ObjectsLoaderThread(obj_type_str)
         thread.data_loaded.connect(lambda obj_type, objs: self._on_objects_loaded(obj_type, objs, table, progress))
+
+        # Clean up thread when it finishes
+        def cleanup_thread() -> None:
+            if obj_type_str in self._loading_threads:
+                del self._loading_threads[obj_type_str]
+            thread.deleteLater()
+
+        thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
+
         self._loading_threads[obj_type_str] = thread
         thread.start()
 
@@ -2666,13 +2718,16 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "tab_widget"):
             return
 
-        # Get all tabs that need loading
+        # Get all tabs that need loading (includes all object types: stars, planets, galaxies, etc.
+        # including variable_star and zodiacal)
         tabs_to_load = []
         for i in range(self.tab_widget.count()):
             tab_widget = self.tab_widget.widget(i)
             if isinstance(tab_widget, QTableWidget):
                 obj_type_str = tab_widget.property("object_type")
                 # Load if not cached and not already loading
+                # This includes all types: star, planet, galaxy, nebula, cluster, double_star,
+                # asterism, constellation, moon, variable_star, zodiacal
                 if (
                     obj_type_str
                     and obj_type_str not in self._objects_cache
@@ -2711,10 +2766,17 @@ class MainWindow(QMainWindow):
             # Wait for loading to complete (check if thread is done)
             if obj_type_str in self._loading_threads:
                 thread = self._loading_threads[obj_type_str]
-                thread.wait(5000)  # Wait up to 5 seconds for each tab
+                if thread.isRunning():
+                    thread.wait(5000)  # Wait up to 5 seconds for each tab
+                # Thread cleanup is handled by the finished signal connection
 
         progress.setValue(len(tabs_to_load))
         progress.close()
+
+        # Process events to allow any pending thread cleanup signals
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.processEvents()
 
     def _on_filter_changed(self, text: str) -> None:
         """Handle filter text change - filter table rows."""
@@ -3484,6 +3546,206 @@ class MainWindow(QMainWindow):
         dialog = WeatherInfoDialog(self)
         dialog.exec()
 
+    def _on_sky_darkness(self) -> None:
+        """Handle sky darkness button click - show sky darkness information."""
+        try:
+            from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QVBoxLayout
+
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude, get_current_configuration
+
+            # Show progress dialog
+            progress = QProgressDialog("Loading sky darkness information...", "Cancel", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)
+            progress.show()
+            QApplication.processEvents()
+
+            # Get location and light pollution data
+            location = get_observer_location()
+            db = get_database()
+
+            async def _load_data():
+                async with db._AsyncSession() as session:
+                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    return light_pollution
+
+            light_pollution = asyncio.run(_load_data())
+
+            # Map Bortle class to SkyBrightness
+            bortle_to_sky_brightness = {
+                1: SkyBrightness.EXCELLENT,
+                2: SkyBrightness.EXCELLENT,
+                3: SkyBrightness.GOOD,
+                4: SkyBrightness.GOOD,
+                5: SkyBrightness.FAIR,
+                6: SkyBrightness.FAIR,
+                7: SkyBrightness.POOR,
+                8: SkyBrightness.POOR,
+                9: SkyBrightness.URBAN,
+            }
+            sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
+
+            # Get telescope configuration and calculate telescope limiting magnitude
+            telescope_limit = None
+            telescope_name = "Not configured"
+            try:
+                config = get_current_configuration()
+                if config:
+                    telescope_name = config.telescope.display_name
+                    exit_pupil = config.eyepiece.exit_pupil_mm(config.telescope)
+                    telescope_limit = calculate_limiting_magnitude(
+                        config.telescope.aperture_mm, sky_brightness, exit_pupil
+                    )
+            except Exception:
+                # No telescope configured, that's okay
+                pass
+
+            progress.close()
+
+            # Create dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Sky Darkness Information")
+            dialog.setMinimumWidth(500)
+            dialog.setMinimumHeight(400)
+            dialog.resize(600, 500)
+
+            layout = QVBoxLayout(dialog)
+
+            # Create text area with formatted information
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setAcceptRichText(True)
+
+            # Make text edit background transparent so it uses dialog's theme background
+            text_edit.setStyleSheet("""
+                QTextEdit {
+                    background-color: transparent;
+                    border: none;
+                }
+            """)
+
+            # Detect theme using palette (same as other dialogs)
+            def _is_dark_theme() -> bool:
+                from PySide6.QtGui import QGuiApplication, QPalette
+
+                app = QGuiApplication.instance()
+                if app and isinstance(app, QGuiApplication):
+                    palette = app.palette()
+                    window_color = palette.color(QPalette.ColorRole.Window)
+                    brightness = window_color.lightness()
+                    return bool(brightness < 128)
+                return False
+
+            is_dark = _is_dark_theme()
+            text_color = "#ffffff" if is_dark else "#000000"
+            text_dim_color = "#9e9e9e" if is_dark else "#666666"
+            header_color = "#4A90E2"
+
+            # Format the information
+            bortle_descriptions = {
+                1: "Excellent dark-sky site",
+                2: "Typical truly dark site",
+                3: "Rural sky",
+                4: "Rural/suburban transition",
+                5: "Suburban sky",
+                6: "Bright suburban sky",
+                7: "Suburban/urban transition. Sky grayish white.",
+                8: "City sky",
+                9: "Inner-city sky",
+            }
+            bortle_desc = bortle_descriptions.get(light_pollution.bortle_class.value, "Unknown")
+
+            html_content = f"""
+            <h2 style="color: {header_color}; margin-bottom: 10px;">Sky Darkness</h2>
+
+            <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+                <tr>
+                    <td style="padding: 8px; font-weight: bold; width: 200px;">Bortle Class:</td>
+                    <td style="padding: 8px;">{light_pollution.bortle_class.value} ({bortle_desc})</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; font-weight: bold;">SQM:</td>
+                    <td style="padding: 8px;">{light_pollution.sqm_value:.2f} mag/arcsec²</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; font-weight: bold;">Naked Eye Limit:</td>
+                    <td style="padding: 8px;">{light_pollution.naked_eye_limiting_magnitude:.2f} mag</td>
+                </tr>
+            """
+
+            if telescope_limit:
+                html_content += f"""
+                <tr>
+                    <td style="padding: 8px; font-weight: bold;">Telescope Limit:</td>
+                    <td style="padding: 8px;">{telescope_limit:.2f} mag ({telescope_name})</td>
+                </tr>
+                """
+            else:
+                html_content += f"""
+                <tr>
+                    <td style="padding: 8px; font-weight: bold;">Telescope Limit:</td>
+                    <td style="padding: 8px; color: {text_dim_color};">Not available (telescope not configured)</td>
+                </tr>
+                """
+
+            html_content += """
+            </table>
+            """
+
+            # Add additional information
+            html_content += f"""
+            <h3 style="color: {header_color}; margin-top: 20px; margin-bottom: 10px;">Sky Characteristics</h3>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>Milky Way: {"Visible" if light_pollution.milky_way_visible else "Not visible"}</li>
+                <li>Airglow: {"Visible" if light_pollution.airglow_visible else "Not visible"}</li>
+                <li>Zodiacal Light: {"Visible" if light_pollution.zodiacal_light_visible else "Not visible"}</li>
+            </ul>
+            """
+
+            if light_pollution.description:
+                html_content += f"""
+                <h3 style="color: {header_color}; margin-top: 20px; margin-bottom: 10px;">Description</h3>
+                <p style="margin: 10px 0;">{light_pollution.description}</p>
+                """
+
+            if light_pollution.recommendations:
+                html_content += f"""
+                <h3 style="color: {header_color}; margin-top: 20px; margin-bottom: 10px;">Recommendations</h3>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                """
+                for rec in light_pollution.recommendations:
+                    html_content += f"<li>{rec}</li>"
+                html_content += "</ul>"
+
+            # Set body background to transparent so it uses dialog's theme background
+            full_html = f"""
+            <html>
+            <body style="background-color: transparent; color: {text_color}; font-family: Arial, sans-serif; padding: 15px;">
+            {html_content}
+            </body>
+            </html>
+            """
+
+            text_edit.setHtml(full_html)
+            layout.addWidget(text_edit)
+
+            # Add OK button
+            button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+            button_box.accepted.connect(dialog.accept)
+            layout.addWidget(button_box)
+
+            dialog.exec()
+
+        except Exception as e:
+            logger.error(f"Error loading sky darkness information: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to load sky darkness information: {e}")
+
     def _on_favorites(self) -> None:
         """Handle favorites button click."""
         from celestron_nexstar.gui.dialogs.favorites_dialog import FavoritesDialog
@@ -3824,6 +4086,20 @@ class MainWindow(QMainWindow):
             milky_way_dialog = MilkyWayInfoDialog(self, progress=progress)
             progress.close()
             milky_way_dialog.exec()
+        elif object_name == "variables":
+            # Switch to Variable Star tab
+            # Find the tab index for Variable Star
+            for i in range(self.tab_widget.count()):
+                if self.tab_widget.tabText(i) == "Variable Star":
+                    self.tab_widget.setCurrentIndex(i)
+                    break
+        elif object_name == "zodiacal":
+            # Switch to Zodiacal tab
+            # Find the tab index for Zodiacal
+            for i in range(self.tab_widget.count()):
+                if self.tab_widget.tabText(i) == "Zodiacal":
+                    self.tab_widget.setCurrentIndex(i)
+                    break
         else:
             # TODO: Open celestial object window for other objects
             pass

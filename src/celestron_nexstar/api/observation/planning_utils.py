@@ -54,18 +54,18 @@ class DifficultyLevel(StrEnum):
     EXPERT = "expert"
 
 
-@dataclass(frozen=True)
+@dataclass
 class ObjectVisibilityTimeline:
     """Timeline of object visibility events."""
 
-    object_name: str
-    rise_time: datetime | None
-    transit_time: datetime | None
-    set_time: datetime | None
-    max_altitude: float
-    is_circumpolar: bool
-    is_always_visible: bool
-    is_never_visible: bool
+    object_name: str = ""
+    rise_time: datetime | None = None
+    transit_time: datetime | None = None
+    set_time: datetime | None = None
+    max_altitude: float = 0.0
+    is_circumpolar: bool = False
+    is_always_visible: bool = False
+    is_never_visible: bool = False
 
 
 def _refine_horizon_crossing(
@@ -136,6 +136,24 @@ def get_object_visibility_timeline(
     else:
         ra_hours = obj.ra_hours
         dec_degrees = obj.dec_degrees
+
+    # Validate declination is within valid range
+    if not (-90.0 <= dec_degrees <= 90.0):
+        logger.warning(
+            f"Invalid declination {dec_degrees}° for object {obj.name}. "
+            f"Declination must be between -90 and 90 degrees. Skipping timeline calculation."
+        )
+        # Return a minimal timeline indicating error
+        return ObjectVisibilityTimeline(
+            object_name=obj.name,
+            rise_time=None,
+            set_time=None,
+            transit_time=None,
+            max_altitude=0.0,
+            is_circumpolar=False,
+            is_always_visible=False,
+            is_never_visible=True,
+        )
 
     # Check if object is circumpolar
     # Object is circumpolar if |dec| > 90 - |lat|

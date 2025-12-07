@@ -57,6 +57,14 @@ GLOSSARY_TERMS: dict[str, dict[str, str]] = {
             "objects visible from the Northern Hemisphere, many of which are excellent targets "
             "for amateur telescopes."
         ),
+        "Zodiacal": (
+            "Objects that lie along or near the ecliptic (the apparent path of the Sun across the sky). "
+            "This includes objects in the 12 zodiac constellations (Aries, Taurus, Gemini, Cancer, "
+            "Leo, Virgo, Libra, Scorpius, Sagittarius, Capricornus, Aquarius, and Pisces) as well as "
+            "objects near the ecliptic plane. Zodiacal objects include planets, asteroids, comets, "
+            "and other celestial bodies that are frequently found in this region of the sky, making "
+            "them of particular interest for observation."
+        ),
     },
     "Galaxies": {
         "Local Group": (

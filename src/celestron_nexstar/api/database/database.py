@@ -47,6 +47,7 @@ from celestron_nexstar.api.database.models import (
     NebulaModel,
     PlanetModel,
     StarModel,
+    VariableStarModel,
 )
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 
@@ -1031,6 +1032,32 @@ class CatalogDatabase:
                     constellation=asterism_model_alt.parent_constellation,
                 )
 
+            # Check variable stars
+            variable_star_stmt = (
+                select(VariableStarModel)
+                .where((VariableStarModel.name.ilike(name)) | (VariableStarModel.designation.ilike(name)))
+                .limit(1)
+            )
+            result = await session.execute(variable_star_stmt)
+            variable_star_model_raw = result.scalar_one_or_none()
+            if variable_star_model_raw:
+                # Type cast: we know this is VariableStarModel from the select
+                variable_star_model: VariableStarModel = variable_star_model_raw  # type: ignore[assignment]
+                # Use average magnitude for display
+                avg_mag = (variable_star_model.magnitude_min + variable_star_model.magnitude_max) / 2.0
+                return CelestialObject(
+                    name=variable_star_model.name,
+                    common_name=variable_star_model.designation,
+                    catalog="variable",
+                    ra_hours=variable_star_model.ra_hours,
+                    dec_degrees=variable_star_model.dec_degrees,
+                    magnitude=avg_mag,
+                    object_type=CelestialObjectType.VARIABLE_STAR,
+                    description=f"{variable_star_model.variable_type} - Mag {variable_star_model.magnitude_min:.1f} to {variable_star_model.magnitude_max:.1f}, Period: {variable_star_model.period_days:.1f} days. {variable_star_model.notes}",
+                    parent_planet=None,
+                    constellation=None,
+                )
+
             # Check constellations
             from celestron_nexstar.api.database.models import ConstellationModel
 
@@ -1156,6 +1183,38 @@ class CatalogDatabase:
                 if model.id not in seen_ids:
                     seen_ids.add(model.id)
                     objects.append(self._model_to_object(model))
+                    if len(objects) >= limit:
+                        break
+
+            # Search variable stars separately (they're not in _TYPE_TO_MODEL)
+            variable_star_stmt = (
+                select(VariableStarModel)
+                .where(
+                    (VariableStarModel.name.ilike(f"%{query}%")) | (VariableStarModel.designation.ilike(f"%{query}%"))
+                )
+                .limit(limit)
+            )
+            result = await session.execute(variable_star_stmt)
+            variable_star_models = result.scalars().all()
+            seen_names = {obj.name for obj in objects}
+            for var_star_model in variable_star_models:
+                # Convert VariableStarModel to CelestialObject
+                avg_mag = (var_star_model.magnitude_min + var_star_model.magnitude_max) / 2.0
+                obj = CelestialObject(
+                    name=var_star_model.name,
+                    common_name=var_star_model.designation,
+                    catalog="variable",
+                    ra_hours=var_star_model.ra_hours,
+                    dec_degrees=var_star_model.dec_degrees,
+                    magnitude=avg_mag,
+                    object_type=CelestialObjectType.VARIABLE_STAR,
+                    description=f"{var_star_model.variable_type} - Mag {var_star_model.magnitude_min:.1f} to {var_star_model.magnitude_max:.1f}, Period: {var_star_model.period_days:.1f} days. {var_star_model.notes}",
+                    parent_planet=None,
+                    constellation=None,
+                )
+                if obj.name not in seen_names:
+                    seen_names.add(obj.name)
+                    objects.append(obj)
                     if len(objects) >= limit:
                         break
 

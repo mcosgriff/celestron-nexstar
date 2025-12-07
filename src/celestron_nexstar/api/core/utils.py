@@ -263,6 +263,17 @@ def ra_dec_to_alt_az(
     Returns:
         Tuple of (Azimuth in degrees, Altitude in degrees)
     """
+    # Validate declination is within valid range
+    if not (-90.0 <= dec_degrees <= 90.0):
+        raise ValueError(
+            f"Invalid declination {dec_degrees}°. Declination must be between -90 and 90 degrees. RA: {ra_hours} hours"
+        )
+
+    # Validate RA is within valid range
+    if not (0.0 <= ra_hours < 24.0):
+        # Normalize RA to 0-24 range
+        ra_hours = ra_hours % 24.0
+
     # Create observer location
     location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
 

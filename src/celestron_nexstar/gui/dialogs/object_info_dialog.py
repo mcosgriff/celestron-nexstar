@@ -18,7 +18,7 @@ from celestron_nexstar.api.favorites import add_favorite, is_favorite, remove_fa
 
 
 if TYPE_CHECKING:
-    pass
+    from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ class ObjectInfoDialog(QDialog):
 
         self.object_name = object_name
         self.object_type: str | None = None  # Will be set when object info is loaded
+        self.object_ra_hours: float | None = None  # Will be set when object info is loaded
+        self.object_dec_degrees: float | None = None  # Will be set when object info is loaded
+        self.object: CelestialObject | None = None  # Will be set when object info is loaded
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -62,6 +65,11 @@ class ObjectInfoDialog(QDialog):
         self.favorite_button.setCheckable(True)
         self.favorite_button.clicked.connect(self._on_favorite_toggled)
         # Will be updated after object info is loaded
+
+        # Add "Add to Goto Queue" button (to the right of favorite button)
+        self.add_to_queue_button = button_box.addButton("Add to Queue", QDialogButtonBox.ButtonRole.ActionRole)
+        self.add_to_queue_button.clicked.connect(self._on_add_to_queue_clicked)
+        self.add_to_queue_button.setToolTip("Add this object to the goto queue")
 
         layout.addWidget(button_box)
 
@@ -161,6 +169,9 @@ class ObjectInfoDialog(QDialog):
 
             # Use first match (in GUI, we should have exact match from table)
             obj = matches[0]
+
+            # Store object for later use (e.g., adding to goto queue)
+            self.object = obj
 
             # Store object coordinates for optic plot
             self.object_ra_hours = obj.ra_hours
@@ -340,6 +351,71 @@ class ObjectInfoDialog(QDialog):
                                 f"• {moon.name}{mag_str}</p>"
                             )
                 except Exception:
+                    pass
+
+            # Component Stars (if this is a double star)
+            if obj.object_type == CelestialObjectType.DOUBLE_STAR.value:
+                try:
+                    from celestron_nexstar.api.database.database import get_database
+
+                    db = get_database()
+                    # Determine search radius: use separation if available (size_arcmin), otherwise default to 2 arcmin
+                    search_radius = obj.size_arcmin if obj.size_arcmin and obj.size_arcmin > 0 else 2.0
+                    # Cap at 5 arcmin to avoid too many results
+                    search_radius = min(search_radius, 5.0)
+
+                    # Search for stars near the double star position
+                    nearby_objects = asyncio.run(
+                        db.search_by_coordinates(obj.ra_hours, obj.dec_degrees, radius_arcmin=search_radius, limit=10)
+                    )
+
+                    # Filter to only stars (exclude the double star itself and other object types)
+                    component_stars = []
+                    for nearby_obj, separation_arcmin in nearby_objects:
+                        if (
+                            nearby_obj.object_type == CelestialObjectType.STAR.value
+                            and nearby_obj.name != obj.name
+                            and nearby_obj.catalog != "wds"  # Exclude other double stars
+                        ):
+                            component_stars.append((nearby_obj, separation_arcmin))
+
+                    # Sort by separation (closest first)
+                    component_stars.sort(key=lambda x: x[1])
+
+                    if component_stars:
+                        html_parts.append(
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Component Stars:</p>"
+                        )
+                        for star, separation_arcmin in component_stars[:5]:  # Show up to 5 closest stars
+                            mag_str = f" (mag {star.magnitude:.2f})" if star.magnitude else ""
+                            sep_str = (
+                                f" - {separation_arcmin:.2f}' away"
+                                if separation_arcmin < 1.0
+                                else f" - {separation_arcmin:.1f}' away"
+                            )
+                            display_name = star.common_name if star.common_name else star.name
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                                f"• {display_name}{mag_str}<span style='color: {colors['text_dim']};'>{sep_str}</span></p>"
+                            )
+                        if len(component_stars) > 5:
+                            html_parts.append(
+                                f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
+                                f"color: {colors['text_dim']}; font-style: italic;'>"
+                                f"... and {len(component_stars) - 5} more nearby star(s)</p>"
+                            )
+                    else:
+                        # If no stars found, show a note
+                        html_parts.append(
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Component Stars:</p>"
+                        )
+                        html_parts.append(
+                            f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; "
+                            f"color: {colors['text_dim']}; font-style: italic;'>"
+                            f"No component stars found in database within {search_radius:.1f}'</p>"
+                        )
+                except Exception as e:
+                    logger.debug(f"Error loading component stars for double star: {e}", exc_info=True)
                     pass
 
             # Moon Phase Impact section (bold yellow header)
@@ -645,3 +721,61 @@ class ObjectInfoDialog(QDialog):
             logger.error(f"Error toggling favorite: {e}", exc_info=True)
             # Reset button state on error
             self._update_favorite_button()
+
+    def _on_add_to_queue_clicked(self) -> None:
+        """Handle add to goto queue button click."""
+        if not self.object:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, "No Object", "Object information not loaded yet.")
+            return
+
+        try:
+            # Get the main window from parent
+            from PySide6.QtWidgets import QMainWindow, QMessageBox
+
+            main_window = self.parent()
+            # Traverse up the parent chain to find MainWindow
+            while main_window:
+                if isinstance(main_window, QMainWindow) and hasattr(main_window, "_on_goto_queue"):
+                    break
+                main_window = main_window.parent() if hasattr(main_window, "parent") else None
+
+            if not main_window or not isinstance(main_window, QMainWindow):
+                QMessageBox.warning(self, "Error", "Could not find main window.")
+                return
+
+            # Create or get goto queue window (silently, without showing it)
+            if not hasattr(main_window, "_goto_queue_window") or main_window._goto_queue_window is None:
+                from celestron_nexstar.gui.windows.goto_queue_window import GotoQueueWindow
+
+                main_window._goto_queue_window = GotoQueueWindow(
+                    main_window, telescope=main_window.telescope if hasattr(main_window, "telescope") else None
+                )
+                main_window._goto_queue_window.destroyed.connect(
+                    lambda: setattr(main_window, "_goto_queue_window", None)
+                )
+
+            # Add object to queue
+            if main_window._goto_queue_window is not None:
+                # Update telescope reference if needed
+                if (
+                    hasattr(main_window, "telescope")
+                    and main_window._goto_queue_window.telescope != main_window.telescope
+                ):
+                    main_window._goto_queue_window.telescope = main_window.telescope
+
+                # Update object position for dynamic objects
+                updated_obj = self.object.with_current_position()
+                main_window._goto_queue_window.add_object(updated_obj)
+
+                # Just show a confirmation message - don't open the window
+                display_name = updated_obj.common_name or updated_obj.name
+                QMessageBox.information(self, "Added to Queue", f"'{display_name}' has been added to the goto queue.")
+            else:
+                QMessageBox.warning(self, "Error", "Could not open goto queue window.")
+        except Exception as e:
+            logger.error(f"Error adding object to queue: {e}", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to add object to queue: {e}")

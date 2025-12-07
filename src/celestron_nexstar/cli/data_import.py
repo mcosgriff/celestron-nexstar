@@ -1765,6 +1765,27 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
                         dec_degrees = dec_d + (dec_m / 60.0) + (dec_s / 3600.0)
                         if dec_sign == "-":
                             dec_degrees = -dec_degrees
+
+                        # Validate declination is within valid range (-90 to 90 degrees)
+                        if not (-90.0 <= dec_degrees <= 90.0):
+                            # Check if this might be a parsing error (e.g., arcminutes treated as degrees)
+                            # If dec_d is > 90, it might be arcminutes instead
+                            if abs(dec_d) > 90 and abs(dec_d) < 5400:  # 5400 arcmin = 90 degrees
+                                # Try treating dec_d as arcminutes
+                                dec_degrees = (dec_d / 60.0) + (dec_m / 3600.0) + (dec_s / 216000.0)
+                                if dec_sign == "-":
+                                    dec_degrees = -dec_degrees
+
+                            # If still invalid, skip this entry
+                            if not (-90.0 <= dec_degrees <= 90.0):
+                                if verbose:
+                                    console.print(
+                                        f"[yellow]Warning: Skipping {wds_designation} - invalid declination {dec_degrees:.2f}° "
+                                        f"(parsed as d={dec_d}, m={dec_m}, s={dec_s})[/yellow]"
+                                    )
+                                skipped += 1
+                                progress.advance(task)
+                                continue
                     except (ValueError, TypeError):
                         skipped += 1
                         progress.advance(task)
