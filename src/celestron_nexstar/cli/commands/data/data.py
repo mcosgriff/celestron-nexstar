@@ -5,6 +5,7 @@ Commands for importing and managing catalog data sources.
 """
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,9 @@ from celestron_nexstar.api.core.exceptions import (
     DatabaseRestoreError,
 )
 from celestron_nexstar.cli.data_import import import_data_source, list_data_sources
+
+
+logger = logging.getLogger(__name__)
 
 
 class SortedCommandsGroup(TyperGroup):
@@ -340,7 +344,7 @@ def setup(
     Set up the database for first-time use.
 
     This command initializes the database by:
-    1. Creating database schema (via Alembic migrations)
+    1. Creating database schema (via DuckDB migrations)
     2. Importing ALL available catalog data from celestial_data (stars, DSOs, Messier, constellations, asterisms, local group) and custom YAML (planets, moons)
     3. Initializing ALL static reference data (meteor showers, constellations, dark sky sites, space events)
     4. Syncing ephemeris file metadata from NAIF (optional)
@@ -644,20 +648,19 @@ def setup(
     else:
         # Database is already set up, just ensure migrations are current
         try:
-            from alembic import command  # type: ignore[attr-defined]
-            from alembic.config import Config
+            from celestron_nexstar.api.database.duckdb_migrations import run_migrations
 
-            alembic_cfg = Config("alembic.ini")
-            command.upgrade(alembic_cfg, "head")
-        except (AttributeError, RuntimeError, ValueError, TypeError, FileNotFoundError, OSError):
-            # AttributeError: missing Alembic attributes
+            # Run migrations to ensure schema is up to date
+            run_migrations(db.con)
+        except (AttributeError, RuntimeError, ValueError, TypeError, FileNotFoundError, OSError) as e:
+            # AttributeError: missing attributes
             # RuntimeError: migration errors
             # ValueError: invalid configuration
             # TypeError: wrong argument types
-            # FileNotFoundError: missing alembic.ini
+            # FileNotFoundError: missing files
             # OSError: file I/O errors
-            # Silently skip migration errors (non-critical)
-            pass
+            # Log but don't fail - migrations are non-critical if database already exists
+            logger.debug(f"Migration check failed (non-critical): {e}")
 
     # Ensure static data is populated (rebuild_database should have done this, but double-check)
     console.print("[cyan]Ensuring static reference data is populated...[/cyan]")
@@ -1818,7 +1821,7 @@ def rebuild(
 
     This command:
     1. Backs up existing database (if present)
-    2. Drops and recreates database schema using Alembic migrations
+    2. Drops and recreates database schema using DuckDB migrations
     3. Imports all available data sources in correct order
     4. Initializes static reference data
     5. Provides progress feedback and summary statistics

@@ -21,9 +21,8 @@ from celestron_nexstar.api.database.duckdb_access import (
     create_weather_forecast,
     delete_old_weather_forecasts,
     get_historical_weather,
-    get_weather_forecast,
     get_weather_forecasts_for_location,
-    update_weather_forecast,
+    upsert_weather_forecasts_batch,
 )
 from celestron_nexstar.api.database.duckdb_models import WeatherForecast
 from celestron_nexstar.api.location.geohash_utils import encode
@@ -585,39 +584,27 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                 # Calculate geohash for this location (precision 9 for ~5m accuracy)
                 location_geohash = encode(location.latitude, location.longitude, precision=9)
 
-                # Insert/update new forecasts
+                # Batch upsert all forecasts in a single transaction to avoid write-write conflicts
+                forecast_dicts = []
                 for forecast_item in forecasts_to_store:
-                    # Check if forecast already exists for this timestamp
-                    existing = get_weather_forecast(location.latitude, location.longitude, forecast_item.timestamp)
+                    forecast_dicts.append(
+                        {
+                            "latitude": location.latitude,
+                            "longitude": location.longitude,
+                            "forecast_timestamp": forecast_item.timestamp,
+                            "geohash": location_geohash,
+                            "temperature_f": forecast_item.temperature_f,
+                            "dew_point_f": forecast_item.dew_point_f,
+                            "humidity_percent": forecast_item.humidity_percent,
+                            "cloud_cover_percent": forecast_item.cloud_cover_percent,
+                            "wind_speed_mph": forecast_item.wind_speed_mph,
+                            "seeing_score": forecast_item.seeing_score,
+                            "fetched_at": now_db,
+                        }
+                    )
 
-                    if existing:
-                        # Update existing forecast
-                        update_weather_forecast(
-                            forecast_id=existing.id,
-                            geohash=location_geohash,
-                            temperature_f=forecast_item.temperature_f,
-                            dew_point_f=forecast_item.dew_point_f,
-                            humidity_percent=forecast_item.humidity_percent,
-                            cloud_cover_percent=forecast_item.cloud_cover_percent,
-                            wind_speed_mph=forecast_item.wind_speed_mph,
-                            seeing_score=forecast_item.seeing_score,
-                            fetched_at=now_db,
-                        )
-                    else:
-                        # Insert new forecast
-                        create_weather_forecast(
-                            latitude=location.latitude,
-                            longitude=location.longitude,
-                            forecast_timestamp=forecast_item.timestamp,
-                            geohash=location_geohash,
-                            temperature_f=forecast_item.temperature_f,
-                            dew_point_f=forecast_item.dew_point_f,
-                            humidity_percent=forecast_item.humidity_percent,
-                            cloud_cover_percent=forecast_item.cloud_cover_percent,
-                            wind_speed_mph=forecast_item.wind_speed_mph,
-                            seeing_score=forecast_item.seeing_score,
-                            fetched_at=now_db,
-                        )
+                # Batch upsert all forecasts in a single transaction
+                upsert_weather_forecasts_batch(forecast_dicts)
 
                 logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
             except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:

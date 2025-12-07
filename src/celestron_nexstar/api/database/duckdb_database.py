@@ -252,7 +252,9 @@ class DuckDBCatalogDatabase:
                 logger.debug("FTS index on constellations table already exists")
             except Exception:
                 try:
-                    self.con.execute("PRAGMA create_fts_index('constellations', 'id', 'name', 'abbreviation', 'common_name')")
+                    self.con.execute(
+                        "PRAGMA create_fts_index('constellations', 'id', 'name', 'abbreviation', 'common_name')"
+                    )
                     logger.info("Created FTS index on constellations table")
                 except Exception as e:
                     error_msg = str(e).lower()
@@ -305,7 +307,9 @@ class DuckDBCatalogDatabase:
                     except Exception:
                         try:
                             logger.info("Creating FTS index on stars_fts_table (this may take a moment)...")
-                            self.con.execute("PRAGMA create_fts_index('stars_fts_table', 'id', 'name', 'common_name', 'bayer', 'hip_str', 'tyc_id')")
+                            self.con.execute(
+                                "PRAGMA create_fts_index('stars_fts_table', 'id', 'name', 'common_name', 'bayer', 'hip_str', 'tyc_id')"
+                            )
                             logger.info("Created FTS index on stars_fts_table")
                         except Exception as e:
                             error_msg = str(e).lower()
@@ -439,7 +443,9 @@ class DuckDBCatalogDatabase:
         if self._fts_available and self._fts_indexes_created:
             logger.debug(f"Using FTS search for query: '{query}'")
         else:
-            logger.debug(f"Using LIKE search for query: '{query}' (FTS available: {self._fts_available}, indexes created: {self._fts_indexes_created})")
+            logger.debug(
+                f"Using LIKE search for query: '{query}' (FTS available: {self._fts_available}, indexes created: {self._fts_indexes_created})"
+            )
 
         # Use FTS if available, otherwise fall back to LIKE queries
         if self._fts_available and self._fts_indexes_created:
@@ -639,7 +645,7 @@ class DuckDBCatalogDatabase:
                 try:
                     # Check if stars_fts_table FTS index exists
                     # Use subquery to exclude score from final result
-                    star_fts_query = f"""
+                    star_fts_query = """
                         SELECT
                             name,
                             common_name,
@@ -665,9 +671,7 @@ class DuckDBCatalogDatabase:
                             LIMIT ?
                         )
                     """
-                    star_results = self.con.execute(
-                        star_fts_query, [query_lower, per_type_limit]
-                    ).fetchdf()
+                    star_results = self.con.execute(star_fts_query, [query_lower, per_type_limit]).fetchdf()
                     logger.debug(f"FTS search for stars returned {len(star_results)} results")
                 except Exception as e:
                     logger.debug(f"FTS search for stars failed, falling back to LIKE: {e}")
@@ -724,7 +728,7 @@ class DuckDBCatalogDatabase:
                 try:
                     # Check if dsos_fts_table FTS index exists
                     # Use subquery to exclude score from final result
-                    dso_fts_query = f"""
+                    dso_fts_query = """
                         SELECT
                             name,
                             NULL as common_name,
@@ -956,22 +960,40 @@ class DuckDBCatalogDatabase:
                 # Try to get constellation abbreviation from the constellations table
                 # Starplot parquet files use 3-letter abbreviations (e.g., "And" for "Andromeda")
                 # So we need to match both the full name and abbreviation
+                constellation_filters = []
                 try:
+                    # Try exact match first, then case-insensitive match
                     abbrev_result = self.con.execute(
-                        "SELECT abbreviation FROM constellations WHERE name = ? OR common_name = ? LIMIT 1",
-                        [constellation, constellation]
+                        "SELECT abbreviation FROM constellations WHERE name = ? OR name ILIKE ? OR common_name ILIKE ? LIMIT 1",
+                        [constellation, constellation, f"%{constellation}%"],
                     ).fetchone()
                     if abbrev_result:
                         abbrev = abbrev_result[0]
                         escaped_abbrev = abbrev.replace("'", "''")
-                        # Match either the abbreviation or the full name
-                        star_where.append(f"(s.constellation ILIKE '%{escaped_abbrev}%' OR s.constellation ILIKE '%{escaped_constellation}%')")
+                        # Match the abbreviation exactly (most likely format in parquet)
+                        # Use = for exact match, which is faster and more accurate
+                        constellation_filters.append(f"s.constellation = '{escaped_abbrev}'")
+                        # Also try case-insensitive exact match
+                        constellation_filters.append(f"s.constellation ILIKE '{escaped_abbrev}'")
+                        # Also try matching the full name (in case parquet has full names)
+                        constellation_filters.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
                     else:
-                        # Fallback: just try to match the name (might work if parquet has full names)
-                        star_where.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
-                except Exception:
-                    # If lookup fails, just use the name
-                    star_where.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
+                        # Fallback: try to match the name directly
+                        constellation_filters.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
+                        # Also try first 3 letters as abbreviation
+                        if len(constellation) >= 3:
+                            abbrev_guess = constellation[:3].upper()
+                            constellation_filters.append(f"s.constellation ILIKE '{abbrev_guess}'")
+                except Exception as e:
+                    logger.debug(f"Error looking up constellation abbreviation for {constellation}: {e}")
+                    # If lookup fails, try multiple approaches
+                    constellation_filters.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
+                    if len(constellation) >= 3:
+                        abbrev_guess = constellation[:3].upper()
+                        constellation_filters.append(f"s.constellation ILIKE '{abbrev_guess}'")
+
+                if constellation_filters:
+                    star_where.append(f"({' OR '.join(constellation_filters)})")
 
             star_where_sql = " AND ".join(star_where) if star_where else "1=1"
 

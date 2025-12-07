@@ -4,6 +4,7 @@ Dialog to display detailed information about an asterism.
 
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import threading
 from collections.abc import Coroutine
@@ -242,24 +243,25 @@ class AsterismInfoDialog(QDialog):
 
                             def _get_star_positions() -> tuple[list[float], list[float]]:
                                 """Get RA/Dec positions of member stars from database."""
-                                from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
+
                                 from celestron_nexstar.api.data.starplot_config import get_starplot_data_directory
-                                from pathlib import Path
+                                from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
 
                                 con = get_duckdb_connection()
-                                
+
                                 # Get starplot data directory and parquet file
                                 starplot_data_dir = get_starplot_data_directory()
                                 star_parquet_path = None
-                                
+
                                 # Find star parquet file
                                 try:
                                     from starplot.data import DataFiles
+
                                     if DataFiles.BIG_SKY_MAG11.exists():
                                         star_parquet_path = DataFiles.BIG_SKY_MAG11
                                 except Exception:
                                     pass
-                                
+
                                 if not star_parquet_path:
                                     parquet_files = list(starplot_data_dir.glob("*.parquet"))
                                     if parquet_files:
@@ -276,10 +278,8 @@ class AsterismInfoDialog(QDialog):
                                 # Attach starplot database for star_designations
                                 dso_db_path = starplot_data_dir / "sky.db"
                                 if dso_db_path.exists():
-                                    try:
+                                    with contextlib.suppress(Exception):
                                         con.execute(f"ATTACH '{dso_db_path}' AS starplot_db (READ_ONLY)")
-                                    except Exception:
-                                        pass  # Already attached
 
                                 ra_positions: list[float] = []
                                 dec_positions: list[float] = []
@@ -287,9 +287,9 @@ class AsterismInfoDialog(QDialog):
                                 # Query each member star by name
                                 for star_name in asterism.member_stars:
                                     star_name_clean = star_name.strip()
-                                    
+
                                     # Query stars from parquet file
-                                    star_query = f"""
+                                    star_query = """
                                         SELECT
                                             s.ra_degrees / 15.0 as ra_hours,
                                             s.dec_degrees
@@ -304,9 +304,15 @@ class AsterismInfoDialog(QDialog):
                                     try:
                                         result = con.execute(
                                             star_query,
-                                            [str(star_parquet_path), star_name_clean, star_name_clean, star_name_clean, star_name_clean]
+                                            [
+                                                str(star_parquet_path),
+                                                star_name_clean,
+                                                star_name_clean,
+                                                star_name_clean,
+                                                star_name_clean,
+                                            ],
                                         ).fetchone()
-                                        
+
                                         if result:
                                             # Normalize RA to 0-24 range (handle negative values)
                                             ra_hours = float(result[0])

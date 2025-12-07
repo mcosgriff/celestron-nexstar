@@ -666,7 +666,6 @@ class AstronomicalCalendarDialog(QDialog):
             from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
 
             async def _load() -> None:
-
                 showers = get_all_meteor_showers()
                 current_date = start_date
                 end_date = current_date + timedelta(days=365)

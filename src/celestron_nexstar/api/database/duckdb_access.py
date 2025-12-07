@@ -7,6 +7,7 @@ These replace SQLAlchemy ORM with direct DuckDB queries for better performance.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -670,7 +671,10 @@ def create_weather_forecast(
             con.execute("COMMIT")
             return next_id
         except Exception as e:
-            con.execute("ROLLBACK")
+            # Try to rollback, but don't fail if transaction is already closed
+            # (DuckDB auto-rolls back on commit failure)
+            with contextlib.suppress(Exception):
+                con.execute("ROLLBACK")
             logger.error(f"Error creating weather forecast: {e}")
             raise
 
@@ -733,42 +737,40 @@ def update_weather_forecast(
 
     params.append(forecast_id)
     query = f"UPDATE weather_forecast SET {', '.join(updates)} WHERE id = ?"
-    
+
     # Retry logic for write-write conflicts
     max_retries = 3
     retry_delay = 0.01  # Start with 10ms
-    
+
     for attempt in range(max_retries):
         try:
             # Use lock to prevent write-write conflicts in DuckDB
             with _weather_forecast_lock:
                 con = get_duckdb_connection()
-                
+
                 # Ensure any previous transaction is rolled back
-                try:
+                with contextlib.suppress(Exception):
                     con.execute("ROLLBACK")
-                except Exception:
-                    pass  # No active transaction, that's fine
-                
+
                 # Use transaction to ensure atomicity and prevent write-write conflicts
                 try:
                     con.execute("BEGIN TRANSACTION")
                     con.execute(query, params)
                     con.execute("COMMIT")
                     return  # Success
-                except Exception as e:
-                    try:
+                except Exception:
+                    with contextlib.suppress(Exception):
                         con.execute("ROLLBACK")
-                    except Exception:
-                        pass  # Ignore rollback errors
                     raise
         except Exception as e:
             error_msg = str(e).lower()
             if "write-write conflict" in error_msg or "transactioncontext" in error_msg:
                 if attempt < max_retries - 1:
                     # Exponential backoff
-                    time.sleep(retry_delay * (2 ** attempt))
-                    logger.debug(f"Retrying weather forecast update for id {forecast_id} (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay * (2**attempt))
+                    logger.debug(
+                        f"Retrying weather forecast update for id {forecast_id} (attempt {attempt + 1}/{max_retries})"
+                    )
                     continue
                 else:
                     logger.error(f"Error updating weather forecast {forecast_id} after {max_retries} attempts: {e}")
@@ -776,6 +778,158 @@ def update_weather_forecast(
             else:
                 # Non-retryable error
                 logger.error(f"Error updating weather forecast {forecast_id}: {e}")
+                raise
+
+
+def upsert_weather_forecasts_batch(forecasts: list[dict[str, Any]]) -> None:
+    """
+    Batch upsert weather forecasts to avoid write-write conflicts.
+
+    Args:
+        forecasts: List of forecast dictionaries with keys:
+            - latitude, longitude, forecast_timestamp (required)
+            - geohash, temperature_f, dew_point_f, humidity_percent,
+              cloud_cover_percent, wind_speed_mph, seeing_score, fetched_at (optional)
+    """
+    if not forecasts:
+        return
+
+    # Retry logic for write-write conflicts
+    max_retries = 3
+    retry_delay = 0.01  # Start with 10ms
+
+    for attempt in range(max_retries):
+        try:
+            # Use lock to prevent write-write conflicts in DuckDB
+            with _weather_forecast_lock:
+                con = get_duckdb_connection()
+
+                # Ensure any previous transaction is rolled back
+                with contextlib.suppress(Exception):
+                    con.execute("ROLLBACK")
+
+                # Use transaction to ensure atomicity
+                try:
+                    con.execute("BEGIN TRANSACTION")
+
+                    for forecast in forecasts:
+                        latitude = forecast["latitude"]
+                        longitude = forecast["longitude"]
+                        forecast_timestamp = forecast["forecast_timestamp"]
+
+                        # Check if forecast exists
+                        existing = con.execute(
+                            """
+                            SELECT id FROM weather_forecast
+                            WHERE latitude = ? AND longitude = ? AND forecast_timestamp = ?
+                            LIMIT 1
+                            """,
+                            [
+                                latitude,
+                                longitude,
+                                forecast_timestamp.isoformat()
+                                if isinstance(forecast_timestamp, datetime)
+                                else forecast_timestamp,
+                            ],
+                        ).fetchone()
+
+                        if existing:
+                            # Update existing
+                            forecast_id = existing[0]
+                            updates = []
+                            params = []
+
+                            for key in [
+                                "geohash",
+                                "temperature_f",
+                                "dew_point_f",
+                                "humidity_percent",
+                                "cloud_cover_percent",
+                                "wind_speed_mph",
+                                "seeing_score",
+                            ]:
+                                if key in forecast and forecast[key] is not None:
+                                    updates.append(f"{key} = ?")
+                                    params.append(forecast[key])
+
+                            if "fetched_at" in forecast and forecast["fetched_at"] is not None:
+                                updates.append("fetched_at = ?")
+                                params.append(
+                                    forecast["fetched_at"].isoformat()
+                                    if isinstance(forecast["fetched_at"], datetime)
+                                    else forecast["fetched_at"]
+                                )
+
+                            if updates:
+                                params.append(forecast_id)
+                                query = f"UPDATE weather_forecast SET {', '.join(updates)} WHERE id = ?"
+                                con.execute(query, params)
+                        else:
+                            # Insert new
+                            max_id_result = con.execute("SELECT COALESCE(MAX(id), 0) FROM weather_forecast").fetchone()
+                            next_id = (max_id_result[0] if max_id_result else 0) + 1
+
+                            fetched_at = forecast.get("fetched_at")
+                            if fetched_at is None:
+                                fetched_at = datetime.now(UTC)
+                            elif isinstance(fetched_at, datetime):
+                                fetched_at = fetched_at
+                            else:
+                                fetched_at = (
+                                    datetime.fromisoformat(fetched_at)
+                                    if isinstance(fetched_at, str)
+                                    else datetime.now(UTC)
+                                )
+
+                            forecast_ts = forecast_timestamp
+                            if isinstance(forecast_ts, str):
+                                forecast_ts = datetime.fromisoformat(forecast_ts)
+
+                            con.execute(
+                                """
+                                INSERT INTO weather_forecast (id, latitude, longitude, geohash, forecast_timestamp, temperature_f,
+                                                             dew_point_f, humidity_percent, cloud_cover_percent, wind_speed_mph,
+                                                             seeing_score, fetched_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                [
+                                    next_id,
+                                    latitude,
+                                    longitude,
+                                    forecast.get("geohash"),
+                                    forecast_ts.isoformat(),
+                                    forecast.get("temperature_f"),
+                                    forecast.get("dew_point_f"),
+                                    forecast.get("humidity_percent"),
+                                    forecast.get("cloud_cover_percent"),
+                                    forecast.get("wind_speed_mph"),
+                                    forecast.get("seeing_score"),
+                                    fetched_at.isoformat(),
+                                ],
+                            )
+
+                    con.execute("COMMIT")
+                    return  # Success
+                except Exception:
+                    # Try to rollback, but don't fail if transaction is already closed
+                    # (DuckDB auto-rolls back on commit failure)
+                    with contextlib.suppress(Exception):
+                        con.execute("ROLLBACK")
+                    raise
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "write-write conflict" in error_msg or "transactioncontext" in error_msg:
+                if attempt < max_retries - 1:
+                    # Exponential backoff
+                    time.sleep(retry_delay * (2**attempt))
+                    logger.debug(f"Retrying batch weather forecast upsert (attempt {attempt + 1}/{max_retries})")
+                    continue
+                else:
+                    logger.error(f"Error batch upserting weather forecasts after {max_retries} attempts: {e}")
+                    raise
+            else:
+                # Non-retryable error
+                logger.error(f"Error batch upserting weather forecasts: {e}")
                 raise
 
 

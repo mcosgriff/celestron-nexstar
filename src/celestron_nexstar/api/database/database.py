@@ -1881,7 +1881,7 @@ async def rebuild_database(
     Steps:
     1. Backup existing database (if exists and not skipped)
     2. Drop existing database
-    3. Run Alembic migrations to create fresh schema
+    3. Run DuckDB migrations to create fresh schema
     4. Import all data sources
     5. Initialize static data
 
@@ -1925,80 +1925,26 @@ async def rebuild_database(
 
         # Step 2: Drop existing database
         if db.db_path.exists():
-            # Close all connections
-            await db._engine.dispose()
+            # For DuckDB, close connection and remove file
+            if hasattr(db, "con"):
+                db.con.close()
             # Remove database file
             db.db_path.unlink()
             logger.info("Database dropped")
 
-        # Step 3: Run Alembic migrations to create fresh schema
-        from alembic import command  # type: ignore[attr-defined]
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
+        # Step 3: Run DuckDB migrations to create fresh schema
+        from celestron_nexstar.api.database.duckdb_migrations import run_migrations
 
-        alembic_cfg = Config("alembic.ini")
-
-        # Determine the target revision (handle multiple heads)
-        script = ScriptDirectory.from_config(alembic_cfg)
-        try:
-            # Try to get single head first (works when there's no branching)
-            target_rev = script.get_current_head()
-        except (AttributeError, ValueError, RuntimeError):
-            # AttributeError: missing script attributes
-            # ValueError: invalid configuration
-            # RuntimeError: multiple heads or script errors
-            # Multiple heads detected - use get_heads() instead
-            try:
-                heads_list = script.get_heads()
-                if len(heads_list) == 1:
-                    target_rev = heads_list[0]
-                elif len(heads_list) > 1:
-                    # Multiple heads detected - look for a merge migration
-                    logger.info(f"Multiple migration heads detected: {', '.join(heads_list)}")
-
-                    # Search all revisions for a merge migration that combines these heads
-                    merge_found = False
-                    for rev in script.walk_revisions():
-                        if hasattr(rev, "down_revision") and rev.down_revision:
-                            down_rev = rev.down_revision
-                            # Check if this is a merge migration (has tuple of down_revisions)
-                            if isinstance(down_rev, tuple) and len(down_rev) > 1:
-                                # Check if this merge migration combines all current heads
-                                down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
-                                heads_set = set(heads_list)
-                                if down_rev_set == heads_set:
-                                    merge_found = True
-                                    target_rev = rev.revision
-                                    logger.info(f"Found merge migration: {rev.revision}")
-                                    break
-
-                    if not merge_found:
-                        logger.info("No merge migration found. Using 'heads' to upgrade all branches.")
-                        # Use "heads" to upgrade all branches - Alembic will apply merge migrations if they exist
-                        target_rev = "heads"
-                else:
-                    target_rev = "head"  # Fallback
-            except (AttributeError, ValueError, RuntimeError, TypeError) as e:
-                # AttributeError: missing script attributes
-                # ValueError: invalid configuration
-                # RuntimeError: script errors
-                # TypeError: wrong argument types
-                logger.warning(f"Error determining head revision: {e}, using 'head'")
-                target_rev = "head"
-
-        command.upgrade(alembic_cfg, target_rev)
-        logger.info(f"Schema created via Alembic migrations (upgraded to {target_rev})")
-
-        # Get fresh database instance after rebuild
+        # Get fresh database instance after dropping old one
         db = get_database()
 
-        # Ensure FTS table exists (migrations should create it, but ensure it's there)
-        await db.ensure_fts_table()
+        # Run all migrations to create schema
+        run_migrations(db.con)
+        logger.info("Schema created via DuckDB migrations")
 
         # Step 4: Initialize static reference data (seed data)
         # This must happen before importing custom YAML and other data sources
-        from celestron_nexstar.api.database.database_seeder import seed_all
-        from celestron_nexstar.api.database.models import get_db_session
+        from celestron_nexstar.api.database.duckdb_seeder import seed_all
 
         logger.info("Initializing static reference data...")
         console.print("\n[cyan]Initializing static reference data...[/cyan]")
@@ -2017,41 +1963,20 @@ async def rebuild_database(
 
         static_data: dict[str, int] = {}
 
-        async with get_db_session() as session:
-            # Use seed_all which handles all static data seeding
-            await seed_all(session, force=False)
-            from sqlalchemy import func, select
+        # Use seed_all which handles all static data seeding (DuckDB seeder is synchronous)
+        seed_results = seed_all(db.con, force=False)
 
-            from celestron_nexstar.api.database.models import (
-                AsterismModel,
-                ConstellationModel,
-                DarkSkySiteModel,
-                MeteorShowerModel,
-                SpaceEventModel,
-            )
+        # Extract counts from seed results
+        static_data = {
+            "meteor_showers": seed_results.get("meteor_showers", 0),
+            "constellations": seed_results.get("constellations", 0),
+            "asterisms": seed_results.get("asterisms", 0),
+            "dark_sky_sites": seed_results.get("dark_sky_sites", 0),
+            "space_events": seed_results.get("space_events", 0),
+            "eclipses": seed_results.get("eclipses", 0),
+        }
 
-            meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
-            meteor_count = meteor_result or 0
-            static_data["meteor_showers"] = meteor_count
-            logger.info(f"Added {meteor_count} meteor showers")
-
-            constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
-            constellation_count = constellation_result or 0
-            asterism_result = await session.scalar(select(func.count(AsterismModel.id)))
-            asterism_count = asterism_result or 0
-            static_data["constellations"] = constellation_count
-            static_data["asterisms"] = asterism_count
-            logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
-
-            dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
-            dark_sky_count = dark_sky_result or 0
-            static_data["dark_sky_sites"] = dark_sky_count
-            logger.info(f"Added {dark_sky_count} dark sky sites")
-
-            space_event_result = await session.scalar(select(func.count(SpaceEventModel.id)))
-            space_event_count = space_event_result or 0
-            static_data["space_events"] = space_event_count
-            logger.info(f"Added {space_event_count} space events")
+        logger.info(f"Seeded static data: {static_data}")
 
         # Step 5: Import data sources
         # Import here to avoid circular dependency

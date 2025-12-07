@@ -410,6 +410,7 @@ class MainWindow(QMainWindow):
         # Can be list[RecommendedObject] or list[str] for constellations/asterisms
         self._objects_cache: dict[str, list[RecommendedObject] | list[str]] = {}
         self._asterism_objects_cache: dict[str, Any] = {}  # Cache asterism objects for member_stars access
+        self._constellation_name_cache: dict[str, str] = {}  # Cache constellation abbreviation -> full name mapping
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
@@ -1569,7 +1570,9 @@ class MainWindow(QMainWindow):
 
             # Constellation (only for star tab)
             if is_star_tab:
-                constellation_text = obj.constellation or "-"
+                constellation_text = (
+                    self._get_constellation_display_name(obj.constellation) if obj.constellation else "-"
+                )
                 table.setItem(row, 3, QTableWidgetItem(constellation_text))
 
             # Magnitude
@@ -1801,6 +1804,7 @@ class MainWindow(QMainWindow):
                         # Try to find the star in the database
                         star = await db.get_by_name(star_name.strip())
                         if not star:
+                            logger.debug(f"Star not found for asterism {asterism_name}: {star_name}")
                             continue
 
                         # Calculate visibility info
@@ -1817,15 +1821,23 @@ class MainWindow(QMainWindow):
                         # Calculate visibility probability
                         visibility_probability = vis_info.observability_score
 
-                        # Apply seeing and weather factors
+                        # Apply seeing and weather factors (but be less strict for counting)
+                        # Only reduce visibility if conditions are very poor
                         if visibility_probability > 0:
                             seeing_factor = min(1.0, conditions.seeing_score / 100.0)
                             cloud_cover = conditions.weather.cloud_cover_percent or 0.0
                             cloud_factor = 1.0 - (cloud_cover / 100.0)
-                            visibility_probability *= seeing_factor * cloud_factor
 
-                        # Count as visible if probability > 0
-                        if visibility_probability > 0:
+                            # Only apply factors if they're significant - don't eliminate stars for minor issues
+                            # If seeing is > 50% or clouds < 50%, still count as potentially visible
+                            if seeing_factor > 0.5 and cloud_factor > 0.5:
+                                visibility_probability *= seeing_factor * cloud_factor
+                            elif seeing_factor > 0.3 and cloud_factor > 0.3:
+                                # Very poor conditions, but still might be visible
+                                visibility_probability *= 0.5
+
+                        # Count as visible if probability > 0 (or if altitude is reasonable even if probability is low)
+                        if visibility_probability > 0 or (vis_info.altitude_deg and vis_info.altitude_deg > 10):
                             visible_count += 1
 
                     counts[asterism_name] = visible_count
@@ -1879,6 +1891,10 @@ class MainWindow(QMainWindow):
                     # Get stars in this constellation
                     stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
+                    # Debug: log if no stars found
+                    if not stars:
+                        logger.debug(f"No stars found for constellation: {constellation_name}")
+
                     visible_count = 0
                     for star in stars:
                         # Calculate visibility info
@@ -1895,15 +1911,23 @@ class MainWindow(QMainWindow):
                         # Calculate visibility probability
                         visibility_probability = vis_info.observability_score
 
-                        # Apply seeing and weather factors
+                        # Apply seeing and weather factors (but be less strict for counting)
+                        # Only reduce visibility if conditions are very poor
                         if visibility_probability > 0:
                             seeing_factor = min(1.0, conditions.seeing_score / 100.0)
                             cloud_cover = conditions.weather.cloud_cover_percent or 0.0
                             cloud_factor = 1.0 - (cloud_cover / 100.0)
-                            visibility_probability *= seeing_factor * cloud_factor
 
-                        # Count as visible if probability > 0
-                        if visibility_probability > 0:
+                            # Only apply factors if they're significant - don't eliminate stars for minor issues
+                            # If seeing is > 50% or clouds < 50%, still count as potentially visible
+                            if seeing_factor > 0.5 and cloud_factor > 0.5:
+                                visibility_probability *= seeing_factor * cloud_factor
+                            elif seeing_factor > 0.3 and cloud_factor > 0.3:
+                                # Very poor conditions, but still might be visible
+                                visibility_probability *= 0.5
+
+                        # Count as visible if probability > 0 (or if altitude is reasonable even if probability is low)
+                        if visibility_probability > 0 or (vis_info.altitude_deg and vis_info.altitude_deg > 10):
                             visible_count += 1
 
                     counts[constellation_name] = visible_count
@@ -1916,6 +1940,57 @@ class MainWindow(QMainWindow):
             logger.debug(f"Error counting visible stars: {e}")
             # Return zeros for all constellations on error
             return dict.fromkeys(constellation_names, 0)
+
+    def _get_constellation_display_name(self, constellation_abbrev: str | None) -> str:
+        """
+        Get the full constellation name from abbreviation.
+
+        Args:
+            constellation_abbrev: Constellation abbreviation (e.g., "And") or full name
+
+        Returns:
+            Full constellation name (e.g., "Andromeda") or the original string if not found
+        """
+        if not constellation_abbrev:
+            return "-"
+
+        # Check cache first
+        if constellation_abbrev in self._constellation_name_cache:
+            return self._constellation_name_cache[constellation_abbrev]
+
+        # Try to look up the full name from the database
+        try:
+            from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
+
+            con = get_duckdb_connection()
+            # Try to find by abbreviation first (most common case)
+            result = con.execute(
+                "SELECT name, common_name FROM constellations WHERE abbreviation = ? OR abbreviation ILIKE ? LIMIT 1",
+                [constellation_abbrev, constellation_abbrev],
+            ).fetchone()
+
+            if result:
+                # Prefer common_name if available, otherwise use name
+                full_name = result[1] if result[1] else result[0]
+                self._constellation_name_cache[constellation_abbrev] = full_name
+                return full_name
+
+            # If not found by abbreviation, check if it's already a full name
+            result = con.execute(
+                "SELECT name, common_name FROM constellations WHERE name = ? OR name ILIKE ? OR common_name ILIKE ? LIMIT 1",
+                [constellation_abbrev, constellation_abbrev, f"%{constellation_abbrev}%"],
+            ).fetchone()
+
+            if result:
+                full_name = result[1] if result[1] else result[0]
+                self._constellation_name_cache[constellation_abbrev] = full_name
+                return full_name
+        except Exception as e:
+            logger.debug(f"Error looking up constellation name for '{constellation_abbrev}': {e}")
+
+        # If not found, return the original (might already be a full name)
+        self._constellation_name_cache[constellation_abbrev] = constellation_abbrev
+        return constellation_abbrev
 
     def _populate_constellation_table(self, table: QTableWidget, constellation_names: list[str]) -> None:
         """Populate table with constellation names (must be called on main thread)."""
