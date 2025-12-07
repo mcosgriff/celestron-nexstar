@@ -23,14 +23,15 @@ Example:
 """
 
 # Configure starplot to use our standard cache directory before importing
-from celestron_nexstar.api.data.starplot_config import configure_starplot_cache
-
-configure_starplot_cache()
-
 # Import duckdb BEFORE any api imports to avoid deal import hook issues
 # This must happen before deal.activate() is called (which happens in api/__init__.py)
 # duckdb is required by starplot, and importing it early ensures it's cached before deal's hook intercepts imports
 import contextlib
+
+from celestron_nexstar.api.data.starplot_config import configure_starplot_cache
+
+
+configure_starplot_cache()
 
 
 with contextlib.suppress(ImportError):
@@ -41,10 +42,10 @@ with contextlib.suppress(ImportError):
 
 # Main telescope class
 # Coordinate converter
-from celestron_nexstar.api.catalogs.converters import CoordinateConverter
+from celestron_nexstar.api.catalogs.converters import CoordinateConverter  # noqa: E402
 
 # Exceptions
-from celestron_nexstar.api.core.exceptions import (
+from celestron_nexstar.api.core.exceptions import (  # noqa: E402
     CommandError,
     InvalidCoordinateError,
     NexstarError,
@@ -54,7 +55,7 @@ from celestron_nexstar.api.core.exceptions import (
 )
 
 # Type definitions
-from celestron_nexstar.api.core.types import (
+from celestron_nexstar.api.core.types import (  # noqa: E402
     AlignmentMode,
     EquatorialCoordinates,
     GeographicLocation,
@@ -66,7 +67,7 @@ from celestron_nexstar.api.core.types import (
 )
 
 # Coordinate conversion utilities
-from celestron_nexstar.api.core.utils import (
+from celestron_nexstar.api.core.utils import (  # noqa: E402
     alt_az_to_ra_dec,
     angular_separation,
     calculate_julian_date,
@@ -80,7 +81,7 @@ from celestron_nexstar.api.core.utils import (
     ra_dec_to_alt_az,
     ra_to_hours,
 )
-from celestron_nexstar.api.telescope.telescope import NexStarTelescope
+from celestron_nexstar.api.telescope.telescope import NexStarTelescope  # noqa: E402
 
 
 __version__ = "0.1.0"

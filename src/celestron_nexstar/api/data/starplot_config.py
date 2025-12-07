@@ -12,6 +12,7 @@ import logging
 import os
 from pathlib import Path
 
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["configure_starplot_cache", "get_starplot_data_directory"]
@@ -46,7 +47,4 @@ def configure_starplot_cache() -> None:
         os.environ["STARPLOT_DOWNLOAD_PATH"] = str(data_dir)
         logger.debug(f"Configured starplot to use cache directory: {data_dir}")
     else:
-        logger.debug(
-            f"starplot download path already set to: {os.environ['STARPLOT_DOWNLOAD_PATH']}"
-        )
-
+        logger.debug(f"starplot download path already set to: {os.environ['STARPLOT_DOWNLOAD_PATH']}")

@@ -19,14 +19,13 @@ instead of the custom table. The custom table is kept as a fallback and for addi
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
 
 import duckdb
 
+
 logger = logging.getLogger(__name__)
 
-__all__ = ["Migration", "run_migrations", "get_current_version", "rollback_migration", "MIGRATIONS"]
+__all__ = ["MIGRATIONS", "Migration", "get_current_version", "rollback_migration", "run_migrations"]
 
 
 class Migration:
@@ -82,26 +81,7 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Planets table
-    CREATE TABLE IF NOT EXISTS planets (
-        id INTEGER PRIMARY KEY,
-        name VARCHAR NOT NULL UNIQUE,
-        common_name VARCHAR,
-        catalog VARCHAR NOT NULL DEFAULT 'planets',
-        catalog_number INTEGER,
-        ra_hours DOUBLE NOT NULL,
-        dec_degrees DOUBLE NOT NULL,
-        magnitude DOUBLE,
-        size_arcmin DOUBLE,
-        description TEXT,
-        constellation VARCHAR,
-        is_dynamic BOOLEAN NOT NULL DEFAULT true,
-        ephemeris_name VARCHAR,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Moons table
+    -- Moons table (for moons of other planets, not Earth's moon which comes from starplot)
     CREATE TABLE IF NOT EXISTS moons (
         id INTEGER PRIMARY KEY,
         name VARCHAR NOT NULL UNIQUE,
@@ -121,7 +101,53 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Asterisms table
+    -- Planets table (stored in DB for fast searching, even though starplot provides them)
+    CREATE TABLE IF NOT EXISTS planets (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR NOT NULL UNIQUE,
+        common_name VARCHAR,
+        catalog VARCHAR NOT NULL DEFAULT 'planets',
+        catalog_number INTEGER,
+        ra_hours DOUBLE NOT NULL,
+        dec_degrees DOUBLE NOT NULL,
+        magnitude DOUBLE,
+        size_arcmin DOUBLE,
+        description TEXT,
+        constellation VARCHAR,
+        is_dynamic BOOLEAN NOT NULL DEFAULT true,
+        ephemeris_name VARCHAR,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_planets_name ON planets(name);
+    CREATE INDEX IF NOT EXISTS idx_planets_ephemeris_name ON planets(ephemeris_name);
+
+    -- Constellations table (stored in DB for fast searching, even though starplot provides them)
+    CREATE TABLE IF NOT EXISTS constellations (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR NOT NULL UNIQUE,
+        abbreviation VARCHAR(3),
+        common_name VARCHAR,
+        ra_hours DOUBLE NOT NULL,
+        dec_degrees DOUBLE NOT NULL,
+        ra_min_hours DOUBLE,
+        ra_max_hours DOUBLE,
+        dec_min_degrees DOUBLE,
+        dec_max_degrees DOUBLE,
+        area_sq_deg DOUBLE,
+        brightest_star VARCHAR,
+        mythology TEXT,
+        season VARCHAR,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_constellations_name ON constellations(name);
+    CREATE INDEX IF NOT EXISTS idx_constellations_abbreviation ON constellations(abbreviation);
+    CREATE INDEX IF NOT EXISTS idx_constellations_common_name ON constellations(common_name);
+
+    -- Asterisms table (custom data, not in starplot)
     CREATE TABLE IF NOT EXISTS asterisms (
         id INTEGER PRIMARY KEY,
         name VARCHAR NOT NULL UNIQUE,
@@ -138,26 +164,6 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
         guidepost_info TEXT,
         historical_notes TEXT,
         shape_description VARCHAR,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-
-    -- Constellations table
-    CREATE TABLE IF NOT EXISTS constellations (
-        id INTEGER PRIMARY KEY,
-        name VARCHAR NOT NULL UNIQUE,
-        abbreviation VARCHAR(3) NOT NULL UNIQUE,
-        common_name VARCHAR,
-        ra_hours DOUBLE NOT NULL,
-        dec_degrees DOUBLE NOT NULL,
-        ra_min_hours DOUBLE NOT NULL,
-        ra_max_hours DOUBLE NOT NULL,
-        dec_min_degrees DOUBLE NOT NULL,
-        dec_max_degrees DOUBLE NOT NULL,
-        area_sq_deg DOUBLE,
-        brightest_star VARCHAR,
-        mythology TEXT,
-        season VARCHAR,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -482,6 +488,8 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
         sensor_height_mm DOUBLE,
         pixel_width_um DOUBLE,
         pixel_height_um DOUBLE,
+        resolution_width INTEGER,
+        resolution_height INTEGER,
         manufacturer VARCHAR,
         model VARCHAR,
         notes TEXT,
@@ -492,11 +500,6 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
     );
 
     -- Create indexes for performance
-    CREATE INDEX IF NOT EXISTS idx_planets_name ON planets(name);
-    CREATE INDEX IF NOT EXISTS idx_planets_magnitude ON planets(magnitude);
-    CREATE INDEX IF NOT EXISTS idx_planets_ephemeris_name ON planets(ephemeris_name);
-    CREATE INDEX IF NOT EXISTS idx_planets_position ON planets(ra_hours, dec_degrees);
-
     CREATE INDEX IF NOT EXISTS idx_moons_name ON moons(name);
     CREATE INDEX IF NOT EXISTS idx_moons_parent ON moons(parent_planet);
     CREATE INDEX IF NOT EXISTS idx_moons_ephemeris_name ON moons(ephemeris_name);
@@ -505,11 +508,6 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
     CREATE INDEX IF NOT EXISTS idx_asterisms_name ON asterisms(name);
     CREATE INDEX IF NOT EXISTS idx_asterisms_parent ON asterisms(parent_constellation);
     CREATE INDEX IF NOT EXISTS idx_asterisms_position ON asterisms(ra_hours, dec_degrees);
-
-    CREATE INDEX IF NOT EXISTS idx_constellations_name ON constellations(name);
-    CREATE INDEX IF NOT EXISTS idx_constellations_abbreviation ON constellations(abbreviation);
-    CREATE INDEX IF NOT EXISTS idx_constellations_position ON constellations(ra_hours, dec_degrees);
-    CREATE INDEX IF NOT EXISTS idx_constellations_bounds ON constellations(ra_min_hours, ra_max_hours, dec_min_degrees, dec_max_degrees);
 
     CREATE INDEX IF NOT EXISTS idx_observations_object_type ON observations(object_type);
     CREATE INDEX IF NOT EXISTS idx_observations_object_id ON observations(object_id);
@@ -629,13 +627,12 @@ MIGRATION_001_INITIAL_SCHEMA = Migration(
     DROP TABLE IF EXISTS favorites;
     DROP TABLE IF EXISTS user_preferences;
     DROP TABLE IF EXISTS observations;
-    DROP TABLE IF EXISTS constellations;
     DROP TABLE IF EXISTS asterisms;
     DROP TABLE IF EXISTS moons;
-    DROP TABLE IF EXISTS planets;
     DROP TABLE IF EXISTS metadata;
     """,
 )
+
 
 # All migrations in order
 MIGRATIONS: list[Migration] = [
@@ -691,7 +688,9 @@ def run_migrations(con: duckdb.DuckDBPyConnection, target_version: int | None = 
         logger.info("No migrations to apply")
         return
 
-    logger.info(f"Applying {len(migrations_to_apply)} migration(s) (from version {current_version} to {target_version})")
+    logger.info(
+        f"Applying {len(migrations_to_apply)} migration(s) (from version {current_version} to {target_version})"
+    )
 
     # Apply each migration in a transaction
     for migration in migrations_to_apply:
@@ -741,7 +740,9 @@ def rollback_migration(con: duckdb.DuckDBPyConnection, target_version: int) -> N
         logger.info("No migrations to rollback")
         return
 
-    logger.info(f"Rolling back {len(migrations_to_rollback)} migration(s) (from version {current_version} to {target_version})")
+    logger.info(
+        f"Rolling back {len(migrations_to_rollback)} migration(s) (from version {current_version} to {target_version})"
+    )
 
     for migration in migrations_to_rollback:
         try:

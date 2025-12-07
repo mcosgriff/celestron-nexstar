@@ -8,16 +8,13 @@ and stores only custom data (planets, moons, asterisms, constellations) in the d
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-import duckdb
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.data.starplot_config import get_starplot_data_directory
-from celestron_nexstar.api.database.duckdb_migrations import run_migrations
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,29 +51,38 @@ class DuckDBCatalogDatabase:
         # Get starplot data directory
         self.starplot_data_dir = get_starplot_data_directory()
 
-        # Initialize DuckDB connection
-        self.con = duckdb.connect(str(self.db_path))
+        # Use shared DuckDB connection
+        from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
 
-        # Configure for performance
-        self.con.execute("SET threads TO 4")  # Use multiple threads
-        self.con.execute("SET memory_limit = '2GB'")  # Allow more memory for queries
+        self.con = get_duckdb_connection(db_path)
 
-        # Load fts extension for full-text search
+        # Check if extensions are available
+        self._fts_available = False
+        self._spatial_available = False
         try:
-            self.con.execute("INSTALL fts;")
-            self.con.execute("LOAD fts;")
-            self._fts_available = True
-            logger.debug("Loaded fts extension for full-text search")
-        except Exception as e:
-            self._fts_available = False
-            logger.warning(f"Could not load fts extension: {e}. Falling back to LIKE queries.")
-
-        # Run migrations to ensure schema is up to date
-        run_migrations(self.con)
+            # Check if extensions are loaded by querying the extensions list
+            extensions = self.con.execute("SELECT * FROM duckdb_extensions() WHERE loaded = true").fetchall()
+            extension_names = [ext[0] for ext in extensions]
+            self._fts_available = "fts" in extension_names
+            self._spatial_available = "spatial" in extension_names
+            if not self._fts_available:
+                logger.warning("FTS extension not available. Falling back to LIKE queries.")
+            if not self._spatial_available:
+                logger.debug("Spatial extension not available. Using fallback methods for spatial queries.")
+        except Exception:
+            logger.warning("Could not check extension availability. Using fallback methods.")
 
         # Cache parquet file paths
         self._star_parquet_path = self._find_star_parquet_file()
         self._dso_db_path = self._find_dso_database()
+
+        # Alias for starplot database (used for both star_designations and deep_sky_objects)
+        self._starplot_db_alias = "starplot_db"
+
+        # Track FTS index creation status
+        self._fts_indexes_created = False
+        if self._fts_available:
+            self._ensure_fts_indexes()
 
     def _get_default_db_path(self) -> Path:
         """Get path to DuckDB database file in user config directory."""
@@ -88,7 +94,6 @@ class DuckDBCatalogDatabase:
         """Find starplot's star parquet file."""
         # Check for abridged version first (included with starplot)
         try:
-            import starplot
             from starplot.data import DataFiles
 
             if DataFiles.BIG_SKY_MAG11.exists():
@@ -110,7 +115,6 @@ class DuckDBCatalogDatabase:
     def _find_dso_database(self) -> Path | None:
         """Find starplot's DSO database."""
         try:
-            import starplot
             from starplot.data import DataFiles
 
             if DataFiles.DATABASE.exists():
@@ -124,6 +128,43 @@ class DuckDBCatalogDatabase:
             return dso_db
 
         return None
+
+    def _ensure_starplot_db_attached(self) -> None:
+        """Ensure starplot database is attached with consistent alias."""
+        if not self._dso_db_path or not self._dso_db_path.exists():
+            raise FileNotFoundError(
+                f"Starplot database not found at {self._dso_db_path}. "
+                "Starplot data is required. Please ensure starplot is properly installed and configured."
+            )
+
+        # Check if already attached
+        try:
+            # Try to query the attached databases
+            attached = self.con.execute(
+                "SELECT database_name FROM pragma_database_list() WHERE database_name = ?", [self._starplot_db_alias]
+            ).fetchone()
+            if attached:
+                return  # Already attached
+        except Exception:
+            pass  # If query fails, try to attach
+
+        # Attach the database
+        try:
+            self.con.execute(f"ATTACH '{self._dso_db_path}' AS {self._starplot_db_alias} (READ_ONLY)")
+        except Exception as e:
+            error_msg = str(e).lower()
+            # Check if it's already attached (different error messages for this)
+            if (
+                "already exists" in error_msg
+                or "already attached" in error_msg
+                or "unique file handle conflict" in error_msg
+                or "database with name" in error_msg
+            ):
+                # Already attached, that's fine - just return
+                return
+            else:
+                # Some other error, re-raise it
+                raise
 
     def _check_starplot_constellations_table(self) -> bool:
         """Check if starplot's database has a constellations table."""
@@ -144,6 +185,190 @@ class DuckDBCatalogDatabase:
         except Exception:
             return False
 
+    def _ensure_fts_indexes(self) -> None:
+        """Create FTS indexes on tables and views for efficient full-text search."""
+        if self._fts_indexes_created:
+            logger.debug("FTS indexes already created, skipping")
+            return
+
+        if not self._fts_available:
+            logger.warning("FTS extension not available, cannot create indexes")
+            return
+
+        logger.info("Creating FTS indexes...")
+
+        try:
+            # Ensure starplot database is attached
+            self._ensure_starplot_db_attached()
+
+            # Create FTS indexes on DuckDB tables (planets, moons, asterisms, constellations)
+            # These work directly on tables
+            try:
+                # Check if indexes already exist by trying to query them
+                self.con.execute("SELECT * FROM fts_main_planets LIMIT 1").fetchone()
+                logger.debug("FTS index on planets table already exists")
+            except Exception:
+                # Index doesn't exist, create it
+                try:
+                    self.con.execute("PRAGMA create_fts_index('planets', 'id', 'name', 'common_name')")
+                    logger.info("Created FTS index on planets table")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "already exists" in error_msg:
+                        logger.debug("FTS index on planets table already exists")
+                    else:
+                        logger.warning(f"Could not create FTS index on planets: {e}")
+
+            try:
+                self.con.execute("SELECT * FROM fts_main_moons LIMIT 1").fetchone()
+                logger.debug("FTS index on moons table already exists")
+            except Exception:
+                try:
+                    self.con.execute("PRAGMA create_fts_index('moons', 'id', 'name', 'common_name', 'description')")
+                    logger.info("Created FTS index on moons table")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "already exists" in error_msg:
+                        logger.debug("FTS index on moons table already exists")
+                    else:
+                        logger.warning(f"Could not create FTS index on moons: {e}")
+
+            try:
+                self.con.execute("SELECT * FROM fts_main_asterisms LIMIT 1").fetchone()
+                logger.debug("FTS index on asterisms table already exists")
+            except Exception:
+                try:
+                    self.con.execute("PRAGMA create_fts_index('asterisms', 'id', 'name', 'alt_names', 'description')")
+                    logger.info("Created FTS index on asterisms table")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "already exists" in error_msg:
+                        logger.debug("FTS index on asterisms table already exists")
+                    else:
+                        logger.warning(f"Could not create FTS index on asterisms: {e}")
+
+            try:
+                self.con.execute("SELECT * FROM fts_main_constellations LIMIT 1").fetchone()
+                logger.debug("FTS index on constellations table already exists")
+            except Exception:
+                try:
+                    self.con.execute("PRAGMA create_fts_index('constellations', 'id', 'name', 'abbreviation', 'common_name')")
+                    logger.info("Created FTS index on constellations table")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if "already exists" in error_msg:
+                        logger.debug("FTS index on constellations table already exists")
+                    else:
+                        logger.warning(f"Could not create FTS index on constellations: {e}")
+
+            # Create materialized tables for stars and DSOs from parquet/attached database
+            # FTS indexes require tables, not views
+            if self._star_parquet_path and self._star_parquet_path.exists():
+                try:
+                    # Check if table already exists and is up to date
+                    table_exists = False
+                    try:
+                        result = self.con.execute(
+                            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'stars_fts_table'"
+                        ).fetchone()
+                        table_exists = result and result[0] > 0
+                    except Exception:
+                        pass
+
+                    if not table_exists:
+                        logger.info("Creating materialized table for stars FTS (this may take a moment)...")
+                        # Create materialized table for stars (from parquet + star_designations)
+                        # We need a unique ID for FTS, so we'll use ROW_NUMBER
+                        stars_table_sql = f"""
+                            CREATE TABLE stars_fts_table AS
+                            SELECT
+                                ROW_NUMBER() OVER (ORDER BY s.hip, s.tyc_id) as id,
+                                COALESCE(NULLIF(sd.name, ''), NULLIF(sd.bayer, ''), CAST(s.hip AS VARCHAR), s.tyc_id) as name,
+                                NULLIF(sd.name, '') as common_name,
+                                NULLIF(sd.bayer, '') as bayer,
+                                CAST(s.hip AS VARCHAR) as hip_str,
+                                s.tyc_id,
+                                s.ra_degrees / 15.0 as ra_hours,
+                                s.dec_degrees,
+                                s.magnitude,
+                                s.constellation
+                            FROM read_parquet(?) s
+                            LEFT JOIN {self._starplot_db_alias}.star_designations sd ON s.hip = sd.hip
+                        """
+                        self.con.execute(stars_table_sql, [str(self._star_parquet_path)])
+                        logger.info("Created stars_fts_table")
+
+                    # Try to create FTS index on the table
+                    try:
+                        self.con.execute("SELECT * FROM fts_main_stars_fts_table LIMIT 1").fetchone()
+                        logger.debug("FTS index on stars_fts_table already exists")
+                    except Exception:
+                        try:
+                            logger.info("Creating FTS index on stars_fts_table (this may take a moment)...")
+                            self.con.execute("PRAGMA create_fts_index('stars_fts_table', 'id', 'name', 'common_name', 'bayer', 'hip_str', 'tyc_id')")
+                            logger.info("Created FTS index on stars_fts_table")
+                        except Exception as e:
+                            error_msg = str(e).lower()
+                            if "already exists" in error_msg:
+                                logger.debug("FTS index on stars_fts_table already exists")
+                            else:
+                                logger.warning(f"Could not create FTS index on stars_fts_table: {e}")
+                except Exception as e:
+                    logger.warning(f"Could not create stars_fts_table: {e}")
+
+            # Create materialized table for DSOs from attached database
+            try:
+                # Check if table already exists
+                table_exists = False
+                try:
+                    result = self.con.execute(
+                        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'dsos_fts_table'"
+                    ).fetchone()
+                    table_exists = result and result[0] > 0
+                except Exception:
+                    pass
+
+                if not table_exists:
+                    logger.info("Creating materialized table for DSOs FTS (this may take a moment)...")
+                    dso_table_sql = f"""
+                        CREATE TABLE dsos_fts_table AS
+                        SELECT
+                            ROW_NUMBER() OVER (ORDER BY name) as id,
+                            name,
+                            ra_degrees / 15.0 as ra_hours,
+                            dec_degrees,
+                            COALESCE(mag_v, mag_b) as magnitude,
+                            type,
+                            constellation
+                        FROM {self._starplot_db_alias}.deep_sky_objects
+                    """
+                    self.con.execute(dso_table_sql)
+                    logger.info("Created dsos_fts_table")
+
+                # Try to create FTS index on the table
+                try:
+                    self.con.execute("SELECT * FROM fts_main_dsos_fts_table LIMIT 1").fetchone()
+                    logger.debug("FTS index on dsos_fts_table already exists")
+                except Exception:
+                    try:
+                        logger.info("Creating FTS index on dsos_fts_table (this may take a moment)...")
+                        self.con.execute("PRAGMA create_fts_index('dsos_fts_table', 'id', 'name')")
+                        logger.info("Created FTS index on dsos_fts_table")
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if "already exists" in error_msg:
+                            logger.debug("FTS index on dsos_fts_table already exists")
+                        else:
+                            logger.warning(f"Could not create FTS index on dsos_fts_table: {e}")
+            except Exception as e:
+                logger.warning(f"Could not create dsos_fts_table: {e}")
+
+            self._fts_indexes_created = True
+            logger.info("FTS indexes created successfully")
+
+        except Exception as e:
+            logger.warning(f"Error creating FTS indexes: {e}. Falling back to LIKE queries.")
+            self._fts_indexes_created = False
 
     def _row_to_celestial_object(self, row: dict[str, Any], object_type: CelestialObjectType) -> CelestialObject:
         """Convert a database row to CelestialObject."""
@@ -178,186 +403,216 @@ class DuckDBCatalogDatabase:
             return []
 
         # Use parameterized queries to prevent SQL injection
-        query_lower = query.lower()
+        query_lower = query.lower().strip()
+        query_len = len(query_lower)
+
+        # Performance optimization: For very short queries (1-2 characters), reduce the search scope
+        # Note: We don't skip searches for common words like "and" because they appear in many object names
+        # (e.g., "Andromeda", "Andromedae", etc.)
+
+        # Adjust limits based on query length
+        if query_len <= 2:
+            # Very short queries: use smaller limits and skip expensive searches
+            per_type_limit = min(10, limit // 4)  # Much smaller limit per type
+            skip_stars = True  # Skip star search for very short queries
+            skip_dsos = True  # Skip DSO search for very short queries
+        elif query_len <= 3:
+            # Short queries (like "and"): use higher limits to find more matches
+            # Common words like "and" appear in many object names (Andromeda, Anderson, etc.)
+            per_type_limit = min(100, limit)  # Use full limit per type for better coverage
+            skip_stars = False
+            skip_dsos = False
+        else:
+            # Normal queries: use full limits
+            per_type_limit = limit
+            skip_stars = False
+            skip_dsos = False
+
         results: list[CelestialObject] = []
 
-        # Search custom data (planets, moons, asterisms, constellations)
-        # Use FTS if available, otherwise LIKE
-        if self._fts_available:
+        import pandas as pd
+
+        custom_results = pd.DataFrame()
+        pattern = f"%{query_lower}%"
+
+        # Log search method being used
+        if self._fts_available and self._fts_indexes_created:
+            logger.debug(f"Using FTS search for query: '{query}'")
+        else:
+            logger.debug(f"Using LIKE search for query: '{query}' (FTS available: {self._fts_available}, indexes created: {self._fts_indexes_created})")
+
+        # Use FTS if available, otherwise fall back to LIKE queries
+        if self._fts_available and self._fts_indexes_created:
             try:
-                # Use FTS with parameterized query
-                custom_query = """
-                    SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees, 
-                           magnitude, catalog, description, NULL as parent_planet, constellation
-                    FROM planets
-                    WHERE fts_main_match(name || ' ' || COALESCE(common_name, '') || ' ' || COALESCE(description, ''), ?)
-                    UNION ALL
-                    SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
-                           magnitude, catalog, description, parent_planet, constellation
-                    FROM moons
-                    WHERE fts_main_match(name || ' ' || COALESCE(common_name, '') || ' ' || COALESCE(description, ''), ?)
-                    UNION ALL
-                    SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                           NULL as magnitude, catalog, description, NULL as parent_planet, constellation
-                    FROM asterisms
-                    WHERE fts_main_match(name || ' ' || COALESCE(common_name, '') || ' ' || COALESCE(description, ''), ?)
-                    LIMIT ?
+                # Use FTS queries for tables with indexes
+                # Wrap each SELECT in a subquery to allow ORDER BY and LIMIT before UNION ALL
+                custom_query = f"""
+                    SELECT * FROM (
+                        SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
+                               magnitude, catalog, description, NULL as parent_planet, constellation
+                        FROM (
+                            SELECT p.name, p.common_name, p.ra_hours, p.dec_degrees,
+                                   p.magnitude, p.catalog, p.description, p.constellation,
+                                   fts_main_planets.match_bm25(p.id, ?) as score
+                            FROM planets p
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC
+                            LIMIT {per_type_limit}
+                        )
+                        UNION ALL
+                        SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
+                               magnitude, catalog, description, parent_planet, constellation
+                        FROM (
+                            SELECT m.name, m.common_name, m.ra_hours, m.dec_degrees,
+                                   m.magnitude, m.catalog, m.description, m.parent_planet, m.constellation,
+                                   fts_main_moons.match_bm25(m.id, ?) as score
+                            FROM moons m
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC
+                            LIMIT {per_type_limit}
+                        )
+                        UNION ALL
+                        SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                               NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
+                        FROM (
+                            SELECT a.name, a.ra_hours, a.dec_degrees, a.description, a.parent_constellation,
+                                   fts_main_asterisms.match_bm25(a.id, ?) as score
+                            FROM asterisms a
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC
+                            LIMIT {per_type_limit}
+                        )
+                        UNION ALL
+                        SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
+                               NULL as magnitude, 'starplot' as catalog, NULL as description, NULL as parent_planet, NULL as constellation
+                        FROM (
+                            SELECT c.name, c.common_name, c.ra_hours, c.dec_degrees,
+                                   fts_main_constellations.match_bm25(c.id, ?) as score
+                            FROM constellations c
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC
+                            LIMIT {per_type_limit}
+                        )
+                    ) LIMIT {limit}
                 """
-                custom_results = self.con.execute(custom_query, [query, query, query, limit]).fetchdf()
+                custom_results = self.con.execute(
+                    custom_query,
+                    [query_lower, query_lower, query_lower, query_lower],
+                ).fetchdf()
+                logger.debug(f"FTS search for custom data returned {len(custom_results)} results")
+            except Exception as e:
+                logger.warning(f"Error executing FTS search query, falling back to LIKE: {e}", exc_info=True)
+                # Fall through to LIKE queries
+                custom_results = pd.DataFrame()
 
-                # Search constellations from starplot using Constellation model
-                from starplot.models import Constellation
+        if not self._fts_available or custom_results.empty:
+            import pandas as pd
 
-                # Get all constellations and filter by query
-                all_constellations = Constellation.all()
-                matching_constellations = []
-                for c in all_constellations:
-                    # Check name (substring match)
-                    if query_lower in c.name.lower():
-                        matching_constellations.append(c)
-                        continue
-                    # Check IAU ID if available
-                    if hasattr(c, 'iau_id') and c.iau_id and query_lower in str(c.iau_id).lower():
-                        matching_constellations.append(c)
-                        continue
-                    # Check abbreviation if available
-                    if hasattr(c, 'abbreviation') and c.abbreviation and query_lower in str(c.abbreviation).lower():
-                        matching_constellations.append(c)
-                        continue
-                    # Check common_name if available
-                    if hasattr(c, 'common_name') and c.common_name and query_lower in str(c.common_name).lower():
-                        matching_constellations.append(c)
-                        continue
-                    if len(matching_constellations) >= limit:
+            custom_results = pd.DataFrame()
+            # Use LIKE queries with parameterized queries for planets, moons, asterisms, and constellations
+            # Query from DuckDB tables for fast database-side filtering with indexes
+            # Apply LIMIT to each SELECT to get per_type_limit results from each type
+            pattern = f"%{query_lower}%"
+            try:
+                # Use subqueries with LIMIT, then wrap in outer query to apply overall limit
+                custom_query = f"""
+                    SELECT * FROM (
+                        SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
+                               magnitude, catalog, description, NULL as parent_planet, constellation
+                        FROM planets
+                        WHERE name ILIKE ? OR common_name ILIKE ?
+                        LIMIT {per_type_limit}
+                        UNION ALL
+                        SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
+                               magnitude, catalog, description, parent_planet, constellation
+                        FROM moons
+                        WHERE name ILIKE ? OR common_name ILIKE ? OR description ILIKE ?
+                        LIMIT {per_type_limit}
+                        UNION ALL
+                        SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                               NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
+                        FROM asterisms
+                        WHERE name ILIKE ? OR alt_names ILIKE ? OR description ILIKE ?
+                        LIMIT {per_type_limit}
+                        UNION ALL
+                        SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
+                               NULL as magnitude, 'starplot' as catalog, NULL as description, NULL as parent_planet, NULL as constellation
+                        FROM constellations
+                        WHERE name ILIKE ? OR abbreviation ILIKE ? OR common_name ILIKE ?
+                        LIMIT {per_type_limit}
+                    ) LIMIT {limit}
+                """
+                custom_results = self.con.execute(
+                    custom_query,
+                    [
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                        pattern,
+                    ],
+                ).fetchdf()
+            except Exception as e:
+                logger.debug(f"Error executing custom search query: {e}", exc_info=True)
+                custom_results = pd.DataFrame()
+
+            # Search comets from starplot
+            from starplot.models import Comet as StarplotComet
+
+            matching_comets = []
+            try:
+                all_comets = StarplotComet.all()
+                for comet in all_comets:
+                    comet_name = comet.name if hasattr(comet, "name") and comet.name else ""
+                    if query_lower in comet_name.lower():
+                        matching_comets.append(comet)
+                    if len(matching_comets) >= per_type_limit:
                         break
 
-                if matching_constellations:
-                    import pandas as pd
-                    constellation_data = []
-                    for const in matching_constellations:
-                        # Get RA/Dec from constellation
-                        ra_hours = None
-                        dec_degrees = None
-                        if hasattr(const, 'ra') and const.ra is not None:
-                            ra_hours = const.ra / 15.0 if const.ra > 24 else const.ra
-                        if hasattr(const, 'dec') and const.dec is not None:
-                            dec_degrees = const.dec
-
-                        constellation_data.append({
-                            'object_type': 'constellation',
-                            'name': const.name,
-                            'common_name': None,
-                            'ra_hours': ra_hours,
-                            'dec_degrees': dec_degrees,
-                            'magnitude': None,
-                            'catalog': 'starplot',
-                            'description': None,
-                            'parent_planet': None,
-                            'constellation': None,
-                        })
-                    constellation_results = pd.DataFrame(constellation_data)
-                    logger.debug(f"Found {len(matching_constellations)} constellations from starplot")
-
-                    # Combine results
-                    if not custom_results.empty:
-                        custom_results = pd.concat([custom_results, constellation_results], ignore_index=True)
-                    else:
-                        custom_results = constellation_results
+                if matching_comets:
+                    comet_data = []
+                    for comet in matching_comets:
+                        comet_data.append(
+                            {
+                                "object_type": "star",  # Use STAR as closest match
+                                "name": comet.name if hasattr(comet, "name") and comet.name else "Unknown",
+                                "common_name": None,
+                                "ra_hours": comet.ra / 15.0 if hasattr(comet, "ra") and comet.ra else 0.0,
+                                "dec_degrees": comet.dec if hasattr(comet, "dec") and comet.dec else 0.0,
+                                "magnitude": None,
+                                "catalog": "starplot",
+                                "description": "Comet",
+                                "parent_planet": None,
+                                "constellation": None,
+                            }
+                        )
+                    comet_results = pd.DataFrame(comet_data)
+                    if not custom_results.empty and not comet_results.empty:
+                        # Ensure both DataFrames have the same columns in the same order to avoid FutureWarning
+                        all_columns = sorted(set(custom_results.columns) | set(comet_results.columns))
+                        for col in all_columns:
+                            if col not in custom_results.columns:
+                                custom_results[col] = None
+                            if col not in comet_results.columns:
+                                comet_results[col] = None
+                        # Reorder columns to match
+                        custom_results = custom_results[all_columns]
+                        comet_results = comet_results[all_columns]
+                        custom_results = pd.concat([custom_results, comet_results], ignore_index=True, sort=False)
+                    elif not comet_results.empty:
+                        custom_results = comet_results
+                    # If both are empty, custom_results stays as is
             except Exception as e:
-                logger.debug(f"FTS search failed, falling back to LIKE: {e}")
-                self._fts_available = False  # Disable FTS for future queries
-                # Fall through to LIKE queries
+                logger.debug(f"Error querying comets from starplot: {e}")
 
-        if not self._fts_available:
-            # Use LIKE queries with parameterized queries
-            # Note: Constellations are queried from starplot if available
-            custom_query = """
-                SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                       magnitude, catalog, description, NULL as parent_planet, constellation
-                FROM planets
-                WHERE name ILIKE ? 
-                   OR common_name ILIKE ?
-                   OR description ILIKE ?
-                UNION ALL
-                SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
-                       magnitude, catalog, description, parent_planet, constellation
-                FROM moons
-                WHERE name ILIKE ?
-                   OR common_name ILIKE ?
-                   OR description ILIKE ?
-                UNION ALL
-                SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                       NULL as magnitude, catalog, description, NULL as parent_planet, constellation
-                FROM asterisms
-                WHERE name ILIKE ?
-                   OR common_name ILIKE ?
-                   OR description ILIKE ?
-                LIMIT ?
-            """
-            pattern = f"%{query_lower}%"
-            custom_results = self.con.execute(
-                custom_query,
-                [pattern] * 9 + [limit],  # 9 patterns (3 per table * 3 tables)
-            ).fetchdf()
-
-            # Search constellations from starplot using Constellation model
-            from starplot.models import Constellation
-
-            # Get all constellations and filter by query
-            all_constellations = Constellation.all()
-            matching_constellations = []
-            for c in all_constellations:
-                # Check name (substring match)
-                if query_lower in c.name.lower():
-                    matching_constellations.append(c)
-                    continue
-                # Check IAU ID if available
-                if hasattr(c, 'iau_id') and c.iau_id and query_lower in str(c.iau_id).lower():
-                    matching_constellations.append(c)
-                    continue
-                # Check abbreviation if available
-                if hasattr(c, 'abbreviation') and c.abbreviation and query_lower in str(c.abbreviation).lower():
-                    matching_constellations.append(c)
-                    continue
-                # Check common_name if available
-                if hasattr(c, 'common_name') and c.common_name and query_lower in str(c.common_name).lower():
-                    matching_constellations.append(c)
-                    continue
-                if len(matching_constellations) >= limit:
-                    break
-
-            if matching_constellations:
-                import pandas as pd
-                constellation_data = []
-                for const in matching_constellations:
-                    # Get RA/Dec from constellation
-                    ra_hours = None
-                    dec_degrees = None
-                    if hasattr(const, 'ra') and const.ra is not None:
-                        ra_hours = const.ra / 15.0 if const.ra > 24 else const.ra
-                    if hasattr(const, 'dec') and const.dec is not None:
-                        dec_degrees = const.dec
-
-                    constellation_data.append({
-                        'object_type': 'constellation',
-                        'name': const.name,
-                        'common_name': None,
-                        'ra_hours': ra_hours,
-                        'dec_degrees': dec_degrees,
-                        'magnitude': None,
-                        'catalog': 'starplot',
-                        'description': None,
-                        'parent_planet': None,
-                        'constellation': None,
-                    })
-                constellation_results = pd.DataFrame(constellation_data)
-                logger.debug(f"Found {len(matching_constellations)} constellations from starplot")
-
-                # Combine custom results with constellation results
-                if not custom_results.empty:
-                    custom_results = pd.concat([custom_results, constellation_results], ignore_index=True)
-                else:
-                    custom_results = constellation_results
+            # Constellations are now included in custom_results from the DuckDB query above
 
         # Convert custom results
         for _, row in custom_results.iterrows():
@@ -367,32 +622,81 @@ class DuckDBCatalogDatabase:
             except Exception as e:
                 logger.debug(f"Error converting custom result: {e}")
 
-        # Search stars from parquet file (if available)
-        if self._star_parquet_path and self._star_parquet_path.exists():
-            try:
-            # Query stars directly from parquet using parameterized query
-            star_query = """
-                SELECT 
-                    COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
-                    NULL as common_name,
-                    ra_degrees / 15.0 as ra_hours,
-                    dec_degrees,
-                    magnitude,
-                    'big_sky' as catalog,
-                    NULL as description,
-                    NULL as parent_planet,
-                    constellation
-                FROM read_parquet(?)
-                WHERE name ILIKE ?
-                   OR CAST(hip AS VARCHAR) ILIKE ?
-                   OR CAST(tyc_id AS VARCHAR) ILIKE ?
-                ORDER BY magnitude NULLS LAST
-                LIMIT ?
-            """
+        # Search stars from parquet file (skip for very short queries)
+        if not skip_stars:
+            if not self._star_parquet_path or not self._star_parquet_path.exists():
+                raise FileNotFoundError(
+                    f"Star catalog parquet file not found at {self._star_parquet_path}. "
+                    "Starplot data is required. Please ensure starplot is properly installed and configured."
+                )
+            # Attach the starplot database to access star_designations table
+            self._ensure_starplot_db_attached()
             pattern = f"%{query_lower}%"
-            star_results = self.con.execute(
-                star_query, [str(self._star_parquet_path), pattern, pattern, pattern, limit]
-            ).fetchdf()
+
+            # Try FTS first if available
+            star_results = pd.DataFrame()
+            if self._fts_available and self._fts_indexes_created:
+                try:
+                    # Check if stars_fts_table FTS index exists
+                    # Use subquery to exclude score from final result
+                    star_fts_query = f"""
+                        SELECT
+                            name,
+                            common_name,
+                            ra_hours,
+                            dec_degrees,
+                            magnitude,
+                            'big_sky' as catalog,
+                            NULL as description,
+                            NULL as parent_planet,
+                            constellation
+                        FROM (
+                            SELECT
+                                name,
+                                common_name,
+                                ra_hours,
+                                dec_degrees,
+                                magnitude,
+                                constellation,
+                                fts_main_stars_fts_table.match_bm25(id, ?) as score
+                            FROM stars_fts_table
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC, magnitude NULLS LAST
+                            LIMIT ?
+                        )
+                    """
+                    star_results = self.con.execute(
+                        star_fts_query, [query_lower, per_type_limit]
+                    ).fetchdf()
+                    logger.debug(f"FTS search for stars returned {len(star_results)} results")
+                except Exception as e:
+                    logger.debug(f"FTS search for stars failed, falling back to LIKE: {e}")
+
+            # Fall back to LIKE if FTS didn't work or returned no results
+            if star_results.empty:
+                star_query = f"""
+                    SELECT
+                        COALESCE(NULLIF(sd.name, ''), NULLIF(sd.bayer, ''), CAST(s.hip AS VARCHAR), s.tyc_id) as name,
+                        NULLIF(sd.name, '') as common_name,
+                        s.ra_degrees / 15.0 as ra_hours,
+                        s.dec_degrees,
+                        s.magnitude,
+                        'big_sky' as catalog,
+                        NULL as description,
+                        NULL as parent_planet,
+                        s.constellation
+                    FROM read_parquet(?) s
+                    LEFT JOIN {self._starplot_db_alias}.star_designations sd ON s.hip = sd.hip
+                    WHERE NULLIF(sd.name, '') ILIKE ?
+                       OR NULLIF(sd.bayer, '') ILIKE ?
+                       OR CAST(s.hip AS VARCHAR) ILIKE ?
+                       OR s.tyc_id ILIKE ?
+                    ORDER BY s.magnitude NULLS LAST
+                    LIMIT ?
+                """
+                star_results = self.con.execute(
+                    star_query, [str(self._star_parquet_path), pattern, pattern, pattern, pattern, per_type_limit]
+                ).fetchdf()
             for _, row in star_results.iterrows():
                 results.append(
                     CelestialObject(
@@ -409,64 +713,104 @@ class DuckDBCatalogDatabase:
                     )
                 )
 
-        # Search DSOs from starplot database
-        if not self._dso_db_path or not self._dso_db_path.exists():
-            raise FileNotFoundError(
-                f"DSO database not found at {self._dso_db_path}. "
-                "Starplot data is required. Please ensure starplot is properly installed and configured."
-            )
-        # Query DSOs directly from starplot's DuckDB database
-        pattern = f"%{query_lower}%"
-        # Attach the database
-        self.con.execute(f"ATTACH '{self._dso_db_path}' AS starplot_dso (READ_ONLY)")
-        dso_query_attached = """
-            SELECT 
-                name,
-                NULL as common_name,
-                ra / 15.0 as ra_hours,
-                dec as dec_degrees,
-                magnitude,
-                CASE 
-                    WHEN type = 'G' THEN 'galaxy'
-                    WHEN type = 'Neb' OR type = 'PN' OR type = 'EmN' OR type = 'RfN' OR type = 'DrkN' THEN 'nebula'
-                    WHEN type = 'OCl' OR type = 'GCl' THEN 'cluster'
-                    ELSE 'dso'
-                END as object_type,
-                'openngc' as catalog,
-                NULL as description,
-                NULL as parent_planet,
-                NULL as constellation
-            FROM starplot_dso.dsos
-            WHERE name ILIKE ?
-            ORDER BY magnitude NULLS LAST
-            LIMIT ?
-        """
-        dso_results = self.con.execute(dso_query_attached, [pattern, limit]).fetchdf()
-        for _, row in dso_results.iterrows():
-            obj_type_str = str(row["object_type"])
-            if obj_type_str == "galaxy":
-                obj_type = CelestialObjectType.GALAXY
-            elif obj_type_str == "nebula":
-                obj_type = CelestialObjectType.NEBULA
-            elif obj_type_str == "cluster":
-                obj_type = CelestialObjectType.CLUSTER
-            else:
-                continue  # Skip unknown types
+        # Search DSOs from starplot database (skip for very short queries)
+        if not skip_dsos:
+            self._ensure_starplot_db_attached()
+            pattern = f"%{query_lower}%"
 
-            results.append(
-                CelestialObject(
-                    name=str(row["name"]),
-                    common_name=None,
-                    ra_hours=float(row["ra_hours"]),
-                    dec_degrees=float(row["dec_degrees"]),
-                    magnitude=float(row["magnitude"]) if row.get("magnitude") is not None else None,
-                    object_type=obj_type,
-                    catalog=str(row["catalog"]),
-                    description=None,
-                    parent_planet=None,
-                    constellation=None,
+            # Try FTS first if available
+            dso_results = pd.DataFrame()
+            if self._fts_available and self._fts_indexes_created:
+                try:
+                    # Check if dsos_fts_table FTS index exists
+                    # Use subquery to exclude score from final result
+                    dso_fts_query = f"""
+                        SELECT
+                            name,
+                            NULL as common_name,
+                            ra_hours,
+                            dec_degrees,
+                            magnitude,
+                            CASE
+                                WHEN type = 'G' THEN 'galaxy'
+                                WHEN type IN ('Neb', 'PN', 'EmN', 'RfN', 'DrkN') THEN 'nebula'
+                                WHEN type IN ('OCl', 'GCl') THEN 'cluster'
+                                ELSE 'dso'
+                            END as object_type,
+                            'openngc' as catalog,
+                            NULL as description,
+                            NULL as parent_planet,
+                            constellation
+                        FROM (
+                            SELECT
+                                name,
+                                ra_hours,
+                                dec_degrees,
+                                magnitude,
+                                type,
+                                constellation,
+                                fts_main_dsos_fts_table.match_bm25(id, ?) as score
+                            FROM dsos_fts_table
+                            WHERE score IS NOT NULL
+                            ORDER BY score DESC, magnitude NULLS LAST
+                            LIMIT ?
+                        )
+                    """
+                    dso_results = self.con.execute(dso_fts_query, [query_lower, per_type_limit]).fetchdf()
+                    logger.debug(f"FTS search for DSOs returned {len(dso_results)} results")
+                except Exception as e:
+                    logger.debug(f"FTS search for DSOs failed, falling back to LIKE: {e}")
+
+            # Fall back to LIKE if FTS didn't work or returned no results
+            if dso_results.empty:
+                dso_query_attached = f"""
+                    SELECT
+                        name,
+                        NULL as common_name,
+                        ra_degrees / 15.0 as ra_hours,
+                        dec_degrees,
+                        COALESCE(mag_v, mag_b) as magnitude,
+                        CASE
+                            WHEN type = 'G' THEN 'galaxy'
+                            WHEN type IN ('Neb', 'PN', 'EmN', 'RfN', 'DrkN') THEN 'nebula'
+                            WHEN type IN ('OCl', 'GCl') THEN 'cluster'
+                            ELSE 'dso'
+                        END as object_type,
+                        'openngc' as catalog,
+                        NULL as description,
+                        NULL as parent_planet,
+                        constellation
+                    FROM {self._starplot_db_alias}.deep_sky_objects
+                    WHERE name ILIKE ?
+                    ORDER BY COALESCE(mag_v, mag_b) NULLS LAST
+                    LIMIT ?
+                """
+                dso_results = self.con.execute(dso_query_attached, [pattern, per_type_limit]).fetchdf()
+            for _, row in dso_results.iterrows():
+                obj_type_str = str(row["object_type"])
+                if obj_type_str == "galaxy":
+                    obj_type = CelestialObjectType.GALAXY
+                elif obj_type_str == "nebula":
+                    obj_type = CelestialObjectType.NEBULA
+                elif obj_type_str == "cluster":
+                    obj_type = CelestialObjectType.CLUSTER
+                else:
+                    continue  # Skip unknown types
+
+                results.append(
+                    CelestialObject(
+                        name=str(row["name"]),
+                        common_name=None,
+                        ra_hours=float(row["ra_hours"]),
+                        dec_degrees=float(row["dec_degrees"]),
+                        magnitude=float(row["magnitude"]) if row.get("magnitude") is not None else None,
+                        object_type=obj_type,
+                        catalog=str(row["catalog"]),
+                        description=None,
+                        parent_planet=None,
+                        constellation=None,
+                    )
                 )
-            )
 
         # Sort by magnitude and limit
         results.sort(key=lambda x: (x.magnitude if x.magnitude is not None else float("inf"), x.name or ""))
@@ -509,13 +853,15 @@ class DuckDBCatalogDatabase:
         # Build WHERE clause
         where_clauses = []
         if catalog:
-            where_clauses.append(f"catalog = '{catalog.replace("'", "''")}'")
+            escaped_catalog = catalog.replace("'", "''")
+            where_clauses.append(f"catalog = '{escaped_catalog}'")
         if max_magnitude is not None:
             where_clauses.append(f"(magnitude <= {max_magnitude} OR magnitude IS NULL)")
         if min_magnitude is not None:
             where_clauses.append(f"magnitude >= {min_magnitude}")
         if constellation:
-            where_clauses.append(f"constellation ILIKE '%{constellation.replace("'", "''")}%'")
+            escaped_constellation = constellation.replace("'", "''")
+            where_clauses.append(f"constellation ILIKE '%{escaped_constellation}%'")
 
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
@@ -528,36 +874,59 @@ class DuckDBCatalogDatabase:
         ]:
             queries = []
 
-            if object_type is None or object_type == CelestialObjectType.PLANET:
-                if is_dynamic is None or is_dynamic:
-                    queries.append(f"""
-                        SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                               magnitude, catalog, description, NULL as parent_planet, constellation
-                        FROM planets
-                        WHERE {where_sql}
-                    """)
+            if object_type is None or (object_type == CelestialObjectType.PLANET and is_dynamic is None) or is_dynamic:
+                # Query planets from DuckDB table (seeded from starplot)
+                planet_where = []
+                if catalog and catalog != "starplot":
+                    planet_where.append("1=0")  # No results if catalog doesn't match
+                # Planets don't have fixed magnitude, so skip magnitude filters
+                # Note: constellation filter for planets would require position calculation, so we skip it
+                planet_where_sql = " AND ".join(planet_where) if planet_where else "1=1"
 
-            if object_type is None or object_type == CelestialObjectType.MOON:
-                if is_dynamic is None or is_dynamic:
-                    queries.append(f"""
-                        SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
-                               magnitude, catalog, description, parent_planet, constellation
-                        FROM moons
-                        WHERE {where_sql}
-                    """)
+                queries.append(f"""
+                    SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
+                           magnitude, catalog, description, NULL as parent_planet, constellation
+                    FROM planets
+                    WHERE {planet_where_sql}
+                """)
+
+            if object_type is None or (object_type == CelestialObjectType.MOON and is_dynamic is None) or is_dynamic:
+                queries.append(f"""
+                    SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
+                            magnitude, catalog, description, parent_planet, constellation
+                    FROM moons
+                    WHERE {where_sql}
+                """)
 
             if object_type is None or object_type == CelestialObjectType.ASTERISM:
+                # Build WHERE clause for asterisms (they don't have magnitude, catalog, or constellation columns)
+                asterism_where = []
+                if constellation:
+                    # Use parent_constellation instead of constellation
+                    escaped_constellation = constellation.replace("'", "''")
+                    asterism_where.append(f"parent_constellation ILIKE '%{escaped_constellation}%'")
+                # Skip magnitude and catalog filters for asterisms
+                asterism_where_sql = " AND ".join(asterism_where) if asterism_where else "1=1"
                 queries.append(f"""
-                    SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                           NULL as magnitude, catalog, description, NULL as parent_planet, constellation
+                    SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                           NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
                     FROM asterisms
-                    WHERE {where_sql.replace('magnitude', '1')}  -- Remove magnitude filter for asterisms
+                    WHERE {asterism_where_sql}
                 """)
 
             if object_type is None or object_type == CelestialObjectType.CONSTELLATION:
-                # Constellations are queried from starplot model, not database
-                # This will be handled separately after the database queries
-                pass
+                # Query constellations from DuckDB table (seeded from starplot)
+                const_where = []
+                if catalog and catalog != "starplot":
+                    const_where.append("1=0")  # No results if catalog doesn't match
+                const_where_sql = " AND ".join(const_where) if const_where else "1=1"
+
+                queries.append(f"""
+                    SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
+                           NULL as magnitude, 'starplot' as catalog, NULL as description, NULL as parent_planet, NULL as constellation
+                    FROM constellations
+                    WHERE {const_where_sql}
+                """)
 
             if queries:
                 custom_query = " UNION ALL ".join(queries) + f" ORDER BY magnitude NULLS LAST, name LIMIT {limit}"
@@ -569,37 +938,6 @@ class DuckDBCatalogDatabase:
                     except Exception as e:
                         logger.debug(f"Error converting custom result: {e}")
 
-        # Query constellations from starplot if requested
-        if object_type is None or object_type == CelestialObjectType.CONSTELLATION:
-            from starplot.models import Constellation
-
-            all_constellations = Constellation.all()
-            matching_constellations = all_constellations[:limit] if limit else all_constellations
-
-            for const in matching_constellations:
-                # Get RA/Dec from constellation
-                ra_hours = None
-                dec_degrees = None
-                if hasattr(const, 'ra') and const.ra is not None:
-                    ra_hours = const.ra / 15.0 if const.ra > 24 else const.ra
-                if hasattr(const, 'dec') and const.dec is not None:
-                    dec_degrees = const.dec
-
-                results.append(
-                    CelestialObject(
-                        name=const.name,
-                        common_name=None,
-                        ra_hours=ra_hours if ra_hours is not None else 0.0,
-                        dec_degrees=dec_degrees if dec_degrees is not None else 0.0,
-                        magnitude=None,
-                        object_type=CelestialObjectType.CONSTELLATION,
-                        catalog="starplot",
-                        description=None,
-                        parent_planet=None,
-                        constellation=None,
-                    )
-                )
-
         # Query stars from parquet if requested
         if object_type is None or object_type == CelestialObjectType.STAR:
             if not self._star_parquet_path or not self._star_parquet_path.exists():
@@ -607,31 +945,66 @@ class DuckDBCatalogDatabase:
                     f"Star catalog parquet file not found at {self._star_parquet_path}. "
                     "Starplot data is required. Please ensure starplot is properly installed and configured."
                 )
-            try:
-                star_where = []
-                if max_magnitude is not None:
-                    star_where.append(f"(magnitude <= {max_magnitude} OR magnitude IS NULL)")
-                if min_magnitude is not None:
-                    star_where.append(f"magnitude >= {min_magnitude}")
-                if constellation:
-                    star_where.append(f"constellation ILIKE '%{constellation.replace("'", "''")}%'")
+            star_where = []
+            if max_magnitude is not None:
+                star_where.append(f"(s.magnitude <= {max_magnitude} OR s.magnitude IS NULL)")
+            if min_magnitude is not None:
+                star_where.append(f"s.magnitude >= {min_magnitude}")
+            if constellation:
+                # Escape single quotes for SQL
+                escaped_constellation = constellation.replace("'", "''")
+                # Try to get constellation abbreviation from the constellations table
+                # Starplot parquet files use 3-letter abbreviations (e.g., "And" for "Andromeda")
+                # So we need to match both the full name and abbreviation
+                try:
+                    abbrev_result = self.con.execute(
+                        "SELECT abbreviation FROM constellations WHERE name = ? OR common_name = ? LIMIT 1",
+                        [constellation, constellation]
+                    ).fetchone()
+                    if abbrev_result:
+                        abbrev = abbrev_result[0]
+                        escaped_abbrev = abbrev.replace("'", "''")
+                        # Match either the abbreviation or the full name
+                        star_where.append(f"(s.constellation ILIKE '%{escaped_abbrev}%' OR s.constellation ILIKE '%{escaped_constellation}%')")
+                    else:
+                        # Fallback: just try to match the name (might work if parquet has full names)
+                        star_where.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
+                except Exception:
+                    # If lookup fails, just use the name
+                    star_where.append(f"s.constellation ILIKE '%{escaped_constellation}%'")
 
             star_where_sql = " AND ".join(star_where) if star_where else "1=1"
 
+            # Attach starplot database for star_designations if not already attached
+            self._ensure_starplot_db_attached()
+
             star_query = f"""
-                SELECT 
-                    COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
-                    NULL as common_name,
-                    ra_degrees / 15.0 as ra_hours,
+                SELECT
+                    star_name as name,
+                    common_name,
+                    ra_hours,
                     dec_degrees,
                     magnitude,
-                    'big_sky' as catalog,
-                    NULL as description,
-                    NULL as parent_planet,
+                    catalog,
+                    description,
+                    parent_planet,
                     constellation
-                FROM read_parquet('{self._star_parquet_path}')
-                WHERE {star_where_sql}
-                ORDER BY magnitude NULLS LAST, name
+                FROM (
+                    SELECT
+                        COALESCE(NULLIF(sd.name, ''), NULLIF(sd.bayer, ''), CAST(s.hip AS VARCHAR), s.tyc_id) as star_name,
+                        NULLIF(sd.name, '') as common_name,
+                        s.ra_degrees / 15.0 as ra_hours,
+                        s.dec_degrees,
+                        s.magnitude,
+                        'big_sky' as catalog,
+                        NULL as description,
+                        NULL as parent_planet,
+                        s.constellation
+                    FROM read_parquet('{self._star_parquet_path}') s
+                    LEFT JOIN starplot_db.star_designations sd ON s.hip = sd.hip
+                    WHERE {star_where_sql}
+                )
+                ORDER BY magnitude NULLS LAST, star_name
                 LIMIT {limit}
             """
             star_results = self.con.execute(star_query).fetchdf()
@@ -661,9 +1034,9 @@ class DuckDBCatalogDatabase:
                 )
             dso_where = []
             if max_magnitude is not None:
-                dso_where.append(f"(magnitude <= {max_magnitude} OR magnitude IS NULL)")
+                dso_where.append(f"(COALESCE(mag_v, mag_b) <= {max_magnitude} OR (mag_v IS NULL AND mag_b IS NULL))")
             if min_magnitude is not None:
-                dso_where.append(f"magnitude >= {min_magnitude}")
+                dso_where.append(f"COALESCE(mag_v, mag_b) >= {min_magnitude}")
 
             # Filter by DSO type
             if object_type == CelestialObjectType.GALAXY:
@@ -676,15 +1049,15 @@ class DuckDBCatalogDatabase:
             dso_where_sql = " AND ".join(dso_where) if dso_where else "1=1"
 
             # Attach DSO database
-            self.con.execute(f"ATTACH '{self._dso_db_path}' AS starplot_dso (READ_ONLY)")
+            self._ensure_starplot_db_attached()
             dso_query = f"""
-                SELECT 
+                SELECT
                     name,
                     NULL as common_name,
-                    ra / 15.0 as ra_hours,
-                    dec as dec_degrees,
-                    magnitude,
-                    CASE 
+                    ra_degrees / 15.0 as ra_hours,
+                    dec_degrees,
+                    COALESCE(mag_v, mag_b) as magnitude,
+                    CASE
                         WHEN type = 'G' THEN 'galaxy'
                         WHEN type IN ('Neb', 'PN', 'EmN', 'RfN', 'DrkN') THEN 'nebula'
                         WHEN type IN ('OCl', 'GCl') THEN 'cluster'
@@ -693,10 +1066,10 @@ class DuckDBCatalogDatabase:
                     'openngc' as catalog,
                     NULL as description,
                     NULL as parent_planet,
-                    NULL as constellation
-                FROM starplot_dso.dsos
+                    constellation
+                FROM {self._starplot_db_alias}.deep_sky_objects
                 WHERE {dso_where_sql}
-                ORDER BY magnitude NULLS LAST, name
+                ORDER BY COALESCE(mag_v, mag_b) NULLS LAST, name
                 LIMIT {limit}
             """
             dso_results = self.con.execute(dso_query).fetchdf()
@@ -740,29 +1113,68 @@ class DuckDBCatalogDatabase:
         Returns:
             CelestialObject if found, None otherwise
         """
-        # Search custom data first (fastest) using parameterized query
-        query = """
-            SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                   magnitude, catalog, description, NULL as parent_planet, constellation
-            FROM planets
-            WHERE name = ?
-            UNION ALL
+        # Search planets from DuckDB table first
+        try:
+            planet_query = """
+                SELECT name, common_name, ra_hours, dec_degrees, magnitude, catalog, description, parent_planet, constellation
+                FROM planets
+                WHERE name = ?
+                LIMIT 1
+            """
+            planet_result = self.con.execute(planet_query, [name]).fetchdf()
+            if not planet_result.empty:
+                row = planet_result.iloc[0]
+                return self._row_to_celestial_object(row.to_dict(), CelestialObjectType.PLANET)
+        except Exception as e:
+            logger.debug(f"Error querying planet from DuckDB: {e}")
+
+        # Search Moon from starplot
+        try:
+            from starplot.models import Moon
+
+            if name.lower() in ("moon", "luna"):
+                moon = Moon.get()
+                if moon:
+                    return CelestialObject(
+                        name="Moon",
+                        common_name="Luna",
+                        ra_hours=moon.ra / 15.0 if hasattr(moon, "ra") and moon.ra else 0.0,
+                        dec_degrees=moon.dec if hasattr(moon, "dec") and moon.dec else 0.0,
+                        magnitude=None,
+                        object_type=CelestialObjectType.MOON,
+                        catalog="starplot",
+                        description=None,
+                        parent_planet="Earth",
+                        constellation=None,
+                    )
+        except Exception:
+            pass
+
+        # Search custom moons (planet moons - starplot doesn't have these yet, coming in 0.19+)
+        moon_query = """
             SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
                    magnitude, catalog, description, parent_planet, constellation
             FROM moons
             WHERE name = ?
-            UNION ALL
-            SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                   NULL as magnitude, catalog, description, NULL as parent_planet, constellation
+            LIMIT 1
+        """
+        moon_result = self.con.execute(moon_query, [name]).fetchdf()
+        if not moon_result.empty:
+            row = moon_result.iloc[0]
+            return self._row_to_celestial_object(row.to_dict(), CelestialObjectType.MOON)
+
+        # Search asterisms (custom data)
+        asterism_query = """
+            SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                   NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
             FROM asterisms
             WHERE name = ?
             LIMIT 1
         """
-        result = self.con.execute(query, [name] * 3).fetchdf()
-        if not result.empty:
-            row = result.iloc[0]
-            obj_type = CelestialObjectType(row["object_type"])
-            return self._row_to_celestial_object(row.to_dict(), obj_type)
+        asterism_result = self.con.execute(asterism_query, [name]).fetchdf()
+        if not asterism_result.empty:
+            row = asterism_result.iloc[0]
+            return self._row_to_celestial_object(row.to_dict(), CelestialObjectType.ASTERISM)
 
         # Search stars using parameterized query
         if not self._star_parquet_path or not self._star_parquet_path.exists():
@@ -770,20 +1182,26 @@ class DuckDBCatalogDatabase:
                 f"Star catalog parquet file not found at {self._star_parquet_path}. "
                 "Starplot data is required. Please ensure starplot is properly installed and configured."
             )
-        star_query = """
-            SELECT 
-                COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
-                NULL as common_name,
-                ra_degrees / 15.0 as ra_hours,
-                dec_degrees,
-                magnitude,
+        # Attach starplot database for star_designations if not already attached
+        self._ensure_starplot_db_attached()
+
+        star_query = f"""
+            SELECT
+                COALESCE(NULLIF(sd.name, ''), NULLIF(sd.bayer, ''), CAST(s.hip AS VARCHAR), s.tyc_id) as name,
+                NULLIF(sd.name, '') as common_name,
+                s.ra_degrees / 15.0 as ra_hours,
+                s.dec_degrees,
+                s.magnitude,
                 'big_sky' as catalog
-            FROM read_parquet(?)
-            WHERE name = ?
-               OR CAST(hip AS VARCHAR) = ?
+            FROM read_parquet(?) s
+            LEFT JOIN {self._starplot_db_alias}.star_designations sd ON s.hip = sd.hip
+            WHERE NULLIF(sd.name, '') = ?
+               OR NULLIF(sd.bayer, '') = ?
+               OR CAST(s.hip AS VARCHAR) = ?
+               OR s.tyc_id = ?
             LIMIT 1
         """
-        star_result = self.con.execute(star_query, [str(self._star_parquet_path), name, name]).fetchdf()
+        star_result = self.con.execute(star_query, [str(self._star_parquet_path), name, name, name, name]).fetchdf()
         if not star_result.empty:
             row = star_result.iloc[0]
             return CelestialObject(
@@ -799,23 +1217,43 @@ class DuckDBCatalogDatabase:
                 constellation=None,
             )
 
-        # Search constellations from starplot
-        from starplot.models import Constellation
+        # Search comets from starplot
         try:
-            constellation = Constellation.get(name=name)
-            if constellation:
-                ra_hours = None
-                dec_degrees = None
-                if hasattr(constellation, 'ra') and constellation.ra is not None:
-                    ra_hours = constellation.ra / 15.0 if constellation.ra > 24 else constellation.ra
-                if hasattr(constellation, 'dec') and constellation.dec is not None:
-                    dec_degrees = constellation.dec
+            from starplot.models import Comet as StarplotComet
 
+            comet = StarplotComet.get(name=name)
+            if comet:
                 return CelestialObject(
-                    name=constellation.name,
+                    name=comet.name if hasattr(comet, "name") and comet.name else name,
                     common_name=None,
-                    ra_hours=ra_hours if ra_hours is not None else 0.0,
-                    dec_degrees=dec_degrees if dec_degrees is not None else 0.0,
+                    ra_hours=comet.ra / 15.0 if hasattr(comet, "ra") and comet.ra else 0.0,
+                    dec_degrees=comet.dec if hasattr(comet, "dec") and comet.dec else 0.0,
+                    magnitude=None,  # Comets don't have fixed magnitude
+                    object_type=CelestialObjectType.STAR,  # Use STAR as closest match, or we could add COMET type
+                    catalog="starplot",
+                    description="Comet",
+                    parent_planet=None,
+                    constellation=None,
+                )
+        except Exception:
+            pass
+
+        # Search constellations from DuckDB table
+        try:
+            const_query = """
+                SELECT name, common_name, ra_hours, dec_degrees
+                FROM constellations
+                WHERE name = ? OR abbreviation = ? OR common_name = ?
+                LIMIT 1
+            """
+            const_result = self.con.execute(const_query, [name, name, name]).fetchdf()
+            if not const_result.empty:
+                row = const_result.iloc[0]
+                return CelestialObject(
+                    name=str(row["name"]),
+                    common_name=str(row["common_name"]) if row.get("common_name") else None,
+                    ra_hours=float(row["ra_hours"]),
+                    dec_degrees=float(row["dec_degrees"]),
                     magnitude=None,
                     object_type=CelestialObjectType.CONSTELLATION,
                     catalog="starplot",
@@ -823,8 +1261,8 @@ class DuckDBCatalogDatabase:
                     parent_planet=None,
                     constellation=None,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Error querying constellation from DuckDB: {e}")
 
         # Search DSOs using parameterized query
         if not self._dso_db_path or not self._dso_db_path.exists():
@@ -833,21 +1271,25 @@ class DuckDBCatalogDatabase:
                 "Starplot data is required. Please ensure starplot is properly installed and configured."
             )
         # Attach DSO database
-        self.con.execute(f"ATTACH '{self._dso_db_path}' AS starplot_dso (READ_ONLY)")
-        dso_query = """
-            SELECT 
+        self._ensure_starplot_db_attached()
+        dso_query = f"""
+            SELECT
                 name,
-                ra / 15.0 as ra_hours,
-                dec as dec_degrees,
-                magnitude,
-                CASE 
+                ra_degrees / 15.0 as ra_hours,
+                dec_degrees,
+                COALESCE(mag_v, mag_b) as magnitude,
+                CASE
                     WHEN type = 'G' THEN 'galaxy'
                     WHEN type IN ('Neb', 'PN', 'EmN', 'RfN', 'DrkN') THEN 'nebula'
                     WHEN type IN ('OCl', 'GCl') THEN 'cluster'
                     ELSE 'dso'
                 END as object_type,
-                'openngc' as catalog
-            FROM starplot_dso.dsos
+                'openngc' as catalog,
+                NULL as common_name,
+                NULL as description,
+                NULL as parent_planet,
+                constellation
+            FROM {self._starplot_db_alias}.deep_sky_objects
             WHERE name = ?
             LIMIT 1
         """
@@ -911,62 +1353,120 @@ class DuckDBCatalogDatabase:
 
         all_results: list[tuple[CelestialObject, float]] = []
 
-        # Search custom data
+        # Search custom data (moons, asterisms) - planets and constellations come from starplot
         if ra_min <= ra_max:
             coord_query = """
-                SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                       magnitude, catalog, description, NULL as parent_planet, constellation
-                FROM planets
-                WHERE ra_hours BETWEEN ? AND ? AND dec_degrees BETWEEN ? AND ?
-                UNION ALL
                 SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
                        magnitude, catalog, description, parent_planet, constellation
                 FROM moons
                 WHERE ra_hours BETWEEN ? AND ? AND dec_degrees BETWEEN ? AND ?
                 UNION ALL
-                SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                       NULL as magnitude, catalog, description, NULL as parent_planet, constellation
+                SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                       NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
                 FROM asterisms
-                WHERE ra_hours BETWEEN ? AND ? AND dec_degrees BETWEEN ? AND ?
-                UNION ALL
-                SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
-                       NULL as magnitude, catalog, description, NULL as parent_planet, NULL as constellation
-                FROM constellations
                 WHERE ra_hours BETWEEN ? AND ? AND dec_degrees BETWEEN ? AND ?
                 LIMIT ?
             """
             coord_results = self.con.execute(
                 coord_query,
-                [ra_min, ra_max, dec_min, dec_max] * 4 + [limit * 5],  # 4 tables, get more candidates
+                [ra_min, ra_max, dec_min, dec_max] * 2 + [limit * 5],  # 2 tables, get more candidates
             ).fetchdf()
         else:
             # Handle RA wrap-around
             coord_query = """
-                SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                       magnitude, catalog, description, NULL as parent_planet, constellation
-                FROM planets
-                WHERE (ra_hours >= ? OR ra_hours <= ?) AND dec_degrees BETWEEN ? AND ?
-                UNION ALL
                 SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
                        magnitude, catalog, description, parent_planet, constellation
                 FROM moons
                 WHERE (ra_hours >= ? OR ra_hours <= ?) AND dec_degrees BETWEEN ? AND ?
                 UNION ALL
-                SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                       NULL as magnitude, catalog, description, NULL as parent_planet, constellation
+                SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                       NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
                 FROM asterisms
-                WHERE (ra_hours >= ? OR ra_hours <= ?) AND dec_degrees BETWEEN ? AND ?
-                UNION ALL
-                SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
-                       NULL as magnitude, catalog, description, NULL as parent_planet, NULL as constellation
-                FROM constellations
                 WHERE (ra_hours >= ? OR ra_hours <= ?) AND dec_degrees BETWEEN ? AND ?
                 LIMIT ?
             """
             coord_results = self.con.execute(
                 coord_query,
-                [ra_min, ra_max, dec_min, dec_max] * 4 + [limit * 5],
+                [ra_min, ra_max, dec_min, dec_max] * 2 + [limit * 5],
             ).fetchdf()
+
+        # Search planets from DuckDB table (seeded from starplot)
+        try:
+            planet_ra_where = (
+                f"(ra_hours >= {ra_min} AND ra_hours <= {ra_max})"
+                if ra_min <= ra_max
+                else f"(ra_hours >= {ra_min} OR ra_hours <= {ra_max})"
+            )
+            planet_coord_query = f"""
+                SELECT name, common_name, ra_hours, dec_degrees, magnitude, catalog, description, parent_planet, constellation
+                FROM planets
+                WHERE {planet_ra_where} AND dec_degrees >= {dec_min} AND dec_degrees <= {dec_max}
+            """
+            planet_coord_results = self.con.execute(planet_coord_query).fetchdf()
+            for _, row in planet_coord_results.iterrows():
+                planet_ra = float(row["ra_hours"])
+                planet_dec = float(row["dec_degrees"])
+                separation_deg = angular_separation(ra_hours, dec_degrees, planet_ra, planet_dec)
+                separation_arcmin = separation_deg * 60.0
+                if separation_arcmin <= radius_arcmin:
+                    all_results.append(
+                        (
+                            CelestialObject(
+                                name=str(row["name"]),
+                                common_name=str(row["common_name"]) if row.get("common_name") else None,
+                                ra_hours=planet_ra,
+                                dec_degrees=planet_dec,
+                                magnitude=float(row["magnitude"]) if row.get("magnitude") is not None else None,
+                                object_type=CelestialObjectType.PLANET,
+                                catalog=str(row["catalog"]),
+                                description=str(row["description"]) if row.get("description") else None,
+                                parent_planet=str(row["parent_planet"]) if row.get("parent_planet") else None,
+                                constellation=str(row["constellation"]) if row.get("constellation") else None,
+                            ),
+                            separation_arcmin,
+                        )
+                    )
+        except Exception as e:
+            logger.debug(f"Error querying planets from DuckDB in coordinate search: {e}")
+
+        # Search constellations from DuckDB table (seeded from starplot)
+        try:
+            const_ra_where = (
+                f"(ra_hours >= {ra_min} AND ra_hours <= {ra_max})"
+                if ra_min <= ra_max
+                else f"(ra_hours >= {ra_min} OR ra_hours <= {ra_max})"
+            )
+            const_coord_query = f"""
+                SELECT name, common_name, ra_hours, dec_degrees
+                FROM constellations
+                WHERE {const_ra_where} AND dec_degrees >= {dec_min} AND dec_degrees <= {dec_max}
+            """
+            const_coord_results = self.con.execute(const_coord_query).fetchdf()
+            for _, row in const_coord_results.iterrows():
+                const_ra = float(row["ra_hours"])
+                const_dec = float(row["dec_degrees"])
+                separation_deg = angular_separation(ra_hours, dec_degrees, const_ra, const_dec)
+                separation_arcmin = separation_deg * 60.0
+                if separation_arcmin <= radius_arcmin:
+                    all_results.append(
+                        (
+                            CelestialObject(
+                                name=str(row["name"]),
+                                common_name=str(row["common_name"]) if row.get("common_name") else None,
+                                ra_hours=const_ra,
+                                dec_degrees=const_dec,
+                                magnitude=None,
+                                object_type=CelestialObjectType.CONSTELLATION,
+                                catalog="starplot",
+                                description=None,
+                                parent_planet=None,
+                                constellation=None,
+                            ),
+                            separation_arcmin,
+                        )
+                    )
+        except Exception as e:
+            logger.debug(f"Error querying constellations from DuckDB in coordinate search: {e}")
 
         # Calculate accurate angular separation
         for _, row in coord_results.iterrows():
@@ -987,13 +1487,13 @@ class DuckDBCatalogDatabase:
                 f"Star catalog parquet file not found at {self._star_parquet_path}. "
                 "Starplot data is required. Please ensure starplot is properly installed and configured."
             )
-        ra_deg = ra_hours * 15.0
+        ra_hours * 15.0
         ra_min_deg = ra_min * 15.0
         ra_max_deg = ra_max * 15.0
 
         if ra_min <= ra_max:
             star_coord_query = """
-                SELECT 
+                SELECT
                     COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
                     NULL as common_name,
                     ra_degrees / 15.0 as ra_hours,
@@ -1010,7 +1510,7 @@ class DuckDBCatalogDatabase:
             ).fetchdf()
         else:
             star_coord_query = """
-                SELECT 
+                SELECT
                     COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
                     NULL as common_name,
                     ra_degrees / 15.0 as ra_hours,
@@ -1062,31 +1562,64 @@ class DuckDBCatalogDatabase:
         """
         results: list[CelestialObject] = []
 
-        # Query custom data
-        catalog_query = """
-            SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
-                   magnitude, catalog, description, NULL as parent_planet, constellation
-            FROM planets
-            WHERE catalog = ?
-            UNION ALL
-            SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
-                   magnitude, catalog, description, parent_planet, constellation
-            FROM moons
-            WHERE catalog = ?
-            UNION ALL
-            SELECT 'asterism' as object_type, name, common_name, ra_hours, dec_degrees,
-                   NULL as magnitude, catalog, description, NULL as parent_planet, constellation
-            FROM asterisms
-            WHERE catalog = ?
-            UNION ALL
-            SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
-                   NULL as magnitude, catalog, description, NULL as parent_planet, NULL as constellation
-            FROM constellations
-            WHERE catalog = ?
-            ORDER BY name
-            LIMIT ?
-        """
-        catalog_results = self.con.execute(catalog_query, [catalog] * 4 + [limit]).fetchdf()
+        # Handle starplot catalogs - query from DuckDB tables
+        if catalog.lower() in ("starplot", "planets"):
+            try:
+                planet_catalog_query = """
+                    SELECT 'planet' as object_type, name, common_name, ra_hours, dec_degrees,
+                           magnitude, catalog, description, NULL as parent_planet, constellation
+                    FROM planets
+                    ORDER BY name
+                    LIMIT ?
+                """
+                planet_catalog_results = self.con.execute(planet_catalog_query, [limit]).fetchdf()
+                for _, row in planet_catalog_results.iterrows():
+                    results.append(self._row_to_celestial_object(row.to_dict(), CelestialObjectType.PLANET))
+            except Exception as e:
+                logger.debug(f"Error querying planets from DuckDB: {e}")
+
+        if catalog.lower() in ("starplot", "constellations"):
+            try:
+                const_catalog_query = """
+                    SELECT 'constellation' as object_type, name, common_name, ra_hours, dec_degrees,
+                           NULL as magnitude, 'starplot' as catalog, NULL as description, NULL as parent_planet, NULL as constellation
+                    FROM constellations
+                    ORDER BY name
+                    LIMIT ?
+                """
+                const_catalog_results = self.con.execute(const_catalog_query, [limit]).fetchdf()
+                for _, row in const_catalog_results.iterrows():
+                    results.append(self._row_to_celestial_object(row.to_dict(), CelestialObjectType.CONSTELLATION))
+            except Exception as e:
+                logger.debug(f"Error querying constellations from DuckDB: {e}")
+
+        # Query custom data (moons, asterisms)
+        # Note: asterisms don't have a catalog column, so only include them if catalog is 'custom' or None
+        if catalog == "custom" or catalog is None:
+            catalog_query = """
+                SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
+                       magnitude, catalog, description, parent_planet, constellation
+                FROM moons
+                WHERE catalog = ?
+                UNION ALL
+                SELECT 'asterism' as object_type, name, NULL as common_name, ra_hours, dec_degrees,
+                       NULL as magnitude, 'custom' as catalog, description, NULL as parent_planet, parent_constellation as constellation
+                FROM asterisms
+                ORDER BY name
+                LIMIT ?
+            """
+            catalog_results = self.con.execute(catalog_query, [catalog, limit]).fetchdf()
+        else:
+            # Only query moons if catalog is specified and not 'custom'
+            catalog_query = """
+                SELECT 'moon' as object_type, name, common_name, ra_hours, dec_degrees,
+                       magnitude, catalog, description, parent_planet, constellation
+                FROM moons
+                WHERE catalog = ?
+                ORDER BY name
+                LIMIT ?
+            """
+            catalog_results = self.con.execute(catalog_query, [catalog, limit]).fetchdf()
 
         for _, row in catalog_results.iterrows():
             try:
@@ -1099,7 +1632,7 @@ class DuckDBCatalogDatabase:
         if catalog.lower() in ("big_sky", "bigsky", "stars") and self._star_parquet_path:
             try:
                 star_catalog_query = """
-                    SELECT 
+                    SELECT
                         COALESCE(name, CAST(hip AS VARCHAR), CAST(tyc_id AS VARCHAR)) as name,
                         NULL as common_name,
                         ra_degrees / 15.0 as ra_hours,
@@ -1137,23 +1670,26 @@ class DuckDBCatalogDatabase:
         # Query DSOs if catalog matches
         if catalog.lower() in ("openngc", "ngc", "messier", "m") and self._dso_db_path:
             try:
-                self.con.execute(f"ATTACH '{self._dso_db_path}' AS starplot_dso (READ_ONLY)")
-                dso_catalog_query = """
-                    SELECT 
+                self._ensure_starplot_db_attached()
+                dso_catalog_query = f"""
+                    SELECT
                         name,
                         NULL as common_name,
-                        ra / 15.0 as ra_hours,
-                        dec as dec_degrees,
-                        magnitude,
-                        CASE 
+                        ra_degrees / 15.0 as ra_hours,
+                        dec_degrees,
+                        COALESCE(mag_v, mag_b) as magnitude,
+                        CASE
                             WHEN type = 'G' THEN 'galaxy'
                             WHEN type IN ('Neb', 'PN', 'EmN', 'RfN', 'DrkN') THEN 'nebula'
                             WHEN type IN ('OCl', 'GCl') THEN 'cluster'
                             ELSE 'dso'
                         END as object_type,
-                        'openngc' as catalog
-                    FROM starplot_dso.dsos
-                    ORDER BY magnitude NULLS LAST, name
+                        'openngc' as catalog,
+                        NULL as description,
+                        NULL as parent_planet,
+                        constellation
+                    FROM {self._starplot_db_alias}.deep_sky_objects
+                    ORDER BY COALESCE(mag_v, mag_b) NULLS LAST, name
                     LIMIT ?
                 """
                 dso_catalog_results = self.con.execute(dso_catalog_query, [limit]).fetchdf()
@@ -1230,4 +1766,3 @@ class DuckDBCatalogDatabase:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit."""
         self.close()
-

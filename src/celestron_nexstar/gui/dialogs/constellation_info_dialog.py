@@ -204,136 +204,201 @@ class ConstellationInfoDialog(QDialog):
 
             async def _load_data() -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
                 db = get_database()
-                async with db._AsyncSession() as session:
-                    # Get sky brightness from light pollution
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness (matching observation_planner.py)
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,  # Suburban/urban transition
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
-                    # Get constellation model with boundaries
-                    from sqlalchemy import select
+                # Get sky brightness from light pollution
+                light_pollution = await get_light_pollution_data(location.latitude, location.longitude)
+                # Map Bortle class to SkyBrightness (matching observation_planner.py)
+                bortle_to_sky_brightness = {
+                    1: SkyBrightness.EXCELLENT,
+                    2: SkyBrightness.EXCELLENT,
+                    3: SkyBrightness.GOOD,
+                    4: SkyBrightness.FAIR,
+                    5: SkyBrightness.FAIR,
+                    6: SkyBrightness.POOR,
+                    7: SkyBrightness.URBAN,  # Suburban/urban transition
+                    8: SkyBrightness.URBAN,
+                    9: SkyBrightness.URBAN,
+                }
+                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
 
-                    from celestron_nexstar.api.database.models import ConstellationModel
+                # Get constellation from starplot
+                from starplot.models import Constellation as StarplotConstellation
 
-                    stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
-                    result = await session.execute(stmt)
-                    constellation_model = result.scalar_one_or_none()
+                starplot_constellation = None
+                for c in StarplotConstellation.all():
+                    if c.name and c.name.lower() == self.constellation_name.lower():
+                        starplot_constellation = c
+                        break
 
-                    if not constellation_model:
-                        return {}, [], None
+                if not starplot_constellation:
+                    return {}, [], None
 
-                    # Get constellation info (for display)
-                    constellations = await get_prominent_constellations(session)
-                    constellation = None
-                    for const in constellations:
-                        if const.name == self.constellation_name:
-                            constellation = const
-                            break
+                # Get constellation info (for display)
+                constellations = get_prominent_constellations()
+                constellation = None
+                for const in constellations:
+                    if const.name == self.constellation_name:
+                        constellation = const
+                        break
 
-                    if not constellation:
-                        return {}, [], None
+                if not constellation:
+                    return {}, [], None
 
-                    # Get constellation boundaries for map generation
+                # Get constellation boundaries for map generation from boundary polygon
+                boundaries = {}
+                if starplot_constellation.boundary:
+                    # Calculate RA/Dec bounds from boundary polygon
+                    coords = list(starplot_constellation.boundary.exterior.coords)
+                    ra_values = [coord[0] / 15.0 for coord in coords]  # Convert degrees to hours
+                    dec_values = [coord[1] for coord in coords]
+
+                    # Normalize RA values to 0-24 range
+                    ra_values_normalized = []
+                    for ra in ra_values:
+                        while ra < 0:
+                            ra += 24.0
+                        while ra >= 24:
+                            ra -= 24.0
+                        ra_values_normalized.append(ra)
+
+                    # Check if constellation wraps around 0/24h
+                    # If min and max are far apart (> 12 hours), it likely wraps
+                    ra_min_norm = min(ra_values_normalized)
+                    ra_max_norm = max(ra_values_normalized)
+                    span_normalized = ra_max_norm - ra_min_norm
+
+                    # If span is > 12 hours, the constellation likely wraps around
+                    # Find the largest gap in the sorted RA values - this is where it wraps
+                    if span_normalized > 12.0:
+                        # Sort all values to find the largest gap
+                        sorted_ra = sorted(ra_values_normalized)
+                        gaps = []
+                        # Check gaps between consecutive points
+                        for i in range(len(sorted_ra) - 1):
+                            gap = sorted_ra[i + 1] - sorted_ra[i]
+                            gaps.append((gap, sorted_ra[i], sorted_ra[i + 1]))
+                        # Also check wrap-around gap (from last point to first point + 24)
+                        wrap_gap = (sorted_ra[0] + 24.0) - sorted_ra[-1]
+                        gaps.append((wrap_gap, sorted_ra[-1], sorted_ra[0] + 24.0))
+
+                        # Find the largest gap - this is where the constellation wraps
+                        largest_gap = max(gaps, key=lambda x: x[0])
+                        gap_start, gap_end = largest_gap[1], largest_gap[2]
+
+                        # Use the range that excludes the gap (the tight range)
+                        if gap_end > 24.0:
+                            # Gap wraps around - use the range from gap_end-24 to gap_start
+                            ra_min_hours = gap_end - 24.0
+                            ra_max_hours = gap_start
+                        else:
+                            # Gap is in the middle - use the range from gap_end to gap_start+24
+                            ra_min_hours = gap_end
+                            ra_max_hours = gap_start + 24.0
+                            # Normalize to 0-24 range
+                            if ra_max_hours > 24.0:
+                                ra_max_hours -= 24.0
+                            if ra_min_hours < 0:
+                                ra_min_hours += 24.0
+                    else:
+                        # Normal case - constellation doesn't wrap significantly
+                        ra_min_hours = ra_min_norm
+                        ra_max_hours = ra_max_norm
+
                     boundaries = {
-                        "ra_min_hours": constellation_model.ra_min_hours,
-                        "ra_max_hours": constellation_model.ra_max_hours,
-                        "dec_min_degrees": constellation_model.dec_min_degrees,
-                        "dec_max_degrees": constellation_model.dec_max_degrees,
+                        "ra_min_hours": ra_min_hours,
+                        "ra_max_hours": ra_max_hours,
+                        "dec_min_degrees": min(dec_values),
+                        "dec_max_degrees": max(dec_values),
+                    }
+                else:
+                    # Fallback: use constellation center with a small range
+                    ra_hours = starplot_constellation.ra / 15.0 if starplot_constellation.ra else 0.0
+                    dec_degrees = starplot_constellation.dec if starplot_constellation.dec else 0.0
+                    boundaries = {
+                        "ra_min_hours": max(0, ra_hours - 2.0),
+                        "ra_max_hours": min(24, ra_hours + 2.0),
+                        "dec_min_degrees": max(-90, dec_degrees - 10.0),
+                        "dec_max_degrees": min(90, dec_degrees + 10.0),
                     }
 
-                    # Get stars in this constellation
-                    stars = await db.filter_objects(
-                        object_type="star", constellation=self.constellation_name, limit=100
+                # Get stars in this constellation
+                stars = await db.filter_objects(object_type="star", constellation=self.constellation_name, limit=100)
+
+                # Calculate visibility for each star directly (much faster than getting all recommended objects)
+                # Note: stars are already CelestialObject instances from filter_objects
+                star_data = []
+                for star in stars:
+                    # Calculate visibility info (sky_brightness is defined in the async function scope)
+                    vis_info = assess_visibility(
+                        star,
+                        config=config,
+                        sky_brightness=sky_brightness,  # type: ignore[name-defined]  # Defined in async function scope
+                        min_altitude_deg=20.0,
+                        observer_lat=location.latitude,
+                        observer_lon=location.longitude,
+                        dt=conditions.timestamp,
                     )
 
-                    # Calculate visibility for each star directly (much faster than getting all recommended objects)
-                    # Note: stars are already CelestialObject instances from filter_objects
-                    star_data = []
-                    for star in stars:
-                        # Calculate visibility info (sky_brightness is defined in the async function scope)
-                        vis_info = assess_visibility(
-                            star,
-                            config=config,
-                            sky_brightness=sky_brightness,  # type: ignore[name-defined]  # Defined in async function scope
-                            min_altitude_deg=20.0,
-                            observer_lat=location.latitude,
-                            observer_lon=location.longitude,
-                            dt=conditions.timestamp,
+                    # Calculate altitude/azimuth
+                    try:
+                        alt, az = ra_dec_to_alt_az(  # noqa: RUF059
+                            star.ra_hours,
+                            star.dec_degrees,
+                            location.latitude,
+                            location.longitude,
+                            conditions.timestamp,
                         )
+                    except Exception:
+                        alt, _az = 0.0, 0.0
 
-                        # Calculate altitude/azimuth
-                        try:
-                            alt, az = ra_dec_to_alt_az(  # noqa: RUF059
-                                star.ra_hours,
-                                star.dec_degrees,
-                                location.latitude,
-                                location.longitude,
-                                conditions.timestamp,
-                            )
-                        except Exception:
-                            alt, _az = 0.0, 0.0
+                    # Calculate visibility probability using planner's method
+                    # (simplified version - just use observability score as probability)
+                    visibility_probability = vis_info.observability_score
 
-                        # Calculate visibility probability using planner's method
-                        # (simplified version - just use observability score as probability)
-                        visibility_probability = vis_info.observability_score
+                    # Apply seeing and weather factors
+                    if visibility_probability > 0:
+                        # Factor in seeing conditions
+                        seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                        # Factor in cloud cover
+                        cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                        cloud_factor = 1.0 - (cloud_cover / 100.0)
+                        visibility_probability *= seeing_factor * cloud_factor
 
-                        # Apply seeing and weather factors
-                        if visibility_probability > 0:
-                            # Factor in seeing conditions
-                            seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                            # Factor in cloud cover
-                            cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                            cloud_factor = 1.0 - (cloud_cover / 100.0)
-                            visibility_probability *= seeing_factor * cloud_factor
-
-                        star_data.append(
-                            {
-                                "obj": star,
-                                "apparent_magnitude": star.magnitude,
-                                "altitude": alt,
-                                "visibility_probability": visibility_probability,
-                                "vis_info": vis_info,
-                            }
-                        )
-
-                    # Sort by visibility probability descending, then by magnitude (brighter first)
-                    def sort_key(x: dict[str, Any]) -> tuple[float, float]:
-                        """Sort key function for star data."""
-                        prob = float(x["visibility_probability"])
-                        mag = x["apparent_magnitude"]
-                        mag_val = float(mag) if mag is not None else 0.0
-                        return (prob, -mag_val)
-
-                    star_data.sort(key=sort_key, reverse=True)
-
-                    return (
+                    star_data.append(
                         {
-                            "name": constellation.name,
-                            "abbreviation": constellation.abbreviation,
-                            "ra_hours": constellation.ra_hours,
-                            "dec_degrees": constellation.dec_degrees,
-                            "area_sq_deg": constellation.area_sq_deg,
-                            "brightest_star": constellation.brightest_star,
-                            "magnitude": constellation.magnitude,
-                            "season": constellation.season,
-                            "hemisphere": constellation.hemisphere,
-                            "description": constellation.description,
-                        },
-                        star_data,
-                        boundaries,
+                            "obj": star,
+                            "apparent_magnitude": star.magnitude,
+                            "altitude": alt,
+                            "visibility_probability": visibility_probability,
+                            "vis_info": vis_info,
+                        }
                     )
+
+                # Sort by visibility probability descending, then by magnitude (brighter first)
+                def sort_key(x: dict[str, Any]) -> tuple[float, float]:
+                    """Sort key function for star data."""
+                    prob = float(x["visibility_probability"])
+                    mag = x["apparent_magnitude"]
+                    mag_val = float(mag) if mag is not None else 0.0
+                    return (prob, -mag_val)
+
+                star_data.sort(key=sort_key, reverse=True)
+
+                return (
+                    {
+                        "name": constellation.name,
+                        "abbreviation": constellation.abbreviation,
+                        "ra_hours": constellation.ra_hours,
+                        "dec_degrees": constellation.dec_degrees,
+                        "area_sq_deg": constellation.area_sq_deg,
+                        "brightest_star": constellation.brightest_star,
+                        "magnitude": constellation.magnitude,
+                        "season": constellation.season,
+                        "hemisphere": constellation.hemisphere,
+                        "description": constellation.description,
+                    },
+                    star_data,
+                    boundaries,
+                )
 
             constellation_data, star_data, boundaries = _run_async_safe(_load_data())
 

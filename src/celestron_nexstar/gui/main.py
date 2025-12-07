@@ -2,6 +2,8 @@
 Main entry point for the GUI application.
 """
 
+# ruff: noqa: I001  # Import order is intentional - configure_starplot_cache must be called before starplot import
+
 import logging
 import sys
 from pathlib import Path
@@ -14,15 +16,15 @@ configure_starplot_cache()
 # Import duckdb BEFORE any api imports to avoid deal import hook issues
 # This must happen before deal.activate() is called (which happens in api/__init__.py)
 # duckdb is required by starplot, and importing it early ensures it's cached before deal's hook intercepts imports
-import duckdb  # type: ignore[import-untyped]  # noqa: F401
+import duckdb  # type: ignore[import-untyped]  # noqa: E402, F401
 
 # Import starplot after duckdb to ensure it can import duckdb successfully
-import starplot  # type: ignore[import-untyped]  # noqa: F401
-from PySide6.QtWidgets import QApplication
+import starplot  # type: ignore[import-untyped]  # noqa: E402, F401
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from celestron_nexstar.api.core.utils import configure_astropy_iers
-from celestron_nexstar.gui.main_window import MainWindow
-from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
+from celestron_nexstar.api.core.utils import configure_astropy_iers  # noqa: E402
+from celestron_nexstar.gui.main_window import MainWindow  # noqa: E402
+from celestron_nexstar.gui.themes import FusionTheme, ThemeMode  # noqa: E402
 
 
 def _setup_logging() -> None:

@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 
 if TYPE_CHECKING:
     from celestron_nexstar.api.location.observer import ObserverLocation
@@ -59,12 +57,12 @@ class VariableStarEvent:
 # To regenerate seed files, run: python scripts/create_seed_files.py
 
 
-async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableStar]:
+def get_known_variable_stars(db_session: None = None) -> list[VariableStar]:  # db_session deprecated
     """
     Get list of known variable stars from database.
 
     Args:
-        db_session: Database session
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of VariableStar objects
@@ -72,21 +70,29 @@ async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableSta
     Raises:
         RuntimeError: If no variable stars found in database (seed data required)
     """
-    from sqlalchemy import func, select
-
     from celestron_nexstar.api.core.exceptions import DatabaseError
-    from celestron_nexstar.api.database.models import VariableStarModel
+    from celestron_nexstar.api.database.duckdb_access import get_all_variable_stars
 
-    count = await db_session.scalar(select(func.count(VariableStarModel.id)))
-    if count == 0:
+    stars_db = get_all_variable_stars()
+    if not stars_db:
         raise DatabaseError(
             "No variable stars found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = await db_session.execute(select(VariableStarModel))
-    models = result.scalars().all()
-
-    return [model.to_variable_star() for model in models]
+    return [
+        VariableStar(
+            name=s.name,
+            designation=s.designation,
+            variable_type=s.variable_type,
+            period_days=s.period_days,
+            magnitude_min=s.magnitude_min,
+            magnitude_max=s.magnitude_max,
+            ra_hours=s.ra_hours,
+            dec_degrees=s.dec_degrees,
+            notes=s.notes or "",
+        )
+        for s in stars_db
+    ]
 
 
 def _calculate_next_event(
@@ -119,10 +125,10 @@ def _calculate_next_event(
 
 
 async def get_variable_star_events(
-    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 6,
     event_type: str | None = None,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[VariableStarEvent]:
     """
     Get variable star events (minima, maxima, eclipses).
@@ -131,6 +137,7 @@ async def get_variable_star_events(
         location: Observer location
         months_ahead: How many months ahead to search (default: 6)
         event_type: Filter by event type ("minimum", "maximum") or None for all
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of VariableStarEvent objects, sorted by date
@@ -139,7 +146,7 @@ async def get_variable_star_events(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    stars = await get_known_variable_stars(db_session)
+    stars = get_known_variable_stars()
     for star in stars:
         # Calculate next minimum and maximum
         if event_type is None or event_type == "minimum":

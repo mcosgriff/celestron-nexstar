@@ -19,7 +19,7 @@ import ast
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+
 
 # Modules that should have contracts
 API_MODULES = [
@@ -148,7 +148,7 @@ class ContractChecker(ast.NodeVisitor):
 def check_file(filepath: Path) -> list[tuple[int, str]]:
     """Check a single file for missing contracts."""
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             content = f.read()
 
         tree = ast.parse(content, filename=str(filepath))

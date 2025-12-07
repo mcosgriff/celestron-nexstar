@@ -17,8 +17,6 @@ from skyfield.api import Topos
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from celestron_nexstar.api.location.observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -200,9 +198,9 @@ def _get_moon_phase_at_time(ts: Any, earth: Any, sun: Any, moon: Any | None, t: 
 
 
 async def get_next_lunar_eclipse(
-    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 5,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[Eclipse]:
     """
     Find next lunar eclipses visible from observer location.
@@ -212,6 +210,7 @@ async def get_next_lunar_eclipse(
     Args:
         location: Observer location
         years_ahead: How many years ahead to search (default: 5)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of Eclipse objects, sorted by date
@@ -225,7 +224,7 @@ async def get_next_lunar_eclipse(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=365 * years_ahead)
 
-    known_eclipses = await get_known_eclipses(db_session)
+    known_eclipses = get_known_eclipses()
     for eclipse_data in known_eclipses:
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
@@ -267,12 +266,12 @@ async def get_next_lunar_eclipse(
 # Data from NASA's Five Millennium Catalog
 
 
-async def get_known_eclipses(db_session: AsyncSession) -> list[dict[str, Any]]:
+def get_known_eclipses(db_session: None = None) -> list[dict[str, Any]]:  # db_session deprecated
     """
     Get list of known eclipses from database.
 
     Args:
-        db_session: Database session
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of dicts with keys: type, date, magnitude
@@ -280,20 +279,15 @@ async def get_known_eclipses(db_session: AsyncSession) -> list[dict[str, Any]]:
     Raises:
         RuntimeError: If no eclipses found in database (seed data required)
     """
-    from sqlalchemy import func, select
-
     from celestron_nexstar.api.core.exceptions import DatabaseError
-    from celestron_nexstar.api.database.models import EclipseModel
+    from celestron_nexstar.api.database.duckdb_access import get_all_eclipses
 
-    count = await db_session.scalar(select(func.count(EclipseModel.id)))
-    if count == 0:
+    eclipses_db = get_all_eclipses(limit=10000)  # Get all eclipses
+    if not eclipses_db:
         raise DatabaseError("No eclipses found in database. Please seed the database by running: nexstar data seed")
 
-    result = await db_session.execute(select(EclipseModel))
-    models = result.scalars().all()
-
     eclipses = []
-    for model in models:
+    for model in eclipses_db:
         eclipses.append(
             {
                 "type": model.eclipse_type,
@@ -305,9 +299,9 @@ async def get_known_eclipses(db_session: AsyncSession) -> list[dict[str, Any]]:
 
 
 async def get_next_solar_eclipse(
-    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 10,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[Eclipse]:
     """
     Find next solar eclipses visible from observer location.
@@ -328,7 +322,7 @@ async def get_next_solar_eclipse(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=365 * years_ahead)
 
-    known_eclipses = await get_known_eclipses(db_session)
+    known_eclipses = get_known_eclipses()
     for eclipse_data in known_eclipses:
         eclipse_type = eclipse_data["type"]
         eclipse_date = eclipse_data["date"]
@@ -443,19 +437,19 @@ def _calculate_solar_eclipse(
 
 
 async def get_upcoming_eclipses(
-    db_session: AsyncSession,
     location: ObserverLocation,
     years_ahead: int = 5,
     eclipse_type: str | None = None,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[Eclipse]:
     """
     Get all upcoming eclipses (lunar and solar) visible from location.
 
     Args:
-        db_session: Database session
         location: Observer location
         years_ahead: How many years ahead to search
         eclipse_type: Filter by type ("lunar" or "solar"), or None for all
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of Eclipse objects, sorted by date
@@ -463,11 +457,11 @@ async def get_upcoming_eclipses(
     all_eclipses: list[Eclipse] = []
 
     if eclipse_type is None or eclipse_type == "lunar":
-        lunar_eclipses = await get_next_lunar_eclipse(db_session, location, years_ahead=years_ahead)
+        lunar_eclipses = await get_next_lunar_eclipse(location, years_ahead=years_ahead)
         all_eclipses.extend(lunar_eclipses)
 
     if eclipse_type is None or eclipse_type == "solar":
-        solar_eclipses = await get_next_solar_eclipse(db_session, location, years_ahead=years_ahead)
+        solar_eclipses = await get_next_solar_eclipse(location, years_ahead=years_ahead)
         all_eclipses.extend(solar_eclipses)
 
     # Sort by date

@@ -109,52 +109,39 @@ def _rgb_to_sqm(r: int, g: int, b: int) -> float:
     return max(17.0, min(22.0, sqm))
 
 
-async def _create_light_pollution_table(db: CatalogDatabase) -> None:
-    """Ensure light pollution grid table exists using SQLAlchemy model."""
-    from celestron_nexstar.api.database.models import Base, LightPollutionGridModel
-
-    # Use SQLAlchemy to create the table if it doesn't exist (async-compatible)
-    # This ensures consistency with the model definition
-    async with db._engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: Base.metadata.create_all(
-                sync_conn,
-                tables=[LightPollutionGridModel.__table__],  # type: ignore[list-item]
-                checkfirst=True,
-            )
-        )
+def _create_light_pollution_table() -> None:
+    """Ensure light pollution grid table exists. Table is created by migrations."""
+    # Table is created by DuckDB migrations, no action needed
+    pass
 
 
-def clear_light_pollution_data(db: CatalogDatabase) -> int:
+def clear_light_pollution_data(db: CatalogDatabase | None = None) -> int:
     """
     Clear all light pollution data from the database.
 
     Deletes all rows from the light_pollution_grid table.
 
     Args:
-        db: Database instance
+        db: Database instance (deprecated, kept for compatibility)
 
     Returns:
         Number of rows deleted
     """
-    from sqlalchemy import func, select
+    from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
 
-    from celestron_nexstar.api.database.models import LightPollutionGridModel
+    con = get_duckdb_connection()
+    # Get count first
+    result = con.execute("SELECT COUNT(*) FROM light_pollution_grid").fetchone()
+    row_count = result[0] if result else 0
 
-    with db._get_session_sync() as session:
-        # First, get count of rows to be deleted
-        row_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
+    if row_count == 0:
+        logger.info("Light pollution table is already empty")
+        return 0
 
-        if row_count == 0:
-            logger.info("Light pollution table is already empty")
-            return 0
-
-        # Delete all rows using SQLAlchemy ORM
-        session.query(LightPollutionGridModel).delete()
-        session.commit()
-
-        logger.info(f"Cleared {row_count} rows from light_pollution_grid table")
-        return row_count
+    # Delete all rows
+    con.execute("DELETE FROM light_pollution_grid")
+    logger.info(f"Cleared {row_count} rows from light_pollution_grid table")
+    return row_count
 
 
 def _load_state_boundaries(state_names: list[str], region: str) -> list[dict[str, Any]] | None:
@@ -452,7 +439,7 @@ async def _process_png_to_database(
     lon_step = (lon_max - lon_min) / width
 
     # Create table if needed
-    await _create_light_pollution_table(db)
+    _create_light_pollution_table()
 
     # Load state/province boundaries if filtering is requested
     boundary_filter = None
@@ -727,64 +714,30 @@ async def _process_png_to_database(
 
 async def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, float, str]]) -> None:
     """Insert batch of light pollution data with geohash indexing."""
-    from sqlalchemy import select
-
-    from celestron_nexstar.api.database.models import LightPollutionGridModel
+    from celestron_nexstar.api.database.duckdb_access import create_or_update_light_pollution_grid_point
 
     if not batch_data:
         return
 
     try:
-        async with db._AsyncSession() as session:
-            # Pre-calculate geohashes for all records
-            records_to_insert = []
-            for lat, lon, sqm, region in batch_data:
-                # Calculate geohash for indexing (use precision 9 for ~5m accuracy)
-                geohash_str = encode(lat, lon, precision=9)
-                records_to_insert.append(
-                    LightPollutionGridModel(
-                        latitude=lat,
-                        longitude=lon,
-                        geohash=geohash_str,
-                        sqm_value=sqm,
-                        region=region,
-                    )
-                )
-
-            # Use bulk_save_objects for better performance
-            # SQLite doesn't support ON CONFLICT in bulk operations, so we need to handle duplicates
-            # Use merge() approach: try to insert, if duplicate key error, update instead
-            try:
-                session.add_all(records_to_insert)
-                await session.commit()
-            except Exception as e:
-                # If bulk insert fails (e.g., due to unique constraint), fall back to individual inserts
-                await session.rollback()
-                logger.debug(f"Bulk insert failed, falling back to individual inserts: {e}")
-                for record in records_to_insert:
-                    # Check if record exists
-                    result = await session.execute(
-                        select(LightPollutionGridModel).where(
-                            LightPollutionGridModel.latitude == record.latitude,
-                            LightPollutionGridModel.longitude == record.longitude,
-                        )
-                    )
-                    existing = result.scalar_one_or_none()
-                    if existing:
-                        # Update existing record
-                        existing.geohash = record.geohash
-                        existing.sqm_value = record.sqm_value
-                        existing.region = record.region
-                    else:
-                        # Insert new record
-                        session.add(record)
-                await session.commit()
+        # Pre-calculate geohashes and insert/update records
+        for lat, lon, sqm, region in batch_data:
+            # Calculate geohash for indexing (use precision 9 for ~5m accuracy)
+            geohash_str = encode(lat, lon, precision=9)
+            # Use create_or_update which handles duplicates
+            create_or_update_light_pollution_grid_point(
+                latitude=lat,
+                longitude=lon,
+                geohash=geohash_str,
+                sqm_value=sqm,
+                region=region,
+            )
     except Exception as e:
         logger.error(f"Error inserting light pollution batch: {e}", exc_info=True)
         raise
 
 
-def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float | None:
+def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase | None = None) -> float | None:
     """
     Get SQM value from database using geohash-based proximity search.
 
@@ -793,23 +746,22 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     Args:
         lat: Latitude in degrees
         lon: Longitude in degrees
-        db: Database instance
+        db: Database instance (deprecated, kept for compatibility)
 
     Returns:
         SQM value or None if not found
     """
+    from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
 
     # Check if table exists first
     try:
-        from sqlalchemy import inspect
-
-        from celestron_nexstar.api.database.models import LightPollutionGridModel
-
-        with db._get_session_sync() as session:
-            inspector = inspect(session.bind)
-            if inspector is not None and "light_pollution_grid" not in inspector.get_table_names():
-                logger.debug("light_pollution_grid table does not exist")
-                return None
+        con = get_duckdb_connection()
+        result = con.execute(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'light_pollution_grid'"
+        ).fetchone()
+        if not result or result[0] == 0:
+            logger.debug("light_pollution_grid table does not exist")
+            return None
     except Exception as e:
         logger.debug(f"Error checking for table: {e}")
         return None
@@ -826,147 +778,133 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     # Use LIKE to match geohash prefixes
     geohash_patterns = [f"{gh}%" for gh in search_geohashes]
 
-    from sqlalchemy import func, or_, select
+    con = get_duckdb_connection()
+    # Build OR conditions for geohash LIKE patterns
+    geohash_conditions = " OR ".join(["geohash LIKE ?" for _ in geohash_patterns])
 
-    from celestron_nexstar.api.database.models import LightPollutionGridModel
+    # Build query - get more candidates (up to 10) for better interpolation
+    # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
+    query = f"""
+        SELECT latitude, longitude, sqm_value
+        FROM light_pollution_grid
+        WHERE {geohash_conditions}
+        ORDER BY ABS(latitude - ?) + ABS(longitude - ?)
+        LIMIT 10
+    """
+    params = [*list(geohash_patterns), lat, lon]
 
-    result: list[Any]
-    with db._get_session_sync() as session:
-        # Query using geohash prefix matching with SQLAlchemy ORM
-        # This is much faster than bounding box queries for large datasets
-        # Build OR conditions for geohash LIKE patterns
-        geohash_conditions = or_(*[LightPollutionGridModel.geohash.like(pattern) for pattern in geohash_patterns])
+    query_results = con.execute(query, params).fetchall()
+    result = list(query_results)
 
-        # Build query - get more candidates than needed, we'll filter by accurate distance
-        # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
-        distance_expr = func.abs(LightPollutionGridModel.latitude - lat) + func.abs(
-            LightPollutionGridModel.longitude - lon
-        )
+    if not result:
+        logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
+        return None
 
-        # Build query - get more candidates (up to 10) for better interpolation
-        query = (
-            select(
-                LightPollutionGridModel.latitude,
-                LightPollutionGridModel.longitude,
-                LightPollutionGridModel.sqm_value,
-            )
-            .where(geohash_conditions)
-            .order_by(distance_expr)
-            .limit(10)  # Get more candidates for better selection
-        )
+    # Use GeoPandas for accurate distance calculation and point selection
+    if gpd is None or Point is None:
+        logger.error("GeoPandas not available for accurate distance calculation")
+        return None
 
-        query_results = session.execute(query).fetchall()
-        result = list(query_results)
+    # Create search point (Point and gpd are guaranteed to be not None here)
+    search_point = Point(lon, lat)  # type: ignore[arg-type]
+    search_gdf = gpd.GeoDataFrame([1], geometry=[search_point], crs="EPSG:4326")  # type: ignore[arg-type]
 
-        if not result:
-            logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
-            return None
+    # Create GeoDataFrame from query results
+    grid_data = {
+        "latitude": [float(r[0]) for r in result],
+        "longitude": [float(r[1]) for r in result],
+        "sqm_value": [float(r[2]) for r in result],
+    }
+    grid_gdf = gpd.GeoDataFrame(  # type: ignore[arg-type]
+        grid_data,
+        geometry=gpd.points_from_xy([float(r[1]) for r in result], [float(r[0]) for r in result]),  # type: ignore[arg-type]
+        crs="EPSG:4326",
+    )
 
-        # Use GeoPandas for accurate distance calculation and point selection
-        if gpd is None or Point is None:
-            logger.error("GeoPandas not available for accurate distance calculation")
-            return None
+    # Project to metric CRS for accurate distance calculation
+    search_projected = search_gdf.to_crs("EPSG:3857")
+    grid_projected = grid_gdf.to_crs("EPSG:3857")
 
-        # Create search point (Point and gpd are guaranteed to be not None here)
-        search_point = Point(lon, lat)  # type: ignore[arg-type]
-        search_gdf = gpd.GeoDataFrame([1], geometry=[search_point], crs="EPSG:4326")  # type: ignore[arg-type]
+    # Calculate accurate distances in meters, convert to km
+    distances_m = grid_projected.geometry.distance(search_projected.geometry.iloc[0])
+    distances_km = distances_m / 1000.0
 
-        # Create GeoDataFrame from query results
-        grid_data = {
-            "latitude": [float(r[0]) for r in result],
-            "longitude": [float(r[1]) for r in result],
-            "sqm_value": [float(r[2]) for r in result],
-        }
-        grid_gdf = gpd.GeoDataFrame(  # type: ignore[arg-type]
-            grid_data,
-            geometry=gpd.points_from_xy([float(r[1]) for r in result], [float(r[0]) for r in result]),  # type: ignore[arg-type]
-            crs="EPSG:4326",
-        )
+    # Add distance column and filter by search radius
+    grid_gdf["distance_km"] = distances_km
+    grid_gdf = grid_gdf[grid_gdf["distance_km"] <= search_radius_km]
 
-        # Project to metric CRS for accurate distance calculation
-        search_projected = search_gdf.to_crs("EPSG:3857")
-        grid_projected = grid_gdf.to_crs("EPSG:3857")
+    if grid_gdf.empty:
+        logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
+        return None
 
-        # Calculate accurate distances in meters, convert to km
-        distances_m = grid_projected.geometry.distance(search_projected.geometry.iloc[0])
-        distances_km = distances_m / 1000.0
+    # Sort by distance and take closest points
+    grid_gdf = grid_gdf.sort_values("distance_km").head(4)
 
-        # Add distance column and filter by search radius
-        grid_gdf["distance_km"] = distances_km
-        grid_gdf = grid_gdf[grid_gdf["distance_km"] <= search_radius_km]
-
-        if grid_gdf.empty:
-            logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
-            return None
-
-        # Sort by distance and take closest points
-        grid_gdf = grid_gdf.sort_values("distance_km").head(4)
-
-        if len(grid_gdf) == 1:
-            sqm = float(grid_gdf.iloc[0]["sqm_value"])
-            logger.debug(f"Found single grid point: SQM={sqm:.2f}")
-            return sqm
-
-        # Bilinear interpolation using the closest points
-        points = [
-            (float(row["latitude"]), float(row["longitude"]), float(row["sqm_value"])) for _, row in grid_gdf.iterrows()
-        ]
-
-        # Find the 4 closest points forming a rectangle
-        lats = sorted({p[0] for p in points})
-        lons = sorted({p[1] for p in points})
-
-        if len(lats) < 2 or len(lons) < 2:
-            # Not enough points for interpolation, use nearest
-            return points[0][2]
-
-        # Find bounding rectangle
-        lat1, lat2 = lats[0], lats[-1]
-        lon1, lon2 = lons[0], lons[-1]
-
-        # Get values at corners
-        values = {}
-        for p in points:
-            values[(p[0], p[1])] = p[2]
-
-        # Bilinear interpolation
-        def get_value(la: float, lo: float) -> float:
-            # Find nearest point using accurate distance
-            min_dist = float("inf")
-            nearest_val = points[0][2]
-            for p in points:
-                # Use GeoPandas for accurate distance calculation
-                p_point = Point(p[1], p[0])  # lon, lat
-                p_gdf = gpd.GeoDataFrame([1], geometry=[p_point], crs="EPSG:4326")
-                p_projected = p_gdf.to_crs("EPSG:3857")
-                search_proj = search_gdf.to_crs("EPSG:3857")
-                dist = float(p_projected.geometry.distance(search_proj.geometry.iloc[0]) / 1000.0)  # km
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest_val = p[2]
-            return nearest_val
-
-        # Interpolate
-        v11 = get_value(lat1, lon1)
-        v12 = get_value(lat1, lon2)
-        v21 = get_value(lat2, lon1)
-        v22 = get_value(lat2, lon2)
-
-        # Bilinear interpolation formula
-        if lat2 != lat1 and lon2 != lon1:
-            t_lat = (lat - lat1) / (lat2 - lat1)
-            t_lon = (lon - lon1) / (lon2 - lon1)
-            sqm = (
-                v11 * (1 - t_lat) * (1 - t_lon)
-                + v21 * t_lat * (1 - t_lon)
-                + v12 * (1 - t_lat) * t_lon
-                + v22 * t_lat * t_lon
-            )
-        else:
-            # Fallback to nearest neighbor
-            sqm = get_value(lat, lon)
-
+    if len(grid_gdf) == 1:
+        sqm = float(grid_gdf.iloc[0]["sqm_value"])
+        logger.debug(f"Found single grid point: SQM={sqm:.2f}")
         return sqm
+
+    # Bilinear interpolation using the closest points
+    points = [
+        (float(row["latitude"]), float(row["longitude"]), float(row["sqm_value"])) for _, row in grid_gdf.iterrows()
+    ]
+
+    # Find the 4 closest points forming a rectangle
+    lats = sorted({p[0] for p in points})
+    lons = sorted({p[1] for p in points})
+
+    if len(lats) < 2 or len(lons) < 2:
+        # Not enough points for interpolation, use nearest
+        return points[0][2]
+
+    # Find bounding rectangle
+    lat1, lat2 = lats[0], lats[-1]
+    lon1, lon2 = lons[0], lons[-1]
+
+    # Get values at corners
+    values = {}
+    for p in points:
+        values[(p[0], p[1])] = p[2]
+
+    # Bilinear interpolation
+    def get_value(la: float, lo: float) -> float:
+        # Find nearest point using accurate distance
+        min_dist = float("inf")
+        nearest_val = points[0][2]
+        for p in points:
+            # Use GeoPandas for accurate distance calculation
+            p_point = Point(p[1], p[0])  # lon, lat
+            p_gdf = gpd.GeoDataFrame([1], geometry=[p_point], crs="EPSG:4326")
+            p_projected = p_gdf.to_crs("EPSG:3857")
+            search_proj = search_gdf.to_crs("EPSG:3857")
+            dist = float(p_projected.geometry.distance(search_proj.geometry.iloc[0]) / 1000.0)  # km
+            if dist < min_dist:
+                min_dist = dist
+                nearest_val = p[2]
+        return nearest_val
+
+    # Interpolate
+    v11 = get_value(lat1, lon1)
+    v12 = get_value(lat1, lon2)
+    v21 = get_value(lat2, lon1)
+    v22 = get_value(lat2, lon2)
+
+    # Bilinear interpolation formula
+    if lat2 != lat1 and lon2 != lon1:
+        t_lat = (lat - lat1) / (lat2 - lat1)
+        t_lon = (lon - lon1) / (lon2 - lon1)
+        sqm = (
+            v11 * (1 - t_lat) * (1 - t_lon)
+            + v21 * t_lat * (1 - t_lon)
+            + v12 * (1 - t_lat) * t_lon
+            + v22 * t_lat * t_lon
+        )
+    else:
+        # Fallback to nearest neighbor
+        sqm = get_value(lat, lon)
+
+    return sqm
 
 
 async def download_world_atlas_data(
@@ -990,7 +928,7 @@ async def download_world_atlas_data(
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    await _create_light_pollution_table(db)
+    _create_light_pollution_table()
 
     if regions is None:
         regions = list(WORLD_ATLAS_URLS.keys())

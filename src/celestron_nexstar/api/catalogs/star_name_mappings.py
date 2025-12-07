@@ -15,11 +15,12 @@ import re
 from pathlib import Path
 
 import aiohttp
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.database.database_seeder import load_seed_json
-from celestron_nexstar.api.database.models import StarNameMappingModel
+from celestron_nexstar.api.database.duckdb_access import (
+    create_or_update_star_name_mapping,
+    get_star_name_mapping,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -205,8 +206,8 @@ async def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[
 
 
 async def populate_star_name_mappings_database(
-    db_session: AsyncSession, hr_numbers: list[int] | None = None, force_refresh: bool = False
-) -> None:
+    db_session: None = None, hr_numbers: list[int] | None = None, force_refresh: bool = False
+) -> None:  # db_session deprecated
     """
     Populate database with star name mappings.
 
@@ -215,16 +216,16 @@ async def populate_star_name_mappings_database(
     This ensures star common names are always available even without internet connectivity.
 
     Args:
-        db_session: SQLAlchemy async database session
+        db_session: Deprecated parameter, kept for compatibility
         hr_numbers: Optional list of HR numbers to fetch from external sources. If None, fetches all available.
         force_refresh: If True, re-populate even if data exists
     """
-    from celestron_nexstar.api.database.database_seeder import seed_star_name_mappings
+    from celestron_nexstar.api.database.duckdb_seeder import seed_star_name_mappings_duckdb
 
     logger.info("Populating star name mappings database...")
 
     # Seed from JSON file (primary source)
-    await seed_star_name_mappings(db_session, force=force_refresh)
+    seed_star_name_mappings_duckdb(force=force_refresh)
 
     # Try to enhance with external sources (optional enhancement)
     try:
@@ -233,24 +234,18 @@ async def populate_star_name_mappings_database(
         external_mappings = await fetch_star_name_mappings(hr_numbers)
         if external_mappings:
             # Add any new mappings from external sources
-            from sqlalchemy import select
-
             added = 0
             for hr_number, (common_name, bayer_designation) in external_mappings.items():
                 # Check if already exists
-                stmt = select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number)
-                result = await db_session.execute(stmt)
-                existing = result.scalar_one_or_none()
+                existing = get_star_name_mapping(hr_number)
                 if not existing:
-                    model = StarNameMappingModel(
+                    create_or_update_star_name_mapping(
                         hr_number=hr_number,
                         common_name=common_name.strip() if common_name else "",
                         bayer_designation=bayer_designation.strip() if bayer_designation else None,
                     )
-                    db_session.add(model)
                     added += 1
             if added > 0:
-                await db_session.commit()
                 logger.info(f"Enhanced with {added} additional mappings from external sources")
             else:
                 logger.info("External sources returned no additional mappings")
@@ -303,18 +298,18 @@ def _get_comprehensive_star_mappings() -> dict[int, tuple[str | None, str | None
         return {}
 
 
-def get_common_name_by_hr(db_session: Session, hr_number: int) -> str | None:
+def get_common_name_by_hr(hr_number: int, db_session: None = None) -> str | None:  # db_session deprecated
     """
     Get common name for a given HR number.
 
     Args:
-        db_session: SQLAlchemy database session
         hr_number: HR catalog number
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         Common name if found, None otherwise
     """
-    mapping = db_session.query(StarNameMappingModel).filter(StarNameMappingModel.hr_number == hr_number).first()
+    mapping = get_star_name_mapping(hr_number)
     if mapping and mapping.common_name and mapping.common_name.strip():
         return str(mapping.common_name.strip())
     return None

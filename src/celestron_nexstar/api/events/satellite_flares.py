@@ -19,8 +19,6 @@ from celestron_nexstar.api.core.exceptions import TLEFetchError
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
     from celestron_nexstar.api.location.observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -353,41 +351,32 @@ async def _fetch_starlink_tle_from_celestrak() -> list[tuple[int, str, str, str]
 
 
 def _get_cached_group_tle(
-    group_name: str, max_satellites: int, db_session: Session | None = None
-) -> list[tuple[int, str, str, str, datetime]] | None:
+    group_name: str, max_satellites: int, db_session: None = None
+) -> list[tuple[int, str, str, str, datetime]] | None:  # db_session deprecated
     """
     Get cached TLE data for a satellite group if fresh enough.
 
     Args:
         group_name: Name of the satellite group (e.g., "starlink", "stations", "visual")
         max_satellites: Maximum number of satellites to return
-        db_session: Database session (optional)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of tuples: (norad_id, satellite_name, line1, line2, fetched_at) or None if cache is stale/missing
     """
-    if db_session is None:
-        return None
-
     try:
-        from celestron_nexstar.api.database.models import TLEModel
+        from celestron_nexstar.api.database.duckdb_access import get_tles_by_group
 
         # Check for fresh TLE data (less than 24 hours old)
         cache_cutoff = datetime.now(UTC) - timedelta(hours=TLE_MAX_AGE_HOURS)
 
-        cached_tles = (
-            db_session.query(TLEModel)
-            .filter(
-                TLEModel.satellite_group == group_name,
-                TLEModel.fetched_at >= cache_cutoff,
-            )
-            .limit(max_satellites)
-            .all()
-        )
+        cached_tles = get_tles_by_group(group_name, limit=max_satellites)
+        # Filter by cache cutoff
+        fresh_tles = [tle for tle in cached_tles if tle.fetched_at >= cache_cutoff]
 
-        if cached_tles:
-            logger.info(f"Using {len(cached_tles)} cached {group_name} TLE records")
-            return [(tle.norad_id, tle.satellite_name, tle.line1, tle.line2, tle.fetched_at) for tle in cached_tles]
+        if fresh_tles:
+            logger.info(f"Using {len(fresh_tles)} cached {group_name} TLE records")
+            return [(tle.norad_id, tle.satellite_name, tle.line1, tle.line2, tle.fetched_at) for tle in fresh_tles]
 
     except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
         # AttributeError: missing database/model attributes
@@ -400,7 +389,9 @@ def _get_cached_group_tle(
     return None
 
 
-def _get_cached_starlink_tle(db_session: Session | None = None) -> list[tuple[int, str, str, str, datetime]] | None:
+def _get_cached_starlink_tle(
+    db_session: None = None,
+) -> list[tuple[int, str, str, str, datetime]] | None:  # db_session deprecated
     """
     Get cached Starlink TLE data if fresh enough.
 
@@ -416,31 +407,28 @@ def _get_cached_starlink_tle(db_session: Session | None = None) -> list[tuple[in
 async def _store_group_tle(
     tle_list: list[tuple[int, str, str, str]],
     group_name: str,
-    db_session: Session | None = None,
-) -> None:
+    db_session: None = None,
+) -> None:  # db_session deprecated
     """
     Store TLE data for a satellite group in database.
 
     Args:
         tle_list: List of tuples: (norad_id, satellite_name, line1, line2)
         group_name: Name of the satellite group (e.g., "starlink", "stations", "visual")
-        db_session: Database session (optional)
+        db_session: Deprecated parameter, kept for compatibility
     """
-    if db_session is None:
-        return
-
     try:
-        from celestron_nexstar.api.database.models import TLEModel
+        from celestron_nexstar.api.database.duckdb_access import create_or_update_tle, delete_tles_by_group
 
         fetch_time = datetime.now(UTC)
 
         # Delete old TLE data for this group
-        db_session.query(TLEModel).filter(TLEModel.satellite_group == group_name).delete()
+        delete_tles_by_group(group_name)
 
         # Insert new TLE data
         for norad_id, name, line1, line2 in tle_list:
             epoch = _parse_tle_epoch(line1)
-            tle_model = TLEModel(
+            create_or_update_tle(
                 norad_id=norad_id,
                 satellite_name=name,
                 satellite_group=group_name,
@@ -449,9 +437,7 @@ async def _store_group_tle(
                 epoch=epoch,
                 fetched_at=fetch_time,
             )
-            db_session.add(tle_model)
 
-        db_session.commit()
         logger.info(f"Stored {len(tle_list)} {group_name} TLE records in database")
 
     except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
@@ -461,13 +447,12 @@ async def _store_group_tle(
         # TypeError: wrong data types
         # KeyError: missing keys in data
         logger.warning(f"Error storing TLE data: {e}")
-        db_session.rollback()
 
 
 async def _store_starlink_tle(
     tle_list: list[tuple[int, str, str, str]],
-    db_session: Session | None = None,
-) -> None:
+    db_session: None = None,
+) -> None:  # db_session deprecated
     """
     Store Starlink TLE data in database.
 
@@ -482,7 +467,6 @@ async def _get_group_satellites(
     url: str,
     group_name: str,
     max_satellites: int,
-    db_session: Session | None = None,
 ) -> list[EarthSatellite]:
     """
     Get satellite objects with current TLE for a satellite group.
@@ -491,7 +475,6 @@ async def _get_group_satellites(
         url: CelesTrak URL for the group
         group_name: Name of the satellite group (e.g., "starlink", "stations", "visual")
         max_satellites: Maximum number of satellites to track
-        db_session: Database session (optional)
 
     Returns:
         List of Skyfield EarthSatellite objects
@@ -501,7 +484,7 @@ async def _get_group_satellites(
     """
 
     # Try cache first
-    cached_tles = _get_cached_group_tle(group_name, max_satellites, db_session)
+    cached_tles = _get_cached_group_tle(group_name, max_satellites)
 
     if cached_tles:
         tle_list = [(norad_id, name, line1, line2) for norad_id, name, line1, line2, _ in cached_tles]
@@ -509,7 +492,7 @@ async def _get_group_satellites(
         # Fetch fresh TLE
         tle_list = await _fetch_group_tle_from_celestrak(url, group_name, max_satellites)
         # Store in database
-        await _store_group_tle(tle_list, group_name, db_session)
+        await _store_group_tle(tle_list, group_name)
 
     # Create satellite objects
     from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
@@ -534,11 +517,9 @@ async def _get_group_satellites(
     return satellites
 
 
-async def _get_starlink_satellites(
-    db_session: Session | None = None,
-) -> list[EarthSatellite]:
+async def _get_starlink_satellites() -> list[EarthSatellite]:
     """Get Starlink satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_STARLINK_URL, "starlink", STARLINK_MAX_SATELLITES, db_session)
+    return await _get_group_satellites(CELESTRAK_STARLINK_URL, "starlink", STARLINK_MAX_SATELLITES)
 
 
 def get_starlink_passes(
@@ -546,7 +527,6 @@ def get_starlink_passes(
     days: int = 7,
     min_altitude_deg: float = 10.0,
     max_passes: int = 50,
-    db_session: Session | None = None,
 ) -> list[SatellitePass]:
     """
     Get Starlink train passes for a location.
@@ -569,7 +549,7 @@ def get_starlink_passes(
 
     try:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
-        satellites = asyncio.run(_get_starlink_satellites(db_session))
+        satellites = asyncio.run(_get_starlink_satellites())
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
         # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes
@@ -588,18 +568,14 @@ def get_starlink_passes(
     )
 
 
-async def _get_stations_satellites(
-    db_session: Session | None = None,
-) -> list[EarthSatellite]:
+async def _get_stations_satellites() -> list[EarthSatellite]:
     """Get space station satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_STATIONS_URL, "stations", STATIONS_MAX_SATELLITES, db_session)
+    return await _get_group_satellites(CELESTRAK_STATIONS_URL, "stations", STATIONS_MAX_SATELLITES)
 
 
-async def _get_visual_satellites(
-    db_session: Session | None = None,
-) -> list[EarthSatellite]:
+async def _get_visual_satellites() -> list[EarthSatellite]:
     """Get visually observable satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_VISUAL_URL, "visual", VISUAL_MAX_SATELLITES, db_session)
+    return await _get_group_satellites(CELESTRAK_VISUAL_URL, "visual", VISUAL_MAX_SATELLITES)
 
 
 def _calculate_passes_for_satellites(
@@ -726,7 +702,6 @@ def get_stations_passes(
     days: int = 7,
     min_altitude_deg: float = 10.0,
     max_passes: int = 50,
-    db_session: Session | None = None,
 ) -> list[SatellitePass]:
     """
     Get space station passes for a location.
@@ -739,7 +714,6 @@ def get_stations_passes(
         days: Number of days to search (default: 7)
         min_altitude_deg: Minimum peak altitude for pass (default: 10°)
         max_passes: Maximum number of passes to return (default: 50)
-        db_session: Database session (optional, for caching)
 
     Returns:
         List of SatellitePass objects, sorted by rise time
@@ -749,7 +723,7 @@ def get_stations_passes(
 
     try:
         # Run async function - this is a sync entry point, so asyncio.run() is safe
-        satellites = asyncio.run(_get_stations_satellites(db_session))
+        satellites = asyncio.run(_get_stations_satellites())
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
         # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes
@@ -773,7 +747,6 @@ async def get_visual_passes(
     days: int = 7,
     min_altitude_deg: float = 10.0,
     max_passes: int = 100,
-    db_session: Session | None = None,
 ) -> list[SatellitePass]:
     """
     Get visually observable satellite passes for a location.
@@ -786,7 +759,6 @@ async def get_visual_passes(
         days: Number of days to search (default: 7)
         min_altitude_deg: Minimum peak altitude for pass (default: 10°)
         max_passes: Maximum number of passes to return (default: 100)
-        db_session: Database session (optional, for caching)
 
     Returns:
         List of SatellitePass objects, sorted by rise time
@@ -794,7 +766,7 @@ async def get_visual_passes(
 
     try:
         # Await async function directly
-        satellites = await _get_visual_satellites(db_session)
+        satellites = await _get_visual_satellites()
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
         # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes

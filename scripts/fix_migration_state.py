@@ -9,11 +9,13 @@ already exists, then applies the new ephemeris_files migration.
 import sys
 from pathlib import Path
 
+
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from celestron_nexstar.api.database.database import get_database
 import sqlite3
+
+from celestron_nexstar.api.database.database import get_database
 
 
 def main():

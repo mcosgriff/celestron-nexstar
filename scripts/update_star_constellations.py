@@ -24,8 +24,8 @@ sys.path.insert(0, str(project_root / "src"))
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
-from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.database.models import CelestialObjectModel, ConstellationModel
 
 

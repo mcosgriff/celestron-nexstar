@@ -667,7 +667,7 @@ class TestNexStarProtocol(unittest.TestCase):
         protocol.tcp_writer = mock_writer
 
         # Mock asyncio.wait_for to raise TimeoutError
-        mock_wait_for.side_effect = asyncio.TimeoutError()
+        mock_wait_for.side_effect = TimeoutError()
 
         with self.assertRaises(TelescopeTimeoutError):
             asyncio.run(protocol.send_command("V"))
@@ -759,7 +759,7 @@ class TestNexStarProtocol(unittest.TestCase):
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_ra_dec_precise_failure(self, mock_decode, mock_send):
         """Test get RA/Dec precise with decode failure"""
-        from returns.result import Failure, Success
+        from returns.result import Failure
 
         mock_send.return_value = "12345678,87654321"
         mock_decode.return_value = Failure("Invalid format")
@@ -772,7 +772,7 @@ class TestNexStarProtocol(unittest.TestCase):
     @patch.object(NexStarProtocol, "decode_coordinate_pair")
     def test_get_alt_az_precise_failure(self, mock_decode, mock_send):
         """Test get Alt/Az precise with decode failure"""
-        from returns.result import Failure, Success
+        from returns.result import Failure
 
         mock_send.return_value = "12345678,87654321"
         mock_decode.return_value = Failure("Invalid format")

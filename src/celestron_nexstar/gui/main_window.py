@@ -106,7 +106,6 @@ class ObjectsLoaderThread(QThread):
 
             from celestron_nexstar.api.astronomy.constellations import get_visible_asterisms, get_visible_constellations
             from celestron_nexstar.api.core.enums import CelestialObjectType
-            from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
             obj_type = CelestialObjectType(self.obj_type_str)
@@ -117,15 +116,12 @@ class ObjectsLoaderThread(QThread):
             if obj_type == CelestialObjectType.CONSTELLATION:
                 # Load visible constellations
                 async def _load_constellations() -> list[Any]:
-                    db = get_database()
-                    async with db._AsyncSession() as session:
-                        return await get_visible_constellations(
-                            session,
-                            conditions.latitude,
-                            conditions.longitude,
-                            conditions.timestamp,
-                            min_altitude_deg=20.0,
-                        )
+                    return await get_visible_constellations(
+                        conditions.latitude,
+                        conditions.longitude,
+                        conditions.timestamp,
+                        min_altitude_deg=20.0,
+                    )
 
                 constellations = asyncio.run(_load_constellations())
                 # Convert to list of constellation names for display
@@ -133,15 +129,12 @@ class ObjectsLoaderThread(QThread):
             elif obj_type == CelestialObjectType.ASTERISM:
                 # Load visible asterisms
                 async def _load_asterisms() -> list[Any]:
-                    db = get_database()
-                    async with db._AsyncSession() as session:
-                        return await get_visible_asterisms(
-                            session,
-                            conditions.latitude,
-                            conditions.longitude,
-                            conditions.timestamp,
-                            min_altitude_deg=20.0,
-                        )
+                    return await get_visible_asterisms(
+                        conditions.latitude,
+                        conditions.longitude,
+                        conditions.timestamp,
+                        min_altitude_deg=20.0,
+                    )
 
                 asterisms = asyncio.run(_load_asterisms())
                 # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
@@ -1458,6 +1451,14 @@ class MainWindow(QMainWindow):
         # Create and start worker thread
         thread = ObjectsLoaderThread(obj_type_str)
         thread.data_loaded.connect(lambda obj_type, objs: self._on_objects_loaded(obj_type, objs, table, progress))
+
+        def cleanup_thread() -> None:
+            """Clean up thread when finished."""
+            if obj_type_str in self._loading_threads:
+                del self._loading_threads[obj_type_str]
+            thread.deleteLater()
+
+        thread.finished.connect(cleanup_thread)  # Clean up thread when finished
         self._loading_threads[obj_type_str] = thread
         thread.start()
 
@@ -1770,69 +1771,66 @@ class MainWindow(QMainWindow):
                 planner = ObservationPlanner()
                 conditions = planner.get_tonight_conditions()
 
-                async with db._AsyncSession() as session:
-                    # Get sky brightness from light pollution (once for all asterisms)
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                # Get sky brightness from light pollution (once for all asterisms)
+                light_pollution = await get_light_pollution_data(location.latitude, location.longitude)
+                # Map Bortle class to SkyBrightness
+                bortle_to_sky_brightness = {
+                    1: SkyBrightness.EXCELLENT,
+                    2: SkyBrightness.EXCELLENT,
+                    3: SkyBrightness.GOOD,
+                    4: SkyBrightness.FAIR,
+                    5: SkyBrightness.FAIR,
+                    6: SkyBrightness.POOR,
+                    7: SkyBrightness.URBAN,
+                    8: SkyBrightness.URBAN,
+                    9: SkyBrightness.URBAN,
+                }
+                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
 
-                    # Count visible stars for each asterism
-                    counts: dict[str, int] = {}
-                    for asterism_name in asterism_names:
-                        asterism = asterism_objects.get(asterism_name)
-                        if not asterism or not asterism.member_stars:
-                            counts[asterism_name] = 0
+                # Count visible stars for each asterism
+                counts: dict[str, int] = {}
+                for asterism_name in asterism_names:
+                    asterism = asterism_objects.get(asterism_name)
+                    if not asterism or not asterism.member_stars:
+                        counts[asterism_name] = 0
+                        continue
+
+                    visible_count = 0
+                    # Look up each member star by name
+                    for star_name in asterism.member_stars:
+                        # Try to find the star in the database
+                        star = await db.get_by_name(star_name.strip())
+                        if not star:
                             continue
 
-                        visible_count = 0
-                        # Look up each member star by name
-                        for star_name in asterism.member_stars:
-                            # Try to find the star in the database
-                            star = await db.get_by_name(star_name.strip())
-                            if not star:
-                                continue
+                        # Calculate visibility info
+                        vis_info = assess_visibility(
+                            star,
+                            config=config,
+                            sky_brightness=sky_brightness,
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
 
-                            # Calculate visibility info
-                            vis_info = assess_visibility(
-                                star,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                        # Calculate visibility probability
+                        visibility_probability = vis_info.observability_score
 
-                            # Calculate visibility probability
-                            visibility_probability = vis_info.observability_score
+                        # Apply seeing and weather factors
+                        if visibility_probability > 0:
+                            seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                            cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                            cloud_factor = 1.0 - (cloud_cover / 100.0)
+                            visibility_probability *= seeing_factor * cloud_factor
 
-                            # Apply seeing and weather factors
-                            if visibility_probability > 0:
-                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                                cloud_factor = 1.0 - (cloud_cover / 100.0)
-                                visibility_probability *= seeing_factor * cloud_factor
+                        # Count as visible if probability > 0
+                        if visibility_probability > 0:
+                            visible_count += 1
 
-                            # Count as visible if probability > 0
-                            if visibility_probability > 0:
-                                visible_count += 1
+                    counts[asterism_name] = visible_count
 
-                        counts[asterism_name] = visible_count
-
-                    return counts
+                return counts
 
             result = _run_async_safe(_count_all_stars())
             return result if isinstance(result, dict) else dict.fromkeys(asterism_names, 0)
@@ -1859,61 +1857,58 @@ class MainWindow(QMainWindow):
                 planner = ObservationPlanner()
                 conditions = planner.get_tonight_conditions()
 
-                async with db._AsyncSession() as session:
-                    # Get sky brightness from light pollution (once for all constellations)
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                # Get sky brightness from light pollution (once for all constellations)
+                light_pollution = await get_light_pollution_data(location.latitude, location.longitude)
+                # Map Bortle class to SkyBrightness
+                bortle_to_sky_brightness = {
+                    1: SkyBrightness.EXCELLENT,
+                    2: SkyBrightness.EXCELLENT,
+                    3: SkyBrightness.GOOD,
+                    4: SkyBrightness.FAIR,
+                    5: SkyBrightness.FAIR,
+                    6: SkyBrightness.POOR,
+                    7: SkyBrightness.URBAN,
+                    8: SkyBrightness.URBAN,
+                    9: SkyBrightness.URBAN,
+                }
+                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
 
-                    # Count stars for each constellation
-                    counts: dict[str, int] = {}
-                    for constellation_name in constellation_names:
-                        # Get stars in this constellation
-                        stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
+                # Count stars for each constellation
+                counts: dict[str, int] = {}
+                for constellation_name in constellation_names:
+                    # Get stars in this constellation
+                    stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
-                        visible_count = 0
-                        for star in stars:
-                            # Calculate visibility info
-                            vis_info = assess_visibility(
-                                star,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                    visible_count = 0
+                    for star in stars:
+                        # Calculate visibility info
+                        vis_info = assess_visibility(
+                            star,
+                            config=config,
+                            sky_brightness=sky_brightness,
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
 
-                            # Calculate visibility probability
-                            visibility_probability = vis_info.observability_score
+                        # Calculate visibility probability
+                        visibility_probability = vis_info.observability_score
 
-                            # Apply seeing and weather factors
-                            if visibility_probability > 0:
-                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                                cloud_factor = 1.0 - (cloud_cover / 100.0)
-                                visibility_probability *= seeing_factor * cloud_factor
+                        # Apply seeing and weather factors
+                        if visibility_probability > 0:
+                            seeing_factor = min(1.0, conditions.seeing_score / 100.0)
+                            cloud_cover = conditions.weather.cloud_cover_percent or 0.0
+                            cloud_factor = 1.0 - (cloud_cover / 100.0)
+                            visibility_probability *= seeing_factor * cloud_factor
 
-                            # Count as visible if probability > 0
-                            if visibility_probability > 0:
-                                visible_count += 1
+                        # Count as visible if probability > 0
+                        if visibility_probability > 0:
+                            visible_count += 1
 
-                        counts[constellation_name] = visible_count
+                    counts[constellation_name] = visible_count
 
-                    return counts
+                return counts
 
             result = _run_async_safe(_count_all_stars())
             return result if isinstance(result, dict) else dict.fromkeys(constellation_names, 0)
@@ -3286,3 +3281,21 @@ class MainWindow(QMainWindow):
             self.log_panel.log_text.hide()
             self.log_panel.setMaximumHeight(30)  # Collapsed height
             self.log_panel.setMinimumHeight(30)
+
+    def closeEvent(self, event: Any) -> None:  # noqa: N802
+        """Handle window close event - clean up threads before closing."""
+        # Wait for all loading threads to finish
+        if self._loading_threads:
+            logger.info(f"Waiting for {len(self._loading_threads)} loading thread(s) to finish...")
+            for obj_type_str, thread in list(self._loading_threads.items()):
+                if thread.isRunning():
+                    logger.debug(f"Waiting for {obj_type_str} thread to finish...")
+                    thread.wait(5000)  # Wait up to 5 seconds per thread
+                    if thread.isRunning():
+                        logger.warning(f"{obj_type_str} thread still running after timeout, terminating...")
+                        thread.terminate()
+                        thread.wait(1000)  # Wait a bit more after termination
+            self._loading_threads.clear()
+
+        # Call parent closeEvent
+        super().closeEvent(event)  # type: ignore[misc]

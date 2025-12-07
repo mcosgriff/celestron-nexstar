@@ -4,7 +4,6 @@ Unit tests for movement.py
 Tests MovementController for interactive telescope control.
 """
 
-import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -73,7 +72,7 @@ class TestMovementController(unittest.TestCase):
         # Give async operations time to complete
         import time
         time.sleep(0.1)
-        
+
         mock_telescope.move_fixed.assert_awaited_once_with("up", 5)
         self.assertTrue(self.controller.moving)
         self.assertEqual(self.controller.active_direction, "up")
@@ -111,7 +110,7 @@ class TestMovementController(unittest.TestCase):
         # Give async operations time to complete
         import time
         time.sleep(0.1)
-        
+
         self.assertFalse(self.controller.moving)
 
     @patch("celestron_nexstar.api.telescope.telescope.NexStarTelescope")
@@ -131,7 +130,7 @@ class TestMovementController(unittest.TestCase):
         # Give async operations time to complete
         import time
         time.sleep(0.1)
-        
+
         mock_telescope.stop_motion.assert_awaited_once_with("both")
         self.assertFalse(self.controller.moving)
         self.assertIsNone(self.controller.active_direction)
@@ -167,7 +166,7 @@ class TestMovementController(unittest.TestCase):
         # Give async operations time to complete
         import time
         time.sleep(0.1)
-        
+
         # Should still be marked as moving since we couldn't stop
         self.assertTrue(self.controller.moving)
 

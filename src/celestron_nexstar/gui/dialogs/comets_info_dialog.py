@@ -207,12 +207,8 @@ class CometsInfoDialog(QDialog):
                 content_parts = []
 
                 from celestron_nexstar.api.astronomy.comets import get_visible_comets
-                from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    comets = await get_visible_comets(
-                        db_session, location, months_ahead=months, max_magnitude=max_magnitude
-                    )
+                comets = await get_visible_comets(location, months_ahead=months, max_magnitude=max_magnitude)
 
                 if not comets:
                     content_parts.append(

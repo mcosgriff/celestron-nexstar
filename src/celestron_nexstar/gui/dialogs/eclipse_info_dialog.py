@@ -399,10 +399,8 @@ class EclipseInfoDialog(QDialog):
 
             async def _load_async_content() -> list[str]:
                 from celestron_nexstar.api.astronomy.eclipses import get_next_lunar_eclipse
-                from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_next_lunar_eclipse(db_session, location, years_ahead=years)
+                eclipses = await get_next_lunar_eclipse(location, years_ahead=years)
 
                 return self._load_eclipse_content(eclipses, location, years, "Upcoming Lunar Eclipses")
 
@@ -433,10 +431,8 @@ class EclipseInfoDialog(QDialog):
 
             async def _load_async_content() -> list[str]:
                 from celestron_nexstar.api.astronomy.eclipses import get_upcoming_eclipses
-                from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=None)
+                eclipses = await get_upcoming_eclipses(location, years_ahead=years, eclipse_type=None)
 
                 return self._load_eclipse_content(eclipses, location, years, "Upcoming Eclipses")
 
@@ -467,10 +463,8 @@ class EclipseInfoDialog(QDialog):
 
             async def _load_async_content() -> list[str]:
                 from celestron_nexstar.api.astronomy.eclipses import get_next_solar_eclipse
-                from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_next_solar_eclipse(db_session, location, years_ahead=years)
+                eclipses = await get_next_solar_eclipse(location, years_ahead=years)
 
                 return self._load_eclipse_content(eclipses, location, years, "Upcoming Solar Eclipses")
 

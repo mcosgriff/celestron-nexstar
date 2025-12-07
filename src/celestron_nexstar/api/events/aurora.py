@@ -686,7 +686,6 @@ def check_aurora_visibility(
         import asyncio
 
         from celestron_nexstar.api.astronomy.solar_system import get_moon_info
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast, fetch_weather
 
         # Determine which weather time to use:
@@ -772,15 +771,14 @@ def check_aurora_visibility(
         if cloud_cover is None or moon_illumination is None or bortle_class is None:
             # Fetch weather, moon, and light pollution data in parallel
             async def fetch_all() -> tuple[Any, Any, Any]:
-                from celestron_nexstar.api.database.models import get_db_session
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
                 weather_task = fetch_weather(location)
                 moon_task = asyncio.to_thread(get_moon_info, location.latitude, location.longitude, dt)
-                async with get_db_session() as db_session:
-                    lp_task = get_light_pollution_data(db_session, location.latitude, location.longitude)
-                    weather, moon_info, lp_data = await asyncio.gather(
-                        weather_task, moon_task, lp_task, return_exceptions=True
-                    )
+                lp_task = get_light_pollution_data(location.latitude, location.longitude)
+                weather, moon_info, lp_data = await asyncio.gather(
+                    weather_task, moon_task, lp_task, return_exceptions=True
+                )
                 return weather, moon_info, lp_data
 
             # Run async function - this is a sync entry point, so asyncio.run() is safe

@@ -16,7 +16,17 @@ from datetime import UTC, datetime, timedelta
 import aiohttp
 import numpy as np
 
-from celestron_nexstar.api.database.models import HistoricalWeatherModel, WeatherForecastModel
+from celestron_nexstar.api.database.duckdb_access import (
+    create_or_update_historical_weather,
+    create_weather_forecast,
+    delete_old_weather_forecasts,
+    get_historical_weather,
+    get_weather_forecast,
+    get_weather_forecasts_for_location,
+    update_weather_forecast,
+)
+from celestron_nexstar.api.database.duckdb_models import WeatherForecast
+from celestron_nexstar.api.location.geohash_utils import encode
 from celestron_nexstar.api.location.observer import ObserverLocation
 
 
@@ -306,7 +316,7 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
     return max(0.0, min(100.0, total_score))
 
 
-def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
+def _is_forecast_stale(forecast: WeatherForecast, now: datetime) -> bool:
     """
     Determine if a weather forecast is stale.
 
@@ -315,7 +325,7 @@ def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
     2. It was fetched too long ago relative to how far in the future it's forecasting
 
     Args:
-        forecast: WeatherForecastModel instance
+        forecast: WeatherForecast instance
         now: Current datetime (timezone-aware, UTC)
 
     Returns:
@@ -375,71 +385,20 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
     forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
 
     # Helper function to check database
-    async def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
+    def _check_database_cache() -> tuple[list[WeatherForecast], datetime]:
         """Check database for cached forecasts. Returns (forecasts, now)."""
-        from sqlalchemy import and_, select, text
-
-        from celestron_nexstar.api.database.database import get_database
-        from celestron_nexstar.api.database.models import Base, WeatherForecastModel
-
-        db = get_database()
-
-        # Ensure weather_forecast table exists (create if migration hasn't run yet)
-        try:
-
-            async def _check_and_create_table() -> None:
-                async with db._engine.begin() as conn:
-                    # Check if table exists by trying to query it
-                    # If it doesn't exist, create it
-                    try:
-                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                        # AttributeError: missing connection attributes
-                        # RuntimeError: database errors, table doesn't exist
-                        # ValueError: invalid SQL
-                        # TypeError: wrong argument types
-                        # Table doesn't exist, create it
-                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                        )
-                    )
-
-            await _check_and_create_table()
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
-            # AttributeError: missing database attributes
-            # RuntimeError: database connection/creation errors
-            # ValueError: invalid table schema
-            # TypeError: wrong argument types
-            # OSError: file I/O errors
-            logger.debug(f"Could not check/create weather_forecast table: {e}")
-
         now = datetime.now(UTC)
         existing_forecasts = []
 
         try:
-            async with db._AsyncSession() as session:
-                # Query for forecasts for this location (we'll filter stale ones after)
-                # Get a wider range to check staleness intelligently
-                stmt = (
-                    select(WeatherForecastModel)
-                    .where(
-                        and_(
-                            WeatherForecastModel.latitude == location.latitude,
-                            WeatherForecastModel.longitude == location.longitude,
-                            # Only consider forecasts that are not too old (max 24 hours fetch age)
-                            WeatherForecastModel.fetched_at >= now - timedelta(hours=24),
-                        )
-                    )
-                    .order_by(WeatherForecastModel.forecast_timestamp)
-                )
-                result = await session.execute(stmt)
-                all_forecasts = result.scalars().all()
+            # Get forecasts for this location (within last 24 hours fetch age)
+            start_time = now - timedelta(hours=24)
+            all_forecasts = get_weather_forecasts_for_location(
+                location.latitude, location.longitude, start_time=start_time
+            )
 
-                # Filter out stale forecasts using intelligent staleness check
-                existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
+            # Filter out stale forecasts using intelligent staleness check
+            existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
         except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
             # AttributeError: missing database/model attributes
             # RuntimeError: database connection errors
@@ -453,7 +412,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
     # Check database for cached data
     try:
-        existing_forecasts, now = await _check_database_cache()
+        existing_forecasts, now = _check_database_cache()
 
         # If we have enough non-stale forecasts covering the requested hours, return them
         if existing_forecasts and len(existing_forecasts) >= hours:
@@ -615,88 +574,52 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             )
 
         # Store forecasts in database (replace stale data)
-        async def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
+        def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
             """Store forecasts in database."""
-            from sqlalchemy import and_, select
-
-            from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.database.models import WeatherForecastModel
-            from celestron_nexstar.api.location.geohash_utils import encode
-
-            db = get_database()
             try:
-                async with db._AsyncSession() as session:
-                    # Delete stale forecasts for this location using intelligent staleness check
-                    now_db = datetime.now(UTC)
-                    # Get all forecasts for this location to check staleness
-                    stmt = select(WeatherForecastModel).where(
-                        and_(
-                            WeatherForecastModel.latitude == location.latitude,
-                            WeatherForecastModel.longitude == location.longitude,
+                # Delete stale forecasts for this location
+                now_db = datetime.now(UTC)
+                # Delete forecasts older than 24 hours
+                delete_old_weather_forecasts(location.latitude, location.longitude, now_db - timedelta(hours=24))
+
+                # Calculate geohash for this location (precision 9 for ~5m accuracy)
+                location_geohash = encode(location.latitude, location.longitude, precision=9)
+
+                # Insert/update new forecasts
+                for forecast_item in forecasts_to_store:
+                    # Check if forecast already exists for this timestamp
+                    existing = get_weather_forecast(location.latitude, location.longitude, forecast_item.timestamp)
+
+                    if existing:
+                        # Update existing forecast
+                        update_weather_forecast(
+                            forecast_id=existing.id,
+                            geohash=location_geohash,
+                            temperature_f=forecast_item.temperature_f,
+                            dew_point_f=forecast_item.dew_point_f,
+                            humidity_percent=forecast_item.humidity_percent,
+                            cloud_cover_percent=forecast_item.cloud_cover_percent,
+                            wind_speed_mph=forecast_item.wind_speed_mph,
+                            seeing_score=forecast_item.seeing_score,
+                            fetched_at=now_db,
                         )
-                    )
-                    result = await session.execute(stmt)
-                    all_location_forecasts = result.scalars().all()
-
-                    # Collect IDs of stale forecasts for bulk delete
-                    stale_ids = [f.id for f in all_location_forecasts if _is_forecast_stale(f, now_db)]
-
-                    # Bulk delete stale forecasts to avoid row count warnings
-                    if stale_ids:
-                        from sqlalchemy import delete
-
-                        delete_stmt = delete(WeatherForecastModel).where(WeatherForecastModel.id.in_(stale_ids))
-                        await session.execute(delete_stmt)
-
-                    # Insert new forecasts
-                    for forecast_item in forecasts_to_store:
-                        # Check if forecast already exists for this timestamp
-                        stmt = (
-                            select(WeatherForecastModel)
-                            .where(
-                                and_(
-                                    WeatherForecastModel.latitude == location.latitude,
-                                    WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
-                                )
-                            )
-                            .limit(1)
+                    else:
+                        # Insert new forecast
+                        create_weather_forecast(
+                            latitude=location.latitude,
+                            longitude=location.longitude,
+                            forecast_timestamp=forecast_item.timestamp,
+                            geohash=location_geohash,
+                            temperature_f=forecast_item.temperature_f,
+                            dew_point_f=forecast_item.dew_point_f,
+                            humidity_percent=forecast_item.humidity_percent,
+                            cloud_cover_percent=forecast_item.cloud_cover_percent,
+                            wind_speed_mph=forecast_item.wind_speed_mph,
+                            seeing_score=forecast_item.seeing_score,
+                            fetched_at=now_db,
                         )
-                        result = await session.execute(stmt)
-                        existing = result.scalar_one_or_none()
 
-                        # Calculate geohash for this location (precision 9 for ~5m accuracy)
-                        location_geohash = encode(location.latitude, location.longitude, precision=9)
-
-                        if existing:
-                            # Update existing forecast
-                            existing.geohash = location_geohash
-                            existing.temperature_f = forecast_item.temperature_f
-                            existing.dew_point_f = forecast_item.dew_point_f
-                            existing.humidity_percent = forecast_item.humidity_percent
-                            existing.cloud_cover_percent = forecast_item.cloud_cover_percent
-                            existing.wind_speed_mph = forecast_item.wind_speed_mph
-                            existing.seeing_score = forecast_item.seeing_score
-                            existing.fetched_at = now_db
-                        else:
-                            # Insert new forecast
-                            db_forecast = WeatherForecastModel(
-                                latitude=location.latitude,
-                                longitude=location.longitude,
-                                geohash=location_geohash,
-                                forecast_timestamp=forecast_item.timestamp,
-                                temperature_f=forecast_item.temperature_f,
-                                dew_point_f=forecast_item.dew_point_f,
-                                humidity_percent=forecast_item.humidity_percent,
-                                cloud_cover_percent=forecast_item.cloud_cover_percent,
-                                wind_speed_mph=forecast_item.wind_speed_mph,
-                                seeing_score=forecast_item.seeing_score,
-                                fetched_at=now_db,
-                            )
-                            session.add(db_forecast)
-
-                    await session.commit()
-                    logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
+                logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
             except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                 # AttributeError: missing database/model attributes
                 # RuntimeError: database connection/commit errors
@@ -706,7 +629,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                 logger.warning(f"Error storing weather forecasts in database: {e}")
 
         if forecasts:
-            await _store_forecasts_in_db(forecasts)
+            _store_forecasts_in_db(forecasts)
 
     except (
         aiohttp.ClientError,
@@ -751,69 +674,23 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     current_hour_end = current_hour_start + timedelta(hours=1)
 
     # Helper function to check database
-    async def _check_database_cache() -> WeatherForecastModel | None:
+    def _check_database_cache() -> WeatherForecast | None:
         """Check database for cached weather. Returns cached forecast or None."""
-        from sqlalchemy import and_, select, text
-
-        from celestron_nexstar.api.database.database import get_database
-        from celestron_nexstar.api.database.models import Base, WeatherForecastModel
-
-        db = get_database()
-
-        # Ensure weather_forecast table exists
         try:
+            # Look for forecasts for the current hour
+            candidates = get_weather_forecasts_for_location(
+                location.latitude,
+                location.longitude,
+                start_time=current_hour_start,
+                end_time=current_hour_end,
+            )
+            # Sort by timestamp descending (most recent first)
+            candidates.sort(key=lambda x: x.forecast_timestamp, reverse=True)
 
-            async def _check_and_create_table() -> None:
-                async with db._engine.begin() as conn:
-                    # Check if table exists by trying to query it
-                    # If it doesn't exist, create it
-                    try:
-                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                        # AttributeError: missing connection attributes
-                        # RuntimeError: database errors, table doesn't exist
-                        # ValueError: invalid SQL
-                        # TypeError: wrong argument types
-                        # Table doesn't exist, create it
-                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                        )
-                    )
-
-            await _check_and_create_table()
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
-            # AttributeError: missing database attributes
-            # RuntimeError: database connection/creation errors
-            # ValueError: invalid table schema
-            # TypeError: wrong argument types
-            # OSError: file I/O errors
-            logger.debug(f"Could not check/create weather_forecast table: {e}")
-
-        try:
-            async with db._AsyncSession() as session:
-                # Look for forecasts for the current hour
-                stmt = (
-                    select(WeatherForecastModel)
-                    .where(
-                        and_(
-                            WeatherForecastModel.latitude == location.latitude,
-                            WeatherForecastModel.longitude == location.longitude,
-                            WeatherForecastModel.forecast_timestamp >= current_hour_start,
-                            WeatherForecastModel.forecast_timestamp < current_hour_end,
-                        )
-                    )
-                    .order_by(WeatherForecastModel.forecast_timestamp.desc())
-                )
-                result = await session.execute(stmt)
-                candidates = result.scalars().all()
-
-                # Find the first non-stale forecast
-                for candidate in candidates:
-                    if not _is_forecast_stale(candidate, now):
-                        return candidate
+            # Find the first non-stale forecast
+            for candidate in candidates:
+                if not _is_forecast_stale(candidate, now):
+                    return candidate
         except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
             # AttributeError: missing database/model attributes
             # RuntimeError: database connection errors
@@ -827,7 +704,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
     # Check database for current weather (within the current hour)
     try:
-        existing = await _check_database_cache()
+        existing = _check_database_cache()
 
         if existing:
             # Convert database model to WeatherData
@@ -958,70 +835,32 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
         # Store in database for future use
         if not weather_data.error:
 
-            async def _store_weather_in_db(weather_to_store: WeatherData) -> None:
+            def _store_weather_in_db(weather_to_store: WeatherData) -> None:
                 """Store weather in database."""
-                from sqlalchemy import and_, select
-
-                from celestron_nexstar.api.database.database import get_database
-                from celestron_nexstar.api.database.models import WeatherForecastModel
-                from celestron_nexstar.api.location.geohash_utils import encode
-
-                db = get_database()
                 try:
                     location_geohash = encode(location.latitude, location.longitude, precision=9)
                     now_db = datetime.now(UTC)
                     current_hour_start_db = now_db.replace(minute=0, second=0, microsecond=0)
-                    current_hour_end_db = current_hour_start_db + timedelta(hours=1)
 
-                    async with db._AsyncSession() as session:
-                        # Check if forecast already exists for this hour
-                        stmt = (
-                            select(WeatherForecastModel)
-                            .where(
-                                and_(
-                                    WeatherForecastModel.latitude == location.latitude,
-                                    WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp >= current_hour_start_db,
-                                    WeatherForecastModel.forecast_timestamp < current_hour_end_db,
-                                )
-                            )
-                            .limit(1)
-                        )
-                        result = await session.execute(stmt)
-                        existing = result.scalar_one_or_none()
+                    # Calculate seeing score
+                    seeing_score = calculate_seeing_conditions(weather_to_store)
 
-                        # Calculate seeing score
-                        seeing_score = calculate_seeing_conditions(weather_to_store)
+                    # Create or update forecast
+                    create_weather_forecast(
+                        latitude=location.latitude,
+                        longitude=location.longitude,
+                        forecast_timestamp=current_hour_start_db,
+                        geohash=location_geohash,
+                        temperature_f=weather_to_store.temperature_c,
+                        dew_point_f=weather_to_store.dew_point_f,
+                        humidity_percent=weather_to_store.humidity_percent,
+                        cloud_cover_percent=weather_to_store.cloud_cover_percent,
+                        wind_speed_mph=weather_to_store.wind_speed_ms,
+                        seeing_score=seeing_score,
+                        fetched_at=now_db,
+                    )
 
-                        if existing:
-                            # Update existing forecast
-                            existing.geohash = location_geohash
-                            existing.temperature_f = weather_to_store.temperature_c
-                            existing.dew_point_f = weather_to_store.dew_point_f
-                            existing.humidity_percent = weather_to_store.humidity_percent
-                            existing.cloud_cover_percent = weather_to_store.cloud_cover_percent
-                            existing.wind_speed_mph = weather_to_store.wind_speed_ms
-                            existing.seeing_score = seeing_score
-                            existing.fetched_at = now_db
-                        else:
-                            # Insert new forecast
-                            db_forecast = WeatherForecastModel(
-                                latitude=location.latitude,
-                                longitude=location.longitude,
-                                geohash=location_geohash,
-                                forecast_timestamp=current_hour_start_db,
-                                temperature_f=weather_to_store.temperature_c,
-                                dew_point_f=weather_to_store.dew_point_f,
-                                humidity_percent=weather_to_store.humidity_percent,
-                                cloud_cover_percent=weather_to_store.cloud_cover_percent,
-                                wind_speed_mph=weather_to_store.wind_speed_ms,
-                                seeing_score=seeing_score,
-                                fetched_at=now_db,
-                            )
-                            session.add(db_forecast)
-
-                        await session.commit()
-                        logger.debug("Stored current weather in database")
+                    logger.debug("Stored current weather in database")
                 except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                     # AttributeError: missing database/model attributes
                     # RuntimeError: database connection/commit errors
@@ -1030,7 +869,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     # KeyError: missing keys in data
                     logger.warning(f"Error storing current weather in database: {e}")
 
-            await _store_weather_in_db(weather_data)
+            _store_weather_in_db(weather_data)
 
         return weather_data
 
@@ -1114,33 +953,15 @@ async def fetch_historical_weather_climatology(
         required_months = set(range(1, 13))  # All 12 months
 
     # Check database first
-    from sqlalchemy import and_, select
-
-    from celestron_nexstar.api.database.database import get_database
-    from celestron_nexstar.api.location.geohash_utils import encode
-
-    db = get_database()
     monthly_stats: dict[int, dict[str, float | None]] = {}
     months_in_db: set[int] = set()
 
     try:
-        async with db._AsyncSession() as session:
-            # Check what months we have in the database
-            stmt = (
-                select(HistoricalWeatherModel)
-                .where(
-                    and_(
-                        HistoricalWeatherModel.latitude == location.latitude,
-                        HistoricalWeatherModel.longitude == location.longitude,
-                    )
-                )
-                .order_by(HistoricalWeatherModel.month)
-            )
-            result = await session.execute(stmt)
-            existing_data = result.scalars().all()
-
-            # Build dictionary of months we have
-            for record in existing_data:
+        # Check what months we have in the database
+        # Get all 12 months
+        for month in range(1, 13):
+            record = get_historical_weather(location.latitude, location.longitude, month)
+            if record:
                 months_in_db.add(record.month)
                 monthly_stats[record.month] = {
                     "avg": record.avg_cloud_cover_percent,
@@ -1294,56 +1115,22 @@ async def fetch_historical_weather_climatology(
 
             # Store in database
             try:
-                async with db._AsyncSession() as session:
-                    # Check if record exists
-                    stmt = (
-                        select(HistoricalWeatherModel)
-                        .where(
-                            and_(
-                                HistoricalWeatherModel.latitude == location.latitude,
-                                HistoricalWeatherModel.longitude == location.longitude,
-                                HistoricalWeatherModel.month == month,
-                            )
-                        )
-                        .limit(1)
-                    )
-                    result = await session.execute(stmt)
-                    existing = result.scalar_one_or_none()
-
-                    if existing:
-                        # Update existing record
-                        existing.geohash = geohash
-                        existing.avg_cloud_cover_percent = avg
-                        existing.min_cloud_cover_percent = min_val
-                        existing.max_cloud_cover_percent = max_val
-                        existing.p25_cloud_cover_percent = p25
-                        existing.p40_cloud_cover_percent = p40
-                        existing.p60_cloud_cover_percent = p60
-                        existing.p75_cloud_cover_percent = p75
-                        existing.std_dev_cloud_cover_percent = std_dev
-                        existing.years_of_data = years_of_data
-                        existing.fetched_at = now_db
-                    else:
-                        # Insert new record
-                        new_record = HistoricalWeatherModel(
-                            latitude=location.latitude,
-                            longitude=location.longitude,
-                            geohash=geohash,
-                            month=month,
-                            avg_cloud_cover_percent=avg,
-                            min_cloud_cover_percent=min_val,
-                            max_cloud_cover_percent=max_val,
-                            p25_cloud_cover_percent=p25,
-                            p40_cloud_cover_percent=p40,
-                            p60_cloud_cover_percent=p60,
-                            p75_cloud_cover_percent=p75,
-                            std_dev_cloud_cover_percent=std_dev,
-                            years_of_data=years_of_data,
-                            fetched_at=now_db,
-                        )
-                        session.add(new_record)
-
-                    await session.commit()
+                create_or_update_historical_weather(
+                    latitude=location.latitude,
+                    longitude=location.longitude,
+                    month=month,
+                    geohash=geohash,
+                    avg_cloud_cover_percent=avg,
+                    min_cloud_cover_percent=min_val,
+                    max_cloud_cover_percent=max_val,
+                    p25_cloud_cover_percent=p25,
+                    p40_cloud_cover_percent=p40,
+                    p60_cloud_cover_percent=p60,
+                    p75_cloud_cover_percent=p75,
+                    std_dev_cloud_cover_percent=std_dev,
+                    years_of_data=years_of_data,
+                    fetched_at=now_db,
+                )
             except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                 # AttributeError: missing database/model attributes
                 # RuntimeError: database connection/commit errors
@@ -1397,50 +1184,32 @@ async def get_historical_cloud_cover_for_month(
         Uses p40-p60 (tighter) or p25-p75 (wider) based on use_tighter_range parameter
     """
     # Check database first
-    from sqlalchemy import and_, select
-
-    from celestron_nexstar.api.database.database import get_database
-
-    db = get_database()
     try:
-        async with db._AsyncSession() as session:
-            stmt = (
-                select(HistoricalWeatherModel)
-                .where(
-                    and_(
-                        HistoricalWeatherModel.latitude == location.latitude,
-                        HistoricalWeatherModel.longitude == location.longitude,
-                        HistoricalWeatherModel.month == month,
-                    )
-                )
-                .limit(1)
-            )
-            result = await session.execute(stmt)
-            record = result.scalar_one_or_none()
+        record = get_historical_weather(location.latitude, location.longitude, month)
 
-            if record:
-                if use_tighter_range:
-                    # Use p40-p60 for tighter range, but fall back to p25-p75 if not available
-                    # Check if p40/p60 exist (might not if migration hasn't been run or data is old)
-                    try:
-                        p40 = getattr(record, "p40_cloud_cover_percent", None)
-                        p60 = getattr(record, "p60_cloud_cover_percent", None)
-                        if p40 is not None and p60 is not None:
-                            std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
-                            return (p40, p60, std_dev)
-                    except AttributeError:
-                        pass  # Columns don't exist, fall through to p25-p75
+        if record:
+            if use_tighter_range:
+                # Use p40-p60 for tighter range, but fall back to p25-p75 if not available
+                # Check if p40/p60 exist (might not if migration hasn't been run or data is old)
+                try:
+                    p40 = getattr(record, "p40_cloud_cover_percent", None)
+                    p60 = getattr(record, "p60_cloud_cover_percent", None)
+                    if p40 is not None and p60 is not None:
+                        std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                        return (p40, p60, std_dev)
+                except AttributeError:
+                    pass  # Columns don't exist, fall through to p25-p75
 
-                    # Fall back to p25-p75 if p40-p60 not available (e.g., old data before migration)
-                    if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
-                        logger.debug(f"Using p25-p75 for month {month} (p40-p60 not available)")
-                        std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
-                        return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
-                else:
-                    # Use p25-p75 for wider range
-                    if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
-                        std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
-                        return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
+                # Fall back to p25-p75 if p40-p60 not available (e.g., old data before migration)
+                if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
+                    logger.debug(f"Using p25-p75 for month {month} (p40-p60 not available)")
+                    std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                    return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
+            else:
+                # Use p25-p75 for wider range
+                if record.p25_cloud_cover_percent is not None and record.p75_cloud_cover_percent is not None:
+                    std_dev = getattr(record, "std_dev_cloud_cover_percent", None)
+                    return (record.p25_cloud_cover_percent, record.p75_cloud_cover_percent, std_dev)
     except (AttributeError, ValueError, TypeError) as e:
         # AttributeError: missing database attributes
         # ValueError: invalid month or location data

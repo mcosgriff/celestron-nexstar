@@ -644,9 +644,8 @@ def setup(
     else:
         # Database is already set up, just ensure migrations are current
         try:
-            from alembic.config import Config
-
             from alembic import command  # type: ignore[attr-defined]
+            from alembic.config import Config
 
             alembic_cfg = Config("alembic.ini")
             command.upgrade(alembic_cfg, "head")
@@ -796,7 +795,6 @@ def seed_database(
     if status:
         console.print("\n[bold cyan]Seed Data Status[/bold cyan]\n")
         try:
-
             from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
             from celestron_nexstar.api.database.duckdb_seeder import get_seed_status
 
@@ -906,10 +904,28 @@ def seed_database(
 
     try:
         from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+        from celestron_nexstar.api.database.duckdb_migrations import MIGRATIONS, get_current_version, run_migrations
         from celestron_nexstar.api.database.duckdb_seeder import seed_all
 
-        # Use DuckDB seeder
+        # Initialize database (this runs migrations automatically)
         db = DuckDBCatalogDatabase()
+
+        # Ensure migrations are up to date
+        current_version = get_current_version(db.con)
+        target_version = max(m.version for m in MIGRATIONS) if MIGRATIONS else 0
+        if current_version < target_version:
+            console.print(f"[dim]Running database migrations (version {current_version} → {target_version})...[/dim]")
+            try:
+                run_migrations(db.con)
+                new_version = get_current_version(db.con)
+                console.print(f"[green]✓[/green] Migrations complete (now at version {new_version})\n")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Migration failed: {e}\n")
+                raise
+        else:
+            console.print(f"[dim]Database is up to date (version {current_version})[/dim]\n")
+
+        # Use DuckDB seeder
         results = seed_all(db.con, force=force)
 
         # Display results
@@ -1443,7 +1459,7 @@ def clear_light_pollution(
 
     # Clear the data
     try:
-        deleted_count = clear_light_pollution_data(db)
+        deleted_count = clear_light_pollution_data()
         console.print(
             f"\n[bold green]✓[/bold green] Cleared [green]{deleted_count:,}[/green] rows from light pollution table.\n"
         )
@@ -1975,6 +1991,151 @@ def rebuild(
         raise typer.Exit(code=1) from None
 
 
+@app.command("database-setup", rich_help_panel="Database Management")
+def database_setup(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force rebuild even if database already exists (DEPRECATED: database-setup always rebuilds)",
+    ),
+) -> None:
+    """
+    Complete database setup for DuckDB (NUCLEAR OPTION - deletes and rebuilds everything).
+
+    This command performs all necessary setup steps:
+    1. Deletes existing DuckDB database (if it exists)
+    2. Creates fresh DuckDB database file
+    3. Installs and loads extensions (fts, spatial, httpfs) - requires internet
+    4. Runs all schema migrations
+    5. Verifies starplot data files are available
+
+    WARNING: This will DELETE all existing data in the database and rebuild from scratch.
+    This is a nuclear option - use when you need a fresh start or after schema changes.
+
+    This requires internet connectivity to download extensions from DuckDB's repository.
+
+    Examples:
+        nexstar data database-setup
+    """
+    from celestron_nexstar.api.data.starplot_config import get_starplot_data_directory
+    from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+    from celestron_nexstar.api.database.duckdb_migrations import (
+        MIGRATIONS,
+        get_current_version,
+        run_migrations,
+    )
+
+    console.print("\n[bold yellow]⚠ NUCLEAR OPTION: This will delete and rebuild the database![/bold yellow]")
+    console.print("[bold cyan]Setting up DuckDB database from scratch...[/bold cyan]\n")
+
+    try:
+        # Step 0: Delete existing database if it exists (NUCLEAR OPTION)
+        db_path = Path.home() / ".config" / "celestron-nexstar" / "catalogs.duckdb"
+        if db_path.exists():
+            console.print("[cyan]Step 0:[/cyan] Deleting existing database...")
+            db_path.unlink()
+            console.print(f"[green]✓[/green] Deleted existing database at: {db_path}\n")
+        else:
+            console.print("[cyan]Step 0:[/cyan] No existing database found (fresh install)\n")
+
+        # Step 1: Initialize DuckDB connection
+        console.print("[cyan]Step 1:[/cyan] Creating DuckDB database...")
+        db = DuckDBCatalogDatabase()
+        console.print(f"[green]✓[/green] Database created at: {db.db_path}\n")
+
+        # Step 2: Install and load extensions
+        console.print("[cyan]Step 2:[/cyan] Installing DuckDB extensions (requires internet)...")
+        extensions_to_install = [
+            ("fts", "Full-text search"),
+            ("spatial", "Geospatial data types and functions"),
+            ("httpfs", "HTTP/HTTPS and cloud storage access"),
+        ]
+
+        installed_extensions = []
+        for ext_name, ext_description in extensions_to_install:
+            try:
+                db.con.execute(f"INSTALL {ext_name};")
+                console.print(f"  [dim]Downloaded {ext_name} extension ({ext_description})[/dim]")
+                db.con.execute(f"LOAD {ext_name};")
+                console.print(f"  [dim]Loaded {ext_name} extension[/dim]")
+                installed_extensions.append(ext_name)
+            except Exception as e:
+                console.print(f"  [yellow]⚠[/yellow] Could not install {ext_name} extension: {e}")
+
+        # Verify extensions are loaded
+        try:
+            extensions = db.con.execute("SELECT * FROM duckdb_extensions() WHERE loaded = true").fetchall()
+            extension_names = [ext[0] for ext in extensions]
+            loaded_count = sum(1 for ext in installed_extensions if ext in extension_names)
+
+            if loaded_count == len(extensions_to_install):
+                console.print(
+                    f"[green]✓[/green] All extensions installed and loaded successfully ({loaded_count}/{len(extensions_to_install)})\n"
+                )
+            elif loaded_count > 0:
+                console.print(
+                    f"[yellow]⚠[/yellow] Some extensions loaded ({loaded_count}/{len(extensions_to_install)})\n"
+                )
+                console.print("[dim]Missing extensions will use fallback methods where available.[/dim]\n")
+            else:
+                console.print("[yellow]⚠[/yellow] No extensions were loaded\n")
+                console.print(
+                    "[dim]The database will use fallback methods (e.g., LIKE for search, manual calculations for spatial queries).[/dim]\n"
+                )
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Could not verify extensions: {e}\n")
+
+        # Step 3: Run migrations
+        console.print("[cyan]Step 3:[/cyan] Running database migrations...")
+        current_version = get_current_version(db.con)
+        target_version = max(m.version for m in MIGRATIONS) if MIGRATIONS else 0
+
+        if current_version < target_version:
+            run_migrations(db.con)
+            new_version = get_current_version(db.con)
+            console.print(f"[green]✓[/green] Migrations applied (version {current_version} → {new_version})\n")
+        else:
+            console.print(f"[green]✓[/green] Database is up to date (version {current_version})\n")
+
+        # Step 4: Verify starplot data
+        console.print("[cyan]Step 4:[/cyan] Verifying starplot data files...")
+        starplot_data_dir = get_starplot_data_directory()
+
+        # Check for star parquet file
+        star_parquet = db._find_star_parquet_file()
+        if star_parquet and star_parquet.exists():
+            console.print(f"  [green]✓[/green] Star catalog found: {star_parquet.name}")
+        else:
+            console.print("  [yellow]⚠[/yellow] Star catalog parquet file not found")
+            console.print(f"  [dim]Expected in: {starplot_data_dir}[/dim]")
+            console.print("  [dim]Starplot will download it on first use.[/dim]")
+
+        # Check for DSO database
+        dso_db = db._find_dso_database()
+        if dso_db and dso_db.exists():
+            console.print(f"  [green]✓[/green] DSO database found: {dso_db.name}")
+        else:
+            console.print("  [yellow]⚠[/yellow] DSO database not found")
+            console.print(f"  [dim]Expected in: {starplot_data_dir}[/dim]")
+            console.print("  [dim]Starplot will download it on first use.[/dim]")
+
+        console.print()
+
+        # Summary
+        console.print("[bold green]✓ Database setup complete![/bold green]\n")
+        console.print("[dim]Next steps:[/dim]")
+        console.print("  [dim]• Run 'nexstar data seed' to populate reference data[/dim]")
+        console.print("  [dim]• The database is ready to use[/dim]\n")
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error during database setup: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("migrate", rich_help_panel="Database Management")
 def run_migrations(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be done without applying changes"),
@@ -2033,7 +2194,9 @@ def run_migrations(
         console.print(f"[green]✓[/green] Star catalog found: {db._star_parquet_path.name}")
     else:
         console.print("[yellow]⚠[/yellow] Star catalog parquet file not found")
-        console.print("[dim]Star queries will be limited. Starplot's abridged catalog should be included with the package.[/dim]")
+        console.print(
+            "[dim]Star queries will be limited. Starplot's abridged catalog should be included with the package.[/dim]"
+        )
 
     if db._dso_db_path and db._dso_db_path.exists():
         console.print(f"[green]✓[/green] DSO database found: {db._dso_db_path.name}")

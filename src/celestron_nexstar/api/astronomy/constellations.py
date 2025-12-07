@@ -11,15 +11,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-
-from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
-
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 logger = logging.getLogger(__name__)
@@ -80,42 +73,58 @@ class Asterism:
 # Removed FAMOUS_ASTERISMS - data is now in asterisms.json seed file and loaded via get_famous_asterisms()
 
 
-async def get_prominent_constellations(db_session: AsyncSession) -> list[Constellation]:
+def get_prominent_constellations(db_session: None = None) -> list[Constellation]:  # db_session deprecated
     """
-    Get list of prominent constellations from database.
+    Get list of prominent constellations from starplot.
 
     Args:
-        db_session: Database session
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of Constellation objects
 
     Raises:
-        RuntimeError: If no constellations found in database (seed data required)
+        RuntimeError: If no constellations found
     """
-    from sqlalchemy import func, select
-
     from celestron_nexstar.api.core.exceptions import DatabaseError
-    from celestron_nexstar.api.database.models import ConstellationModel
 
-    count = await db_session.scalar(select(func.count(ConstellationModel.id)))
-    if count == 0:
+    try:
+        from starplot.models import Constellation as StarplotConstellation
+
+        constellations = []
+        # Get all constellations from starplot
+        for c in StarplotConstellation.all():
+            # Convert starplot Constellation to our Constellation dataclass
+            # starplot Constellation has: name, iau_id (3-letter abbreviation), ra (degrees), dec (degrees), etc.
+            constellations.append(
+                Constellation(
+                    name=c.name or "",
+                    abbreviation=c.iau_id or "",
+                    ra_hours=c.ra / 15.0 if c.ra else 0.0,  # Convert degrees to hours
+                    dec_degrees=c.dec if c.dec else 0.0,
+                    area_sq_deg=0.0,  # Not available from starplot
+                    brightest_star="",  # Not available from starplot
+                    magnitude=0.0,  # Not available from starplot
+                    season="",  # Not available from starplot
+                    hemisphere="",  # Not available from starplot
+                    description="",  # Not available from starplot
+                )
+            )
+        if not constellations:
+            raise DatabaseError("No constellations found. Please ensure starplot data is available.")
+        return constellations
+    except (ImportError, AttributeError, RuntimeError) as e:
         raise DatabaseError(
-            "No constellations found in database. Please seed the database by running: nexstar data seed"
-        )
-
-    result = await db_session.execute(select(ConstellationModel))
-    models = result.scalars().all()
-
-    return [model.to_constellation() for model in models]
+            "Could not load constellations from starplot. Please ensure starplot is properly installed."
+        ) from e
 
 
-async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
+def get_famous_asterisms(db_session: None = None) -> list[Asterism]:  # db_session deprecated
     """
     Get list of famous asterisms from database.
 
     Args:
-        db_session: Database session
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of Asterism objects
@@ -123,37 +132,77 @@ async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
     Raises:
         RuntimeError: If no asterisms found in database (seed data required)
     """
-    from sqlalchemy import func, select
-
     from celestron_nexstar.api.core.exceptions import DatabaseError
-    from celestron_nexstar.api.database.models import AsterismModel
+    from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
 
-    count = await db_session.scalar(select(func.count(AsterismModel.id)))
-    if count == 0:
+    con = get_duckdb_connection()
+    results = con.execute(
+        """
+        SELECT name, alt_names, ra_hours, dec_degrees, size_degrees, parent_constellation,
+               description, stars, season, wikipedia_url, cultural_info, guidepost_info,
+               historical_notes, shape_description
+        FROM asterisms
+        ORDER BY name
+        """
+    ).fetchall()
+
+    if not results:
         raise DatabaseError("No asterisms found in database. Please seed the database by running: nexstar data seed")
 
-    result = await db_session.execute(select(AsterismModel))
-    models = result.scalars().all()
+    asterisms = []
+    for row in results:
+        # Parse alt_names and stars (stored as comma-separated strings)
+        alt_names = [n.strip() for n in row[1].split(",")] if row[1] else []
+        member_stars = [s.strip() for s in row[7].split(",")] if row[7] else []
 
-    return [model.to_asterism() for model in models]
+        # Calculate hemisphere from declination
+        dec = row[3]
+        if dec > 30:
+            hemisphere = "Northern"
+        elif dec < -30:
+            hemisphere = "Southern"
+        else:
+            hemisphere = "Equatorial"
+
+        asterisms.append(
+            Asterism(
+                name=row[0],
+                alt_names=alt_names,
+                ra_hours=row[2],
+                dec_degrees=dec,
+                size_degrees=row[4] or 0.0,
+                parent_constellation=row[5] or "",
+                season=row[8] or "",
+                hemisphere=hemisphere,
+                member_stars=member_stars,
+                description=row[6] or "",
+                wikipedia_url=row[9],
+                cultural_info=row[10],
+                guidepost_info=row[11],
+                historical_notes=row[12],
+                shape_description=row[13],
+            )
+        )
+
+    return asterisms
 
 
 async def get_visible_constellations(
-    db_session: AsyncSession,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
     min_altitude_deg: float = 20.0,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[tuple[Constellation, float, float]]:
     """
     Get constellations visible above horizon at given time.
 
     Args:
-        db_session: Database session
         latitude: Observer latitude in degrees
         longitude: Observer longitude in degrees
         observation_time: Time of observation (default: now)
         min_altitude_deg: Minimum altitude for visibility (default: 20°)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of (Constellation, altitude_deg, azimuth_deg) tuples sorted by altitude
@@ -167,7 +216,7 @@ async def get_visible_constellations(
 
     visible = []
 
-    constellations = await get_prominent_constellations(db_session)
+    constellations = get_prominent_constellations()
     for constellation in constellations:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -188,21 +237,21 @@ async def get_visible_constellations(
 
 
 async def get_visible_asterisms(
-    db_session: AsyncSession,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
     min_altitude_deg: float = 20.0,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[tuple[Asterism, float, float]]:
     """
     Get asterisms visible above horizon at given time.
 
     Args:
-        db_session: Database session
         latitude: Observer latitude in degrees
         longitude: Observer longitude in degrees
         observation_time: Time of observation (default: now)
         min_altitude_deg: Minimum altitude for visibility (default: 20°)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of (Asterism, altitude_deg, azimuth_deg) tuples sorted by altitude
@@ -216,7 +265,7 @@ async def get_visible_asterisms(
 
     visible = []
 
-    asterisms = await get_famous_asterisms(db_session)
+    asterisms = get_famous_asterisms()
     for asterism in asterisms:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -236,7 +285,7 @@ async def get_visible_asterisms(
     return visible
 
 
-def populate_constellation_database(db_session: Session) -> None:
+def populate_constellation_database(db_session: None = None) -> None:  # db_session deprecated
     """
     Populate database with constellation and asterism data.
 
@@ -244,18 +293,10 @@ def populate_constellation_database(db_session: Session) -> None:
     Now uses seed data from JSON files instead of hardcoded Python data.
 
     Args:
-        db_session: SQLAlchemy database session
+        db_session: Deprecated parameter, kept for compatibility
     """
-    import asyncio
-
-    from celestron_nexstar.api.database.database_seeder import seed_asterisms, seed_constellations
-    from celestron_nexstar.api.database.models import get_db_session
+    from celestron_nexstar.api.database.duckdb_seeder import seed_asterisms_duckdb
 
     logger.info("Populating constellation database...")
-
-    async def _seed() -> None:
-        async with get_db_session() as async_session:
-            await seed_constellations(async_session, force=True)
-            await seed_asterisms(async_session, force=True)
-
-    asyncio.run(_seed())
+    # Constellations come from starplot, only seed asterisms
+    seed_asterisms_duckdb(force=True)

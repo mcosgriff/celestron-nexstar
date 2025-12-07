@@ -4,6 +4,7 @@
 import sys
 from pathlib import Path
 
+
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
@@ -11,7 +12,6 @@ sys.path.insert(0, str(project_root / "src"))
 from sqlalchemy import inspect, text
 
 from celestron_nexstar.api.database.database import get_database
-from celestron_nexstar.api.database.models import CelestialObjectModel, StarNameMappingModel
 
 
 def main():
@@ -72,7 +72,7 @@ def main():
                 text("SELECT hr_number, common_name FROM star_name_mappings ORDER BY hr_number LIMIT 5")
             )
             rows = result.fetchall()
-            print(f"\n   Sample mappings:")
+            print("\n   Sample mappings:")
             for r in rows:
                 print(f"     HR {r[0]}: {r[1]}")
 

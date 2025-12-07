@@ -12,14 +12,12 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
 
 import aiohttp
 from bs4 import BeautifulSoup
 
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+# Removed SQLAlchemy AsyncSession import - using DuckDB directly
 
 
 logger = logging.getLogger(__name__)
@@ -529,38 +527,37 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
 
 
 async def cache_astropixels_events(
-    db_session: AsyncSession, year: int, timezone: str = "MST", force_refresh: bool = False
-) -> int:
+    year: int, timezone: str = "MST", force_refresh: bool = False, db_session: None = None
+) -> int:  # db_session deprecated
     """
     Fetch and cache AstroPixels events in the database.
 
     Args:
-        db_session: Database session
         year: Year to fetch
         timezone: Timezone abbreviation
         force_refresh: Force refresh even if events already exist
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         Number of events cached
     """
-    from sqlalchemy import delete, select
-
-    from celestron_nexstar.api.database.models import SpaceEventModel
+    from celestron_nexstar.api.database.duckdb_access import (
+        create_or_update_space_event,
+        delete_space_events_by_source_and_date_range,
+        get_space_events,
+    )
 
     # Check if events already exist
     if not force_refresh:
-        from sqlalchemy import func
-
-        count = await db_session.scalar(
-            select(func.count(SpaceEventModel.id)).where(
-                SpaceEventModel.source == "AstroPixels",
-                SpaceEventModel.date >= datetime(year, 1, 1, tzinfo=UTC),
-                SpaceEventModel.date < datetime(year + 1, 1, 1, tzinfo=UTC),
-            )
+        existing_events = get_space_events(
+            start_date=datetime(year, 1, 1, tzinfo=UTC),
+            end_date=datetime(year + 1, 1, 1, tzinfo=UTC),
+            source="AstroPixels",
+            limit=10000,
         )
-        if count and count > 0:
-            logger.info(f"AstroPixels events for {year} already cached ({count} events)")
-            return count
+        if existing_events:
+            logger.info(f"AstroPixels events for {year} already cached ({len(existing_events)} events)")
+            return len(existing_events)
 
     # Fetch events
     events = await fetch_and_parse_almanac(year, timezone)
@@ -571,14 +568,11 @@ async def cache_astropixels_events(
 
     # Delete existing events for this year if forcing refresh
     if force_refresh:
-        await db_session.execute(
-            delete(SpaceEventModel).where(
-                SpaceEventModel.source == "AstroPixels",
-                SpaceEventModel.date >= datetime(year, 1, 1, tzinfo=UTC),
-                SpaceEventModel.date < datetime(year + 1, 1, 1, tzinfo=UTC),
-            )
+        delete_space_events_by_source_and_date_range(
+            source="AstroPixels",
+            start_date=datetime(year, 1, 1, tzinfo=UTC),
+            end_date=datetime(year + 1, 1, 1, tzinfo=UTC),
         )
-        await db_session.commit()  # Commit the delete before adding new events
         logger.info(f"Deleted existing AstroPixels events for {year} (force_refresh=True)")
 
     # Store events
@@ -587,22 +581,24 @@ async def cache_astropixels_events(
     updated = 0
     for event in events:
         # Check if event already exists (by name and date)
-        existing = await db_session.scalar(
-            select(SpaceEventModel)
-            .where(
-                SpaceEventModel.source == "AstroPixels",
-                SpaceEventModel.name == event.event_name,
-                SpaceEventModel.date == event.date,
-            )
-            .limit(1)
+        existing_events = get_space_events(
+            start_date=event.date - timedelta(seconds=1),
+            end_date=event.date + timedelta(seconds=1),
+            source="AstroPixels",
+            limit=10,
         )
+        existing = None
+        for e in existing_events:
+            if e.name == event.event_name and abs((e.date - event.date).total_seconds()) < 1:
+                existing = e
+                break
 
         if not existing:
             # Ensure text is properly encoded (UTF-8) to preserve special characters
             event_name = event.event_name.encode("utf-8", errors="replace").decode("utf-8")
             event_description = event.description.encode("utf-8", errors="replace").decode("utf-8")
 
-            db_event = SpaceEventModel(
+            create_or_update_space_event(
                 name=event_name,
                 event_type=event.event_type,
                 date=event.date,
@@ -610,7 +606,6 @@ async def cache_astropixels_events(
                 source="AstroPixels",
                 url=f"https://astropixels.com/almanac/almanac21/almanac{year}{timezone.lower()}.html",
             )
-            db_session.add(db_event)
             added += 1
 
             # Debug logging for FULL MOON events
@@ -622,8 +617,14 @@ async def cache_astropixels_events(
         else:
             # Update existing event's event_type in case classification changed
             if existing.event_type != event.event_type:
-                existing.event_type = event.event_type
-                existing.description = event.description.encode("utf-8", errors="replace").decode("utf-8")
+                create_or_update_space_event(
+                    name=existing.name,
+                    event_type=event.event_type,
+                    date=existing.date,
+                    description=event.description.encode("utf-8", errors="replace").decode("utf-8"),
+                    source=existing.source,
+                    url=existing.url,
+                )
                 updated += 1
             else:
                 skipped += 1
@@ -634,30 +635,27 @@ async def cache_astropixels_events(
                     f"existing_date={existing.date if existing else None}"
                 )
 
-    await db_session.commit()
     logger.info(f"Cached {added} new AstroPixels events for {year} (updated {updated}, skipped {skipped} duplicates)")
 
     return added + updated
 
 
 async def get_cached_astropixels_events(
-    db_session: AsyncSession, start_date: datetime, end_date: datetime, timezone_offset: int | None = None
-) -> list[AstroPixelsEvent]:
+    start_date: datetime, end_date: datetime, timezone_offset: int | None = None, db_session: None = None
+) -> list[AstroPixelsEvent]:  # db_session deprecated
     """
     Get cached AstroPixels events from database.
 
     Args:
-        db_session: Database session
         start_date: Start date (in UTC)
         end_date: End date (in UTC)
         timezone_offset: Timezone offset in hours (e.g., -7 for MST) to reconstruct local_date
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of events
     """
-    from sqlalchemy import and_, select
-
-    from celestron_nexstar.api.database.models import SpaceEventModel
+    from celestron_nexstar.api.database.duckdb_access import get_space_events
 
     # Adjust query range to account for timezone offset
     # Events stored in UTC might correspond to dates in local timezone that are
@@ -675,19 +673,12 @@ async def get_cached_astropixels_events(
         query_start = start_date - timedelta(hours=offset_hours)
         query_end = end_date + timedelta(hours=offset_hours)
 
-    result = await db_session.execute(
-        select(SpaceEventModel)
-        .where(
-            and_(
-                SpaceEventModel.source == "AstroPixels",
-                SpaceEventModel.date >= query_start,
-                SpaceEventModel.date <= query_end,
-            )
-        )
-        .order_by(SpaceEventModel.date)
+    models = get_space_events(
+        start_date=query_start,
+        end_date=query_end,
+        source="AstroPixels",
+        limit=10000,
     )
-
-    models = result.scalars().all()
 
     logger.debug(
         f"Retrieved {len(models)} events from database (query range: {query_start} to {query_end}, "
@@ -702,7 +693,8 @@ async def get_cached_astropixels_events(
         if timezone_offset is not None:
             try:
                 # Convert UTC to local by adding the offset
-                local_date_naive = model.date.replace(tzinfo=None) + timedelta(hours=timezone_offset)
+                model_date = model.date if isinstance(model.date, datetime) else datetime.fromisoformat(model.date)
+                local_date_naive = model_date.replace(tzinfo=None) + timedelta(hours=timezone_offset)
                 # Create a timezone-naive datetime for the local date
                 local_date = datetime(
                     local_date_naive.year,
@@ -719,12 +711,13 @@ async def get_cached_astropixels_events(
         # Don't filter here - return all events from the expanded query
         # The calendar dialog will handle filtering based on the actual date range needed
         # This ensures we don't accidentally filter out valid events due to timezone conversion issues
+        model_date = model.date if isinstance(model.date, datetime) else datetime.fromisoformat(model.date)
         events.append(
             AstroPixelsEvent(
-                date=model.date,
+                date=model_date,
                 event_name=model.name,
                 event_type=model.event_type,
-                description=model.description,
+                description=model.description or "",
                 local_date=local_date,  # Reconstructed local date if timezone_offset provided
             )
         )

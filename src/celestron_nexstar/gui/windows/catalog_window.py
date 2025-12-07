@@ -357,17 +357,15 @@ class CatalogSearchWindow(QMainWindow):
     async def _get_recent_searches(self) -> list[str]:
         """Get recent searches from database."""
         try:
-            from celestron_nexstar.api.database.models import UserPreferenceModel
+            from celestron_nexstar.api.database.duckdb_access import get_user_preference
 
-            db = get_database()
-            async with db._AsyncSession() as session:
-                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
-                if pref:
-                    data = json.loads(pref.value)
-                    searches = data.get("searches", [])
-                    if isinstance(searches, list):
-                        return [str(s) for s in searches]  # Ensure all are strings
-                    return []
+            pref = get_user_preference("catalog_recent_searches")
+            if pref:
+                data = json.loads(pref.value)
+                searches = data.get("searches", [])
+                if isinstance(searches, list):
+                    return [str(s) for s in searches]  # Ensure all are strings
+                return []
         except Exception as e:
             logger.debug(f"Error getting recent searches: {e}")
         return []
@@ -380,42 +378,45 @@ class CatalogSearchWindow(QMainWindow):
         try:
             from datetime import UTC, datetime
 
-            from celestron_nexstar.api.database.models import UserPreferenceModel
+            from celestron_nexstar.api.database.duckdb_access import (
+                create_user_preference,
+                get_user_preference,
+                update_user_preference,
+            )
 
-            db = get_database()
-            async with db._AsyncSession() as session:
-                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
-                searches: list[str] = []
-                if pref:
-                    data = json.loads(pref.value)
-                    searches = data.get("searches", [])
+            pref = get_user_preference("catalog_recent_searches")
+            searches: list[str] = []
+            if pref:
+                data = json.loads(pref.value)
+                searches = data.get("searches", [])
 
-                # Remove if already exists and add to front
-                query = query.strip()
-                if query in searches:
-                    searches.remove(query)
-                searches.insert(0, query)
+            # Remove if already exists and add to front
+            query = query.strip()
+            if query in searches:
+                searches.remove(query)
+            searches.insert(0, query)
 
-                # Limit to MAX_RECENT_SEARCHES
-                searches = searches[: self.MAX_RECENT_SEARCHES]
+            # Limit to MAX_RECENT_SEARCHES
+            searches = searches[: self.MAX_RECENT_SEARCHES]
 
-                # Save back
-                value = json.dumps({"searches": searches})
-                if pref:
-                    pref.value = value
-                    pref.updated_at = datetime.now(UTC)
-                else:
-                    pref = UserPreferenceModel(
-                        key="catalog_recent_searches",
-                        value=value,
-                        category="catalog",
-                        description="Recent catalog search queries",
-                    )
-                    session.add(pref)
-                await session.commit()
+            # Save back
+            value = json.dumps({"searches": searches})
+            if pref:
+                update_user_preference(
+                    key="catalog_recent_searches",
+                    value=value,
+                    updated_at=datetime.now(UTC),
+                )
+            else:
+                create_user_preference(
+                    key="catalog_recent_searches",
+                    value=value,
+                    category="catalog",
+                    description="Recent catalog search queries",
+                )
 
-                # Reload recent searches in UI
-                self._load_recent_searches()
+            # Reload recent searches in UI
+            self._load_recent_searches()
         except Exception as e:
             logger.error(f"Error saving recent search: {e}")
 

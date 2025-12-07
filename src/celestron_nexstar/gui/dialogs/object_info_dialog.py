@@ -37,6 +37,8 @@ class ObjectInfoDialog(QDialog):
 
         self.object_name = object_name
         self.object_type: str | None = None  # Will be set when object info is loaded
+        self.object_ra_hours: float | None = None  # Will be set when object info is loaded
+        self.object_dec_degrees: float | None = None  # Will be set when object info is loaded
 
         # Create layout
         layout = QVBoxLayout(self)

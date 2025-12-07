@@ -1932,10 +1932,9 @@ async def rebuild_database(
             logger.info("Database dropped")
 
         # Step 3: Run Alembic migrations to create fresh schema
+        from alembic import command  # type: ignore[attr-defined]
         from alembic.config import Config
         from alembic.script import ScriptDirectory
-
-        from alembic import command  # type: ignore[attr-defined]
 
         alembic_cfg = Config("alembic.ini")
 

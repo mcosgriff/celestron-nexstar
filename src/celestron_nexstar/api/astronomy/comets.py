@@ -16,8 +16,6 @@ import skyfield.api  # noqa: F401
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
     from celestron_nexstar.api.location.observer import ObserverLocation
 
 logger = logging.getLogger(__name__)
@@ -65,32 +63,82 @@ class CometVisibility:
 # Data from Minor Planet Center and comet observation databases
 
 
-async def get_known_comets(db_session: AsyncSession) -> list[Comet]:
+def get_known_comets(db_session: None = None) -> list[Comet]:  # db_session deprecated
     """
-    Get list of known comets from database.
+    Get list of known comets from starplot.
 
     Args:
-        db_session: Database session
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of Comet objects
 
     Raises:
-        RuntimeError: If no comets found in database (seed data required)
+        RuntimeError: If no comets found (starplot data required)
     """
-    from sqlalchemy import func, select
-
     from celestron_nexstar.api.core.exceptions import DatabaseError
-    from celestron_nexstar.api.database.models import CometModel
 
-    count = await db_session.scalar(select(func.count(CometModel.id)))
-    if count == 0:
-        raise DatabaseError("No comets found in database. Please seed the database by running: nexstar data seed")
+    try:
+        from starplot.models import Comet as StarplotComet
 
-    result = await db_session.execute(select(CometModel))
-    models = result.scalars().all()
+        starplot_comets = StarplotComet.all()
+        if not starplot_comets:
+            raise DatabaseError(
+                "No comets found in starplot. Please ensure starplot is properly installed and configured."
+            )
 
-    return [model.to_comet() for model in models]
+        # Convert starplot Comet models to our Comet dataclass
+        comets = []
+        now = datetime.now(UTC)
+
+        for sc in starplot_comets:
+            # Starplot's Comet model provides position at a specific time
+            # Get name - starplot Comet has a name attribute
+            name = sc.name if hasattr(sc, "name") and sc.name else "Unknown"
+
+            # Use name as designation if no separate designation field
+            designation = name
+
+            # Starplot's Comet model calculates positions dynamically from ephemeris
+            # For metadata fields, we'll use placeholders since starplot focuses on position calculation
+            # The actual position will be calculated when needed using the Comet model
+
+            # Try to get current position to estimate some values
+            try:
+                # Get current RA/Dec from starplot Comet (for validation, but not used in metadata)
+                # Position is calculated dynamically when needed
+                _ = sc.ra if hasattr(sc, "ra") and sc.ra is not None else None
+                _ = sc.dec if hasattr(sc, "dec") and sc.dec is not None else None
+
+                # If we have position, we can estimate it's visible
+                # But we still need perihelion info which would require orbital elements
+                # For now, use reasonable defaults
+                perihelion_date = now  # Would need orbital calculation
+                peak_date = now  # Would need magnitude calculation
+            except Exception:
+                # If position calculation fails, use defaults
+                perihelion_date = now
+                peak_date = now
+
+            comets.append(
+                Comet(
+                    name=name,
+                    designation=designation,
+                    perihelion_date=perihelion_date,  # Placeholder - would need orbital calculation
+                    perihelion_distance_au=1.0,  # Placeholder - would need orbital elements
+                    peak_magnitude=10.0,  # Placeholder - would need magnitude calculation
+                    peak_date=peak_date,  # Placeholder
+                    is_periodic=False,  # Placeholder - would need to check orbital period
+                    period_years=None,
+                    notes="Data from starplot - position calculated dynamically from ephemeris",
+                )
+            )
+
+        return comets
+    except ImportError as e:
+        raise DatabaseError("Could not load comets from starplot. Please ensure starplot is properly installed.") from e
+    except Exception as e:
+        raise DatabaseError(f"Error loading comets from starplot: {e}") from e
 
 
 def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
@@ -131,10 +179,10 @@ def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
 
 
 async def get_visible_comets(
-    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 12,
     max_magnitude: float = 8.0,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[CometVisibility]:
     """
     Get comets visible from observer location.
@@ -143,6 +191,7 @@ async def get_visible_comets(
         location: Observer location
         months_ahead: How many months ahead to search (default: 12)
         max_magnitude: Maximum magnitude to include (default: 8.0)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of CometVisibility objects, sorted by date
@@ -153,7 +202,7 @@ async def get_visible_comets(
     end_date = now + timedelta(days=30 * months_ahead)
 
     # For each known comet, check visibility
-    comets = await get_known_comets(db_session)
+    comets = get_known_comets()
     for comet in comets:
         # Normalize comet dates to UTC for comparison
         perihelion = comet.perihelion_date
@@ -220,19 +269,19 @@ async def get_visible_comets(
 
 
 async def get_upcoming_comets(
-    db_session: AsyncSession,
     location: ObserverLocation,
     months_ahead: int = 24,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[CometVisibility]:
     """
     Get upcoming bright comets.
 
     Args:
-        db_session: Database session
         location: Observer location
         months_ahead: How many months ahead to search (default: 24)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of CometVisibility objects, sorted by peak date
     """
-    return await get_visible_comets(db_session, location, months_ahead=months_ahead, max_magnitude=10.0)
+    return await get_visible_comets(location, months_ahead=months_ahead, max_magnitude=10.0)

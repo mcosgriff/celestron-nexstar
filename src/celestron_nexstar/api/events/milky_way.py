@@ -374,7 +374,6 @@ def check_milky_way_visibility(
 
         from celestron_nexstar.api.astronomy.solar_system import get_moon_info
         from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast
 
         # Determine which weather time to use:
@@ -445,16 +444,15 @@ def check_milky_way_visibility(
         if cloud_cover is None or moon_illumination is None or bortle_class is None:
             # Fetch weather, moon, and light pollution data in parallel
             async def fetch_all() -> tuple[Any, Any, Any]:
-                from celestron_nexstar.api.database.models import get_db_session
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.location.weather import fetch_weather
 
                 weather_task = fetch_weather(location)
                 moon_task = asyncio.to_thread(get_moon_info, location.latitude, location.longitude, dt)
-                async with get_db_session() as db_session:
-                    lp_task = get_light_pollution_data(db_session, location.latitude, location.longitude)
-                    weather, moon_info, lp_data = await asyncio.gather(
-                        weather_task, moon_task, lp_task, return_exceptions=True
-                    )
+                lp_task = get_light_pollution_data(location.latitude, location.longitude)
+                weather, moon_info, lp_data = await asyncio.gather(
+                    weather_task, moon_task, lp_task, return_exceptions=True
+                )
                 return weather, moon_info, lp_data
 
             # Run async function
@@ -637,7 +635,6 @@ def get_milky_way_visibility_windows(
     # Fetch all data once upfront to avoid repeated API calls
     import asyncio
 
-    from celestron_nexstar.api.database.models import get_db_session
     from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
     from celestron_nexstar.api.location.weather import HourlySeeingForecast, fetch_hourly_weather_forecast
 
@@ -645,12 +642,7 @@ def get_milky_way_visibility_windows(
     bortle_class = None
     sqm_value = None
     try:
-
-        async def fetch_lp() -> Any:
-            async with get_db_session() as db_session:
-                return await get_light_pollution_data(db_session, location.latitude, location.longitude)
-
-        lp_data = asyncio.run(fetch_lp())
+        lp_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
             sqm_value = lp_data.sqm_value
@@ -941,14 +933,9 @@ def get_next_milky_way_opportunity(
     try:
         import asyncio
 
-        from celestron_nexstar.api.database.models import get_db_session
         from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
-        async def fetch_lp() -> Any:
-            async with get_db_session() as db_session:
-                return await get_light_pollution_data(db_session, location.latitude, location.longitude)
-
-        lp_data = asyncio.run(fetch_lp())
+        lp_data = asyncio.run(get_light_pollution_data(location.latitude, location.longitude))
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
     except (RuntimeError, TimeoutError, AttributeError) as e:
@@ -969,34 +956,17 @@ def get_next_milky_way_opportunity(
     try:
         import asyncio
 
-        from sqlalchemy import and_, select
-
         # Check database for needed months
-        from celestron_nexstar.api.database.database import get_database
-        from celestron_nexstar.api.database.models import HistoricalWeatherModel
+        from celestron_nexstar.api.database.duckdb_access import get_historical_weather
         from celestron_nexstar.api.location.weather import fetch_historical_weather_climatology
 
-        db = get_database()
         months_in_db: set[int] = set()
         try:
-
-            async def check_db() -> set[int]:
-                async with db._AsyncSession() as session:
-                    stmt = (
-                        select(HistoricalWeatherModel.month)
-                        .where(
-                            and_(
-                                HistoricalWeatherModel.latitude == location.latitude,
-                                HistoricalWeatherModel.longitude == location.longitude,
-                                HistoricalWeatherModel.month.in_(list(months_needed)),
-                            )
-                        )
-                        .distinct()
-                    )
-                    result = await session.execute(stmt)
-                    return {row[0] for row in result.all()}
-
-            months_in_db = asyncio.run(check_db())
+            # Check which months we have in the database
+            for month in months_needed:
+                historical_data = get_historical_weather(location.latitude, location.longitude, month)
+                if historical_data:
+                    months_in_db.add(month)
         except (RuntimeError, TimeoutError, AttributeError) as e:
             # RuntimeError: asyncio errors, database connection errors
             # asyncio.TimeoutError: database query timeout

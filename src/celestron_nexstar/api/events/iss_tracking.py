@@ -12,7 +12,6 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from skyfield.api import wgs84
 from skyfield.sgp4lib import EarthSatellite
@@ -22,8 +21,7 @@ from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
 from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
 
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+# Removed SQLAlchemy Session import - using DuckDB directly
 
 
 logger = logging.getLogger(__name__)
@@ -378,7 +376,7 @@ async def get_iss_passes_cached(
     start_time: datetime | None = None,
     days: int = 7,
     min_altitude_deg: float = 10.0,
-    db_session: Session | None = None,
+    db_session: None = None,  # Deprecated, kept for compatibility
 ) -> list[ISSPass]:
     """
     Get ISS passes with database caching.
@@ -392,11 +390,18 @@ async def get_iss_passes_cached(
         start_time: Start of search window (default: now)
         days: Number of days to search (default: 7)
         min_altitude_deg: Minimum peak altitude for pass (default: 10°)
-        db_session: SQLAlchemy session (optional, creates new if None)
+        db_session: Deprecated parameter, kept for compatibility
 
     Returns:
         List of ISS passes sorted by rise time
     """
+    from celestron_nexstar.api.database.duckdb_access import (
+        create_iss_pass,
+        delete_old_iss_passes,
+        get_iss_passes_for_location,
+    )
+    from celestron_nexstar.api.location.geohash_utils import encode
+
     if start_time is None:
         start_time = datetime.now(UTC)
 
@@ -405,26 +410,16 @@ async def get_iss_passes_cached(
     lon_rounded = round(longitude, 2)
 
     # Try to get from cache
-    if db_session is not None:
-        from celestron_nexstar.api.database.models import ISSPassModel
-
+    try:
         # Check for fresh cached passes
         cache_cutoff = datetime.now(UTC) - timedelta(hours=PASS_CACHE_MAX_AGE_HOURS)
+        cached_passes = get_iss_passes_for_location(lat_rounded, lon_rounded, start_time=start_time, limit=100)
 
-        cached_passes = (
-            db_session.query(ISSPassModel)
-            .filter(
-                ISSPassModel.latitude == lat_rounded,
-                ISSPassModel.longitude == lon_rounded,
-                ISSPassModel.rise_time >= start_time,
-                ISSPassModel.fetched_at >= cache_cutoff,
-            )
-            .order_by(ISSPassModel.rise_time)
-            .all()
-        )
+        # Filter by cache cutoff
+        fresh_passes = [p for p in cached_passes if p.fetched_at >= cache_cutoff]
 
-        if cached_passes:
-            logger.info(f"Using {len(cached_passes)} cached ISS passes")
+        if fresh_passes:
+            logger.info(f"Using {len(fresh_passes)} cached ISS passes")
             return [
                 ISSPass(
                     rise_time=p.rise_time,
@@ -438,33 +433,28 @@ async def get_iss_passes_cached(
                     magnitude=p.magnitude,
                     is_visible=p.is_visible,
                 )
-                for p in cached_passes
+                for p in fresh_passes
             ]
+    except Exception as e:
+        logger.debug(f"Error checking cache: {e}")
 
     # Calculate fresh passes
     passes = await get_iss_passes(latitude, longitude, start_time, days, min_altitude_deg)
 
     # Cache in database
-    if db_session is not None and passes:
-        from celestron_nexstar.api.database.models import ISSPassModel
-        from celestron_nexstar.api.location.geohash_utils import encode
-
+    if passes:
         # Calculate geohash for this location (precision 9 for ~5m accuracy)
         location_geohash = encode(lat_rounded, lon_rounded, precision=9)
 
         # Delete old cached passes for this location
-        db_session.query(ISSPassModel).filter(
-            ISSPassModel.latitude == lat_rounded,
-            ISSPassModel.longitude == lon_rounded,
-        ).delete()
+        delete_old_iss_passes(lat_rounded, lon_rounded, cache_cutoff)
 
         # Insert new passes
         fetch_time = datetime.now(UTC)
         for iss_pass in passes:
-            pass_model = ISSPassModel(
+            create_iss_pass(
                 latitude=lat_rounded,
                 longitude=lon_rounded,
-                geohash=location_geohash,
                 rise_time=iss_pass.rise_time,
                 max_time=iss_pass.max_time,
                 set_time=iss_pass.set_time,
@@ -473,13 +463,12 @@ async def get_iss_passes_cached(
                 rise_azimuth_deg=iss_pass.rise_azimuth_deg,
                 max_azimuth_deg=iss_pass.max_azimuth_deg,
                 set_azimuth_deg=iss_pass.set_azimuth_deg,
+                geohash=location_geohash,
                 magnitude=iss_pass.magnitude,
                 is_visible=iss_pass.is_visible,
                 fetched_at=fetch_time,
             )
-            db_session.add(pass_model)
 
-        db_session.commit()
         logger.info(f"Cached {len(passes)} ISS passes in database")
 
     return passes

@@ -16,13 +16,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any
 
 from celestron_nexstar.api.core.exceptions import DatabaseError
+from celestron_nexstar.api.database.duckdb_access import get_bortle_characteristics
 
 
 logger = logging.getLogger(__name__)
@@ -109,12 +106,11 @@ def sqm_to_bortle(sqm: float) -> BortleClass:
         return BortleClass.CLASS_9
 
 
-async def _get_bortle_characteristics(db_session: AsyncSession, bortle_class: BortleClass) -> dict[str, Any]:
+def _get_bortle_characteristics(bortle_class: BortleClass) -> dict[str, Any]:
     """
     Get Bortle class characteristics from database.
 
     Args:
-        db_session: Database session
         bortle_class: Bortle class enum value
 
     Returns:
@@ -125,13 +121,7 @@ async def _get_bortle_characteristics(db_session: AsyncSession, bortle_class: Bo
     """
     import json
 
-    from sqlalchemy import select
-
-    from celestron_nexstar.api.database.models import BortleCharacteristicsModel
-
-    model = await db_session.scalar(
-        select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
-    )
+    model = get_bortle_characteristics(int(bortle_class.value))
     if model is None:
         raise DatabaseError(
             f"Bortle class {bortle_class.value} characteristics not found in database. "
@@ -149,12 +139,10 @@ async def _get_bortle_characteristics(db_session: AsyncSession, bortle_class: Bo
     }
 
 
-async def _create_light_pollution_data(
-    db_session: AsyncSession, sqm: float, source: str | None = None, cached: bool = False
-) -> LightPollutionData:
+def _create_light_pollution_data(sqm: float, source: str | None = None, cached: bool = False) -> LightPollutionData:
     """Create LightPollutionData from SQM value."""
     bortle = sqm_to_bortle(sqm)
-    chars = await _get_bortle_characteristics(db_session, bortle)
+    chars = _get_bortle_characteristics(bortle)
 
     return LightPollutionData(
         bortle_class=bortle,
@@ -295,11 +283,9 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
     """
     # Try database only (offline, fast, preferred)
     try:
-        from celestron_nexstar.api.database.database import get_database
         from celestron_nexstar.api.database.light_pollution_db import get_sqm_from_database
 
-        db = get_database()
-        sqm = get_sqm_from_database(lat, lon, db)
+        sqm = get_sqm_from_database(lat, lon)
         if sqm is not None:
             logger.info(f"Found SQM {sqm:.2f} in database for {lat},{lon}")
             return sqm
@@ -316,9 +302,7 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
     return None
 
 
-async def get_light_pollution_data(
-    db_session: AsyncSession, lat: float, lon: float, force_refresh: bool = False
-) -> LightPollutionData:
+async def get_light_pollution_data(lat: float, lon: float, force_refresh: bool = False) -> LightPollutionData:
     """
     Get light pollution data for a location.
 
@@ -348,8 +332,8 @@ async def get_light_pollution_data(
                     age = datetime.now(UTC) - cache_time.replace(tzinfo=UTC)
                     if age < timedelta(hours=CACHE_STALE_HOURS):
                         logger.debug(f"Using cached light pollution data for {lat},{lon}")
-                        return await _create_light_pollution_data(
-                            db_session, location_data["sqm"], location_data.get("source"), cached=True
+                        return _create_light_pollution_data(
+                            location_data["sqm"], location_data.get("source"), cached=True
                         )
                 except (ValueError, KeyError):
                     pass
@@ -386,11 +370,11 @@ async def get_light_pollution_data(
     cache_data["timestamp"] = datetime.now(UTC).isoformat()
     _save_cache(cache_data)
 
-    return await _create_light_pollution_data(db_session, sqm, source, cached=False)
+    return _create_light_pollution_data(sqm, source, cached=False)
 
 
 async def get_light_pollution_data_batch(
-    db_session: AsyncSession, locations: list[tuple[float, float]], force_refresh: bool = False
+    locations: list[tuple[float, float]], force_refresh: bool = False
 ) -> dict[tuple[float, float], LightPollutionData]:
     """
     Get light pollution data for multiple locations concurrently.
@@ -406,7 +390,7 @@ async def get_light_pollution_data_batch(
         Dictionary mapping (lat, lon) to LightPollutionData
         Only includes locations that have data in the database.
     """
-    tasks = [get_light_pollution_data(db_session, lat, lon, force_refresh) for lat, lon in locations]
+    tasks = [get_light_pollution_data(lat, lon, force_refresh) for lat, lon in locations]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     data_map: dict[tuple[float, float], LightPollutionData] = {}

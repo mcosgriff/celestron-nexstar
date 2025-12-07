@@ -9,6 +9,7 @@ Demonstrates different approaches to monitoring telescope position in the backgr
 """
 
 import asyncio
+import queue
 import threading
 import time
 from collections.abc import Callable
@@ -380,12 +381,12 @@ class QueuePositionMonitor:
                 # Add to queue (non-blocking, drop oldest if full)
                 try:
                     self.queue.put_nowait((ra_dec, alt_az, timestamp))
-                except:
+                except queue.Full:
                     # Queue full, remove oldest and add new
                     try:
                         self.queue.get_nowait()
                         self.queue.put_nowait((ra_dec, alt_az, timestamp))
-                    except:
+                    except queue.Empty:
                         pass
 
             except Exception as e:
@@ -405,7 +406,7 @@ class QueuePositionMonitor:
         """
         try:
             return self.queue.get(timeout=timeout)
-        except:
+        except queue.Empty:
             return None
 
     def queue_size(self) -> int:

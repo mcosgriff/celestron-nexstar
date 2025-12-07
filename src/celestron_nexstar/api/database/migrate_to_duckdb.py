@@ -11,8 +11,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
 from celestron_nexstar.api.database.database import CatalogDatabase
+from celestron_nexstar.api.database.duckdb_database import DuckDBCatalogDatabase
+
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,8 @@ async def migrate_sqlite_to_duckdb(
                     try:
                         duckdb_db.con.execute(
                             """
-                            INSERT OR REPLACE INTO planets 
-                            (id, name, common_name, ra_hours, dec_degrees, magnitude, catalog, 
+                            INSERT OR REPLACE INTO planets
+                            (id, name, common_name, ra_hours, dec_degrees, magnitude, catalog,
                              description, constellation, ephemeris_name, created_at, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
@@ -127,8 +128,8 @@ async def migrate_sqlite_to_duckdb(
                     try:
                         duckdb_db.con.execute(
                             """
-                            INSERT OR REPLACE INTO moons 
-                            (id, name, common_name, ra_hours, dec_degrees, magnitude, catalog, 
+                            INSERT OR REPLACE INTO moons
+                            (id, name, common_name, ra_hours, dec_degrees, magnitude, catalog,
                              description, parent_planet, constellation, ephemeris_name, created_at, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
@@ -169,8 +170,8 @@ async def migrate_sqlite_to_duckdb(
                     try:
                         duckdb_db.con.execute(
                             """
-                            INSERT OR REPLACE INTO asterisms 
-                            (id, name, common_name, ra_hours, dec_degrees, catalog, 
+                            INSERT OR REPLACE INTO asterisms
+                            (id, name, common_name, ra_hours, dec_degrees, catalog,
                              description, constellation, created_at, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
@@ -208,8 +209,8 @@ async def migrate_sqlite_to_duckdb(
                     try:
                         duckdb_db.con.execute(
                             """
-                            INSERT OR REPLACE INTO constellations 
-                            (id, name, common_name, ra_hours, dec_degrees, catalog, 
+                            INSERT OR REPLACE INTO constellations
+                            (id, name, common_name, ra_hours, dec_degrees, catalog,
                              description, abbreviation, created_at, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
@@ -272,9 +273,6 @@ def migrate_sqlite_to_duckdb_sync(
 
     try:
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(
-            migrate_sqlite_to_duckdb(sqlite_db_path, duckdb_db_path, dry_run)
-        )
+        return loop.run_until_complete(migrate_sqlite_to_duckdb(sqlite_db_path, duckdb_db_path, dry_run))
     except RuntimeError:
         return asyncio.run(migrate_sqlite_to_duckdb(sqlite_db_path, duckdb_db_path, dry_run))
-

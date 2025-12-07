@@ -21,8 +21,8 @@ from pathlib import Path
 
 import yaml
 
-from celestron_nexstar.api.database.database import CatalogDatabase
 from celestron_nexstar.api.core.enums import CelestialObjectType
+from celestron_nexstar.api.database.database import CatalogDatabase
 
 
 # Add src to path for imports

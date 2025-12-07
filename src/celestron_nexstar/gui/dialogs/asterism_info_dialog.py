@@ -173,14 +173,11 @@ class AsterismInfoDialog(QDialog):
             from celestron_nexstar.api.core.utils import format_dec, format_ra
 
             async def _load_data() -> Any | None:
-                from celestron_nexstar.api.database.models import get_db_session
-
-                async with get_db_session() as session:
-                    asterisms = await get_famous_asterisms(session)
-                    for asterism in asterisms:
-                        if asterism.name == self.asterism_name:
-                            return asterism
-                    return None
+                asterisms = get_famous_asterisms()
+                for asterism in asterisms:
+                    if asterism.name == self.asterism_name:
+                        return asterism
+                return None
 
             asterism = _run_async_safe(_load_data())
 
@@ -243,46 +240,89 @@ class AsterismInfoDialog(QDialog):
 
                         if asterism.member_stars:
 
-                            async def _get_star_positions() -> tuple[list[float], list[float]]:
+                            def _get_star_positions() -> tuple[list[float], list[float]]:
                                 """Get RA/Dec positions of member stars from database."""
-                                from sqlalchemy import or_, select
+                                from celestron_nexstar.api.database.duckdb_connection import get_duckdb_connection
+                                from celestron_nexstar.api.data.starplot_config import get_starplot_data_directory
+                                from pathlib import Path
 
-                                from celestron_nexstar.api.database.models import StarModel, get_db_session
+                                con = get_duckdb_connection()
+                                
+                                # Get starplot data directory and parquet file
+                                starplot_data_dir = get_starplot_data_directory()
+                                star_parquet_path = None
+                                
+                                # Find star parquet file
+                                try:
+                                    from starplot.data import DataFiles
+                                    if DataFiles.BIG_SKY_MAG11.exists():
+                                        star_parquet_path = DataFiles.BIG_SKY_MAG11
+                                except Exception:
+                                    pass
+                                
+                                if not star_parquet_path:
+                                    parquet_files = list(starplot_data_dir.glob("*.parquet"))
+                                    if parquet_files:
+                                        for f in parquet_files:
+                                            if "mag11" in f.name.lower():
+                                                star_parquet_path = f
+                                                break
+                                        if not star_parquet_path:
+                                            star_parquet_path = parquet_files[0]
+
+                                if not star_parquet_path or not star_parquet_path.exists():
+                                    return [], []
+
+                                # Attach starplot database for star_designations
+                                dso_db_path = starplot_data_dir / "sky.db"
+                                if dso_db_path.exists():
+                                    try:
+                                        con.execute(f"ATTACH '{dso_db_path}' AS starplot_db (READ_ONLY)")
+                                    except Exception:
+                                        pass  # Already attached
 
                                 ra_positions: list[float] = []
                                 dec_positions: list[float] = []
 
-                                async with get_db_session() as session:
-                                    # Query each member star by name
-                                    for star_name in asterism.member_stars:
-                                        # Try exact name match first
-                                        stmt = (
-                                            select(StarModel)
-                                            .where(
-                                                or_(
-                                                    StarModel.name.ilike(star_name.strip()),
-                                                    StarModel.common_name.ilike(star_name.strip()),
-                                                )
-                                            )
-                                            .limit(1)
-                                        )
-                                        result = await session.execute(stmt)
-                                        star_model = result.scalar_one_or_none()
-
-                                        if star_model:
+                                # Query each member star by name
+                                for star_name in asterism.member_stars:
+                                    star_name_clean = star_name.strip()
+                                    
+                                    # Query stars from parquet file
+                                    star_query = f"""
+                                        SELECT
+                                            s.ra_degrees / 15.0 as ra_hours,
+                                            s.dec_degrees
+                                        FROM read_parquet(?) s
+                                        LEFT JOIN starplot_db.star_designations sd ON s.hip = sd.hip
+                                        WHERE NULLIF(sd.name, '') ILIKE ?
+                                           OR NULLIF(sd.bayer, '') ILIKE ?
+                                           OR CAST(s.hip AS VARCHAR) ILIKE ?
+                                           OR s.tyc_id ILIKE ?
+                                        LIMIT 1
+                                    """
+                                    try:
+                                        result = con.execute(
+                                            star_query,
+                                            [str(star_parquet_path), star_name_clean, star_name_clean, star_name_clean, star_name_clean]
+                                        ).fetchone()
+                                        
+                                        if result:
                                             # Normalize RA to 0-24 range (handle negative values)
-                                            ra_hours = star_model.ra_hours
+                                            ra_hours = float(result[0])
                                             if ra_hours < 0:
                                                 ra_hours = ra_hours + 24.0
                                             elif ra_hours >= 24:
                                                 ra_hours = ra_hours - 24.0
                                             ra_positions.append(ra_hours)
-                                            dec_positions.append(star_model.dec_degrees)
+                                            dec_positions.append(float(result[1]))
+                                    except Exception:
+                                        continue  # Skip if star not found
 
                                 return ra_positions, dec_positions
 
-                            # Get star positions (run in async context)
-                            star_ra_list, star_dec_list = _run_async_safe(_get_star_positions())
+                            # Get star positions (now synchronous)
+                            star_ra_list, star_dec_list = _get_star_positions()
                             ra_values.extend(star_ra_list)
                             dec_values.extend(star_dec_list)
 

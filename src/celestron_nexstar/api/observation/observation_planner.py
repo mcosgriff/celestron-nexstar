@@ -323,7 +323,7 @@ class ObservationPlanner:
                         and time_diff_hours <= 6
                     ):
                         # Use current weather instead of forecast
-                        logger.info(
+                        logger.debug(
                             f"Using current weather ({current_weather.cloud_cover_percent:.0f}% clouds) "
                             f"instead of forecast ({weather.cloud_cover_percent:.0f}% clouds) "
                             f"for time {time_diff_hours:.1f} hours away"
@@ -340,10 +340,7 @@ class ObservationPlanner:
         from typing import Any
 
         async def _get_light_data() -> Any:
-            from celestron_nexstar.api.database.models import get_db_session
-
-            async with get_db_session() as db_session:
-                return await get_light_pollution_data(db_session, lat, lon)
+            return await get_light_pollution_data(lat, lon)
 
         lp_data = asyncio.run(_get_light_data())
 
