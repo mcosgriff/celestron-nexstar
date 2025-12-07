@@ -41,6 +41,8 @@ class CelestialObjectType(StrEnum):
     ASTERISM = "asterism"
     CONSTELLATION = "constellation"
     MOON = "moon"
+    VARIABLE_STAR = "variable_star"
+    ZODIACAL = "zodiacal"
 
 
 class EphemerisSet(StrEnum):

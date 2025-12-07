@@ -285,18 +285,14 @@ class ConstellationInfoDialog(QDialog):
                         except Exception:
                             alt, _az = 0.0, 0.0
 
-                        # Calculate visibility probability using planner's method
-                        # (simplified version - just use observability score as probability)
-                        visibility_probability = vis_info.observability_score
+                        # Use the same visibility probability calculation as the stars table
+                        visibility_prob_result = planner._calculate_visibility_probability(star, conditions, vis_info)
 
-                        # Apply seeing and weather factors
-                        if visibility_probability > 0:
-                            # Factor in seeing conditions
-                            seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                            # Factor in cloud cover
-                            cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                            cloud_factor = 1.0 - (cloud_cover / 100.0)
-                            visibility_probability *= seeing_factor * cloud_factor
+                        # Handle tuple return (probability, explanations) or just probability
+                        if isinstance(visibility_prob_result, tuple):
+                            visibility_probability = visibility_prob_result[0]
+                        else:
+                            visibility_probability = visibility_prob_result
 
                         star_data.append(
                             {

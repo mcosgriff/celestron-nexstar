@@ -2184,66 +2184,201 @@ def run_migrations(
 
             # Verify the new revision after applying migrations
             # Get a fresh connection to ensure we see the updated state
-            asyncio.run(_dispose_engine())  # Close existing connections
-            from sqlalchemy import create_engine
-
-            sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
-            with sync_engine.connect() as connection:
-                context = MigrationContext.configure(connection)
-                try:
-                    new_rev = context.get_current_revision()
-                except (AttributeError, RuntimeError, ValueError):
-                    # AttributeError: missing Alembic context attributes
-                    # RuntimeError: multiple heads or migration errors
-                    # ValueError: invalid revision format
-                    # Multiple heads - use get_current_heads()
-                    new_heads = context.get_current_heads()
-                    new_rev = new_heads[0] if len(new_heads) == 1 else ", ".join(new_heads) if new_heads else "unknown"
-                try:
-                    head_rev_after = script.get_current_head()
-                except (AttributeError, RuntimeError, ValueError):
-                    # AttributeError: missing script attributes
-                    # RuntimeError: multiple heads or script errors
-                    # ValueError: invalid configuration
-                    # Multiple heads - get the merge migration if it exists
-                    heads_list = script.get_heads()
-                    if len(heads_list) == 1:
-                        head_rev_after = heads_list[0]
-                    else:
-                        # Look for merge migration
-                        head_rev_after = None
-                        for rev in script.walk_revisions():
-                            if hasattr(rev, "down_revision") and rev.down_revision:
-                                down_rev = rev.down_revision
-                                if isinstance(down_rev, tuple) and len(down_rev) > 1:
-                                    down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
-                                    heads_set = set(heads_list)
-                                    if down_rev_set == heads_set:
-                                        head_rev_after = rev.revision
-                                        break
-                        if head_rev_after is None:
-                            head_rev_after = heads_list[0] if heads_list else None
-
-                if new_rev == head_rev_after:
-                    console.print(f"[dim]Database is now at revision: {new_rev}[/dim]\n")
-                else:
-                    console.print(f"[yellow]⚠[/yellow] Database revision: {new_rev}")
-                    console.print(f"[yellow]⚠[/yellow] Head revision: {head_rev_after}")
-                    console.print("[yellow]⚠[/yellow] Database may not be fully up to date. Run migrate again.\n")
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
-            # AttributeError: missing Alembic attributes
-            # RuntimeError: migration errors
-            # ValueError: invalid configuration or revision format
-            # TypeError: wrong argument types
-            # OSError: file I/O errors
-            # FileNotFoundError: missing alembic.ini or migration files
-            console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
+            asyncio.run(_dispose_engine())
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to apply migrations: {e}")
             import traceback
 
             console.print(f"[dim]{traceback.format_exc()}[/dim]")
             raise typer.Exit(code=1) from e
-
     except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+        # AttributeError: missing Alembic attributes
+        # RuntimeError: migration errors
+        # ValueError: invalid configuration or revision format
+        # TypeError: wrong argument types
+        # OSError: file I/O errors
+        # FileNotFoundError: missing alembic.ini or migration files
+        console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
+@app.command("database-setup", rich_help_panel="Database Management")
+def database_setup(
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip confirmation prompt and rebuild database if it exists"
+    ),
+) -> None:
+    """
+    Rebuild the database schema and apply all migrations.
+
+    This command:
+    1. Drops the existing database (if it exists)
+    2. Applies all Alembic migrations to create a fresh schema
+    3. Ensures the database is properly initialized
+
+    This is useful for:
+    - Setting up a fresh database from scratch
+    - Resetting the database schema after schema changes
+    - Fixing corrupted database schemas
+
+    [bold yellow]Warning:[/bold yellow] This will delete all existing data!
+
+    Examples:
+        nexstar data database-setup
+        nexstar data database-setup --force  # Skip confirmation prompt
+    """
+
+    import asyncio
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from alembic import command  # type: ignore[attr-defined]
+    from celestron_nexstar.api.database.database import get_database
+
+    console.print("\n[bold cyan]Setting up database schema...[/bold cyan]\n")
+
+    db = get_database()
+
+    # Check if database exists and warn
+    if db.db_path.exists():
+        if not force:
+            console.print("[yellow]⚠[/yellow] Database already exists!")
+            console.print(f"[dim]Location: {db.db_path}[/dim]")
+            console.print("[yellow]This will delete all existing data![/yellow]\n")
+            if not typer.confirm("Are you sure you want to continue?"):
+                console.print("[dim]Cancelled.[/dim]")
+                raise typer.Exit(code=0)
+
+        console.print("[cyan]Dropping existing database...[/cyan]")
+        # Close all connections
+        asyncio.run(db._engine.dispose())
+        # Small delay to ensure file handles are released
+        import time
+
+        time.sleep(0.1)
+        # Remove database file
+        if db.db_path.exists():
+            db.db_path.unlink()
+        # Also remove any -wal or -shm files that might exist
+        wal_file = db.db_path.with_suffix(db.db_path.suffix + "-wal")
+        shm_file = db.db_path.with_suffix(db.db_path.suffix + "-shm")
+        if wal_file.exists():
+            wal_file.unlink()
+        if shm_file.exists():
+            shm_file.unlink()
+        console.print("[green]✓[/green] Database dropped\n")
+    else:
+        # Ensure parent directory exists
+        db.db_path.parent.mkdir(parents=True, exist_ok=True)
+        console.print("[cyan]Creating new database...[/cyan]\n")
+
+    # Configure Alembic
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db.db_path}")
+
+    # Determine the target revision (handle multiple heads)
+    script = ScriptDirectory.from_config(alembic_cfg)
+    try:
+        # Try to get single head first (works when there's no branching)
+        target_rev = script.get_current_head()
+    except (AttributeError, ValueError, RuntimeError):
+        # Multiple heads detected - use get_heads() instead
+        try:
+            heads_list = script.get_heads()
+            if len(heads_list) == 1:
+                target_rev = heads_list[0]
+            elif len(heads_list) > 1:
+                # Multiple heads detected - look for a merge migration
+                console.print(f"[yellow]⚠[/yellow] Multiple migration heads detected: {', '.join(heads_list)}")
+
+                # Search all revisions for a merge migration that combines these heads
+                merge_found = False
+                for rev in script.walk_revisions():
+                    if hasattr(rev, "down_revision") and rev.down_revision:
+                        down_rev = rev.down_revision
+                        # Check if this is a merge migration (has tuple of down_revisions)
+                        if isinstance(down_rev, tuple) and len(down_rev) > 1:
+                            # Check if this merge migration combines all current heads
+                            down_rev_set = set(down_rev) if isinstance(down_rev, tuple) else {down_rev}
+                            heads_set = set(heads_list)
+                            if down_rev_set == heads_set:
+                                merge_found = True
+                                target_rev = rev.revision
+                                console.print(f"[dim]Found merge migration: {rev.revision}[/dim]\n")
+                                break
+
+                if not merge_found:
+                    console.print("[dim]No merge migration found. Using 'heads' to upgrade all branches.[/dim]\n")
+                    target_rev = "heads"
+            else:
+                target_rev = "head"  # Fallback
+        except (AttributeError, ValueError, RuntimeError, TypeError) as e:
+            console.print(f"[yellow]⚠[/yellow] Error determining head revision: {e}, using 'head'")
+            target_rev = "head"
+
+    # Apply migrations
+    console.print("[cyan]Applying migrations...[/cyan]")
+    try:
+        # Handle trigger errors during migration
+        try:
+            command.upgrade(alembic_cfg, target_rev)
+            console.print(f"[green]✓[/green] Schema created via Alembic migrations (upgraded to {target_rev})\n")
+        except Exception as e:
+            # If migration fails due to triggers referencing non-existent FTS table,
+            # drop the triggers and retry
+            error_msg = str(e).lower()
+            if "objects_fts" in error_msg and ("trigger" in error_msg or "no such table" in error_msg):
+                console.print("[dim]Migration encountered trigger issue (this is normal). Fixing and retrying...[/dim]")
+                # Get a connection to drop triggers
+                db_temp = get_database()
+                try:
+                    asyncio.run(db_temp._engine.dispose())
+
+                    async def _drop_triggers():
+                        async with db_temp._AsyncSession() as session:
+                            from sqlalchemy import text
+
+                            await session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                            await session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                            await session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                            await session.commit()
+
+                    asyncio.run(_drop_triggers())
+                    # Dispose again before retrying migration
+                    asyncio.run(db_temp._engine.dispose())
+                    # Retry migration
+                    command.upgrade(alembic_cfg, target_rev)
+                    console.print(
+                        f"[green]✓[/green] Schema created via Alembic migrations (upgraded to {target_rev})\n"
+                    )
+                except Exception as retry_error:
+                    console.print(f"[red]✗[/red] Failed to recover from trigger error: {retry_error}")
+                    raise typer.Exit(code=1) from retry_error
+            else:
+                raise
+
+        # Get fresh database instance after setup
+        db = get_database()
+
+        # Ensure FTS table exists (migrations should create it, but ensure it's there)
+        console.print("[cyan]Ensuring FTS table is initialized...[/cyan]")
+
+        async def _ensure_fts():
+            await db.ensure_fts_table()
+
+        asyncio.run(_ensure_fts())
+        console.print("[green]✓[/green] Database setup complete!\n")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to setup database: {e}")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
         # AttributeError: missing Alembic attributes
         # RuntimeError: migration errors
         # ValueError: invalid configuration

@@ -503,8 +503,29 @@ class CatalogDatabase:
 
         This is useful when the database was created without migrations
         or if the FTS table was accidentally dropped.
+
+        Note: If the objects table has been split into separate tables
+        (stars, galaxies, etc.), this will skip FTS creation as FTS
+        is no longer used in that schema.
         """
         async with self._AsyncSession() as session:
+            # Check if objects table exists (it may have been split into separate tables)
+            objects_table_result = await session.execute(
+                text("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='objects'
+                """)
+            )
+            objects_table_exists = objects_table_result.fetchone() is not None
+
+            if not objects_table_exists:
+                # Objects table doesn't exist - it was likely split into separate tables
+                # FTS is no longer used in the split schema, so skip creation
+                logger.debug(
+                    "Objects table does not exist (likely split into separate tables). Skipping FTS table creation."
+                )
+                return
+
             # Check if FTS table exists
             result = await session.execute(
                 text("""
@@ -1346,6 +1367,30 @@ class CatalogDatabase:
                 # Query all tables
                 model_classes = list(self._TYPE_TO_MODEL.values())
 
+            # Look up constellation name/abbreviation if constellation filter is provided
+            # Stars store full constellation names (e.g., "Andromeda"), not abbreviations
+            constellation_match: str | None = None
+            constellation_abbrev: str | None = None
+            if constellation:
+                from celestron_nexstar.api.database.models import ConstellationModel
+
+                # Look up constellation from constellations table to get both name and abbreviation
+                const_lookup_stmt = (
+                    select(ConstellationModel.name, ConstellationModel.abbreviation)
+                    .where(
+                        (ConstellationModel.name.ilike(constellation))
+                        | (ConstellationModel.abbreviation.ilike(constellation))
+                        | (ConstellationModel.common_name.ilike(constellation))
+                    )
+                    .limit(1)
+                )
+                const_result = await session.execute(const_lookup_stmt)
+                const_row = const_result.first()
+
+                if const_row:
+                    constellation_match = const_row[0]  # Full name
+                    constellation_abbrev = const_row[1]  # Abbreviation
+
             all_models: list[Any] = []
             for model_class in model_classes:
                 stmt = select(model_class)
@@ -1365,7 +1410,18 @@ class CatalogDatabase:
                     stmt = stmt.where(model_class.magnitude >= min_magnitude)
 
                 if constellation:
-                    stmt = stmt.where(model_class.constellation.ilike(constellation))
+                    # Stars store full constellation names, so match by name
+                    # Other objects (planets, moons) might use abbreviations
+                    if constellation_match:
+                        # Match by full name (for stars) or abbreviation (for other objects)
+                        stmt = stmt.where(
+                            (model_class.constellation == constellation_match)
+                            | (model_class.constellation == constellation_abbrev)
+                            | (model_class.constellation.ilike(f"%{constellation_match}%"))
+                        )
+                    else:
+                        # Fallback: use ILIKE if we couldn't find the constellation
+                        stmt = stmt.where(model_class.constellation.ilike(f"%{constellation}%"))
 
                 # is_dynamic filter (only for planets and moons)
                 # Type ignore: Protocol includes is_dynamic but mypy needs help with the check
@@ -1932,11 +1988,23 @@ async def rebuild_database(
         if db.db_path.exists():
             # Close all connections
             await db._engine.dispose()
+            # Small delay to ensure file handles are released
+            time.sleep(0.1)
             # Remove database file
-            db.db_path.unlink()
+            if db.db_path.exists():
+                db.db_path.unlink()
+            # Also remove any -wal or -shm files that might exist
+            wal_file = db.db_path.with_suffix(db.db_path.suffix + "-wal")
+            shm_file = db.db_path.with_suffix(db.db_path.suffix + "-shm")
+            if wal_file.exists():
+                wal_file.unlink()
+            if shm_file.exists():
+                shm_file.unlink()
             logger.info("Database dropped")
 
         # Step 3: Run Alembic migrations to create fresh schema
+        # Note: If migrations fail due to triggers referencing non-existent FTS table,
+        # we'll handle that by dropping triggers after migrations if needed
         from alembic.config import Config
         from alembic.script import ScriptDirectory
 
@@ -1992,8 +2060,45 @@ async def rebuild_database(
                 logger.warning(f"Error determining head revision: {e}, using 'head'")
                 target_rev = "head"
 
-        command.upgrade(alembic_cfg, target_rev)
-        logger.info(f"Schema created via Alembic migrations (upgraded to {target_rev})")
+        try:
+            command.upgrade(alembic_cfg, target_rev)
+            logger.info(f"Schema created via Alembic migrations (upgraded to {target_rev})")
+        except Exception as e:
+            # If migration fails due to triggers referencing non-existent FTS table,
+            # drop the triggers and retry
+            # Check error message in exception and its cause chain
+            error_str = str(e)
+            if isinstance(e, Exception) and hasattr(e, "__cause__") and e.__cause__:
+                error_str += " " + str(e.__cause__)
+            if hasattr(e, "orig") and e.orig:
+                error_str += " " + str(e.orig)
+            error_msg = error_str.lower()
+            if "objects_fts" in error_msg and ("trigger" in error_msg or "no such table" in error_msg):
+                logger.warning(
+                    "Migration failed due to triggers referencing non-existent FTS table. Dropping triggers and retrying..."
+                )
+                # Get a connection to drop triggers
+                db_temp = get_database()
+                try:
+                    # Dispose of engine to ensure fresh connection
+                    await db_temp._engine.dispose()
+                    async with db_temp._AsyncSession() as session:
+                        await session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                        await session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                        await session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                        await session.commit()
+                    # Dispose again before retrying migration
+                    await db_temp._engine.dispose()
+                    # Retry migration
+                    command.upgrade(alembic_cfg, target_rev)
+                    logger.info(
+                        f"Schema created via Alembic migrations (upgraded to {target_rev}) after dropping triggers"
+                    )
+                except Exception as retry_error:
+                    logger.error(f"Failed to recover from trigger error: {retry_error}")
+                    raise DatabaseRebuildError(f"Migration failed: {e}") from retry_error
+            else:
+                raise DatabaseRebuildError(f"Migration failed: {e}") from e
 
         # Get fresh database instance after rebuild
         db = get_database()

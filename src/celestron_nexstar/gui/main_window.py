@@ -89,6 +89,210 @@ def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
         return asyncio.run(coro)
 
 
+class VisibilityCountThread(QThread):
+    """Worker thread to count visible stars for constellations/asterisms in the background."""
+
+    counts_ready = Signal(dict)  # type: ignore[type-arg,misc]  # Emits dict[str, int] of counts
+
+    def __init__(
+        self,
+        constellation_names: list[str],
+        is_asterism: bool = False,
+        asterism_objects: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize the visibility count thread."""
+        super().__init__()
+        self.constellation_names = constellation_names
+        self.is_asterism = is_asterism
+        self.asterism_objects = asterism_objects or {}
+
+    def run(self) -> None:
+        """Count visible stars in background thread."""
+        try:
+            # Check if thread should stop
+            if self.isInterruptionRequested():
+                return
+            import asyncio
+
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.optics import get_current_configuration
+            from celestron_nexstar.api.observation.visibility import assess_visibility
+
+            # Get conditions outside async function to avoid nested event loop issues
+            location = get_observer_location()
+            config = get_current_configuration()
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
+            async def _count_all_stars() -> dict[str, int]:
+                db = get_database()
+
+                async with db._AsyncSession() as session:
+                    # Get sky brightness from light pollution
+                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
+
+                    counts: dict[str, int] = {}
+
+                    if self.is_asterism:
+                        # Count visible stars for each asterism
+                        print(f"DEBUG: Counting stars for {len(self.constellation_names)} asterisms")
+                        print(f"DEBUG: Asterism objects cache has {len(self.asterism_objects)} entries")
+                        for asterism_name in self.constellation_names:
+                            asterism = self.asterism_objects.get(asterism_name)
+                            if not asterism:
+                                print(f"DEBUG: Asterism '{asterism_name}' not found in cache")
+                                counts[asterism_name] = 0
+                                continue
+                            if not asterism.member_stars:
+                                print(f"DEBUG: Asterism '{asterism_name}' has no member_stars")
+                                counts[asterism_name] = 0
+                                continue
+
+                            print(f"DEBUG: Asterism '{asterism_name}' has {len(asterism.member_stars)} member stars")
+                            visible_count = 0
+                            for star_name in asterism.member_stars:
+                                star = await db.get_by_name(star_name.strip())
+                                if not star:
+                                    if asterism_name == "Big Dipper":
+                                        print(f"DEBUG: Asterism '{asterism_name}': Star '{star_name}' not found")
+                                    continue
+
+                                try:
+                                    vis_info = assess_visibility(
+                                        star,
+                                        config=config,
+                                        sky_brightness=sky_brightness,
+                                        min_altitude_deg=20.0,
+                                        observer_lat=location.latitude,
+                                        observer_lon=location.longitude,
+                                        dt=conditions.timestamp,
+                                    )
+
+                                    visibility_prob_result = planner._calculate_visibility_probability(
+                                        star, conditions, vis_info
+                                    )
+
+                                    if isinstance(visibility_prob_result, tuple):
+                                        visibility_probability = visibility_prob_result[0]
+                                    else:
+                                        visibility_probability = visibility_prob_result
+
+                                    altitude = vis_info.altitude_deg or 0.0
+                                    is_visible = False
+
+                                    # Use same logic as stars table: count as visible if probability > 0
+                                    if visibility_probability > 0:
+                                        visible_count += 1
+                                        is_visible = True
+
+                                    if asterism_name == "Big Dipper":
+                                        print(
+                                            f"DEBUG: Asterism '{asterism_name}': Star '{star_name}' - "
+                                            f"alt={altitude:.1f}°, prob={visibility_probability:.3f}, "
+                                            f"obs_score={vis_info.observability_score:.3f}, visible={is_visible}"
+                                        )
+                                except Exception as e:
+                                    if asterism_name == "Big Dipper":
+                                        print(
+                                            f"DEBUG: Asterism '{asterism_name}': Error calculating visibility for '{star_name}': {e}"
+                                        )
+                                    continue
+
+                            counts[asterism_name] = visible_count
+                            print(f"DEBUG: Asterism '{asterism_name}': {visible_count} visible stars")
+                    else:
+                        # Count visible stars for each constellation
+                        for constellation_name in self.constellation_names:
+                            stars = await db.filter_objects(
+                                object_type="star", constellation=constellation_name, limit=100
+                            )
+
+                            visible_count = 0
+                            for star in stars:
+                                try:
+                                    vis_info = assess_visibility(
+                                        star,
+                                        config=config,
+                                        sky_brightness=sky_brightness,
+                                        min_altitude_deg=20.0,
+                                        observer_lat=location.latitude,
+                                        observer_lon=location.longitude,
+                                        dt=conditions.timestamp,
+                                    )
+
+                                    visibility_prob_result = planner._calculate_visibility_probability(
+                                        star, conditions, vis_info
+                                    )
+
+                                    if isinstance(visibility_prob_result, tuple):
+                                        visibility_probability = visibility_prob_result[0]
+                                    else:
+                                        visibility_probability = visibility_prob_result
+
+                                    altitude = vis_info.altitude_deg or 0.0
+                                    is_visible = False
+
+                                    # Use same logic as stars table: count as visible if probability > 0
+                                    # The stars table shows all stars with visibility_probability > 0
+                                    # and marks them as "Visible" or "Marginal" based on altitude/probability
+                                    if visibility_probability > 0:
+                                        visible_count += 1
+                                        is_visible = True
+
+                                    if constellation_name in ["Andromeda", "Ursa Major"] or (
+                                        len(stars) <= 5 and visible_count < len(stars)
+                                    ):
+                                        print(
+                                            f"DEBUG: Constellation '{constellation_name}': Star '{star.name}' - "
+                                            f"alt={altitude:.1f}°, prob={visibility_probability:.3f}, "
+                                            f"obs_score={vis_info.observability_score:.3f}, visible={is_visible}"
+                                        )
+                                except Exception as e:
+                                    if constellation_name in ["Andromeda", "Ursa Major"]:
+                                        print(
+                                            f"DEBUG: Constellation '{constellation_name}': Error calculating visibility for '{star.name}': {e}"
+                                        )
+                                    continue
+
+                            counts[constellation_name] = visible_count
+                            print(
+                                f"DEBUG: Constellation '{constellation_name}': {visible_count} visible stars out of {len(stars)} total"
+                            )
+
+                    return counts
+
+            print(f"DEBUG: VisibilityCountThread starting async count for {len(self.constellation_names)} items")
+            result = asyncio.run(_count_all_stars())
+            print(f"DEBUG: VisibilityCountThread got result: {result}")
+            print(f"DEBUG: VisibilityCountThread emitting counts: {result}")
+            logger.info(f"VisibilityCountThread emitting counts: {result}")
+            self.counts_ready.emit(result)
+            print("DEBUG: VisibilityCountThread signal emitted")
+        except Exception as e:
+            logger.error(f"Error counting visible stars: {e}", exc_info=True)
+            print(f"DEBUG: VisibilityCountThread error: {e}")
+            # Emit empty dict on error
+            self.counts_ready.emit({})
+
+
 class ObjectsLoaderThread(QThread):
     """Worker thread to load objects data in the background."""
 
@@ -146,6 +350,204 @@ class ObjectsLoaderThread(QThread):
                 asterisms = asyncio.run(_load_asterisms())
                 # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
                 objects = asterisms  # Keep full objects for asterisms
+            elif obj_type == CelestialObjectType.VARIABLE_STAR:
+                # Load variable stars and convert to RecommendedObject format
+                async def _load_variable_stars() -> list[Any]:
+                    from celestron_nexstar.api.astronomy.variable_stars import get_known_variable_stars
+                    from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+                    from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+                    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                    from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+                    from celestron_nexstar.api.observation.optics import get_current_configuration
+                    from celestron_nexstar.api.observation.visibility import assess_visibility
+
+                    db = get_database()
+                    config = get_current_configuration()
+                    location = get_observer_location()
+
+                    async with db._AsyncSession() as session:
+                        variable_stars = await get_known_variable_stars(session)
+                        light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+
+                        # Convert to RecommendedObject format
+                        recommended_objects = []
+                        for var_star in variable_stars:
+                            # Use average magnitude for display
+                            avg_mag = (var_star.magnitude_min + var_star.magnitude_max) / 2.0
+                            obj = CelestialObject(
+                                name=var_star.name,
+                                common_name=var_star.designation,
+                                catalog="variable",
+                                catalog_number=None,
+                                ra_hours=var_star.ra_hours,
+                                dec_degrees=var_star.dec_degrees,
+                                magnitude=avg_mag,
+                                object_type=CelestialObjectType.VARIABLE_STAR,
+                                size_arcmin=None,
+                                description=f"{var_star.variable_type} - Mag {var_star.magnitude_min:.1f} to {var_star.magnitude_max:.1f}, Period: {var_star.period_days:.1f} days. {var_star.notes}",
+                                constellation=None,
+                            )
+
+                            # Calculate visibility
+                            vis_info = assess_visibility(
+                                obj,
+                                config=config,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
+                            )
+
+                            visibility_prob_result = planner._calculate_visibility_probability(
+                                obj, conditions, vis_info
+                            )
+                            if isinstance(visibility_prob_result, tuple):
+                                visibility_prob = visibility_prob_result[0]
+                            else:
+                                visibility_prob = visibility_prob_result
+
+                            # Create RecommendedObject
+                            rec_obj = RecommendedObject(
+                                obj=obj,
+                                altitude=vis_info.altitude_deg or 0.0,
+                                azimuth=vis_info.azimuth_deg or 0.0,
+                                best_viewing_time=conditions.timestamp,
+                                visible_duration_hours=8.0,
+                                apparent_magnitude=avg_mag,
+                                observability_score=vis_info.observability_score,
+                                visibility_probability=visibility_prob,
+                                priority=1 if visibility_prob > 0.5 else 3,
+                                reason=f"Variable star: {var_star.variable_type}",
+                                viewing_tips=(),
+                            )
+                            recommended_objects.append(rec_obj)
+
+                        # Sort by visibility probability
+                        recommended_objects.sort(key=lambda x: -x.visibility_probability)
+                        return recommended_objects[:100]  # Limit to 100
+
+                objects = asyncio.run(_load_variable_stars())
+            elif obj_type == CelestialObjectType.ZODIACAL:
+                # Load zodiacal objects (objects along the ecliptic - in zodiac constellations or near ecliptic)
+                async def _load_zodiacal_objects() -> list[Any]:
+                    from celestron_nexstar.api.core.enums import SkyBrightness
+                    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                    from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+                    from celestron_nexstar.api.observation.optics import get_current_configuration
+                    from celestron_nexstar.api.observation.visibility import assess_visibility
+
+                    db = get_database()
+                    config = get_current_configuration()
+                    location = get_observer_location()
+
+                    # Zodiac constellations
+                    zodiac_constellations = [
+                        "Aries",
+                        "Taurus",
+                        "Gemini",
+                        "Cancer",
+                        "Leo",
+                        "Virgo",
+                        "Libra",
+                        "Scorpius",
+                        "Sagittarius",
+                        "Capricornus",
+                        "Aquarius",
+                        "Pisces",
+                    ]
+
+                    async with db._AsyncSession() as session:
+                        light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+
+                        # Get objects in zodiac constellations
+                        all_objects = []
+                        seen_names = set()
+                        for const in zodiac_constellations:
+                            objects = await db.filter_objects(constellation=const, limit=50)
+                            for obj in objects:
+                                if obj.name not in seen_names:
+                                    all_objects.append(obj)
+                                    seen_names.add(obj.name)
+
+                        # Also get objects near ecliptic (declination between -8 and +8 degrees)
+                        all_db_objects = await db.filter_objects(limit=500)
+                        for obj in all_db_objects:
+                            if -8.0 <= obj.dec_degrees <= 8.0 and obj.name not in seen_names:
+                                all_objects.append(obj)
+                                seen_names.add(obj.name)
+
+                        # Convert to RecommendedObject format
+                        recommended_objects = []
+                        for obj in all_objects:
+                            # Calculate visibility
+                            vis_info = assess_visibility(
+                                obj,
+                                config=config,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
+                            )
+
+                            visibility_prob_result = planner._calculate_visibility_probability(
+                                obj, conditions, vis_info
+                            )
+                            if isinstance(visibility_prob_result, tuple):
+                                visibility_prob = visibility_prob_result[0]
+                            else:
+                                visibility_prob = visibility_prob_result
+
+                            # Create RecommendedObject
+                            rec_obj = RecommendedObject(
+                                obj=obj,
+                                altitude=vis_info.altitude_deg or 0.0,
+                                azimuth=vis_info.azimuth_deg or 0.0,
+                                best_viewing_time=conditions.timestamp,
+                                visible_duration_hours=8.0,
+                                apparent_magnitude=obj.magnitude or 0.0,
+                                observability_score=vis_info.observability_score,
+                                visibility_probability=visibility_prob,
+                                priority=1 if visibility_prob > 0.5 else 3,
+                                reason=f"Zodiacal object in {obj.constellation or 'ecliptic region'}",
+                                viewing_tips=(),
+                            )
+                            recommended_objects.append(rec_obj)
+
+                        # Sort by visibility probability
+                        recommended_objects.sort(key=lambda x: -x.visibility_probability)
+                        return recommended_objects[:100]  # Limit to 100
+
+                objects = asyncio.run(_load_zodiacal_objects())
             else:
                 # Get recommended objects for this type
                 objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
@@ -420,6 +822,8 @@ class MainWindow(QMainWindow):
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
+        # Track visibility counting threads to prevent premature destruction
+        self._visibility_threads: dict[QTableWidget, VisibilityCountThread] = {}
 
         # Initialize theme (use provided theme or create default)
         if theme is None:
@@ -1002,15 +1406,15 @@ class MainWindow(QMainWindow):
             action.setStatusTip(f"View {display_name} information")
             action.triggered.connect(lambda checked, name=obj_name: self._on_celestial_object(name))
             setattr(self, f"{obj_name}_action", action)
-            # Disable buttons until API is implemented
+            # Enable buttons - features are now implemented
             if obj_name == "variables":
-                action.setEnabled(False)
-                action.setToolTip("Variables (Coming Soon)")
-                action.setStatusTip("Variables feature is not yet implemented")
+                action.setEnabled(True)
+                action.setToolTip("Variable Stars")
+                action.setStatusTip("View variable stars")
             elif obj_name == "zodiacal":
-                action.setEnabled(False)
-                action.setToolTip("Zodiacal (Coming Soon)")
-                action.setStatusTip("Zodiacal feature is not yet implemented")
+                action.setEnabled(True)
+                action.setToolTip("Zodiacal Objects")
+                action.setStatusTip("View objects along the ecliptic (zodiac)")
 
         celestial_button = QToolButton()
         celestial_button.setText("Objects")
@@ -1312,6 +1716,24 @@ class MainWindow(QMainWindow):
                     "Name",
                     "Type",
                     "Constellation",
+                    "Mag",
+                    "Alt",
+                    "Visibility",
+                    "Transit",
+                    "Moon Sep",
+                    "Chance",
+                    "Tips",
+                    "Favorite",
+                ]
+            )
+        # For variable_star and zodiacal, use standard table format
+        elif obj_type in (CelestialObjectType.VARIABLE_STAR, CelestialObjectType.ZODIACAL):
+            table.setColumnCount(11)
+            table.setHorizontalHeaderLabels(
+                [
+                    "Priority",
+                    "Name",
+                    "Type",
                     "Mag",
                     "Alt",
                     "Visibility",
@@ -1763,12 +2185,14 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
+            # Get conditions outside async function to avoid nested event loop issues
+            location = get_observer_location()
+            config = get_current_configuration()
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
             async def _count_all_stars() -> dict[str, int]:
                 db = get_database()
-                location = get_observer_location()
-                config = get_current_configuration()
-                planner = ObservationPlanner()
-                conditions = planner.get_tonight_conditions()
 
                 async with db._AsyncSession() as session:
                     # Get sky brightness from light pollution (once for all asterisms)
@@ -1805,30 +2229,41 @@ class MainWindow(QMainWindow):
                             if not star:
                                 continue
 
-                            # Calculate visibility info
-                            vis_info = assess_visibility(
-                                star,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                            try:
+                                # Calculate visibility info (same as stars table)
+                                vis_info = assess_visibility(
+                                    star,
+                                    config=config,
+                                    sky_brightness=sky_brightness,
+                                    min_altitude_deg=20.0,  # Same as stars table
+                                    observer_lat=location.latitude,
+                                    observer_lon=location.longitude,
+                                    dt=conditions.timestamp,
+                                )
 
-                            # Calculate visibility probability
-                            visibility_probability = vis_info.observability_score
+                                # Use the same visibility probability calculation as the stars table
+                                visibility_prob_result = planner._calculate_visibility_probability(
+                                    star, conditions, vis_info
+                                )
 
-                            # Apply seeing and weather factors
-                            if visibility_probability > 0:
-                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                                cloud_factor = 1.0 - (cloud_cover / 100.0)
-                                visibility_probability *= seeing_factor * cloud_factor
+                                # Handle tuple return (probability, explanations) or just probability
+                                if isinstance(visibility_prob_result, tuple):
+                                    visibility_probability = visibility_prob_result[0]
+                                else:
+                                    visibility_probability = visibility_prob_result
 
-                            # Count as visible if probability > 0
-                            if visibility_probability > 0:
-                                visible_count += 1
+                                # Count as visible using the same logic as the stars table visibility indicator
+                                # A star is "visible" if it would be marked as "Visible" or "Marginal" in the table
+                                altitude = vis_info.altitude_deg or 0.0
+                                if altitude >= 20.0 and visibility_probability >= 0.5:
+                                    # "Visible" status
+                                    visible_count += 1
+                                elif altitude >= 10.0 and visibility_probability >= 0.3:
+                                    # "Marginal" status - still count as visible
+                                    visible_count += 1
+                            except Exception as e:
+                                logger.debug(f"Error calculating visibility for star '{star_name}': {e}")
+                                continue
 
                         counts[asterism_name] = visible_count
 
@@ -1843,6 +2278,7 @@ class MainWindow(QMainWindow):
 
     def _count_visible_stars_batch(self, constellation_names: list[str]) -> dict[str, int]:
         """Count the number of visible stars for multiple constellations in a single batch operation."""
+        print(f"DEBUG: _count_visible_stars_batch called with {len(constellation_names)} constellations")
         try:
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.database.database import get_database
@@ -1852,12 +2288,14 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
+            # Get conditions outside async function to avoid nested event loop issues
+            location = get_observer_location()
+            config = get_current_configuration()
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
             async def _count_all_stars() -> dict[str, int]:
                 db = get_database()
-                location = get_observer_location()
-                config = get_current_configuration()
-                planner = ObservationPlanner()
-                conditions = planner.get_tonight_conditions()
 
                 async with db._AsyncSession() as session:
                     # Get sky brightness from light pollution (once for all constellations)
@@ -1878,47 +2316,103 @@ class MainWindow(QMainWindow):
                         light_pollution.bortle_class.value, SkyBrightness.FAIR
                     )
 
+                    # Debug: Log conditions once
+                    seeing_score = conditions.seeing_score if hasattr(conditions, "seeing_score") else None
+                    cloud_cover = (
+                        conditions.weather.cloud_cover_percent
+                        if hasattr(conditions, "weather") and conditions.weather
+                        else None
+                    )
+                    logger.info(
+                        f"Visibility conditions: seeing_score={seeing_score}, cloud_cover={cloud_cover}, timestamp={conditions.timestamp}"
+                    )
+
                     # Count stars for each constellation
                     counts: dict[str, int] = {}
+                    print(f"DEBUG: Starting to count stars for {len(constellation_names)} constellations")
                     for constellation_name in constellation_names:
                         # Get stars in this constellation
                         stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
+                        # Debug logging
+                        print(f"DEBUG: Constellation '{constellation_name}': Found {len(stars)} stars")
+                        logger.info(f"Constellation '{constellation_name}': Found {len(stars)} stars")
+
                         visible_count = 0
                         for star in stars:
-                            # Calculate visibility info
-                            vis_info = assess_visibility(
-                                star,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                            try:
+                                # Calculate visibility info (same as stars table)
+                                vis_info = assess_visibility(
+                                    star,
+                                    config=config,
+                                    sky_brightness=sky_brightness,
+                                    min_altitude_deg=20.0,  # Same as stars table
+                                    observer_lat=location.latitude,
+                                    observer_lon=location.longitude,
+                                    dt=conditions.timestamp,
+                                )
 
-                            # Calculate visibility probability
-                            visibility_probability = vis_info.observability_score
+                                # Use the same visibility probability calculation as the stars table
+                                visibility_prob_result = planner._calculate_visibility_probability(
+                                    star, conditions, vis_info
+                                )
 
-                            # Apply seeing and weather factors
-                            if visibility_probability > 0:
-                                seeing_factor = min(1.0, conditions.seeing_score / 100.0)
-                                cloud_cover = conditions.weather.cloud_cover_percent or 0.0
-                                cloud_factor = 1.0 - (cloud_cover / 100.0)
-                                visibility_probability *= seeing_factor * cloud_factor
+                                # Handle tuple return (probability, explanations) or just probability
+                                if isinstance(visibility_prob_result, tuple):
+                                    visibility_probability = visibility_prob_result[0]
+                                    explanations = visibility_prob_result[1]
+                                else:
+                                    visibility_probability = visibility_prob_result
+                                    explanations = []
 
-                            # Count as visible if probability > 0
-                            if visibility_probability > 0:
-                                visible_count += 1
+                                # Debug: Log first few stars for troubleshooting
+                                if visible_count < 3 or len(stars) - visible_count < 3:
+                                    logger.info(
+                                        f"  Star '{star.name}': alt={vis_info.altitude_deg:.1f}°, "
+                                        f"mag={star.magnitude}, prob={visibility_probability:.3f}, "
+                                        f"obs_score={vis_info.observability_score:.3f}, "
+                                        f"is_visible={vis_info.is_visible}"
+                                    )
+                                    if explanations:
+                                        logger.info(f"    Explanations: {explanations}")
+
+                                # Count as visible using the same logic as the stars table visibility indicator
+                                # A star is "visible" if it would be marked as "Visible" or "Marginal" in the table
+                                altitude = vis_info.altitude_deg or 0.0
+                                if altitude >= 20.0 and visibility_probability >= 0.5:
+                                    # "Visible" status
+                                    visible_count += 1
+                                elif altitude >= 10.0 and visibility_probability >= 0.3:
+                                    # "Marginal" status - still count as visible
+                                    visible_count += 1
+                            except Exception as e:
+                                logger.debug(f"Error calculating visibility for star '{star.name}': {e}")
+                                continue
 
                         counts[constellation_name] = visible_count
+                        print(
+                            f"DEBUG: Constellation '{constellation_name}': {visible_count} visible stars out of {len(stars)} total"
+                        )
+                        logger.info(
+                            f"Constellation '{constellation_name}': {visible_count} visible stars out of {len(stars)} total"
+                        )
 
                     return counts
 
             result = _run_async_safe(_count_all_stars())
-            return result if isinstance(result, dict) else dict.fromkeys(constellation_names, 0)
+            print(f"DEBUG: _count_all_stars returned: {result}")
+            if not isinstance(result, dict):
+                print(f"DEBUG: Expected dict from _count_all_stars, got {type(result)}: {result}")
+                logger.warning(f"Expected dict from _count_all_stars, got {type(result)}: {result}")
+                return dict.fromkeys(constellation_names, 0)
+            logger.info(f"Visibility count results: {result}")
+            return result
         except Exception as e:
-            logger.debug(f"Error counting visible stars: {e}")
+            print(f"DEBUG: Exception in _count_visible_stars_batch: {e}")
+            import traceback
+
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            logger.error(f"Error counting visible stars: {e}", exc_info=True)
             # Return zeros for all constellations on error
             return dict.fromkeys(constellation_names, 0)
 
@@ -1955,24 +2449,9 @@ class MainWindow(QMainWindow):
         obj_type_str = table.property("object_type")
         is_asterism_table = obj_type_str == "asterism"
 
-        # Count visible stars for all constellations/asterisms in a single batch operation (much more efficient)
-        visible_star_counts: dict[str, int] = {}
-        if is_constellation_table:
-            try:
-                if is_asterism_table:
-                    # For asterisms, use the cached asterism objects to access member_stars
-                    visible_star_counts = self._count_visible_stars_for_asterisms_batch(
-                        sorted_names, self._asterism_objects_cache
-                    )
-                else:
-                    # For constellations, count stars by constellation name
-                    visible_star_counts = self._count_visible_stars_batch(sorted_names)
-            except Exception as e:
-                logger.debug(f"Error counting visible stars: {e}")
-                # Fall back to zeros for all
-                visible_star_counts = dict.fromkeys(sorted_names, 0)
+        # Now populate table with all data (initially with 0 counts, will update when async count completes)
+        visible_star_counts: dict[str, int] = dict.fromkeys(sorted_names, 0)
 
-        # Now populate table with all data
         for row, constellation_name in enumerate(sorted_names):
             # Constellation name (no star indicator - we have a dedicated favorites column)
             name_item = QTableWidgetItem(constellation_name)
@@ -1981,7 +2460,7 @@ class MainWindow(QMainWindow):
             table.setItem(row, 0, name_item)
 
             if is_constellation_table:
-                # Get visible star count from pre-calculated batch result
+                # Initially set to 0, will be updated when async count completes
                 visible_count = visible_star_counts.get(constellation_name, 0)
                 stars_item = QTableWidgetItem(str(visible_count))
                 stars_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -2001,6 +2480,81 @@ class MainWindow(QMainWindow):
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
+
+        # Start background thread to count visible stars (non-blocking)
+        if is_constellation_table:
+            # Clean up any existing thread for this table
+            if table in self._visibility_threads:
+                old_thread = self._visibility_threads[table]
+                if old_thread.isRunning():
+                    old_thread.requestInterruption()
+                    old_thread.wait(3000)  # Wait up to 3 seconds for graceful shutdown
+                    if old_thread.isRunning():
+                        old_thread.terminate()
+                        old_thread.wait(1000)
+                old_thread.deleteLater()
+                del self._visibility_threads[table]
+
+            asterism_objects = None
+            if is_asterism_table:
+                asterism_objects = self._asterism_objects_cache
+                print(f"DEBUG: Creating visibility thread for asterisms with {len(asterism_objects)} cached objects")
+                print(f"DEBUG: Asterism names: {sorted_names[:5]}...")  # Show first 5
+                print(f"DEBUG: Cached asterism names: {list(asterism_objects.keys())[:5]}...")  # Show first 5
+
+            visibility_thread = VisibilityCountThread(
+                sorted_names,
+                is_asterism=is_asterism_table,
+                asterism_objects=asterism_objects,
+            )
+
+            # Store thread reference to prevent garbage collection
+            self._visibility_threads[table] = visibility_thread
+
+            def update_counts(counts: dict[str, int]) -> None:
+                """Update the table with visibility counts."""
+                print(f"DEBUG: update_counts called with {len(counts)} counts")
+                print(f"DEBUG: Counts dict: {counts}")
+                logger.info(f"update_counts called with {len(counts)} counts: {counts}")
+                updated = 0
+                print(f"DEBUG: Table has {table.rowCount()} rows")
+                for row in range(table.rowCount()):
+                    name_item = table.item(row, 0)
+                    if name_item:
+                        constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
+                        print(
+                            f"DEBUG: Row {row}: constellation_name='{constellation_name}', in counts: {constellation_name in counts if constellation_name else False}"
+                        )
+                        if constellation_name and constellation_name in counts:
+                            visible_count = counts[constellation_name]
+                            stars_item = table.item(row, 1)
+                            if stars_item:
+                                old_value = stars_item.text()
+                                stars_item.setText(str(visible_count))
+                                stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
+                                updated += 1
+                                print(f"DEBUG: Updated {constellation_name} from '{old_value}' to {visible_count}")
+                            else:
+                                print(f"DEBUG: Row {row}: No stars_item found for {constellation_name}")
+                        elif constellation_name:
+                            print(f"DEBUG: Row {row}: {constellation_name} not in counts dict")
+                    else:
+                        print(f"DEBUG: Row {row}: No name_item found")
+
+                print(f"DEBUG: Updated {updated} rows in table")
+                logger.info(f"Updated {updated} rows in table")
+
+            def cleanup_thread() -> None:
+                """Clean up thread reference when finished."""
+                if table in self._visibility_threads:
+                    thread = self._visibility_threads.pop(table)
+                    thread.deleteLater()
+
+            # Use QueuedConnection to ensure signal is processed on main thread
+            visibility_thread.counts_ready.connect(update_counts, Qt.ConnectionType.QueuedConnection)
+            visibility_thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
+            print(f"DEBUG: Starting visibility count thread for {len(sorted_names)} constellations/asterisms")
+            visibility_thread.start()
 
         # Set default sort indicator on Constellation column (A-Z ascending)
         header = table.horizontalHeader()
