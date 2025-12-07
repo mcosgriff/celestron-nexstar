@@ -70,9 +70,9 @@ class CometsInfoDialog(QDialog):
         """Initialize the comets info dialog."""
         super().__init__(parent)
         self.setWindowTitle("Comet Visibility")
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(625)
         self.setMinimumHeight(500)
-        self.resize(600, 700)  # Match ObjectInfoDialog width
+        self.resize(625, 700)  # Match ObjectInfoDialog width
 
         # Create layout
         layout = QVBoxLayout(self)
