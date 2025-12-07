@@ -168,6 +168,39 @@ class ConstellationInfoDialog(QDialog):
             return bool(brightness < 128)
         return False
 
+    def _format_altitude_user_friendly(self, altitude_deg: float) -> str:
+        """Format altitude with user-friendly description."""
+        from celestron_nexstar.api.telescope.compass import format_altitude_description
+
+        alt_desc = format_altitude_description(altitude_deg)
+
+        # Add helpful explanation for common angles
+        if altitude_deg < 0:
+            return f"{altitude_deg:.0f}° (below horizon)"
+        elif altitude_deg < 10:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about one fist at arm's length)"
+        elif altitude_deg < 20:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about two fists)"
+        elif altitude_deg < 40:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about four fists)"
+        elif altitude_deg < 50:
+            return f"{altitude_deg:.0f}° ({alt_desc} - halfway up)"
+        else:
+            return f"{altitude_deg:.0f}° ({alt_desc})"
+
+    def _explain_magnitude(self, magnitude: float) -> str:
+        """Provide brief explanation of magnitude value."""
+        if magnitude < 1:
+            return "very bright"
+        elif magnitude < 3:
+            return "bright"
+        elif magnitude < 5:
+            return "visible to naked eye"
+        elif magnitude < 6:
+            return "visible under dark skies"
+        else:
+            return "binoculars needed"
+
     def _get_theme_colors(self) -> dict[str, str]:
         """Get theme-aware colors."""
         is_dark = self._is_dark_theme()
@@ -613,7 +646,9 @@ class ConstellationInfoDialog(QDialog):
                     obj = star_info["obj"]
                     display_name = obj.common_name or obj.name
                     mag_text = f"{star_info['apparent_magnitude']:.2f}" if star_info["apparent_magnitude"] else "-"
-                    alt_text = f"{star_info['altitude']:.0f}°"
+                    # Add user-friendly altitude description
+                    alt_deg = star_info["altitude"]
+                    alt_text = self._format_altitude_user_friendly(alt_deg)
                     prob_text = f"{star_info['visibility_probability']:.0%}"
 
                     # Color code by visibility probability
@@ -628,18 +663,30 @@ class ConstellationInfoDialog(QDialog):
                     star_name_encoded = display_name.replace('"', "&quot;").replace("'", "&#39;")
                     info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
 
+                    # Add magnitude explanation
+                    mag_explanation = ""
+                    if star_info["apparent_magnitude"]:
+                        mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(star_info['apparent_magnitude'])})</span>"
+
                     html_parts.append(
                         f"<tr>"
                         f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{display_name}</td>"
                         f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{alt_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}{mag_explanation}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; font-size: 0.9em;'>{alt_text}</td>"
                         f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>"
                         f"<span style='color: {prob_color};'>{prob_text}</span></td>"
                         f"</tr>"
                     )
 
                 html_parts.append("</table>")
+                # Add helpful tips
+                html_parts.append(
+                    f"<p style='margin-top: 15px; margin-left: 20px; color: {colors['text_dim']}; font-size: 0.9em;'>"
+                    f"💡 <b>Tips:</b> Altitude is shown with helpful descriptions (e.g., 'one fist at arm's length' = 10°). "
+                    f"Magnitude indicates brightness - lower numbers are brighter. "
+                    f"Chance shows visibility probability based on current conditions.</p>"
+                )
             else:
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>No visible stars found in this constellation.</p>"

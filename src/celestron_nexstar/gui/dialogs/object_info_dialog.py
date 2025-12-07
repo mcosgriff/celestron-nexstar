@@ -149,6 +149,66 @@ class ObjectInfoDialog(QDialog):
         else:
             return "NW"
 
+    def _format_altitude_user_friendly(self, altitude_deg: float) -> str:
+        """Format altitude with user-friendly description and explanation."""
+        from celestron_nexstar.api.telescope.compass import format_altitude_description
+
+        alt_desc = format_altitude_description(altitude_deg)
+
+        # Add helpful explanation for common angles
+        if altitude_deg < 0:
+            return f"{altitude_deg:.1f}° (below horizon - not visible)"
+        elif altitude_deg < 10:
+            return f"{altitude_deg:.1f}° ({alt_desc} - about the width of your fist at arm's length)"
+        elif altitude_deg < 20:
+            return f"{altitude_deg:.1f}° ({alt_desc} - about two fists at arm's length)"
+        elif altitude_deg < 40:
+            return f"{altitude_deg:.1f}° ({alt_desc} - about four fists at arm's length)"
+        elif altitude_deg < 50:
+            return f"{altitude_deg:.1f}° ({alt_desc} - halfway between horizon and overhead)"
+        elif altitude_deg < 80:
+            return f"{altitude_deg:.1f}° ({alt_desc})"
+        else:
+            return f"{altitude_deg:.1f}° ({alt_desc} - almost directly above you)"
+
+    def _explain_magnitude(self, magnitude: float) -> str:
+        """Provide user-friendly explanation of magnitude value."""
+        if magnitude < -1:
+            return "very bright - easily visible"
+        elif magnitude < 0:
+            return "extremely bright"
+        elif magnitude < 1:
+            return "very bright"
+        elif magnitude < 2:
+            return "bright"
+        elif magnitude < 3:
+            return "moderately bright"
+        elif magnitude < 4:
+            return "visible to naked eye"
+        elif magnitude < 5:
+            return "visible under dark skies"
+        elif magnitude < 6:
+            return "visible under very dark skies"
+        elif magnitude < 8:
+            return "binoculars or small telescope needed"
+        elif magnitude < 10:
+            return "telescope required"
+        elif magnitude < 12:
+            return "large telescope needed"
+        else:
+            return "very faint - requires large telescope"
+
+    def _explain_limiting_magnitude(self, limiting_mag: float, object_mag: float | None) -> str:
+        """Explain limiting magnitude and whether object is visible."""
+        if object_mag is None:
+            return f"(you can see objects down to magnitude {limiting_mag:.2f})"
+
+        if object_mag <= limiting_mag:
+            return f"(object at {object_mag:.2f} should be visible)"
+        else:
+            diff = object_mag - limiting_mag
+            return f"(object at {object_mag:.2f} is {diff:.2f} magnitudes too faint to see)"
+
     def _load_object_info(self) -> None:
         """Load object information from the API."""
         colors = self._get_theme_colors()
@@ -235,8 +295,11 @@ class ObjectInfoDialog(QDialog):
                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Type: {type_text}</p>"
             )
             if obj.magnitude is not None:
+                # Add user-friendly magnitude explanation
+                mag_explanation = self._explain_magnitude(obj.magnitude)
                 html_parts.append(
-                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Magnitude: {obj.magnitude:.2f}</p>"
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Magnitude: {obj.magnitude:.2f} <span style='color: {colors['text_dim']}; font-size: 0.9em;'>({mag_explanation})</span></p>"
                 )
             # Display constellation for stars and other objects that have constellation data
             if obj.constellation:
@@ -264,20 +327,23 @@ class ObjectInfoDialog(QDialog):
                 )
 
             if visibility_info.altitude_deg is not None:
+                # Add user-friendly altitude description
+                alt_desc = self._format_altitude_user_friendly(visibility_info.altitude_deg)
                 html_parts.append(
-                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    f"Altitude: {visibility_info.altitude_deg:.1f}°</p>"
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Altitude: {alt_desc}</p>"
                 )
             if visibility_info.azimuth_deg is not None:
                 direction = self._get_azimuth_direction(visibility_info.azimuth_deg)
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    f"Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})</p>"
+                    f"Direction: Look <b>{direction}</b> (azimuth {visibility_info.azimuth_deg:.1f}°)</p>"
                 )
             if visibility_info.limiting_magnitude is not None:
+                # Add explanation for limiting magnitude
+                mag_explanation = self._explain_limiting_magnitude(visibility_info.limiting_magnitude, obj.magnitude)
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    f"Limiting Magnitude: {visibility_info.limiting_magnitude:.2f}</p>"
+                    f"Limiting Magnitude: {visibility_info.limiting_magnitude:.2f} {mag_explanation}</p>"
                 )
             if visibility_info.observability_score is not None:
                 html_parts.append(

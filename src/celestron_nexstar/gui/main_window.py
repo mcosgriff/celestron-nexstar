@@ -3696,6 +3696,60 @@ class MainWindow(QMainWindow):
             </table>
             """
 
+            # Add explanations section
+            sqm_condition = (
+                "excellent dark sky conditions"
+                if light_pollution.sqm_value >= 21.5
+                else "good dark sky conditions"
+                if light_pollution.sqm_value >= 20.5
+                else "moderate light pollution"
+                if light_pollution.sqm_value >= 19.0
+                else "significant light pollution"
+            )
+            naked_eye_condition = (
+                "you can see quite faint stars - excellent conditions!"
+                if light_pollution.naked_eye_limiting_magnitude >= 6.0
+                else "you can see moderately faint stars"
+                if light_pollution.naked_eye_limiting_magnitude >= 5.0
+                else "you can see bright stars, but light pollution limits fainter objects"
+            )
+
+            html_content += f"""
+            <h3 style="color: {header_color}; margin-top: 20px; margin-bottom: 10px;">Understanding These Values</h3>
+            <ul style="margin: 10px 0; padding-left: 20px; line-height: 1.6;">
+                <li style="margin-bottom: 8px;">
+                    <b>Bortle Class:</b> A scale from 1 (excellent dark sky) to 9 (inner-city sky).
+                    Lower numbers mean darker skies and better observing conditions. Class 1-2 sites are
+                    excellent for deep-sky observing, while Class 7-9 are best for bright objects only.
+                </li>
+                <li style="margin-bottom: 8px;">
+                    <b>SQM (Sky Quality Meter):</b> Measures sky brightness in magnitudes per square arcsecond.
+                    Higher values mean darker skies. Typical ranges: 17-18 (city), 19-20 (suburban),
+                    21-22 (rural/dark site). Your value of {light_pollution.sqm_value:.2f} indicates
+                    {sqm_condition}.
+                </li>
+                <li style="margin-bottom: 8px;">
+                    <b>Limiting Magnitude:</b> The faintest star you can see with the naked eye.
+                    Under dark skies (Bortle 1-2), you might see magnitude 6-7. In cities (Bortle 8-9),
+                    you might only see magnitude 3-4. Your limit of {light_pollution.naked_eye_limiting_magnitude:.2f} means
+                    {naked_eye_condition}.
+                </li>
+            """
+
+            if telescope_limit:
+                html_content += f"""
+                <li style="margin-bottom: 8px;">
+                    <b>Telescope Limiting Magnitude:</b> The faintest object your telescope can show under
+                    these sky conditions. With your {telescope_name}, you can see objects down to magnitude
+                    {telescope_limit:.2f}. Remember: this is theoretical - actual visibility depends on
+                    object type, contrast, and your experience level.
+                </li>
+                """
+
+            html_content += """
+            </ul>
+            """
+
             # Add additional information
             html_content += f"""
             <h3 style="color: {header_color}; margin-top: 20px; margin-bottom: 10px;">Sky Characteristics</h3>

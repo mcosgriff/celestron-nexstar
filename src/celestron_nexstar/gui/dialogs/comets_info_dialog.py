@@ -149,6 +149,41 @@ class CometsInfoDialog(QDialog):
 
         return format_local_time(dt, lat, lon)
 
+    def _format_altitude_user_friendly(self, altitude_deg: float) -> str:
+        """Format altitude with user-friendly description."""
+        from celestron_nexstar.api.telescope.compass import format_altitude_description
+
+        alt_desc = format_altitude_description(altitude_deg)
+
+        # Add helpful explanation for common angles
+        if altitude_deg < 0:
+            return f"{altitude_deg:.0f}° (below horizon)"
+        elif altitude_deg < 10:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about one fist at arm's length)"
+        elif altitude_deg < 20:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about two fists)"
+        elif altitude_deg < 40:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about four fists)"
+        elif altitude_deg < 50:
+            return f"{altitude_deg:.0f}° ({alt_desc} - halfway up)"
+        else:
+            return f"{altitude_deg:.0f}° ({alt_desc})"
+
+    def _explain_magnitude(self, magnitude: float) -> str:
+        """Provide brief explanation of magnitude value."""
+        if magnitude < 1:
+            return "very bright"
+        elif magnitude < 3:
+            return "bright"
+        elif magnitude < 5:
+            return "visible to naked eye"
+        elif magnitude < 6:
+            return "visible under dark skies"
+        elif magnitude < 8:
+            return "binoculars needed"
+        else:
+            return "telescope required"
+
     def _load_comets_info(self) -> None:
         """Load comet visibility information from the API and format it for display."""
         colors = self._get_theme_colors()
@@ -246,7 +281,7 @@ class CometsInfoDialog(QDialog):
                     # Format comet name
                     comet_str = vis.comet.name
 
-                    # Format magnitude with color
+                    # Format magnitude with color and explanation
                     if vis.magnitude < 3.0:
                         mag_color = colors["bright_green"]
                         mag_style = f"color: {mag_color}; font-weight: bold;"
@@ -259,6 +294,7 @@ class CometsInfoDialog(QDialog):
                     else:
                         mag_color = colors["text_dim"]
                         mag_style = f"color: {mag_color};"
+                    mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(vis.magnitude)})</span>"
 
                     # Format visibility
                     if vis.is_visible:
@@ -268,20 +304,26 @@ class CometsInfoDialog(QDialog):
                         visible_str = "✗ No"
                         visible_color = colors["text_dim"]
 
-                    # Format altitude
-                    alt_str = f"{vis.altitude:.0f}°"
+                    # Format altitude with user-friendly description
+                    alt_str = self._format_altitude_user_friendly(vis.altitude)
 
                     content_parts.append(
                         f"<tr style='border-bottom: 1px solid #444;'>"
                         f"<td style='padding: 6px; color: {colors['cyan']};'>{date_only}</td>"
                         f"<td style='padding: 6px; color: {colors['text']};'>{comet_str}</td>"
-                        f"<td style='padding: 6px; text-align: right; {mag_style}'>{vis.magnitude:.2f}</td>"
+                        f"<td style='padding: 6px; text-align: right; {mag_style}'>{vis.magnitude:.2f}{mag_explanation}</td>"
                         f"<td style='padding: 6px; text-align: center; color: {visible_color};'>{visible_str}</td>"
-                        f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{alt_str}</td>"
+                        f"<td style='padding: 6px; text-align: right; color: {colors['text']}; font-size: 0.9em;'>{alt_str}</td>"
                         "</tr>"
                     )
 
                 content_parts.append("</table>")
+                # Add helpful tips
+                content_parts.append(
+                    f"<p style='margin-top: 15px; color: {colors['text_dim']}; font-size: 0.9em;'>"
+                    f"💡 <b>Tips:</b> Altitude shows how high the comet is in the sky (use your fist at arm's length to estimate - one fist = 10°). "
+                    f"Magnitude indicates brightness - lower numbers are brighter. Comets with magnitude < 6 are visible to the naked eye under dark skies.</p>"
+                )
 
                 # Show details
                 content_parts.append("<h2>Comet Details</h2>")
@@ -304,10 +346,13 @@ class CometsInfoDialog(QDialog):
                     content_parts.append(
                         f"<p><b style='color: {colors['header']};'>{vis.comet.name}</b> ({vis.comet.designation})</p>"
                     )
+                    peak_mag_explanation = self._explain_magnitude(vis.comet.peak_magnitude)
+                    mag_explanation = self._explain_magnitude(vis.magnitude)
+                    alt_desc = self._format_altitude_user_friendly(vis.altitude)
                     content_parts.append(
                         f"<ul style='margin-left: 20px; color: {colors['text']};'>"
-                        f"<li>Peak: {peak_display} at magnitude {vis.comet.peak_magnitude:.2f}</li>"
-                        f"<li>{date_display}: Magnitude {vis.magnitude:.2f} at {vis.altitude:.0f}° altitude</li>"
+                        f"<li>Peak: {peak_display} at magnitude {vis.comet.peak_magnitude:.2f} ({peak_mag_explanation})</li>"
+                        f"<li>{date_display}: Magnitude {vis.magnitude:.2f} ({mag_explanation}) at {alt_desc}</li>"
                     )
 
                     if vis.comet.is_periodic and vis.comet.period_years:

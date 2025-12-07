@@ -237,6 +237,39 @@ class EclipseInfoDialog(QDialog):
         color, label = type_colors.get(eclipse_type, (colors["text"], eclipse_type))
         return color, label
 
+    def _format_altitude_user_friendly(self, altitude_deg: float) -> str:
+        """Format altitude with user-friendly description."""
+        from celestron_nexstar.api.telescope.compass import format_altitude_description
+
+        alt_desc = format_altitude_description(altitude_deg)
+
+        # Add helpful explanation for common angles
+        if altitude_deg < 0:
+            return f"{altitude_deg:.0f}° (below horizon)"
+        elif altitude_deg < 10:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about one fist at arm's length)"
+        elif altitude_deg < 20:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about two fists)"
+        elif altitude_deg < 40:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about four fists)"
+        elif altitude_deg < 50:
+            return f"{altitude_deg:.0f}° ({alt_desc} - halfway up)"
+        else:
+            return f"{altitude_deg:.0f}° ({alt_desc})"
+
+    def _explain_magnitude(self, magnitude: float) -> str:
+        """Provide brief explanation of magnitude value (for eclipses, this is obscuration)."""
+        # For eclipses, magnitude represents the fraction of the diameter obscured
+        # 1.0 = total eclipse, < 1.0 = partial
+        if magnitude >= 1.0:
+            return "total eclipse"
+        elif magnitude >= 0.9:
+            return "nearly total"
+        elif magnitude >= 0.5:
+            return "major partial"
+        else:
+            return "minor partial"
+
     def _load_eclipse_content(self, eclipses: list[Any], location: Any, years: int, title: str) -> list[str]:
         """Generate HTML content for eclipse list."""
         colors = self._get_theme_colors()
@@ -301,11 +334,12 @@ class EclipseInfoDialog(QDialog):
                 visible_str = "✗ No"
                 visible_color = colors["text_dim"]
 
-            # Format altitude
-            alt_str = f"{eclipse.altitude_at_maximum:.0f}°"
+            # Format altitude with user-friendly description
+            alt_str = self._format_altitude_user_friendly(eclipse.altitude_at_maximum)
 
-            # Format magnitude
+            # Format magnitude with explanation
             mag_str = f"{eclipse.magnitude:.2f}"
+            mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(eclipse.magnitude)})</span>"
 
             html_content.append(
                 f"<tr style='border-bottom: 1px solid #444;'>"
@@ -313,8 +347,8 @@ class EclipseInfoDialog(QDialog):
                 f"<td style='padding: 6px; color: {type_color}; font-weight: bold;'>{type_label}</td>"
                 f"<td style='padding: 6px; color: {colors['cyan']};'>{max_time_only}</td>"
                 f"<td style='padding: 6px; text-align: center; color: {visible_color};'>{visible_str}</td>"
-                f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{alt_str}</td>"
-                f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{mag_str}</td>"
+                f"<td style='padding: 6px; text-align: right; color: {colors['text']}; font-size: 0.9em;'>{alt_str}</td>"
+                f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{mag_str}{mag_explanation}</td>"
                 "</tr>"
             )
 
@@ -341,10 +375,13 @@ class EclipseInfoDialog(QDialog):
 
                 type_color, type_label = self._format_eclipse_type(eclipse.eclipse_type, colors)
 
+                alt_desc = self._format_altitude_user_friendly(eclipse.altitude_at_maximum)
+                mag_explanation = self._explain_magnitude(eclipse.magnitude)
                 html_content.append(f"<p><b style='color: {type_color};'>{type_label}</b> - {date_display}</p>")
                 html_content.append(
                     f"<ul style='margin-left: 20px; color: {colors['text']};'>"
-                    f"<li>Maximum: {max_display} at {eclipse.altitude_at_maximum:.0f}° altitude</li>"
+                    f"<li>Maximum: {max_display} at {alt_desc}</li>"
+                    f"<li>Magnitude: {eclipse.magnitude:.2f} ({mag_explanation})</li>"
                 )
 
                 if eclipse.visibility_start and eclipse.visibility_end:

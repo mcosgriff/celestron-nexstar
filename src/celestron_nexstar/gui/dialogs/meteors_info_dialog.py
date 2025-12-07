@@ -195,11 +195,37 @@ class MeteorsInfoDialog(QDialog):
 
         return format_local_time(dt, lat, lon)
 
+    def _format_altitude_user_friendly(self, altitude_deg: float) -> str:
+        """Format altitude with user-friendly description and explanation."""
+        from celestron_nexstar.api.telescope.compass import format_altitude_description
+
+        alt_desc = format_altitude_description(altitude_deg)
+
+        # Add helpful explanation for common angles
+        if altitude_deg < 0:
+            return f"{altitude_deg:.0f}° (below horizon - not visible)"
+        elif altitude_deg < 10:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about the width of your fist at arm's length)"
+        elif altitude_deg < 20:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about two fists at arm's length)"
+        elif altitude_deg < 40:
+            return f"{altitude_deg:.0f}° ({alt_desc} - about four fists at arm's length)"
+        elif altitude_deg < 50:
+            return f"{altitude_deg:.0f}° ({alt_desc} - halfway between horizon and overhead)"
+        elif altitude_deg < 70 or altitude_deg < 80:
+            return f"{altitude_deg:.0f}° ({alt_desc})"
+        else:
+            return f"{altitude_deg:.0f}° ({alt_desc} - almost directly above you)"
+
     def _load_predictions_content(self, predictions: list[Any], location: Any, months: int, title: str) -> list[str]:
         """Generate HTML content for meteor shower predictions list."""
         colors = self._get_theme_colors()
         _lat, _lon = location.latitude, location.longitude
         location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
+
+        # Import functions for calculating radiant position
+        from celestron_nexstar.api.astronomy.meteor_showers import get_radiant_position
+        from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
         html_content = []
         html_content.append(
@@ -230,6 +256,7 @@ class MeteorsInfoDialog(QDialog):
             "<th style='padding: 8px; text-align: right;'>ZHR</th>"
             "<th style='padding: 8px; text-align: right;'>Adjusted ZHR</th>"
             "<th style='padding: 8px; text-align: right;'>Moon</th>"
+            "<th style='padding: 8px; text-align: left;'>Where to Look</th>"
             "<th style='padding: 8px; text-align: left;'>Quality</th>"
             "</tr>"
         )
@@ -245,6 +272,14 @@ class MeteorsInfoDialog(QDialog):
 
             # Format moon
             moon_str = f"{pred.moon_illumination:.0%}"
+
+            # Calculate radiant azimuth and format direction
+            radiant_alt, radiant_az = get_radiant_position(
+                pred.shower, location.latitude, location.longitude, pred.date
+            )
+            direction = azimuth_to_compass_8point(radiant_az)
+            altitude_desc = self._format_altitude_user_friendly(radiant_alt)
+            where_to_look = f"{direction}, {altitude_desc}"
 
             # Format quality with color
             if pred.viewing_quality == "excellent":
@@ -269,6 +304,7 @@ class MeteorsInfoDialog(QDialog):
                 f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{zhr_str}</td>"
                 f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{adj_zhr_str}</td>"
                 f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{moon_str}</td>"
+                f"<td style='padding: 6px; color: {colors['text']}; font-size: 0.9em;'>{where_to_look}</td>"
                 f"<td style='padding: 6px; {quality_style}'>{quality_str}</td>"
                 "</tr>"
             )
@@ -283,12 +319,19 @@ class MeteorsInfoDialog(QDialog):
             date_obj = pred.date.replace(tzinfo=UTC) if pred.date.tzinfo is None else pred.date.astimezone(UTC)
             date_display = date_obj.strftime("%B %d, %Y")
 
+            # Calculate radiant position for details
+            radiant_alt, radiant_az = get_radiant_position(
+                pred.shower, location.latitude, location.longitude, pred.date
+            )
+            direction = azimuth_to_compass_8point(radiant_az)
+            altitude_desc = self._format_altitude_user_friendly(radiant_alt)
+
             html_content.append(f"<p><b style='color: {colors['header']};'>{pred.shower.name}</b> - {date_display}</p>")
             html_content.append(
                 f"<ul style='margin-left: 20px; color: {colors['text']}; margin-top: 0.5em; margin-bottom: 1em;'>"
                 f"<li>Peak ZHR: {pred.zhr_peak} → Adjusted: {pred.zhr_adjusted:.0f} (moon impact)</li>"
                 f"<li>Moon: {pred.moon_illumination:.0%} illuminated at {pred.moon_altitude:.0f}° altitude</li>"
-                f"<li>Radiant: {pred.radiant_altitude:.0f}° altitude</li>"
+                f"<li><b>Where to Look:</b> Look <b>{direction}</b> (north, northeast, etc.), {altitude_desc}</li>"
             )
 
             # Format quality
@@ -313,7 +356,11 @@ class MeteorsInfoDialog(QDialog):
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>ZHR = Zenithal Hourly Rate (meteors per hour under ideal conditions)</li>"
             f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Adjusted ZHR accounts for moonlight interference</li>"
             f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Best viewing: After midnight when radiant is highest</li>"
-            f"<li style='margin-bottom: 5px;'>Don't stare at the radiant - meteors appear throughout the sky</li>"
+            f"<li style='margin-bottom: 5px;'><b>Where to Look:</b> The 'Where to Look' column shows the compass direction (N, NE, E, etc.) and altitude. "
+            f"Use this as a starting point - meteors will appear to radiate from this area but can be seen throughout the sky.</li>"
+            f"<li style='margin-bottom: 5px;'><b>Understanding Altitude:</b> Hold your fist at arm's length - that's about 10°. "
+            f"Two fists = 20°, four fists = 40°. Halfway between horizon and overhead is about 45°.</li>"
+            f"<li style='margin-bottom: 5px;'>Don't stare directly at the radiant - meteors appear throughout the sky</li>"
             f"<li style='margin-bottom: 5px;'>Give your eyes 20+ minutes to adapt to darkness</li>"
             "</ul>"
             f"<p style='color: {colors['text_dim']}; margin-top: 1em;'>💡 Tip: Use 'nexstar meteors best' to find showers with minimal moonlight!</p>"
