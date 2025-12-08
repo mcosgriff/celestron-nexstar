@@ -420,7 +420,7 @@ def get_available_catalogs() -> list[str]:
     message="Search query must be non-empty",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-async def search_objects(
+def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
 ) -> list[tuple[CelestialObject, str]]:
     """
@@ -459,7 +459,7 @@ async def search_objects(
         try:
             db = get_database()
             # Search for objects within 5 arcminutes of the coordinates
-            coord_results = await db.search_by_coordinates(ra_hours, dec_degrees, radius_arcmin=5.0, limit=50)
+            coord_results = db.search_by_coordinates(ra_hours, dec_degrees, radius_arcmin=5.0, limit=50)
 
             # Convert to expected format: (CelestialObject, match_type)
             # Use separation in arcminutes as part of match type for sorting
@@ -486,7 +486,9 @@ async def search_objects(
 
     try:
         db = get_database()
-        async with db._AsyncSession() as session:
+        from celestron_nexstar.api.database.models import get_db_session
+
+        with get_db_session() as session:
             from celestron_nexstar.api.database.models import (
                 CelestialObjectModelProtocol,
                 ClusterModel,
@@ -521,7 +523,7 @@ async def search_objects(
                 if catalog_name:
                     exact_query = exact_query.where(model_class.catalog == catalog_name)
 
-                result = await session.execute(exact_query)
+                result = session.execute(exact_query)
                 exact_models = result.scalars().all()
                 for exact_model in exact_models:
                     exact_obj = db._model_to_object(exact_model)
@@ -544,7 +546,7 @@ async def search_objects(
                 | (ConstellationModel.abbreviation.ilike(query))
                 | (ConstellationModel.common_name.ilike(query))
             )
-            result = await session.execute(constellation_exact_query)
+            result = session.execute(constellation_exact_query)
             constellation_exact_models: list[ConstellationModel] = list(result.scalars().all())
             for constellation_model in constellation_exact_models:
                 # Convert ConstellationModel to CelestialObject
@@ -568,7 +570,7 @@ async def search_objects(
 
             # Search asterisms for exact matches
             asterism_exact_query = select(AsterismModel).where(AsterismModel.name.ilike(query))
-            result = await session.execute(asterism_exact_query)
+            result = session.execute(asterism_exact_query)
             asterism_exact_models: list[AsterismModel] = list(result.scalars().all())
             for asterism_model in asterism_exact_models:
                 # Convert AsterismModel to CelestialObject
@@ -604,7 +606,7 @@ async def search_objects(
                 if catalog_name:
                     name_query = name_query.where(model_class.catalog == catalog_name)
 
-                result = await session.execute(name_query)
+                result = session.execute(name_query)
                 name_models = result.scalars().all()
                 for model in name_models:
                     obj = db._model_to_object(model)
@@ -634,7 +636,7 @@ async def search_objects(
                 if catalog_name:
                     common_query = common_query.where(model_class.catalog == catalog_name)
 
-                result = await session.execute(common_query)
+                result = session.execute(common_query)
                 common_models = result.scalars().all()
                 for model in common_models:
                     obj = db._model_to_object(model)
@@ -664,7 +666,7 @@ async def search_objects(
                 if catalog_name:
                     desc_query = desc_query.where(model_class.catalog == catalog_name)
 
-                result = await session.execute(desc_query)
+                result = session.execute(desc_query)
                 desc_models = result.scalars().all()
                 for model in desc_models:
                     obj = db._model_to_object(model)
@@ -702,7 +704,7 @@ async def search_objects(
                 | (ConstellationModel.abbreviation.ilike(f"%{query}%"))
                 | (ConstellationModel.common_name.ilike(f"%{query}%"))
             )
-            result = await session.execute(constellation_name_query)
+            result = session.execute(constellation_name_query)
             constellation_name_models: list[ConstellationModel] = list(result.scalars().all())
             for constellation_model in constellation_name_models:
                 constellation_obj = CelestialObject(
@@ -725,7 +727,7 @@ async def search_objects(
 
             # Search asterisms by name (substring match) - score: 0
             asterism_name_query = select(AsterismModel).where(AsterismModel.name.ilike(f"%{query}%"))
-            result = await session.execute(asterism_name_query)
+            result = session.execute(asterism_name_query)
             asterism_name_models: list[AsterismModel] = list(result.scalars().all())
             for asterism_model in asterism_name_models:
                 alt_names_list = []
@@ -761,7 +763,7 @@ async def search_objects(
                 AsterismModel.alt_names.isnot(None),
                 AsterismModel.alt_names.ilike(f"%{query}%"),
             )
-            result = await session.execute(asterism_alt_query)
+            result = session.execute(asterism_alt_query)
             asterism_alt_models: list[AsterismModel] = list(result.scalars().all())
             for asterism_model in asterism_alt_models:
                 alt_names_list = []
@@ -792,7 +794,7 @@ async def search_objects(
                 ConstellationModel.mythology.isnot(None),
                 ConstellationModel.mythology.ilike(f"%{query}%"),
             )
-            result = await session.execute(constellation_desc_query)
+            result = session.execute(constellation_desc_query)
             constellation_desc_models: list[ConstellationModel] = list(result.scalars().all())
             for constellation_model in constellation_desc_models:
                 constellation_obj = CelestialObject(
@@ -827,7 +829,7 @@ async def search_objects(
                 AsterismModel.description.isnot(None),
                 AsterismModel.description.ilike(f"%{query}%"),
             )
-            result = await session.execute(asterism_desc_query)
+            result = session.execute(asterism_desc_query)
             asterism_desc_models: list[AsterismModel] = list(result.scalars().all())
             for asterism_model in asterism_desc_models:
                 alt_names_list = []
@@ -885,7 +887,7 @@ async def search_objects(
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-async def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> list[str]:
+def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> list[str]:
     """
     Get object names for autocompletion.
 
@@ -904,7 +906,7 @@ async def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> 
     try:
         db = get_database()
         # Database query handles case-insensitivity
-        return await db.get_names_for_completion(prefix=prefix, limit=limit)
+        return db.get_names_for_completion(prefix=prefix, limit=limit)
     except (AttributeError, ValueError, TypeError, RuntimeError) as e:
         # AttributeError: missing database attributes or methods
         # ValueError: invalid prefix or limit
@@ -916,7 +918,7 @@ async def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> 
 
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
-async def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
+def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
     Get objects by name (name field only, no common_name).
 
@@ -939,7 +941,7 @@ async def get_object_by_name(name: str, catalog_name: str | None = None) -> list
     try:
         db = get_database()
         # First, try exact match in database (highest priority) - name field only
-        db_obj = await db.get_by_name(name)
+        db_obj = db.get_by_name(name)
         if db_obj:
             all_matches.append(db_obj)
             seen_names.add(str(db_obj.name).lower())
@@ -948,7 +950,7 @@ async def get_object_by_name(name: str, catalog_name: str | None = None) -> list
 
         # If no exact match, try FTS5 search (searches name, common_name, description)
         # But we'll filter to only return matches where name contains the query
-        db_results = await db.search(name, limit=20)
+        db_results = db.search(name, limit=20)
         for obj in db_results:
             if obj and obj.name is not None:
                 obj_name_lower = str(obj.name).lower()

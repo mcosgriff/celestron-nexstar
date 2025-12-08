@@ -140,9 +140,9 @@ def _get_cached_tle() -> tuple[str, str, datetime] | None:
     return None
 
 
-async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
+def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
     """
-    Fetch current ISS TLE from CelesTrak (async).
+    Fetch current ISS TLE from CelesTrak.
 
     Returns:
         Tuple of (line1, line2, fetch_time)
@@ -150,23 +150,17 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
     Raises:
         TLEFetchError: If fetch fails
     """
-    import aiohttp
+    import urllib.request
 
     try:
-        logger.info("Fetching ISS TLE from CelesTrak (async)...")
+        logger.info("Fetching ISS TLE from CelesTrak...")
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(CELESTRAK_ISS_URL, timeout=aiohttp.ClientTimeout(total=10)) as response,
-        ):
-            match response.status:
-                case 200:
-                    pass  # Success
-                case status:
-                    msg = f"Failed to fetch ISS TLE: HTTP {status}"
-                    raise TLEFetchError(msg) from None
+        with urllib.request.urlopen(CELESTRAK_ISS_URL, timeout=10) as response:
+            if response.status != 200:
+                msg = f"Failed to fetch ISS TLE: HTTP {response.status}"
+                raise TLEFetchError(msg) from None
 
-            data = await response.text()
+            data = response.read().decode("utf-8")
             lines = data.strip().split("\n")
 
             if len(lines) >= 3:
@@ -179,7 +173,7 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
                 with TLE_CACHE_FILE.open("w") as f:
                     f.write(data)
 
-                logger.info("ISS TLE fetched and cached successfully (async)")
+                logger.info("ISS TLE fetched and cached successfully")
                 return (line1, line2, fetch_time)
             else:
                 msg = "Invalid TLE format from CelesTrak"
@@ -187,16 +181,17 @@ async def _fetch_tle_from_celestrak() -> tuple[str, str, datetime]:
 
     except TLEFetchError:
         raise
-    except (aiohttp.ClientError, TimeoutError, ValueError, IndexError) as e:
-        # aiohttp.ClientError: HTTP/network errors
+    except (OSError, TimeoutError, ValueError, IndexError, UnicodeDecodeError) as e:
+        # OSError: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid data format
         # IndexError: insufficient lines in response
+        # UnicodeDecodeError: encoding errors
         msg = f"Failed to fetch ISS TLE: {e}"
         raise TLEFetchError(msg) from e
 
 
-async def _get_iss_satellite() -> EarthSatellite:
+def _get_iss_satellite() -> EarthSatellite:
     """
     Get ISS satellite object with current TLE.
 
@@ -213,7 +208,7 @@ async def _get_iss_satellite() -> EarthSatellite:
         line1, line2, _fetch_time = cached_tle
     else:
         # Fetch fresh TLE
-        line1, line2, _fetch_time = await _fetch_tle_from_celestrak()
+        line1, line2, _fetch_time = _fetch_tle_from_celestrak()
 
     # Create satellite object
     loader = get_skyfield_loader()
@@ -223,7 +218,7 @@ async def _get_iss_satellite() -> EarthSatellite:
     return satellite
 
 
-async def get_iss_passes(
+def get_iss_passes(
     latitude: float,
     longitude: float,
     start_time: datetime | None = None,
@@ -263,7 +258,7 @@ async def get_iss_passes(
     logger.info(f"Calculating ISS passes for lat={latitude}, lon={longitude}, {days} days")
 
     # Get ISS satellite
-    satellite = await _get_iss_satellite()
+    satellite = _get_iss_satellite()
 
     # Create observer location
     observer = wgs84.latlon(latitude, longitude)
@@ -372,7 +367,7 @@ async def get_iss_passes(
     return passes
 
 
-async def get_iss_passes_cached(
+def get_iss_passes_cached(
     latitude: float,
     longitude: float,
     start_time: datetime | None = None,
@@ -442,7 +437,7 @@ async def get_iss_passes_cached(
             ]
 
     # Calculate fresh passes
-    passes = await get_iss_passes(latitude, longitude, start_time, days, min_altitude_deg)
+    passes = get_iss_passes(latitude, longitude, start_time, days, min_altitude_deg)
 
     # Cache in database
     if db_session is not None and passes:

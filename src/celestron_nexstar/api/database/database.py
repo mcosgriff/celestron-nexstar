@@ -21,11 +21,10 @@ from typing import Any, ClassVar, TypeVar, cast
 
 import deal
 from rich.console import Console
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Row
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
@@ -208,6 +207,26 @@ class CatalogDatabase:
             db_path: Path to database file (default: ~/.config/celestron-nexstar/catalogs.db)
             use_memory: If True, load database into memory for faster queries (requires existing database)
         """
+        # Set SPATIALITE_LIBRARY_PATH for GeoAlchemy2 plugin if not already set
+        # This must be done BEFORE creating the engine
+        import os
+
+        if "SPATIALITE_LIBRARY_PATH" not in os.environ:
+            # Try to find SpatiaLite library and set environment variable
+            import platform
+
+            system = platform.system()
+            if system == "Darwin":
+                paths = ["/opt/homebrew/lib/mod_spatialite.dylib", "/usr/local/lib/mod_spatialite.dylib"]
+            elif system == "Linux":
+                paths = ["/usr/lib/x86_64-linux-gnu/mod_spatialite.so", "/usr/local/lib/mod_spatialite.so"]
+            else:
+                paths = []
+
+            for path in paths:
+                if os.path.exists(path):
+                    os.environ["SPATIALITE_LIBRARY_PATH"] = path
+                    break
         if db_path is None:
             db_path = self._get_default_db_path()
 
@@ -215,22 +234,23 @@ class CatalogDatabase:
         self.use_memory = use_memory
         self._source_db_path = self.db_path if use_memory else None
 
-        # Use aiosqlite for async SQLite support
-        # SQLite URL format for async: sqlite+aiosqlite:///
-        # For in-memory databases, use :memory: (see https://sqlite.org/inmemorydb.html)
+        # Use synchronous SQLite for better SpatiaLite support
+        # SQLite URL format: sqlite:///
+        # For in-memory databases, use :memory:
         if use_memory:
             # Use shared cache for in-memory database so multiple connections can access it
             # See: https://sqlite.org/inmemorydb.html#sharedmemdb
-            db_url = "sqlite+aiosqlite:///file:memdb1?mode=memory&cache=shared"
+            db_url = "sqlite:///file:memdb1?mode=memory&cache=shared&uri=true"
         else:
-            db_url = f"sqlite+aiosqlite:///{self.db_path}"
+            db_url = f"sqlite:///{self.db_path}"
 
         # Optimize connection pooling for SQLite:
         # - pool_size: SQLite doesn't use traditional pooling, but this sets max connections
         # - max_overflow: Additional connections beyond pool_size
         # - pool_pre_ping: Verify connections before using (prevents stale connections)
         # - pool_recycle: Recycle connections after this many seconds (not critical for SQLite)
-        self._engine = create_async_engine(
+        # - connect_args: Enable SQLite extensions (R-tree and SpatiaLite for spatial indexing)
+        self._engine = create_engine(
             db_url,
             echo=False,  # Set to True for SQL debugging
             future=True,
@@ -238,18 +258,28 @@ class CatalogDatabase:
             max_overflow=5,  # Additional connections beyond pool_size
             pool_pre_ping=True,  # Verify connections before using (prevents stale connections)
             pool_recycle=3600,  # Recycle connections after 1 hour (not critical for SQLite)
+            connect_args={
+                # Enable SQLite R-tree extension for spatial indexing
+                # This allows efficient spatial queries for star positions and constellation boundaries
+                "check_same_thread": False,  # Allow connections from different threads
+            },
+            plugins=["geoalchemy2"],  # Enable GeoAlchemy2 plugin for SpatiaLite support
         )
-        self._AsyncSession = async_sessionmaker(
+
+        # Enable R-tree extension after engine creation
+        # R-tree is built into SQLite and doesn't need to be loaded
+        # It's automatically available when creating R-tree virtual tables
+
+        self._Session = sessionmaker(
             bind=self._engine,
-            class_=AsyncSession,
             expire_on_commit=False,
         )
         self._configure_optimizations()
 
         # If using memory mode, copy the existing database into memory
         if use_memory and self._source_db_path and self._source_db_path.exists():
-            # This will be called asynchronously when needed
-            self._memory_loaded = False
+            # Load database into memory synchronously
+            self._load_database_into_memory()
             self._memory_dirty = False  # Track if in-memory DB has been modified
         else:
             self._memory_loaded = True  # Not using memory or no source DB
@@ -264,29 +294,91 @@ class CatalogDatabase:
 
     def _configure_optimizations(self) -> None:
         """Configure SQLite optimizations via engine events."""
+        import logging
+
         from sqlalchemy import event
 
-        @event.listens_for(self._engine.sync_engine, "connect")
+        logger = logging.getLogger(__name__)
+
+        @event.listens_for(self._engine, "connect")
         def set_sqlite_pragmas(dbapi_conn: Any, connection_record: Any) -> None:
-            """Set SQLite pragmas for performance."""
+            """Set SQLite pragmas for performance and enable extensions."""
             cursor = dbapi_conn.cursor()
 
             cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
             cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
             cursor.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+
+            # R-tree extension is built into SQLite and doesn't need to be loaded
+            # It's automatically available when creating R-tree virtual tables
+
+            # Load SpatiaLite extension
+            # With synchronous SQLite, we can directly access the connection
+            try:
+                # Enable extension loading
+                dbapi_conn.enable_load_extension(True)
+
+                # Try to load SpatiaLite
+                spatialite_loaded = False
+                import os
+                import platform
+
+                # First try the environment variable path
+                if "SPATIALITE_LIBRARY_PATH" in os.environ:
+                    try:
+                        dbapi_conn.load_extension(os.environ["SPATIALITE_LIBRARY_PATH"])
+                        spatialite_loaded = True
+                        logger.debug("SpatiaLite loaded from SPATIALITE_LIBRARY_PATH")
+                    except Exception as e:
+                        logger.debug(f"Failed to load SpatiaLite from SPATIALITE_LIBRARY_PATH: {e}")
+
+                # If not loaded, try common paths
+                if not spatialite_loaded:
+                    system = platform.system()
+                    if system == "Darwin":
+                        paths = ["/opt/homebrew/lib/mod_spatialite.dylib", "/usr/local/lib/mod_spatialite.dylib"]
+                    elif system == "Linux":
+                        paths = ["/usr/lib/x86_64-linux-gnu/mod_spatialite.so", "/usr/local/lib/mod_spatialite.so"]
+                    else:
+                        paths = []
+
+                    for path in paths:
+                        if os.path.exists(path):
+                            try:
+                                dbapi_conn.load_extension(path)
+                                spatialite_loaded = True
+                                logger.debug(f"SpatiaLite loaded from {path}")
+                                break
+                            except Exception as e:
+                                logger.debug(f"Failed to load SpatiaLite from {path}: {e}")
+                                continue
+
+                # Initialize SpatiaLite metadata if loaded
+                if spatialite_loaded:
+                    try:
+                        cursor.execute("SELECT InitSpatialMetadata(1)")
+                        logger.debug("SpatiaLite metadata initialized")
+                    except Exception as e:
+                        logger.debug(f"SpatiaLite metadata already initialized or error: {e}")
+
+                # Disable extension loading for security
+                dbapi_conn.enable_load_extension(False)
+            except Exception as e:
+                logger.warning(f"Failed to load SpatiaLite extension: {e}", exc_info=True)
+                # Continue without SpatiaLite - some operations may fail, but basic functionality should work
+
             cursor.close()
 
         # Hook into commit events to track writes when using in-memory mode
-        # Note: This tracks commits on the sync engine (used by async engine under the hood)
         if self.use_memory:
 
-            @event.listens_for(self._engine.sync_engine, "commit")
+            @event.listens_for(self._engine, "commit")
             def mark_dirty(conn: Any) -> None:
                 """Mark in-memory database as dirty when commits occur."""
                 self._memory_dirty = True
 
-    async def _load_database_into_memory(self) -> None:
+    def _load_database_into_memory(self) -> None:
         """
         Load the source database into the in-memory database.
 
@@ -302,19 +394,22 @@ class CatalogDatabase:
             return
 
         try:
-            import aiosqlite
+            import sqlite3
 
             # Connect to source database (file-based)
-            async with (
-                aiosqlite.connect(str(self._source_db_path)) as source_conn,
-                # Connect to destination database (in-memory with shared cache)
-                # Use the same shared memory name that SQLAlchemy uses
-                aiosqlite.connect("file:memdb1?mode=memory&cache=shared") as dest_conn,
-            ):
+            source_conn = sqlite3.connect(str(self._source_db_path))
+            # Connect to destination database (in-memory with shared cache)
+            # Use the same shared memory name that SQLAlchemy uses
+            dest_conn = sqlite3.connect("file:memdb1?mode=memory&cache=shared&uri=true")
+
+            try:
                 # Use SQLite backup API to copy database
                 # This is much faster than copying row by row
-                await source_conn.backup(dest_conn)
-                await dest_conn.commit()
+                source_conn.backup(dest_conn)
+                dest_conn.commit()
+            finally:
+                source_conn.close()
+                dest_conn.close()
 
             logger.info(f"Loaded database into memory from {self._source_db_path}")
             self._memory_loaded = True
@@ -325,7 +420,7 @@ class CatalogDatabase:
             self.use_memory = False
             self._memory_loaded = True
 
-    async def _sync_memory_to_file(self) -> None:
+    def _sync_memory_to_file(self) -> None:
         """
         Sync the in-memory database back to the file database.
 
@@ -341,83 +436,58 @@ class CatalogDatabase:
             return
 
         try:
-            import aiosqlite
+            import sqlite3
 
             # Connect to source database (in-memory)
-            async with (
-                aiosqlite.connect("file:memdb1?mode=memory&cache=shared") as source_conn,
-                # Connect to destination database (file-based)
-                aiosqlite.connect(str(self._source_db_path)) as dest_conn,
-            ):
+            source_conn = sqlite3.connect("file:memdb1?mode=memory&cache=shared&uri=true")
+            # Connect to destination database (file-based)
+            dest_conn = sqlite3.connect(str(self._source_db_path))
+
+            try:
                 # Use SQLite backup API to copy from memory to file
                 # This efficiently copies the entire database
-                await source_conn.backup(dest_conn)
-                await dest_conn.commit()
+                source_conn.backup(dest_conn)
+                dest_conn.commit()
+            finally:
+                source_conn.close()
+                dest_conn.close()
 
             logger.debug(f"Synced in-memory database to file: {self._source_db_path}")
             self._memory_dirty = False
         except Exception as e:
             logger.error(f"Failed to sync in-memory database to file: {e}", exc_info=True)
 
-    async def sync_to_file(self) -> None:
+    def sync_to_file(self) -> None:
         """
         Manually trigger a sync from in-memory database to file.
 
         This is useful if you want to ensure data is persisted immediately.
         """
-        await self._sync_memory_to_file()
-
-    async def _get_session(self) -> AsyncSession:
-        """Get a new async database session."""
-        # Ensure database is loaded into memory if using memory mode
-        if self.use_memory and not self._memory_loaded:
-            await self._load_database_into_memory()
-        return self._AsyncSession()
+        self._sync_memory_to_file()
 
     @contextmanager
-    def _get_session_sync(self) -> Iterator[Session]:
-        """
-        Get a synchronous session (for backwards compatibility during migration).
-
-        Note: This creates a sync engine temporarily. Use _get_session() for new code.
-
-        Returns a context manager that yields a Session.
-        """
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
-
-        # For sync engine, handle in-memory databases
-        db_url = "sqlite:///file:memdb1?mode=memory&cache=shared" if self.use_memory else f"sqlite:///{self.db_path}"
-
-        sync_engine = create_engine(
-            db_url,
-            connect_args={"check_same_thread": False},
-            echo=False,
-        )
-        session_factory = sessionmaker(bind=sync_engine, expire_on_commit=False)
-
-        session = session_factory()
+    def _get_session(self) -> Iterator[Session]:
+        """Get a new synchronous database session."""
+        # Ensure database is loaded into memory if using memory mode
+        if self.use_memory and not self._memory_loaded:
+            self._load_database_into_memory()
+        session = self._Session()
         try:
             yield session
             session.commit()
-        except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError):
-            # SQLAlchemyError: database errors
-            # RuntimeError: session errors
-            # AttributeError: missing session attributes
-            # ValueError: invalid data
-            # TypeError: wrong argument types
+        except Exception:
             session.rollback()
             raise
         finally:
             session.close()
 
     @deal.post(lambda result: result is None, message="Close must complete")
-    async def close(self) -> None:
+    def close(self) -> None:
         """Close database connection."""
         # If using in-memory mode and database has been modified, sync back to file
         if self.use_memory and self._memory_dirty:
-            await self._sync_memory_to_file()
-        await self._engine.dispose()
+            self._sync_memory_to_file()
+        self._engine.dispose()
 
     def __enter__(self) -> CatalogDatabase:
         """Context manager entry."""
@@ -435,7 +505,7 @@ class CatalogDatabase:
         )
 
     @deal.post(lambda result: result is None, message="Schema initialization must complete")
-    async def init_schema(self) -> None:
+    def init_schema(self) -> None:
         """
         Initialize database schema.
 
@@ -444,14 +514,13 @@ class CatalogDatabase:
         """
         from celestron_nexstar.api.database.models import Base
 
-        # Create all tables (async)
-        async with self._engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        # Create all tables
+        Base.metadata.create_all(self._engine)
 
         # Create FTS5 table and triggers (not handled by SQLAlchemy)
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # Create FTS5 virtual table
-            await session.execute(
+            session.execute(
                 text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS objects_fts USING fts5(
                     name,
@@ -464,7 +533,7 @@ class CatalogDatabase:
             )
 
             # Create triggers
-            await session.execute(
+            session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
                     INSERT INTO objects_fts(rowid, name, common_name, description)
@@ -473,7 +542,7 @@ class CatalogDatabase:
             """)
             )
 
-            await session.execute(
+            session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
                     DELETE FROM objects_fts WHERE rowid = old.id;
@@ -481,7 +550,7 @@ class CatalogDatabase:
             """)
             )
 
-            await session.execute(
+            session.execute(
                 text("""
                 CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
                     UPDATE objects_fts SET
@@ -493,12 +562,12 @@ class CatalogDatabase:
             """)
             )
 
-            await session.commit()
+            session.commit()
 
         logger.info("Database schema initialized")
 
     @deal.post(lambda result: result is None, message="FTS table ensure must complete")
-    async def ensure_fts_table(self) -> None:
+    def ensure_fts_table(self) -> None:
         """
         Ensure the FTS5 table exists. Creates it if missing.
 
@@ -509,9 +578,9 @@ class CatalogDatabase:
         (stars, galaxies, etc.), this will skip FTS creation as FTS
         is no longer used in that schema.
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # Check if objects table exists (it may have been split into separate tables)
-            objects_table_result = await session.execute(
+            objects_table_result = session.execute(
                 text("""
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name='objects'
@@ -528,7 +597,7 @@ class CatalogDatabase:
                 return
 
             # Check if FTS table exists
-            result = await session.execute(
+            result = session.execute(
                 text("""
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name='objects_fts'
@@ -539,7 +608,7 @@ class CatalogDatabase:
             if row is None:
                 logger.info("Creating missing objects_fts table")
                 # Create FTS5 virtual table
-                await session.execute(
+                session.execute(
                     text("""
                     CREATE VIRTUAL TABLE objects_fts USING fts5(
                         name,
@@ -552,7 +621,7 @@ class CatalogDatabase:
                 )
 
                 # Create triggers
-                await session.execute(
+                session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_ai AFTER INSERT ON objects BEGIN
                         INSERT INTO objects_fts(rowid, name, common_name, description)
@@ -561,7 +630,7 @@ class CatalogDatabase:
                 """)
                 )
 
-                await session.execute(
+                session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_ad AFTER DELETE ON objects BEGIN
                         DELETE FROM objects_fts WHERE rowid = old.id;
@@ -569,7 +638,7 @@ class CatalogDatabase:
                 """)
                 )
 
-                await session.execute(
+                session.execute(
                     text("""
                     CREATE TRIGGER IF NOT EXISTS objects_au AFTER UPDATE ON objects BEGIN
                         UPDATE objects_fts SET
@@ -582,18 +651,18 @@ class CatalogDatabase:
                 )
 
                 # Populate FTS table with existing objects
-                await session.execute(
+                session.execute(
                     text("""
                     INSERT INTO objects_fts(rowid, name, common_name, description)
                     SELECT id, name, common_name, description FROM objects
                 """)
                 )
 
-                await session.commit()
+                session.commit()
                 logger.info("FTS table created and populated")
 
     @deal.post(lambda result: result is None, message="FTS repopulation must complete")
-    async def repopulate_fts_table(self) -> None:
+    def repopulate_fts_table(self) -> None:
         """
         Repopulate the FTS table with all existing objects.
 
@@ -603,14 +672,14 @@ class CatalogDatabase:
         Note: For external content tables (content=objects), we need to use
         INSERT OR REPLACE to properly sync the FTS table.
         """
-        await self.ensure_fts_table()  # Make sure table exists
+        self.ensure_fts_table()  # Make sure table exists
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # For external content FTS tables, we need to rebuild the index
             # Delete all existing FTS data first
             try:
-                await session.execute(text("DELETE FROM objects_fts"))
-                await session.commit()
+                session.execute(text("DELETE FROM objects_fts"))
+                session.commit()
             except (SQLAlchemyError, RuntimeError, AttributeError) as e:
                 # SQLAlchemyError: table doesn't exist or database errors
                 # RuntimeError: async/await errors
@@ -621,23 +690,23 @@ class CatalogDatabase:
 
             # Repopulate from objects table
             # For external content tables, use INSERT OR REPLACE
-            await session.execute(
+            session.execute(
                 text("""
                     INSERT OR REPLACE INTO objects_fts(rowid, name, common_name, description)
                     SELECT id, name, common_name, description FROM objects
                     WHERE name IS NOT NULL
                 """)
             )
-            await session.commit()
+            session.commit()
 
             # Verify the repopulation
             # FTS5 table requires raw SQL (virtual table)
-            fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
+            fts_result = session.execute(text("SELECT COUNT(*) FROM objects_fts"))
             fts_count = fts_result.scalar() or 0
             # Use SQLAlchemy for objects count
             from sqlalchemy import func, select
 
-            objects_result = await session.scalar(
+            objects_result = session.scalar(
                 select(func.count(CelestialObjectModel.id)).where(CelestialObjectModel.name.isnot(None))
             )
             objects_count = objects_result or 0
@@ -664,7 +733,7 @@ class CatalogDatabase:
         message="Dec must be -90 to +90 degrees",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result > 0, message="Insert must return positive ID")  # type: ignore[misc,arg-type,operator]
-    async def insert_object(
+    def insert_object(
         self,
         name: str,
         catalog: str,
@@ -704,17 +773,17 @@ class CatalogDatabase:
             ID of inserted object
         """
         # Ensure FTS table exists before inserting (triggers depend on it)
-        await self.ensure_fts_table()
+        self.ensure_fts_table()
 
         # Get the correct model class for this object type
         object_type_enum = CelestialObjectType(object_type) if isinstance(object_type, str) else object_type
         model_class = self._get_model_class(object_type_enum)
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             # Check if object with this name already exists
-            existing = await session.scalar(select(model_class).where(model_class.name == name))
+            existing = session.scalar(select(model_class).where(model_class.name == name))
             if existing:
                 # Object already exists, return its ID
                 # At runtime, existing.id is an int, not Mapped[int]
@@ -743,12 +812,12 @@ class CatalogDatabase:
 
             model = model_class(**model_kwargs)
             session.add(model)
-            await session.commit()
-            await session.refresh(model)
+            session.commit()
+            session.refresh(model)
             # At runtime, model.id is an int, not Mapped[int]
             return model.id  # type: ignore[return-value]
 
-    async def insert_objects_batch(
+    def insert_objects_batch(
         self,
         objects: list[dict[str, Any]],
     ) -> int:
@@ -762,12 +831,12 @@ class CatalogDatabase:
             Number of objects inserted
         """
         # Ensure FTS table exists before inserting (triggers depend on it)
-        await self.ensure_fts_table()
+        self.ensure_fts_table()
 
         if not objects:
             return 0
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             # Pre-fetch existing names for each model type to avoid duplicates
@@ -792,7 +861,7 @@ class CatalogDatabase:
 
             # Pre-fetch existing names for each model type
             for model_class in objects_by_type:
-                result = await session.execute(select(model_class.name))
+                result = session.execute(select(model_class.name))
                 existing_names_by_type[model_class] = {row[0] for row in result.all()}
 
             # Group objects by type for batch insertion, skipping duplicates
@@ -805,6 +874,16 @@ class CatalogDatabase:
                     # Skip if name already exists
                     if obj_name in existing_names:
                         continue
+
+                    # Create POINT geometry from RA/Dec coordinates
+                    # Convert RA from hours to degrees for geometry (treating as longitude)
+                    ra_degrees = obj["ra_hours"] * 15.0
+                    dec_degrees = obj["dec_degrees"]
+                    point_wkt = f"POINT({ra_degrees} {dec_degrees})"
+
+                    # Create geometry using GeoAlchemy2 (will be converted to SpatiaLite format)
+                    # We'll create geometries in batch after creating all models
+                    geometry_wkt = point_wkt
 
                     # Create model instance with common fields
                     model_kwargs = {
@@ -837,11 +916,31 @@ class CatalogDatabase:
                             model_kwargs["parent_planet"] = obj.get("parent_planet")
 
                     model = model_class(**model_kwargs)
+                    # Store WKT for batch geometry creation
+                    model._temp_geometry_wkt = geometry_wkt  # type: ignore[attr-defined]
                     if model_class not in models_by_type:
                         models_by_type[model_class] = []
                     models_by_type[model_class].append(model)
                     # Track this name as existing to avoid duplicates within the same batch
                     existing_names.add(obj_name)
+
+            # Create geometries in batch for all models
+            from sqlalchemy import text
+
+            for _model_class, models in models_by_type.items():
+                for model in models:
+                    if hasattr(model, "_temp_geometry_wkt"):  # type: ignore[attr-defined]
+                        wkt = model._temp_geometry_wkt  # type: ignore[attr-defined]
+                        try:
+                            result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
+                            geometry_obj = result.scalar()
+                            if geometry_obj:
+                                model.geometry = geometry_obj
+                        except Exception:
+                            # If geometry creation fails, continue without geometry
+                            pass
+                        # Clean up temp attribute
+                        delattr(model, "_temp_geometry_wkt")  # type: ignore[attr-defined]
 
             # Insert all models grouped by type
             total_inserted = 0
@@ -850,10 +949,10 @@ class CatalogDatabase:
                     session.add_all(models)
                     total_inserted += len(models)
 
-            await session.commit()
+            session.commit()
             return total_inserted
 
-    async def get_existing_objects_set(
+    def get_existing_objects_set(
         self,
         catalog: str | None = None,
     ) -> set[tuple[str, str | None, int | None]]:
@@ -869,7 +968,7 @@ class CatalogDatabase:
         Returns:
             Set of tuples (name, common_name, catalog_number)
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             existing_set: set[tuple[str, str | None, int | None]] = set()
@@ -879,7 +978,7 @@ class CatalogDatabase:
                 if catalog:
                     query = query.where(model_class.catalog == catalog)
 
-                result = await session.execute(query)
+                result = session.execute(query)
                 rows = result.all()
 
                 # Build set of (name, common_name, catalog_number) tuples
@@ -896,9 +995,7 @@ class CatalogDatabase:
         lambda result: result is None or isinstance(result, CelestialObject),
         message="Must return CelestialObject or None",
     )
-    async def get_by_id(
-        self, object_id: int, object_type: CelestialObjectType | str | None = None
-    ) -> CelestialObject | None:
+    def get_by_id(self, object_id: int, object_type: CelestialObjectType | str | None = None) -> CelestialObject | None:
         """
         Get object by ID.
 
@@ -906,20 +1003,20 @@ class CatalogDatabase:
             object_id: Object ID
             object_type: Optional object type to speed up lookup (searches all tables if not provided)
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # If object_type is provided, query the specific table
             if object_type:
                 if isinstance(object_type, str):
                     object_type = CelestialObjectType(object_type)
                 model_class = self._get_model_class(object_type)
-                model = await session.get(model_class, object_id)
+                model = session.get(model_class, object_id)
                 if model:
                     return self._model_to_object(model)
                 return None
 
             # Otherwise, search across all tables
             for model_class in self._TYPE_TO_MODEL.values():
-                model = await session.get(model_class, object_id)
+                model = session.get(model_class, object_id)
                 if model:
                     return self._model_to_object(model)
 
@@ -931,7 +1028,7 @@ class CatalogDatabase:
         lambda result: result is None or isinstance(result, CelestialObject),
         message="Must return CelestialObject or None",
     )
-    async def get_by_name(self, name: str) -> CelestialObject | None:
+    def get_by_name(self, name: str) -> CelestialObject | None:
         """
         Get object by exact name match (checks both name and common_name fields).
 
@@ -944,14 +1041,14 @@ class CatalogDatabase:
         if not name:
             return None
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             # Search across all type-specific tables
             for model_class in self._TYPE_TO_MODEL.values():
                 # Check name field first
                 stmt = select(model_class).where(model_class.name.ilike(name)).limit(1)
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 model = result.scalar_one_or_none()
                 if model:
                     return self._model_to_object(model)
@@ -965,10 +1062,71 @@ class CatalogDatabase:
                     )
                     .limit(1)
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 model = result.scalar_one_or_none()
                 if model:
                     return self._model_to_object(model)
+
+            # Check Bayer designations in star_name_mappings for stars
+            # This allows searching for stars by Bayer designation (e.g., "Theta Tauri")
+            from celestron_nexstar.api.database.models import StarModel, StarNameMappingModel
+
+            # Try exact match first, then partial match (for cases like "Theta Tauri" matching "Theta¹ Tauri" or "Theta² Tauri")
+            bayer_stmt = (
+                select(StarNameMappingModel)
+                .where(
+                    StarNameMappingModel.bayer_designation.isnot(None),
+                    StarNameMappingModel.bayer_designation.ilike(name),
+                )
+                .limit(1)
+            )
+            result = session.execute(bayer_stmt)
+            bayer_mapping = result.scalar_one_or_none()
+
+            # If no exact match, try partial match (e.g., "Theta Tauri" should match "Theta¹ Tauri" or "Theta² Tauri")
+            if not bayer_mapping:
+                # Remove superscripts and try again (e.g., "Theta Tauri" should match "Theta¹ Tauri")
+                name_normalized = name.replace("¹", "1").replace("²", "2").replace("³", "3").replace("⁴", "4")
+                bayer_stmt = (
+                    select(StarNameMappingModel)
+                    .where(
+                        StarNameMappingModel.bayer_designation.isnot(None),
+                        StarNameMappingModel.bayer_designation.ilike(name_normalized),
+                    )
+                    .limit(1)
+                )
+                result = session.execute(bayer_stmt)
+                bayer_mapping = result.scalar_one_or_none()
+
+            # Also try matching without the superscript in the database
+            if not bayer_mapping:
+                bayer_stmt = (
+                    select(StarNameMappingModel)
+                    .where(
+                        StarNameMappingModel.bayer_designation.isnot(None),
+                        StarNameMappingModel.bayer_designation.ilike(f"%{name}%"),
+                    )
+                    .limit(1)
+                )
+                result = session.execute(bayer_stmt)
+                bayer_mapping = result.scalar_one_or_none()
+
+            if bayer_mapping:
+                # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
+                # Try multiple patterns to find the star
+                star_stmt = (
+                    select(StarModel)
+                    .where(
+                        (StarModel.name.ilike(f"HR {bayer_mapping.hr_number}"))
+                        | (StarModel.name.ilike(f"HR{bayer_mapping.hr_number}"))
+                        | (StarModel.name.ilike(f"%HR {bayer_mapping.hr_number}%"))
+                    )
+                    .limit(1)
+                )
+                result = session.execute(star_stmt)
+                star_model = result.scalar_one_or_none()
+                if star_model:
+                    return self._model_to_object(star_model)
 
             # Check asterisms
             from celestron_nexstar.api.catalogs.catalogs import CelestialObject
@@ -976,7 +1134,7 @@ class CatalogDatabase:
             from celestron_nexstar.api.database.models import AsterismModel
 
             asterism_stmt = select(AsterismModel).where(AsterismModel.name.ilike(name)).limit(1)
-            result = await session.execute(asterism_stmt)
+            result = session.execute(asterism_stmt)
             asterism_model_raw = result.scalar_one_or_none()
             if asterism_model_raw:
                 # Type cast: we know this is AsterismModel from the select
@@ -1009,7 +1167,7 @@ class CatalogDatabase:
                 )
                 .limit(1)
             )
-            result = await session.execute(asterism_alt_stmt)
+            result = session.execute(asterism_alt_stmt)
             asterism_model_alt_raw = result.scalar_one_or_none()
             if asterism_model_alt_raw:
                 # Type cast: we know this is AsterismModel from the select
@@ -1038,7 +1196,7 @@ class CatalogDatabase:
                 .where((VariableStarModel.name.ilike(name)) | (VariableStarModel.designation.ilike(name)))
                 .limit(1)
             )
-            result = await session.execute(variable_star_stmt)
+            result = session.execute(variable_star_stmt)
             variable_star_model_raw = result.scalar_one_or_none()
             if variable_star_model_raw:
                 # Type cast: we know this is VariableStarModel from the select
@@ -1070,7 +1228,7 @@ class CatalogDatabase:
                 )
                 .limit(1)
             )
-            result = await session.execute(constellation_stmt)
+            result = session.execute(constellation_stmt)
             constellation_model_raw = result.scalar_one_or_none()
             if constellation_model_raw:
                 # Type cast: we know this is ConstellationModel from the select
@@ -1092,7 +1250,7 @@ class CatalogDatabase:
 
     @deal.pre(lambda self, hr_number: hr_number > 0, message="HR number must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: result is None or isinstance(result, str), message="Must return string or None")
-    async def get_common_name_by_hr(self, hr_number: int) -> str | None:
+    def get_common_name_by_hr(self, hr_number: int) -> str | None:
         """
         Get common name for a given HR number from star_name_mappings table.
 
@@ -1102,13 +1260,13 @@ class CatalogDatabase:
         Returns:
             Common name if found, None otherwise
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             from celestron_nexstar.api.database.models import StarNameMappingModel
 
             stmt = select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number).limit(1)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             mapping = result.scalar_one_or_none()
             if mapping and mapping.common_name and mapping.common_name.strip():
                 return mapping.common_name.strip()
@@ -1117,7 +1275,7 @@ class CatalogDatabase:
     @deal.pre(lambda self, query, limit: query and len(query.strip()) > 0, message="Query must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, query, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    async def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
+    def search(self, query: str, limit: int = 100) -> list[CelestialObject]:
         """
         Search across all type-specific tables using LIKE queries.
 
@@ -1136,7 +1294,7 @@ class CatalogDatabase:
         if not query:
             return []
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             all_models: list[Any] = []
@@ -1146,7 +1304,7 @@ class CatalogDatabase:
             for model_class in self._TYPE_TO_MODEL.values():
                 # Search in name
                 stmt = select(model_class).where(model_class.name.ilike(f"%{query}%")).limit(limit)
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 models = result.scalars().all()
                 all_models.extend(models)
 
@@ -1159,7 +1317,7 @@ class CatalogDatabase:
                     )
                     .limit(limit)
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 models = result.scalars().all()
                 all_models.extend(models)
 
@@ -1172,9 +1330,46 @@ class CatalogDatabase:
                     )
                     .limit(limit)
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 models = result.scalars().all()
                 all_models.extend(models)
+
+            # Search Bayer designations for stars
+            from celestron_nexstar.api.database.models import StarModel, StarNameMappingModel
+
+            # Normalize query for Bayer designation search (handle superscripts)
+            query_normalized = query.replace("¹", "1").replace("²", "2").replace("³", "3").replace("⁴", "4")
+
+            bayer_stmt = (
+                select(StarNameMappingModel)
+                .where(
+                    StarNameMappingModel.bayer_designation.isnot(None),
+                    (
+                        StarNameMappingModel.bayer_designation.ilike(f"%{query}%")
+                        | StarNameMappingModel.bayer_designation.ilike(f"%{query_normalized}%")
+                    ),
+                )
+                .limit(limit)
+            )
+            result = session.execute(bayer_stmt)
+            bayer_mappings = result.scalars().all()
+            seen_star_ids = {m.id for m in all_models}
+            for bayer_mapping in bayer_mappings:
+                # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
+                star_stmt = (
+                    select(StarModel)
+                    .where(
+                        (StarModel.name.ilike(f"HR {bayer_mapping.hr_number}"))
+                        | (StarModel.name.ilike(f"HR{bayer_mapping.hr_number}"))
+                        | (StarModel.name.ilike(f"%HR {bayer_mapping.hr_number}%"))
+                    )
+                    .limit(1)
+                )
+                result = session.execute(star_stmt)
+                star_model = result.scalar_one_or_none()
+                if star_model and star_model.id not in seen_star_ids:
+                    seen_star_ids.add(star_model.id)
+                    all_models.append(star_model)
 
             # Convert to objects and deduplicate by ID
             seen_ids = set()
@@ -1194,7 +1389,7 @@ class CatalogDatabase:
                 )
                 .limit(limit)
             )
-            result = await session.execute(variable_star_stmt)
+            result = session.execute(variable_star_stmt)
             variable_star_models = result.scalars().all()
             seen_names = {obj.name for obj in objects}
             for var_star_model in variable_star_models:
@@ -1227,11 +1422,15 @@ class CatalogDatabase:
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, ra_hours, dec_degrees, radius_arcmin: radius_arcmin > 0, message="Radius must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    async def search_by_coordinates(
+    def search_by_coordinates(
         self, ra_hours: float, dec_degrees: float, radius_arcmin: float = 5.0, limit: int = 50
     ) -> list[tuple[CelestialObject, float]]:
         """
-        Search for objects near given coordinates.
+        Search for objects near given coordinates using R-tree spatial index when available.
+
+        Uses R-tree virtual tables for fast spatial queries, falling back to bounding box
+        queries if R-tree tables are not available. Final filtering uses accurate angular
+        separation calculation.
 
         Args:
             ra_hours: Right ascension in hours (0-24)
@@ -1242,54 +1441,139 @@ class CatalogDatabase:
         Returns:
             List of tuples (CelestialObject, angular_separation_arcmin) sorted by distance
         """
-        from sqlalchemy import select
+        from sqlalchemy import select, text
 
         from celestron_nexstar.api.core.utils import angular_separation
 
         # Convert radius from arcminutes to degrees
         radius_deg = radius_arcmin / 60.0
 
-        # Approximate bounding box for initial filtering (faster than calculating separation for all objects)
+        # Convert RA from hours to degrees for R-tree queries
+        # R-tree stores RA in -180 to 180 range (0-12h = 0-180°, 12-24h = -180-0°)
+        ra_degrees_raw = ra_hours * 15.0
+        ra_degrees = ra_degrees_raw if ra_degrees_raw <= 180 else ra_degrees_raw - 360
+
+        # Approximate bounding box for R-tree query
         # Account for RA wrap-around and declination limits
-        # RA range in degrees (approximate, accounting for declination)
         cos_dec = abs(max(0.1, abs(dec_degrees)))  # Avoid division by zero
         ra_range_deg = radius_deg / cos_dec if cos_dec > 0.1 else radius_deg
-        ra_range_hours = ra_range_deg / 15.0
 
-        ra_min = (ra_hours - ra_range_hours) % 24.0
-        ra_max = (ra_hours + ra_range_hours) % 24.0
+        ra_min_deg = ra_degrees - ra_range_deg
+        ra_max_deg = ra_degrees + ra_range_deg
         dec_min = max(-90.0, dec_degrees - radius_deg)
         dec_max = min(90.0, dec_degrees + radius_deg)
 
-        async with self._AsyncSession() as session:
+        # Handle RA wrap-around for R-tree (-180 to 180 range)
+        # If range crosses ±180°, we need to query both sides
+        wraps_around_rtree = ra_min_deg < -180 or ra_max_deg > 180
+
+        with self._get_session() as session:
             all_results: list[tuple[CelestialObject, float]] = []
+
+            # Map from model class to R-tree table name
+            rtree_table_map = {
+                StarModel: "rtree_stars",
+                DoubleStarModel: "rtree_double_stars",
+                GalaxyModel: "rtree_galaxies",
+                NebulaModel: "rtree_nebulae",
+                ClusterModel: "rtree_clusters",
+            }
 
             # Search across all type-specific tables
             for model_class in self._TYPE_TO_MODEL.values():
-                # Use bounding box for initial filtering
-                # Handle RA wrap-around (e.g., 23h to 1h)
-                if ra_min <= ra_max:
-                    # Normal case: no wrap-around
-                    stmt = (
-                        select(model_class)
-                        .where(
-                            model_class.ra_hours.between(ra_min, ra_max),
-                            model_class.dec_degrees.between(dec_min, dec_max),
-                        )
-                        .limit(limit * 5)  # Get more candidates for accurate filtering
-                    )
-                else:
-                    # Wrap-around case: RA range crosses 0h
-                    stmt = (
-                        select(model_class)
-                        .where(
-                            (model_class.ra_hours >= ra_min) | (model_class.ra_hours <= ra_max),
-                            model_class.dec_degrees.between(dec_min, dec_max),
-                        )
-                        .limit(limit * 5)  # Get more candidates for accurate filtering
-                    )
+                rtree_table = rtree_table_map.get(model_class)
 
-                result = await session.execute(stmt)
+                # Try to use R-tree if available, otherwise fall back to bounding box
+                use_rtree = False
+                candidate_ids: list[int] = []
+
+                if rtree_table:
+                    # Check if R-tree table exists
+                    try:
+                        # Query R-tree for objects within bounding box
+                        # R-tree stores RA in -180 to 180 range
+                        if wraps_around_rtree:
+                            # Wrap-around case: RA range crosses ±180° boundary
+                            # Query both sides of the wrap
+                            rtree_stmt = text(
+                                f"""
+                                SELECT id FROM {rtree_table}
+                                WHERE (
+                                    (minX <= 180 AND maxX >= :ra_min)
+                                    OR (minX <= :ra_max AND maxX >= -180)
+                                )
+                                AND minY <= :dec_max AND maxY >= :dec_min
+                                LIMIT :limit
+                                """
+                            )
+                        else:
+                            # Normal case: no wrap-around
+                            # Clamp to valid range
+                            ra_min_clamped = max(-180.0, ra_min_deg)
+                            ra_max_clamped = min(180.0, ra_max_deg)
+                            rtree_stmt = text(
+                                f"""
+                                SELECT id FROM {rtree_table}
+                                WHERE minX <= :ra_max AND maxX >= :ra_min
+                                AND minY <= :dec_max AND maxY >= :dec_min
+                                LIMIT :limit
+                                """
+                            )
+                            ra_min_deg = ra_min_clamped
+                            ra_max_deg = ra_max_clamped
+
+                        result = session.execute(
+                            rtree_stmt,
+                            {
+                                "ra_min": ra_min_deg,
+                                "ra_max": ra_max_deg,
+                                "dec_min": dec_min,
+                                "dec_max": dec_max,
+                                "limit": limit * 5,  # Get more candidates for accurate filtering
+                            },
+                        )
+                        candidate_ids = [row[0] for row in result.fetchall()]
+                        use_rtree = len(candidate_ids) > 0
+                    except Exception as e:
+                        # R-tree table doesn't exist or query failed, fall back to regular query
+                        logger.debug(f"R-tree query failed for {rtree_table}, using fallback: {e}")
+                        use_rtree = False
+
+                if use_rtree and candidate_ids:
+                    # Use R-tree results - query by IDs
+                    stmt = select(model_class).where(model_class.id.in_(candidate_ids))
+                else:
+                    # Fall back to bounding box query
+                    ra_min_hours = ra_hours - (ra_range_deg / 15.0)
+                    ra_max_hours = ra_hours + (ra_range_deg / 15.0)
+
+                    if ra_min_hours < 0:
+                        ra_min_hours += 24.0
+                    if ra_max_hours >= 24.0:
+                        ra_max_hours -= 24.0
+
+                    if ra_min_hours <= ra_max_hours:
+                        # Normal case: no wrap-around
+                        stmt = (
+                            select(model_class)
+                            .where(
+                                model_class.ra_hours.between(ra_min_hours, ra_max_hours),
+                                model_class.dec_degrees.between(dec_min, dec_max),
+                            )
+                            .limit(limit * 5)  # Get more candidates for accurate filtering
+                        )
+                    else:
+                        # Wrap-around case: RA range crosses 0h
+                        stmt = (
+                            select(model_class)
+                            .where(
+                                (model_class.ra_hours >= ra_min_hours) | (model_class.ra_hours <= ra_max_hours),
+                                model_class.dec_degrees.between(dec_min, dec_max),
+                            )
+                            .limit(limit * 5)  # Get more candidates for accurate filtering
+                        )
+
+                result = session.execute(stmt)
                 models = result.scalars().all()
 
                 # Calculate accurate angular separation and filter
@@ -1310,9 +1594,9 @@ class CatalogDatabase:
     @deal.pre(lambda self, catalog, limit: catalog and len(catalog.strip()) > 0, message="Catalog must be non-empty")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    async def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
+    def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             all_models: list[Any] = []
@@ -1324,7 +1608,7 @@ class CatalogDatabase:
                     .order_by(model_class.catalog_number, model_class.name)
                     .limit(limit)
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 models = result.scalars().all()
                 all_models.extend(models)
 
@@ -1339,7 +1623,7 @@ class CatalogDatabase:
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, catalog, catalog_number: catalog_number > 0, message="Catalog number must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
-    async def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
+    def exists_by_catalog_number(self, catalog: str, catalog_number: int) -> bool:
         """
         Check if an object exists with the given catalog and catalog number.
 
@@ -1350,12 +1634,12 @@ class CatalogDatabase:
         Returns:
             True if object exists, False otherwise
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import func, select
 
             # Check across all type-specific tables
             for model_class in self._TYPE_TO_MODEL.values():
-                count = await session.scalar(
+                count = session.scalar(
                     select(func.count(model_class.id)).where(
                         model_class.catalog == catalog,
                         model_class.catalog_number == catalog_number,
@@ -1370,7 +1654,7 @@ class CatalogDatabase:
         message="Limit must be positive",
     )  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-    async def filter_objects(
+    def filter_objects(
         self,
         catalog: str | None = None,
         object_type: CelestialObjectType | str | None = None,
@@ -1395,7 +1679,7 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             # Convert object_type to enum if string
@@ -1443,7 +1727,7 @@ class CatalogDatabase:
                     )
                     .limit(1)
                 )
-                const_result = await session.execute(const_lookup_stmt)
+                const_result = session.execute(const_lookup_stmt)
                 const_row = const_result.first()
 
                 if const_row:
@@ -1490,7 +1774,7 @@ class CatalogDatabase:
                 # Order and limit
                 stmt = stmt.order_by(model_class.magnitude.asc().nulls_last(), model_class.name.asc()).limit(limit)
 
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 models = result.scalars().all()
                 all_models.extend(models)
 
@@ -1501,7 +1785,7 @@ class CatalogDatabase:
             objects.sort(key=lambda x: (x.magnitude if x.magnitude is not None else float("inf"), x.name or ""))
             return objects[:limit]
 
-    async def get_moons_by_parent_planet(self, planet_name: str) -> list[CelestialObject]:
+    def get_moons_by_parent_planet(self, planet_name: str) -> list[CelestialObject]:
         """
         Get all moons for a given parent planet.
 
@@ -1511,7 +1795,7 @@ class CatalogDatabase:
         Returns:
             List of moon objects
         """
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             stmt = (
@@ -1520,22 +1804,22 @@ class CatalogDatabase:
                 .order_by(MoonModel.magnitude.asc().nulls_last(), MoonModel.name.asc())
             )
 
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             models = result.scalars().all()
 
             return [self._model_to_object(model) for model in models]
 
     @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
-    async def get_all_catalogs(self) -> list[str]:
+    def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             from sqlalchemy import select
 
             catalog_set: set[str] = set()
             # Query all type-specific tables
             for model_class in self._TYPE_TO_MODEL.values():
                 stmt = select(model_class.catalog).distinct()
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 catalogs = result.scalars().all()
                 catalog_set.update(catalogs)
 
@@ -1543,7 +1827,7 @@ class CatalogDatabase:
 
     @deal.pre(lambda self, prefix, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
-    async def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
+    def get_names_for_completion(self, prefix: str = "", limit: int = 50) -> list[str]:
         """
         Get object names for command-line autocompletion.
 
@@ -1559,7 +1843,7 @@ class CatalogDatabase:
         """
         from sqlalchemy import func, select
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # Build case-insensitive filter using LIKE for better compatibility
             prefix_lower = str(prefix).lower()
 
@@ -1577,7 +1861,7 @@ class CatalogDatabase:
                     .order_by(func.lower(model_class.name))
                     .limit(limit)
                 )
-                name_result = await session.execute(name_query)
+                name_result = session.execute(name_query)
                 name_results = name_result.fetchall()
                 for row in name_results:
                     if row[0]:
@@ -1595,7 +1879,7 @@ class CatalogDatabase:
                     .limit(limit)
                 )
             # Fix type incompatibility: Row[tuple[str | None]], be explicit with Optional[str]
-            common_name_result = await session.execute(common_name_query)
+            common_name_result = session.execute(common_name_query)
             common_name_results: Sequence[Row[tuple[str | None]]] = common_name_result.fetchall()
             for common_name_row in common_name_results:
                 # Use cast to help mypy understand the type (common_name can be None)
@@ -1606,7 +1890,7 @@ class CatalogDatabase:
 
     @deal.pre(lambda self, limit: limit > 0, message="Limit must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, list), message="Must return list of strings")
-    async def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
+    def get_all_names_for_completion(self, limit: int = 10000) -> list[str]:
         """
         Get all object names for command-line autocompletion.
 
@@ -1618,25 +1902,25 @@ class CatalogDatabase:
         Returns:
             List of unique names (case-insensitive)
         """
-        return await self.get_names_for_completion(prefix="", limit=limit)
+        return self.get_names_for_completion(prefix="", limit=limit)
 
     @deal.post(lambda result: result is not None, message="Stats must be returned")
     @deal.post(lambda result: hasattr(result, "total_objects"), message="Stats must have total_objects")
-    async def get_stats(self) -> DatabaseStats:
+    def get_stats(self) -> DatabaseStats:
         """Get database statistics."""
         from sqlalchemy import func, select
 
-        async with self._AsyncSession() as session:
+        with self._get_session() as session:
             # Total count - sum across all tables
             total = 0
             for model_class in self._TYPE_TO_MODEL.values():
-                result = await session.execute(select(func.count(model_class.id)))
+                result = session.execute(select(func.count(model_class.id)))
                 total += result.scalar_one() or 0
 
             # By catalog - query all tables
             by_catalog: dict[str, int] = {}
             for model_class in self._TYPE_TO_MODEL.values():
-                result = await session.execute(
+                result = session.execute(
                     select(model_class.catalog, func.count(model_class.id)).group_by(model_class.catalog)
                 )
                 for row in result.all():
@@ -1648,7 +1932,7 @@ class CatalogDatabase:
             # By type - count each table
             by_type: dict[str, int] = {}
             for obj_type, model_class in self._TYPE_TO_MODEL.items():
-                result = await session.execute(select(func.count(model_class.id)))
+                result = session.execute(select(func.count(model_class.id)))
                 count = result.scalar_one() or 0
                 by_type[obj_type.value] = count
 
@@ -1656,7 +1940,7 @@ class CatalogDatabase:
             min_mags: list[float] = []
             max_mags: list[float] = []
             for model_class in self._TYPE_TO_MODEL.values():
-                result = await session.execute(
+                result = session.execute(
                     select(func.min(model_class.magnitude), func.max(model_class.magnitude)).where(
                         model_class.magnitude.isnot(None)
                     )
@@ -1674,16 +1958,16 @@ class CatalogDatabase:
                 cast(type[CelestialObjectModelProtocol], PlanetModel),
                 cast(type[CelestialObjectModelProtocol], MoonModel),
             ):
-                result = await session.execute(
+                result = session.execute(
                     select(func.count(model_class.id)).where(model_class.is_dynamic.is_(True))  # type: ignore[attr-defined]
                 )
                 dynamic += result.scalar_one() or 0
 
             # Version and last updated from metadata table
-            version_model = await session.get(MetadataModel, "version")
+            version_model = session.get(MetadataModel, "version")
             version = version_model.value if version_model else "unknown"
 
-            updated_model = await session.get(MetadataModel, "last_updated")
+            updated_model = session.get(MetadataModel, "last_updated")
             last_updated = (
                 datetime.fromisoformat(updated_model.value) if updated_model and updated_model.value else None
             )
@@ -1816,7 +2100,7 @@ def get_database(use_memory: bool | None = None) -> CatalogDatabase:
 
 
 @deal.post(lambda result: result is not None, message="Database must be initialized")
-async def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
+def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     """
     Initialize a new database with schema.
 
@@ -1827,7 +2111,7 @@ async def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
         Initialized database
     """
     db = CatalogDatabase(db_path)
-    await db.init_schema()
+    db.init_schema()
     return db
 
 
@@ -1836,7 +2120,7 @@ async def init_database(db_path: Path | str | None = None) -> CatalogDatabase:
     message="Must return tuple of (pages_freed, pages_used)",
 )
 @deal.post(lambda result: result[0] >= 0 and result[1] >= 0, message="Page counts must be non-negative")  # type: ignore[misc,arg-type,index,operator]
-async def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
+def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     """
     Reclaim unused space in the database by running VACUUM.
 
@@ -1861,18 +2145,18 @@ async def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     # Run VACUUM
     # Note: VACUUM rebuilds the entire database file, so we need to ensure
     # all connections are closed for the file size to update properly
-    async with db._AsyncSession() as session:
-        await session.execute(text("VACUUM"))
-        await session.commit()
+    with db._get_session() as session:
+        session.execute(text("VACUUM"))
+        session.commit()
 
     # Close the engine to ensure all connections are released and file is written
     # This is important because VACUUM creates a new database file
-    await db._engine.dispose()
+    db._engine.dispose()
 
     # Small delay to ensure filesystem updates (some filesystems cache stat info)
-    import asyncio
+    import time
 
-    await asyncio.sleep(0.1)
+    time.sleep(0.1)
 
     # Get file size after vacuum
     # Note: Some filesystems may cache file size, so the actual size on disk
@@ -1969,8 +2253,8 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
     # Run async dispose in sync context
     import asyncio
 
-    async def _dispose_engine() -> None:
-        await db._engine.dispose()
+    def _dispose_engine() -> None:
+        db._engine.dispose()
 
     asyncio.run(_dispose_engine())
 
@@ -1987,7 +2271,7 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
 @deal.post(lambda result: result is not None, message="Rebuild must return statistics")
 @deal.post(lambda result: "duration_seconds" in result, message="Result must include duration")  # type: ignore[misc,arg-type,operator]
 @deal.raises(DatabaseRebuildError)
-async def rebuild_database(
+def rebuild_database(
     backup_dir: Path | None = None,
     sources: list[str] | None = None,
     mag_limit: float = 15.0,
@@ -2046,7 +2330,7 @@ async def rebuild_database(
         # Step 2: Drop existing database
         if db.db_path.exists():
             # Close all connections
-            await db._engine.dispose()
+            db._engine.dispose()
             # Small delay to ensure file handles are released
             time.sleep(0.1)
             # Remove database file
@@ -2140,14 +2424,14 @@ async def rebuild_database(
                 db_temp = get_database()
                 try:
                     # Dispose of engine to ensure fresh connection
-                    await db_temp._engine.dispose()
-                    async with db_temp._AsyncSession() as session:
-                        await session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
-                        await session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
-                        await session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
-                        await session.commit()
+                    db_temp._engine.dispose()
+                    with db_temp._get_session() as session:
+                        session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                        session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                        session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                        session.commit()
                     # Dispose again before retrying migration
-                    await db_temp._engine.dispose()
+                    db_temp._engine.dispose()
                     # Retry migration
                     command.upgrade(alembic_cfg, target_rev)
                     logger.info(
@@ -2163,7 +2447,7 @@ async def rebuild_database(
         db = get_database()
 
         # Ensure FTS table exists (migrations should create it, but ensure it's there)
-        await db.ensure_fts_table()
+        db.ensure_fts_table()
 
         # Step 4: Initialize static reference data (seed data)
         # This must happen before importing custom YAML and other data sources
@@ -2175,7 +2459,7 @@ async def rebuild_database(
         console.print("[dim]  • Star name mappings[/dim]")
         console.print("[dim]  • Meteor showers[/dim]")
         console.print("[dim]  • Constellations[/dim]")
-        console.print("[dim]  • Asterisms[/dim]")
+        console.print("[dim]  • Asterisms (imported from GeoJSON, not seeded)[/dim]")
         console.print("[dim]  • Dark sky sites[/dim]")
         console.print("[dim]  • Space events[/dim]")
         console.print("[dim]  • Variable stars[/dim]")
@@ -2187,9 +2471,9 @@ async def rebuild_database(
 
         static_data: dict[str, int] = {}
 
-        async with get_db_session() as session:
+        with get_db_session() as session:
             # Use seed_all which handles all static data seeding
-            await seed_all(session, force=False)
+            seed_all(session, force=False)
             from sqlalchemy import func, select
 
             from celestron_nexstar.api.database.models import (
@@ -2200,25 +2484,25 @@ async def rebuild_database(
                 SpaceEventModel,
             )
 
-            meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
+            meteor_result = session.scalar(select(func.count(MeteorShowerModel.id)))
             meteor_count = meteor_result or 0
             static_data["meteor_showers"] = meteor_count
             logger.info(f"Added {meteor_count} meteor showers")
 
-            constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
+            constellation_result = session.scalar(select(func.count(ConstellationModel.id)))
             constellation_count = constellation_result or 0
-            asterism_result = await session.scalar(select(func.count(AsterismModel.id)))
+            asterism_result = session.scalar(select(func.count(AsterismModel.id)))
             asterism_count = asterism_result or 0
             static_data["constellations"] = constellation_count
             static_data["asterisms"] = asterism_count
             logger.info(f"Added {constellation_count} constellations and {asterism_count} asterisms")
 
-            dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
+            dark_sky_result = session.scalar(select(func.count(DarkSkySiteModel.id)))
             dark_sky_count = dark_sky_result or 0
             static_data["dark_sky_sites"] = dark_sky_count
             logger.info(f"Added {dark_sky_count} dark sky sites")
 
-            space_event_result = await session.scalar(select(func.count(SpaceEventModel.id)))
+            space_event_result = session.scalar(select(func.count(SpaceEventModel.id)))
             space_event_count = space_event_result or 0
             static_data["space_events"] = space_event_count
             logger.info(f"Added {space_event_count} space events")
@@ -2242,7 +2526,7 @@ async def rebuild_database(
             logger.info(f"Importing {source_id}...")
             # Get count before import
             try:
-                db_stats_before = await db.get_stats()
+                db_stats_before = db.get_stats()
                 objects_before_import = db_stats_before.total_objects
             except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError) as e:
                 # SQLAlchemyError: database errors
@@ -2264,7 +2548,7 @@ async def rebuild_database(
                 if success:
                     # Get count after import
                     try:
-                        db_stats_after = await db.get_stats()
+                        db_stats_after = db.get_stats()
                         imported = db_stats_after.total_objects - objects_before_import
                         imported_counts[source_id] = (imported, 0)  # Skipped count not easily available
                         objects_before_import = db_stats_after.total_objects
@@ -2305,7 +2589,7 @@ async def rebuild_database(
         # Repopulate FTS table after all imports to ensure all objects are searchable
         logger.info("Repopulating FTS search index...")
         try:
-            await db.repopulate_fts_table()
+            db.repopulate_fts_table()
         except (SQLAlchemyError, RuntimeError, AttributeError, ValueError, TypeError) as e:
             # SQLAlchemyError: database errors, FTS table issues
             # RuntimeError: async/await errors
@@ -2329,7 +2613,7 @@ async def rebuild_database(
             # Ensure light pollution table exists before downloading data
             logger.info("Ensuring light pollution grid table exists...")
             console.print("[dim]Ensuring light pollution grid table exists...[/dim]")
-            await _create_light_pollution_table(db)
+            _create_light_pollution_table(db)
 
             # Download north_america region by default
             # Users can download other regions later with: nexstar data download-light-pollution --region <region>
@@ -2340,7 +2624,7 @@ async def rebuild_database(
                 "[dim]Note: Downloading 'north_america' region by default. Use 'nexstar data download-light-pollution' to download other regions.[/dim]\n"
             )
             # We're already in an async context, so await directly
-            light_pollution_results = await download_world_atlas_data(
+            light_pollution_results = download_world_atlas_data(
                 regions=["north_america"],  # North America by default
                 grid_resolution=0.1,  # 0.1° ≈ 11km resolution
                 force=force_download,  # Re-download if force_download is True
@@ -2458,7 +2742,7 @@ async def rebuild_database(
                 )
                 # Fetch 3 days = 72 hours of weather forecast
                 # We're already in an async context, so await directly
-                weather_forecasts = await fetch_hourly_weather_forecast(location, hours=72)
+                weather_forecasts = fetch_hourly_weather_forecast(location, hours=72)
                 if weather_forecasts:
                     logger.info(f"Pre-fetched {len(weather_forecasts)} hours of weather forecast data")
                     static_data["weather_forecast_hours"] = len(weather_forecasts)
@@ -2528,7 +2812,7 @@ async def rebuild_database(
 
 
 @deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
-async def get_ephemeris_files() -> dict[str, dict[str, Any]]:
+def get_ephemeris_files() -> dict[str, dict[str, Any]]:
     """
     Get all ephemeris files from the database.
 
@@ -2536,11 +2820,11 @@ async def get_ephemeris_files() -> dict[str, dict[str, Any]]:
         Dictionary mapping file_key to EphemerisFileInfo-like dict
     """
     db = get_database()
-    async with db._AsyncSession() as session:
+    with db._get_session() as session:
         from sqlalchemy import select
 
         stmt = select(EphemerisFileModel)
-        result = await session.execute(stmt)
+        result = session.execute(stmt)
         files = result.scalars().all()
         file_dict: dict[str, dict[str, Any]] = {}
         for file_model in files:
@@ -2560,7 +2844,7 @@ async def get_ephemeris_files() -> dict[str, dict[str, Any]]:
 
 @deal.post(lambda result: isinstance(result, list), message="Must return list")
 # Note: Postconditions on async functions check the coroutine, not the awaited result
-async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
+def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
     """
     Fetch ephemeris file information from NAIF and return as list (without syncing).
 
@@ -2578,8 +2862,8 @@ async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
     try:
         # Fetch and parse summaries
         logger.info("Fetching ephemeris file summaries from NAIF...")
-        planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
-        satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+        planets_content = _fetch_summaries(NAIF_PLANETS_SUMMARY)
+        satellites_content = _fetch_summaries(NAIF_SATELLITES_SUMMARY)
 
         planets_summaries = _parse_summaries(planets_content, "planets")
         satellites_summaries = _parse_summaries(satellites_content, "satellites")
@@ -2625,7 +2909,7 @@ async def list_ephemeris_files_from_naif() -> list[dict[str, Any]]:
 # Note: Postconditions on async functions check the coroutine, not the awaited result
 # Cannot use @deal.post here - deal checks coroutine object, not awaited result
 @deal.pre(lambda force: isinstance(force, bool), message="Force must be boolean")  # type: ignore[misc,arg-type]
-async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
+def sync_ephemeris_files_from_naif(force: bool = False) -> int:
     """
     Fetch ephemeris file information from NAIF and sync to database.
 
@@ -2647,12 +2931,10 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
 
     # Check if we need to sync (check last sync time in metadata)
     if not force:
-        async with db._AsyncSession() as session:
+        with db._get_session() as session:
             from sqlalchemy import select
 
-            result = await session.execute(
-                select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync")
-            )
+            result = session.execute(select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync"))
             last_sync = result.scalar_one_or_none()
             if last_sync:
                 last_sync_time = datetime.fromisoformat(last_sync.value)
@@ -2664,8 +2946,8 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
     try:
         # Fetch and parse summaries
         logger.info("Fetching ephemeris file summaries from NAIF...")
-        planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
-        satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+        planets_content = _fetch_summaries(NAIF_PLANETS_SUMMARY)
+        satellites_content = _fetch_summaries(NAIF_SATELLITES_SUMMARY)
 
         planets_summaries = _parse_summaries(planets_content, "planets")
         satellites_summaries = _parse_summaries(satellites_content, "satellites")
@@ -2694,13 +2976,13 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
             )
 
         # Upsert to database
-        async with db._AsyncSession() as session:
+        with db._get_session() as session:
             from sqlalchemy import select
 
             synced_count = 0
             for file_model in files_to_sync:
                 # Check if exists
-                result = await session.execute(
+                result = session.execute(
                     select(EphemerisFileModel).filter(EphemerisFileModel.file_key == file_model.file_key)
                 )
                 existing = result.scalar_one_or_none()
@@ -2716,7 +2998,7 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
                 synced_count += 1
 
             # Update sync timestamp
-            sync_result = await session.execute(
+            sync_result = session.execute(
                 select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync")
             )
             sync_metadata = sync_result.scalar_one_or_none()
@@ -2731,7 +3013,7 @@ async def sync_ephemeris_files_from_naif(force: bool = False) -> int:
                     )
                 )
 
-            await session.commit()
+            session.commit()
             logger.info(f"Synced {synced_count} ephemeris files to database")
             return synced_count
 

@@ -40,6 +40,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "greenlet>=3.0.0", # Required for SQLAlchemy async operations (run_sync, etc.)
     "aiosqlite>=0.20.0",
+    "geoalchemy2>=0.18.0", # SpatiaLite support for SQLAlchemy
     "alembic>=1.13.0",
     "sqlalchemyseed>=0.4.0",
     "python-dotenv>=1.2.1",

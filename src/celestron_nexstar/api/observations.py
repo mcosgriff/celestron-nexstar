@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from celestron_nexstar.api.database.database import get_database
-from celestron_nexstar.api.database.models import ObservationModel
+from celestron_nexstar.api.database.models import ObservationModel, get_db_session
 
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-async def add_observation(
+def add_observation(
     object_name: str,
     observed_at: datetime | None = None,
     location_lat: float | None = None,
@@ -73,20 +73,20 @@ async def add_observation(
     """
     try:
         db = get_database()
-        async with db._AsyncSession() as session:
-            from sqlalchemy import select
+        # Get object from database to find its ID and type
+        obj = db.get_by_name(object_name)
+        if not obj:
+            logger.error(f"Object '{object_name}' not found in database")
+            return None
 
-            # Get object from database to find its ID and type
-            obj = await db.get_by_name(object_name)
-            if not obj:
-                logger.error(f"Object '{object_name}' not found in database")
-                return None
+        with get_db_session() as session:
+            from sqlalchemy import select
 
             # Query the database model to get the ID
             # We need to search the appropriate table based on object_type
             model_class = db._get_model_class(obj.object_type)
             stmt = select(model_class).where(model_class.name == object_name).limit(1)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             model = result.scalar_one_or_none()
             if not model:
                 logger.error(f"Could not find database model for '{object_name}'")
@@ -122,8 +122,8 @@ async def add_observation(
                 sketch_path=sketch_path,
             )
             session.add(observation)
-            await session.commit()
-            await session.refresh(observation)
+            session.commit()
+            session.refresh(observation)
             logger.info(f"Added observation for '{object_name}' (ID: {observation.id})")
             return observation.id
     except Exception as e:
@@ -131,7 +131,7 @@ async def add_observation(
         return None
 
 
-async def get_observation(observation_id: int) -> ObservationModel | None:
+def get_observation(observation_id: int) -> ObservationModel | None:
     """
     Get an observation by ID.
 
@@ -142,16 +142,15 @@ async def get_observation(observation_id: int) -> ObservationModel | None:
         ObservationModel if found, None otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
-            observation = await session.get(ObservationModel, observation_id)
+        with get_db_session() as session:
+            observation = session.get(ObservationModel, observation_id)
             return observation
     except Exception as e:
         logger.error(f"Error getting observation: {e}", exc_info=True)
         return None
 
 
-async def get_observations(
+def get_observations(
     limit: int | None = None,
     offset: int = 0,
     order_by: str = "observed_at",
@@ -170,8 +169,7 @@ async def get_observations(
         List of ObservationModel instances
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(ObservationModel)
@@ -184,14 +182,14 @@ async def get_observations(
                 stmt = stmt.limit(limit)
             if offset:
                 stmt = stmt.offset(offset)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             return list(result.scalars().all())
     except Exception as e:
         logger.error(f"Error getting observations: {e}", exc_info=True)
         return []
 
 
-async def get_observations_by_object(
+def get_observations_by_object(
     object_name: str,
     limit: int | None = None,
 ) -> list[ObservationModel]:
@@ -207,19 +205,19 @@ async def get_observations_by_object(
     """
     try:
         db = get_database()
-        async with db._AsyncSession() as session:
-            from sqlalchemy import select
+        # Get object to find its ID and type
+        obj = db.get_by_name(object_name)
+        if not obj:
+            logger.warning(f"Object '{object_name}' not found in database")
+            return []
 
-            # Get object to find its ID and type
-            obj = await db.get_by_name(object_name)
-            if not obj:
-                logger.warning(f"Object '{object_name}' not found in database")
-                return []
+        with get_db_session() as session:
+            from sqlalchemy import select
 
             # Query the database model to get the ID
             model_class = db._get_model_class(obj.object_type)
             stmt = select(model_class).where(model_class.name == object_name).limit(1)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             model = result.scalar_one_or_none()
             if not model:
                 return []
@@ -238,14 +236,14 @@ async def get_observations_by_object(
             )
             if limit:
                 obs_stmt = obs_stmt.limit(limit)
-            obs_result = await session.execute(obs_stmt)
+            obs_result = session.execute(obs_stmt)
             return list(obs_result.scalars().all())
     except Exception as e:
         logger.error(f"Error getting observations for object: {e}", exc_info=True)
         return []
 
 
-async def update_observation(
+def update_observation(
     observation_id: int,
     observed_at: datetime | None = None,
     location_lat: float | None = None,
@@ -288,9 +286,8 @@ async def update_observation(
         True if updated successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
-            observation = await session.get(ObservationModel, observation_id)
+        with get_db_session() as session:
+            observation = session.get(ObservationModel, observation_id)
             if not observation:
                 logger.error(f"Observation {observation_id} not found")
                 return False
@@ -329,7 +326,7 @@ async def update_observation(
             if sketch_path is not None:
                 observation.sketch_path = sketch_path
 
-            await session.commit()
+            session.commit()
             logger.info(f"Updated observation {observation_id}")
             return True
     except Exception as e:
@@ -337,7 +334,7 @@ async def update_observation(
         return False
 
 
-async def delete_observation(observation_id: int) -> bool:
+def delete_observation(observation_id: int) -> bool:
     """
     Delete an observation log entry.
 
@@ -348,15 +345,14 @@ async def delete_observation(observation_id: int) -> bool:
         True if deleted successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
-            observation = await session.get(ObservationModel, observation_id)
+        with get_db_session() as session:
+            observation = session.get(ObservationModel, observation_id)
             if not observation:
                 logger.error(f"Observation {observation_id} not found")
                 return False
 
-            await session.delete(observation)
-            await session.commit()
+            session.delete(observation)
+            session.commit()
             logger.info(f"Deleted observation {observation_id}")
             return True
     except Exception as e:

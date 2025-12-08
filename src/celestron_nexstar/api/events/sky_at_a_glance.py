@@ -11,10 +11,10 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import aiohttp
 import feedparser
+import requests
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.core.exceptions import DataImportFailedError
 from celestron_nexstar.api.database.models import RSSFeedModel
@@ -99,10 +99,10 @@ class SkyAtAGlanceArticle:
             self.published_date = self.published_date.replace(tzinfo=UTC)
 
 
-async def fetch_and_store_rss_feed(
+def fetch_and_store_rss_feed(
     feed_url: str,
     source_name: str = "Unknown Source",
-    db_session: AsyncSession | None = None,
+    db_session: Session | None = None,
 ) -> int:
     """
     Fetch RSS feed and store articles in database.
@@ -118,8 +118,8 @@ async def fetch_and_store_rss_feed(
     if db_session is None:
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            return await fetch_and_store_rss_feed(feed_url, source_name, session)
+        with get_db_session() as session:
+            return fetch_and_store_rss_feed(feed_url, source_name, session)
 
     try:
         logger.info(f"Fetching RSS feed from {feed_url}")
@@ -130,14 +130,11 @@ async def fetch_and_store_rss_feed(
             "Accept": "application/rss+xml, application/xml, text/xml, */*",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        async with (
-            aiohttp.ClientSession() as http_session,
-            http_session.get(feed_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                raise DataImportFailedError(f"Failed to fetch RSS feed: HTTP {response.status}")
+        response = requests.get(feed_url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            raise DataImportFailedError(f"Failed to fetch RSS feed: HTTP {response.status_code}")
 
-            content = await response.text()
+        content = response.text
 
         # Parse RSS feed
         feed = feedparser.parse(content)
@@ -225,7 +222,7 @@ async def fetch_and_store_rss_feed(
                     conditions.append(RSSFeedModel.guid == guid)
                 stmt = select(RSSFeedModel).where(or_(*conditions))
 
-                result = await db_session.execute(stmt)
+                result = db_session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
                 if existing:
@@ -262,19 +259,19 @@ async def fetch_and_store_rss_feed(
                 logger.warning(f"Error processing RSS entry: {e}", exc_info=True)
                 continue
 
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"RSS feed processed: {new_count} new articles added from {source_name}")
         return new_count
 
     except Exception as e:
         logger.error(f"Error fetching RSS feed from {source_name} ({feed_url}): {e}", exc_info=True)
-        await db_session.rollback()
+        db_session.rollback()
         raise
 
 
-async def fetch_all_rss_feeds(
+def fetch_all_rss_feeds(
     feed_sources: dict[str, RSSFeedSource] | None = None,
-    db_session: AsyncSession | None = None,
+    db_session: Session | None = None,
 ) -> dict[str, int]:
     """
     Fetch all RSS feeds from the registry and store articles in database.
@@ -292,14 +289,14 @@ async def fetch_all_rss_feeds(
     if db_session is None:
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            return await fetch_all_rss_feeds(feed_sources, session)
+        with get_db_session() as session:
+            return fetch_all_rss_feeds(feed_sources, session)
 
     results: dict[str, int] = {}
 
     for source in feed_sources.values():
         try:
-            new_count = await fetch_and_store_rss_feed(source.url, source.name, db_session)
+            new_count = fetch_and_store_rss_feed(source.url, source.name, db_session)
             results[source.name] = new_count
         except Exception as e:
             logger.error(f"Failed to fetch feed from {source.name}: {e}")
@@ -308,7 +305,7 @@ async def fetch_all_rss_feeds(
     return results
 
 
-async def get_articles_this_week(db_session: AsyncSession | None = None) -> list[SkyAtAGlanceArticle]:
+def get_articles_this_week(db_session: Session | None = None) -> list[SkyAtAGlanceArticle]:
     """
     Get articles published in the last 7 days.
 
@@ -321,8 +318,8 @@ async def get_articles_this_week(db_session: AsyncSession | None = None) -> list
     if db_session is None:
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            return await get_articles_this_week(session)
+        with get_db_session() as session:
+            return get_articles_this_week(session)
 
     now = datetime.now(UTC)
     week_ago = now - timedelta(days=7)
@@ -331,7 +328,7 @@ async def get_articles_this_week(db_session: AsyncSession | None = None) -> list
         select(RSSFeedModel).where(RSSFeedModel.published_date >= week_ago).order_by(RSSFeedModel.published_date.desc())
     )
 
-    result = await db_session.execute(stmt)
+    result = db_session.execute(stmt)
     models = result.scalars().all()
 
     articles = []
@@ -354,7 +351,7 @@ async def get_articles_this_week(db_session: AsyncSession | None = None) -> list
     return articles
 
 
-async def get_articles_this_month(db_session: AsyncSession | None = None) -> list[SkyAtAGlanceArticle]:
+def get_articles_this_month(db_session: Session | None = None) -> list[SkyAtAGlanceArticle]:
     """
     Get articles published in the last 30 days.
 
@@ -367,8 +364,8 @@ async def get_articles_this_month(db_session: AsyncSession | None = None) -> lis
     if db_session is None:
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            return await get_articles_this_month(session)
+        with get_db_session() as session:
+            return get_articles_this_month(session)
 
     now = datetime.now(UTC)
     month_ago = now - timedelta(days=30)
@@ -379,7 +376,7 @@ async def get_articles_this_month(db_session: AsyncSession | None = None) -> lis
         .order_by(RSSFeedModel.published_date.desc())
     )
 
-    result = await db_session.execute(stmt)
+    result = db_session.execute(stmt)
     models = result.scalars().all()
 
     articles = []
@@ -402,7 +399,7 @@ async def get_articles_this_month(db_session: AsyncSession | None = None) -> lis
     return articles
 
 
-async def get_article_by_title(title_query: str, db_session: AsyncSession | None = None) -> SkyAtAGlanceArticle | None:
+def get_article_by_title(title_query: str, db_session: Session | None = None) -> SkyAtAGlanceArticle | None:
     """
     Get an article by title (partial match, case-insensitive).
 
@@ -416,14 +413,14 @@ async def get_article_by_title(title_query: str, db_session: AsyncSession | None
     if db_session is None:
         from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as session:
-            return await get_article_by_title(title_query, session)
+        with get_db_session() as session:
+            return get_article_by_title(title_query, session)
 
     title_lower = title_query.lower()
 
     stmt = select(RSSFeedModel).where(RSSFeedModel.title.ilike(f"%{title_lower}%")).limit(1)
 
-    result = await db_session.execute(stmt)
+    result = db_session.execute(stmt)
     model = result.scalar_one_or_none()
 
     if model is None:

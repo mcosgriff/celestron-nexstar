@@ -8,14 +8,13 @@ stored in the database as catalog numbers.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
-import aiohttp
-from sqlalchemy.ext.asyncio import AsyncSession
+import requests
 from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.database.database_seeder import load_seed_json
@@ -31,7 +30,7 @@ SIMBAD_BASE_URL = "http://simbad.u-strasbg.fr/simbad/sim-id"
 VIZIER_CATALOG_URL = "https://cdsarc.cds.unistra.fr/viz-bin/nph-Cat/txt?V/50"
 
 
-async def _fetch_from_simbad(hr_numbers: list[int]) -> dict[int, tuple[str | None, str | None]]:
+def _fetch_from_simbad(hr_numbers: list[int]) -> dict[int, tuple[str | None, str | None]]:
     """
     Fetch common names and Bayer designations from SIMBAD for a list of HR numbers.
 
@@ -44,69 +43,66 @@ async def _fetch_from_simbad(hr_numbers: list[int]) -> dict[int, tuple[str | Non
     results: dict[int, tuple[str | None, str | None]] = {}
 
     try:
-        async with aiohttp.ClientSession() as session:
-            # SIMBAD allows batch queries using catalog identifiers
-            # Format: query "HR 1708" or "HR 2491" etc.
-            # We'll query in batches to avoid overwhelming the server
-            batch_size = 10  # SIMBAD recommends small batches
+        # SIMBAD allows batch queries using catalog identifiers
+        # Format: query "HR 1708" or "HR 2491" etc.
+        # We'll query in batches to avoid overwhelming the server
+        batch_size = 10  # SIMBAD recommends small batches
 
-            for i in range(0, len(hr_numbers), batch_size):
-                batch = hr_numbers[i : i + batch_size]
-                # Build query: "HR 1708|HR 2491|..."
-                query_ids = "|".join(f"HR {hr}" for hr in batch)
+        for i in range(0, len(hr_numbers), batch_size):
+            batch = hr_numbers[i : i + batch_size]
+            # Build query: "HR 1708|HR 2491|..."
+            query_ids = "|".join(f"HR {hr}" for hr in batch)
 
-                try:
-                    params = {
-                        "Ident": query_ids,
-                        "output.format": "VOTable",  # VOTable is more structured
-                    }
+            try:
+                params = {
+                    "Ident": query_ids,
+                    "output.format": "VOTable",  # VOTable is more structured
+                }
 
-                    async with session.get(
-                        SIMBAD_BASE_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)
-                    ) as response:
-                        if response.status == 200:
-                            # Parse VOTable response
-                            # This is simplified - full VOTable parsing would be more robust
-                            text = await response.text()
-                            # Extract common names and Bayer designations from VOTable
-                            # This is a simplified parser - may need refinement
-                            for hr in batch:
-                                # Look for common name patterns in the response
-                                # SIMBAD returns names in various formats
-                                pattern = rf"HR\s+{hr}.*?<TD>([^<]+)</TD>"
-                                matches = re.findall(pattern, text, re.DOTALL)
-                                if matches:
-                                    # First match is usually the primary name
-                                    name = matches[0].strip()
-                                    # Check if it's a common name (not HR number itself)
-                                    if name and not name.startswith("HR"):
-                                        results[hr] = (name, None)  # Bayer designation parsing would go here
-                        else:
-                            logger.warning(f"SIMBAD query failed with status {response.status}")
+                response = requests.get(SIMBAD_BASE_URL, params=params, timeout=30)
+                if response.status_code == 200:
+                    # Parse VOTable response
+                    # This is simplified - full VOTable parsing would be more robust
+                    text = response.text
+                    # Extract common names and Bayer designations from VOTable
+                    # This is a simplified parser - may need refinement
+                    for hr in batch:
+                        # Look for common name patterns in the response
+                        # SIMBAD returns names in various formats
+                        pattern = rf"HR\s+{hr}.*?<TD>([^<]+)</TD>"
+                        matches = re.findall(pattern, text, re.DOTALL)
+                        if matches:
+                            # First match is usually the primary name
+                            name = matches[0].strip()
+                            # Check if it's a common name (not HR number itself)
+                            if name and not name.startswith("HR"):
+                                results[hr] = (name, None)  # Bayer designation parsing would go here
+                else:
+                    logger.warning(f"SIMBAD query failed with status {response.status_code}")
 
-                    # Be polite to SIMBAD server
-                    await asyncio.sleep(0.5)  # Rate limiting
+                # Be polite to SIMBAD server
+                time.sleep(0.5)  # Rate limiting
 
-                except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, AttributeError, KeyError) as e:
-                    # aiohttp.ClientError: HTTP/network errors
-                    # TimeoutError: request timeout
-                    # ValueError: invalid response format
-                    # TypeError: wrong data types
-                    # AttributeError: missing attributes in response
-                    # KeyError: missing keys in response data
-                    logger.warning(f"Failed to query SIMBAD for batch {batch}: {e}")
-                    continue
+            except (requests.RequestException, TimeoutError, ValueError, TypeError, AttributeError, KeyError) as e:
+                # requests.RequestException: HTTP/network errors
+                # TimeoutError: request timeout
+                # ValueError: invalid response format
+                # TypeError: wrong data types
+                # AttributeError: missing attributes in response
+                # KeyError: missing keys in response data
+                logger.warning(f"Failed to query SIMBAD for batch {batch}: {e}")
+                continue
 
-    except (aiohttp.ClientError, TimeoutError, RuntimeError) as e:
-        # aiohttp.ClientError: HTTP/network errors
+    except (requests.RequestException, TimeoutError, RuntimeError) as e:
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
-        # RuntimeError: async/await errors
+        # RuntimeError: other errors
         logger.warning(f"Failed to fetch from SIMBAD: {e}")
 
     return results
 
 
-async def _fetch_from_yale_bsc() -> dict[int, tuple[str | None, str | None]]:
+def _fetch_from_yale_bsc() -> dict[int, tuple[str | None, str | None]]:
     """
     Extract common names from Yale Bright Star Catalog JSON if available.
 
@@ -169,7 +165,7 @@ async def _fetch_from_yale_bsc() -> dict[int, tuple[str | None, str | None]]:
     return results
 
 
-async def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[int, tuple[str | None, str | None]]:
+def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[int, tuple[str | None, str | None]]:
     """
     Fetch star name mappings from external sources.
 
@@ -188,7 +184,7 @@ async def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[
 
     # First, try Yale BSC (fastest, most reliable)
     logger.info("Fetching star name mappings from Yale BSC...")
-    yale_results = await _fetch_from_yale_bsc()
+    yale_results = _fetch_from_yale_bsc()
     results.update(yale_results)
     logger.info(f"Found {len(yale_results)} mappings in Yale BSC")
 
@@ -197,15 +193,15 @@ async def fetch_star_name_mappings(hr_numbers: list[int] | None = None) -> dict[
         missing = [hr for hr in hr_numbers if hr not in results]
         if missing:
             logger.info(f"Fetching {len(missing)} missing mappings from SIMBAD...")
-            simbad_results = await _fetch_from_simbad(missing)
+            simbad_results = _fetch_from_simbad(missing)
             results.update(simbad_results)
             logger.info(f"Found {len(simbad_results)} additional mappings from SIMBAD")
 
     return results
 
 
-async def populate_star_name_mappings_database(
-    db_session: AsyncSession, hr_numbers: list[int] | None = None, force_refresh: bool = False
+def populate_star_name_mappings_database(
+    db_session: Session, hr_numbers: list[int] | None = None, force_refresh: bool = False
 ) -> None:
     """
     Populate database with star name mappings.
@@ -215,7 +211,7 @@ async def populate_star_name_mappings_database(
     This ensures star common names are always available even without internet connectivity.
 
     Args:
-        db_session: SQLAlchemy async database session
+        db_session: SQLAlchemy database session
         hr_numbers: Optional list of HR numbers to fetch from external sources. If None, fetches all available.
         force_refresh: If True, re-populate even if data exists
     """
@@ -224,13 +220,13 @@ async def populate_star_name_mappings_database(
     logger.info("Populating star name mappings database...")
 
     # Seed from JSON file (primary source)
-    await seed_star_name_mappings(db_session, force=force_refresh)
+    seed_star_name_mappings(db_session, force=force_refresh)
 
     # Try to enhance with external sources (optional enhancement)
     try:
         logger.info("Attempting to fetch additional mappings from external sources...")
-        # Fetch external mappings (already async)
-        external_mappings = await fetch_star_name_mappings(hr_numbers)
+        # Fetch external mappings
+        external_mappings = fetch_star_name_mappings(hr_numbers)
         if external_mappings:
             # Add any new mappings from external sources
             from sqlalchemy import select
@@ -239,7 +235,7 @@ async def populate_star_name_mappings_database(
             for hr_number, (common_name, bayer_designation) in external_mappings.items():
                 # Check if already exists
                 stmt = select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number)
-                result = await db_session.execute(stmt)
+                result = db_session.execute(stmt)
                 existing = result.scalar_one_or_none()
                 if not existing:
                     model = StarNameMappingModel(
@@ -250,17 +246,25 @@ async def populate_star_name_mappings_database(
                     db_session.add(model)
                     added += 1
             if added > 0:
-                await db_session.commit()
+                db_session.commit()
                 logger.info(f"Enhanced with {added} additional mappings from external sources")
             else:
                 logger.info("External sources returned no additional mappings")
-    except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, aiohttp.ClientError, TimeoutError) as e:
-        # RuntimeError: async/await errors, database connection errors
+    except (
+        RuntimeError,
+        AttributeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        requests.RequestException,
+        TimeoutError,
+    ) as e:
+        # RuntimeError: database connection errors
         # AttributeError: missing database attributes or methods
         # ValueError: invalid HR numbers or data format
         # TypeError: wrong argument types
         # KeyError: missing keys in external data
-        # aiohttp.ClientError: HTTP/network errors from external APIs
+        # requests.RequestException: HTTP/network errors from external APIs
         # TimeoutError: request timeout
         logger.warning(f"Could not fetch additional mappings from external sources: {e}")
         logger.info("Continuing with seed data only")

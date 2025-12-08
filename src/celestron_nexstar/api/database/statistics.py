@@ -43,16 +43,16 @@ class TLEStats:
     newest_epoch: datetime | None
 
 
-async def get_light_pollution_stats() -> LightPollutionStats:
+def get_light_pollution_stats() -> LightPollutionStats:
     """
     Get statistics for light pollution grid data.
 
     Returns:
         LightPollutionStats with aggregated statistics
     """
-    async with get_db_session() as db_session:
+    with get_db_session() as db_session:
         # Check if table exists
-        table_check = await db_session.execute(
+        table_check = db_session.execute(
             text("SELECT name FROM sqlite_master WHERE type='table' AND name='light_pollution_grid'")
         )
         table_exists = table_check.fetchone() is not None
@@ -67,7 +67,7 @@ async def get_light_pollution_stats() -> LightPollutionStats:
             )
 
         # Get total count
-        total_count_result = await db_session.scalar(select(func.count(LightPollutionGridModel.id)))
+        total_count_result = db_session.scalar(select(func.count(LightPollutionGridModel.id)))
         total_count = total_count_result or 0
 
         if total_count == 0:
@@ -80,7 +80,7 @@ async def get_light_pollution_stats() -> LightPollutionStats:
             )
 
         # Get SQM range
-        sqm_result = await db_session.execute(
+        sqm_result = db_session.execute(
             select(
                 func.min(LightPollutionGridModel.sqm_value),
                 func.max(LightPollutionGridModel.sqm_value),
@@ -95,7 +95,7 @@ async def get_light_pollution_stats() -> LightPollutionStats:
             sqm_max = None
 
         # Get coverage by region
-        region_result = await db_session.execute(
+        region_result = db_session.execute(
             select(
                 LightPollutionGridModel.region,
                 func.count(LightPollutionGridModel.id),
@@ -115,18 +115,16 @@ async def get_light_pollution_stats() -> LightPollutionStats:
         )
 
 
-async def get_tle_stats() -> TLEStats:
+def get_tle_stats() -> TLEStats:
     """
     Get statistics for TLE (satellite orbital elements) data.
 
     Returns:
         TLEStats with aggregated statistics
     """
-    async with get_db_session() as db_session:
+    with get_db_session() as db_session:
         # Check if table exists
-        table_check = await db_session.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'")
-        )
+        table_check = db_session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='tle_data'"))
         table_exists = table_check.fetchone() is not None
 
         if not table_exists:
@@ -140,7 +138,7 @@ async def get_tle_stats() -> TLEStats:
                 newest_epoch=None,
             )
 
-        total_tle_result = await db_session.scalar(select(func.count(TLEModel.norad_id)))
+        total_tle_result = db_session.scalar(select(func.count(TLEModel.norad_id)))
         total_tle_count = total_tle_result or 0
 
         if total_tle_count == 0:
@@ -155,7 +153,7 @@ async def get_tle_stats() -> TLEStats:
             )
 
         # Get counts by group
-        group_result = await db_session.execute(
+        group_result = db_session.execute(
             select(
                 TLEModel.satellite_group,
                 func.count(TLEModel.norad_id),
@@ -167,19 +165,19 @@ async def get_tle_stats() -> TLEStats:
         group_counts = list(group_result.fetchall())
 
         # Get unique satellite count
-        unique_result = await db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id))))
+        unique_result = db_session.scalar(select(func.count(func.distinct(TLEModel.norad_id))))
         unique_satellites = unique_result or 0
 
         # Get last fetched time
-        last_fetched_result = await db_session.scalar(
+        last_fetched_result = db_session.scalar(
             select(func.max(TLEModel.fetched_at)).where(TLEModel.fetched_at.isnot(None))
         )
         last_fetched = last_fetched_result
 
         # Get oldest and newest TLE epoch (to show data freshness)
-        oldest_result = await db_session.scalar(select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
+        oldest_result = db_session.scalar(select(func.min(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
         oldest_epoch = oldest_result
-        newest_result = await db_session.scalar(select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
+        newest_result = db_session.scalar(select(func.max(TLEModel.epoch)).where(TLEModel.epoch.isnot(None)))
         newest_epoch = newest_result
 
         return TLEStats(

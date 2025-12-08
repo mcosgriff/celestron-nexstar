@@ -14,12 +14,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-import aiohttp
+import requests
 from bs4 import BeautifulSoup
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.orm import Session
 
 
 logger = logging.getLogger(__name__)
@@ -271,7 +271,7 @@ def _classify_event_type(event_name: str) -> str:
         return "other"
 
 
-async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[AstroPixelsEvent]:
+def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[AstroPixelsEvent]:
     """
     Fetch and parse AstroPixels almanac for a given year and timezone.
 
@@ -290,235 +290,232 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
     events: list[AstroPixelsEvent] = []
 
     try:
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                logger.error(f"Failed to fetch almanac: HTTP {response.status}")
-                return events
+        response = requests.get(url, timeout=30)
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch almanac: HTTP {response.status_code}")
+            return events
 
-            html = await response.text(encoding="utf-8")
-            soup = BeautifulSoup(html, "html.parser")
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
 
-            # Find the main table with events
-            # The almanac table has class "datatab" and contains <pre> tags with the data
-            main_table = soup.find("table", class_="datatab")
-            if not main_table:
-                # Fallback: try to find any table with pre tags
-                tables = soup.find_all("table")
-                for table in tables:
-                    pre_tags = table.find_all("pre")
-                    if pre_tags:
-                        main_table = table
-                        logger.debug("Found table with <pre> tags")
-                        break
+        # Find the main table with events
+        # The almanac table has class "datatab" and contains <pre> tags with the data
+        main_table = soup.find("table", class_="datatab")
+        if not main_table:
+            # Fallback: try to find any table with pre tags
+            tables = soup.find_all("table")
+            for table in tables:
+                pre_tags = table.find_all("pre")
+                if pre_tags:
+                    main_table = table
+                    logger.debug("Found table with <pre> tags")
+                    break
 
-            if not main_table:
-                logger.warning(
-                    "Could not find almanac table (looking for table with class 'datatab' or containing <pre> tags)"
-                )
-                return events
+        if not main_table:
+            logger.warning(
+                "Could not find almanac table (looking for table with class 'datatab' or containing <pre> tags)"
+            )
+            return events
 
-            logger.info("Found almanac table with pre-formatted data")
+        logger.info("Found almanac table with pre-formatted data")
 
-            # Parse the <pre> tags inside table cells
-            # The data is in pre-formatted text blocks, one per table cell (column)
-            pre_tags = main_table.find_all("pre")
+        # Parse the <pre> tags inside table cells
+        # The data is in pre-formatted text blocks, one per table cell (column)
+        pre_tags = main_table.find_all("pre")
 
-            if not pre_tags:
-                logger.warning("No <pre> tags found in almanac table")
-                return events
+        if not pre_tags:
+            logger.warning("No <pre> tags found in almanac table")
+            return events
 
-            logger.info(f"Found {len(pre_tags)} pre-formatted data blocks")
+        logger.info(f"Found {len(pre_tags)} pre-formatted data blocks")
 
-            # Parse each pre block (each represents a time period, e.g., Jan-Jun, Jul-Dec)
-            for pre_block in pre_tags:
-                # Get text and decode HTML entities to preserve special characters like °
-                # Use get_text with separator to preserve line structure
-                pre_text = pre_block.get_text(separator="\n", strip=False)
-                # Decode HTML entities if any (BeautifulSoup should handle this, but ensure UTF-8)
-                pre_text = html_module.unescape(pre_text)
-                lines = pre_text.split("\n")
+        # Parse each pre block (each represents a time period, e.g., Jan-Jun, Jul-Dec)
+        for pre_block in pre_tags:
+            # Get text and decode HTML entities to preserve special characters like °
+            # Use get_text with separator to preserve line structure
+            pre_text = pre_block.get_text(separator="\n", strip=False)
+            # Decode HTML entities if any (BeautifulSoup should handle this, but ensure UTF-8)
+            pre_text = html_module.unescape(pre_text)
+            lines = pre_text.split("\n")
 
-                logger.debug(f"Parsing pre block with {len(lines)} lines")
+            logger.debug(f"Parsing pre block with {len(lines)} lines")
 
-                # Skip header lines
-                current_month = None
-                lines_processed = 0
-                skipped_lines = []  # Track skipped lines for debugging
-                for line in lines:
-                    original_line = line  # Keep original for debugging (before stripping)
-                    # Don't strip yet - we need leading spaces for continuation lines
-                    line_stripped = line.strip()
-                    if not line_stripped:
+            # Skip header lines
+            current_month = None
+            lines_processed = 0
+            skipped_lines = []  # Track skipped lines for debugging
+            for line in lines:
+                original_line = line  # Keep original for debugging (before stripping)
+                # Don't strip yet - we need leading spaces for continuation lines
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                # Use original_line for parsing, but line_stripped for checks
+                line = original_line
+
+                # Skip header lines (use stripped version for checks)
+                if (
+                    line_stripped.lower().startswith("date")
+                    or line_stripped.lower().startswith("(h:m)")
+                    or "sky event" in line_stripped.lower()
+                ):
+                    continue
+
+                # Parse line format: "Jan 03  08:24  Venus 1.4°N of Moon"
+                # Or: "    03  08     Quadrantid Meteor Shower" (continued from previous month)
+                # Pattern: Optional month abbreviation, day, time, event
+
+                # Check if line starts with month abbreviation (use stripped version)
+                month_match = re.match(r"^([A-Z][a-z]{2})\s+(\d{1,2})", line_stripped)
+                if month_match:
+                    month_str, day_str = month_match.groups()
+                    # Update current month
+                    month_names = {
+                        "jan": 1,
+                        "feb": 2,
+                        "mar": 3,
+                        "apr": 4,
+                        "may": 5,
+                        "jun": 6,
+                        "jul": 7,
+                        "aug": 8,
+                        "sep": 9,
+                        "oct": 10,
+                        "nov": 11,
+                        "dec": 12,
+                    }
+                    current_month = month_names.get(month_str.lower())
+                    if not current_month:
                         continue
-                    # Use original_line for parsing, but line_stripped for checks
-                    line = original_line
-
-                    # Skip header lines (use stripped version for checks)
-                    if (
-                        line_stripped.lower().startswith("date")
-                        or line_stripped.lower().startswith("(h:m)")
-                        or "sky event" in line_stripped.lower()
-                    ):
-                        continue
-
-                    # Parse line format: "Jan 03  08:24  Venus 1.4°N of Moon"
-                    # Or: "    03  08     Quadrantid Meteor Shower" (continued from previous month)
-                    # Pattern: Optional month abbreviation, day, time, event
-
-                    # Check if line starts with month abbreviation (use stripped version)
-                    month_match = re.match(r"^([A-Z][a-z]{2})\s+(\d{1,2})", line_stripped)
-                    if month_match:
-                        month_str, day_str = month_match.groups()
-                        # Update current month
-                        month_names = {
-                            "jan": 1,
-                            "feb": 2,
-                            "mar": 3,
-                            "apr": 4,
-                            "may": 5,
-                            "jun": 6,
-                            "jul": 7,
-                            "aug": 8,
-                            "sep": 9,
-                            "oct": 10,
-                            "nov": 11,
-                            "dec": 12,
-                        }
-                        current_month = month_names.get(month_str.lower())
-                        if not current_month:
-                            continue
-                        day = int(day_str)
-                        # Extract time and event from rest of line (use original line to preserve spacing)
-                        # Find the position in original line
-                        month_pos = line.find(month_str + " " + day_str)
-                        if month_pos >= 0:
-                            rest = line[month_pos + month_match.end() :].strip()
-                        else:
-                            # Fallback to stripped version
-                            rest = line_stripped[month_match.end() :].strip()
+                    day = int(day_str)
+                    # Extract time and event from rest of line (use original line to preserve spacing)
+                    # Find the position in original line
+                    month_pos = line.find(month_str + " " + day_str)
+                    if month_pos >= 0:
+                        rest = line[month_pos + month_match.end() :].strip()
                     else:
-                        # Line continues from previous month (starts with spaces and day)
-                        # Match lines like "    04  16:14  FULL MOON" or "    04  04:06  Moon at Perigee"
-                        # The line might have leading spaces, then day, then spaces, then time/event
-                        # Try with leading spaces first (most common case)
-                        # Use original_line here since line might have been stripped
-                        day_match = re.match(r"^\s+(\d{1,2})\s+(.+)", original_line)
+                        # Fallback to stripped version
+                        rest = line_stripped[month_match.end() :].strip()
+                else:
+                    # Line continues from previous month (starts with spaces and day)
+                    # Match lines like "    04  16:14  FULL MOON" or "    04  04:06  Moon at Perigee"
+                    # The line might have leading spaces, then day, then spaces, then time/event
+                    # Try with leading spaces first (most common case)
+                    # Use original_line here since line might have been stripped
+                    day_match = re.match(r"^\s+(\d{1,2})\s+(.+)", original_line)
+                    if day_match and current_month:
+                        day = int(day_match.group(1))
+                        rest = day_match.group(2).strip()  # Get everything after day
+                    else:
+                        # Try without leading spaces (in case line was already stripped)
+                        day_match = re.match(r"^(\d{1,2})\s+(.+)", line_stripped)
                         if day_match and current_month:
                             day = int(day_match.group(1))
-                            rest = day_match.group(2).strip()  # Get everything after day
+                            rest = day_match.group(2).strip()
                         else:
-                            # Try without leading spaces (in case line was already stripped)
-                            day_match = re.match(r"^(\d{1,2})\s+(.+)", line_stripped)
-                            if day_match and current_month:
-                                day = int(day_match.group(1))
-                                rest = day_match.group(2).strip()
-                            else:
-                                # If we can't parse and don't have a current_month, skip
-                                if current_month is None:
-                                    skipped_lines.append(f"No current_month: {original_line[:100]}")
-                                    continue
-                                # If we have a current_month but can't parse, log it for debugging
-                                skipped_lines.append(
-                                    f"Could not parse (current_month={current_month}): {original_line[:100]}"
-                                )
-                                logger.debug(
-                                    f"Could not parse line (no month match, current_month={current_month}): {original_line[:100]}"
-                                )
+                            # If we can't parse and don't have a current_month, skip
+                            if current_month is None:
+                                skipped_lines.append(f"No current_month: {original_line[:100]}")
                                 continue
+                            # If we have a current_month but can't parse, log it for debugging
+                            skipped_lines.append(
+                                f"Could not parse (current_month={current_month}): {original_line[:100]}"
+                            )
+                            logger.debug(
+                                f"Could not parse line (no month match, current_month={current_month}): {original_line[:100]}"
+                            )
+                            continue
 
-                    # Parse time and event from rest of line
-                    # Format: "08:24  Event" or "08     Event" (hours only) or just "Event" (no time)
-                    # The time might have multiple spaces before the event
-                    # Try to match time with colon first (e.g., "16:14  FULL MOON")
-                    # Use \s+ to match one or more spaces between time and event
-                    time_match = re.match(r"(\d{1,2}):(\d{2})\s+(.+)", rest)
-                    if time_match:
-                        hour_str, minute_str, event_text = time_match.groups()
+                # Parse time and event from rest of line
+                # Format: "08:24  Event" or "08     Event" (hours only) or just "Event" (no time)
+                # The time might have multiple spaces before the event
+                # Try to match time with colon first (e.g., "16:14  FULL MOON")
+                # Use \s+ to match one or more spaces between time and event
+                time_match = re.match(r"(\d{1,2}):(\d{2})\s+(.+)", rest)
+                if time_match:
+                    hour_str, minute_str, event_text = time_match.groups()
+                    hour = int(hour_str)
+                    minute = int(minute_str)
+                    event_name = event_text.strip()
+                else:
+                    # Try to match time without colon (hours only, e.g., "08     Event")
+                    # Match one or more spaces between hour and event
+                    hour_match = re.match(r"(\d{1,2})\s+(.+)", rest)
+                    if hour_match:
+                        hour_str, event_text = hour_match.groups()
                         hour = int(hour_str)
-                        minute = int(minute_str)
+                        minute = 0
                         event_name = event_text.strip()
                     else:
-                        # Try to match time without colon (hours only, e.g., "08     Event")
-                        # Match one or more spaces between hour and event
-                        hour_match = re.match(r"(\d{1,2})\s+(.+)", rest)
-                        if hour_match:
-                            hour_str, event_text = hour_match.groups()
-                            hour = int(hour_str)
-                            minute = 0
-                            event_name = event_text.strip()
-                        else:
-                            # No time, just event - but check if rest starts with a number (might be a time)
-                            # If rest is just whitespace or empty, skip
-                            if not rest or not rest.strip():
-                                logger.debug(f"Skipping line with empty event text: {line[:100]}")
-                                continue
-                            # No time, just event
-                            event_name = rest.strip()
-                            hour = 12  # Default to noon
-                            minute = 0
+                        # No time, just event - but check if rest starts with a number (might be a time)
+                        # If rest is just whitespace or empty, skip
+                        if not rest or not rest.strip():
+                            logger.debug(f"Skipping line with empty event text: {line[:100]}")
+                            continue
+                        # No time, just event
+                        event_name = rest.strip()
+                        hour = 12  # Default to noon
+                        minute = 0
 
-                    if not event_name:
-                        continue
+                if not event_name:
+                    continue
 
-                    # Skip if event name looks like it's just whitespace or a number
-                    if not event_name or event_name.isdigit():
-                        continue
+                # Skip if event name looks like it's just whitespace or a number
+                if not event_name or event_name.isdigit():
+                    continue
 
-                    # Create datetime in local timezone first
-                    try:
-                        # Create datetime in the almanac's timezone (timezone-naive, represents local time)
-                        event_date_local = datetime(year, current_month, day, hour, minute, tzinfo=None)
-                        # Convert to UTC for storage, but keep local date for calendar grouping
-                        event_date_utc = event_date_local - timedelta(hours=tz_offset)
-                        event_date_utc = event_date_utc.replace(tzinfo=UTC)
-                    except ValueError:
-                        logger.debug(f"Invalid date: {year}-{current_month}-{day}")
-                        continue
+                # Create datetime in local timezone first
+                try:
+                    # Create datetime in the almanac's timezone (timezone-naive, represents local time)
+                    event_date_local = datetime(year, current_month, day, hour, minute, tzinfo=None)
+                    # Convert to UTC for storage, but keep local date for calendar grouping
+                    event_date_utc = event_date_local - timedelta(hours=tz_offset)
+                    event_date_utc = event_date_utc.replace(tzinfo=UTC)
+                except ValueError:
+                    logger.debug(f"Invalid date: {year}-{current_month}-{day}")
+                    continue
 
-                    event_type = _classify_event_type(event_name)
-                    time_str = f"{hour:02d}:{minute:02d}" if minute > 0 else f"{hour:02d}"
+                event_type = _classify_event_type(event_name)
+                time_str = f"{hour:02d}:{minute:02d}" if minute > 0 else f"{hour:02d}"
 
-                    # Debug logging for FULL MOON events
-                    if "FULL MOON" in event_name.upper() or "full moon" in event_name.lower():
-                        logger.debug(
-                            f"Parsed FULL MOON: {event_name}, date_local={event_date_local}, "
-                            f"date_utc={event_date_utc}, type={event_type}"
-                        )
-
-                    event = AstroPixelsEvent(
-                        date=event_date_utc,  # Store in UTC
-                        event_name=event_name,
-                        event_type=event_type,
-                        description=event_name,
-                        time_str=time_str,
-                        local_date=event_date_local,  # Keep original local date for calendar grouping
+                # Debug logging for FULL MOON events
+                if "FULL MOON" in event_name.upper() or "full moon" in event_name.lower():
+                    logger.debug(
+                        f"Parsed FULL MOON: {event_name}, date_local={event_date_local}, "
+                        f"date_utc={event_date_utc}, type={event_type}"
                     )
 
-                    events.append(event)
-                    lines_processed += 1
+                event = AstroPixelsEvent(
+                    date=event_date_utc,  # Store in UTC
+                    event_name=event_name,
+                    event_type=event_type,
+                    description=event_name,
+                    time_str=time_str,
+                    local_date=event_date_local,  # Keep original local date for calendar grouping
+                )
 
-                    # Debug logging for December events
-                    if current_month == 12:
-                        logger.debug(f"December event: {day:02d} {hour:02d}:{minute:02d} - {event_name}")
+                events.append(event)
+                lines_processed += 1
 
-                logger.debug(f"Processed {lines_processed} events from this pre block")
+                # Debug logging for December events
+                if current_month == 12:
+                    logger.debug(f"December event: {day:02d} {hour:02d}:{minute:02d} - {event_name}")
 
-            logger.info(f"Parsed {len(events)} events from pre-formatted data")
+            logger.debug(f"Processed {lines_processed} events from this pre block")
 
-            # Count December events and log them
-            december_events_list = [e for e in events if e.local_date and e.local_date.month == 12]
-            december_count = len(december_events_list)
-            if december_count > 0:
-                logger.info(f"Found {december_count} events in December")
-                # Log all December events for debugging
-                for e in sorted(december_events_list, key=lambda x: x.local_date.day if x.local_date else 0):
-                    if e.local_date:
-                        logger.debug(f"  Dec {e.local_date.day:02d} {e.event_name}")
+        logger.info(f"Parsed {len(events)} events from pre-formatted data")
 
-            logger.info(f"Parsed {len(events)} events from AstroPixels almanac for {year}")
+        # Count December events and log them
+        december_events_list = [e for e in events if e.local_date and e.local_date.month == 12]
+        december_count = len(december_events_list)
+        if december_count > 0:
+            logger.info(f"Found {december_count} events in December")
+            # Log all December events for debugging
+            for e in sorted(december_events_list, key=lambda x: x.local_date.day if x.local_date else 0):
+                if e.local_date:
+                    logger.debug(f"  Dec {e.local_date.day:02d} {e.event_name}")
+
+        logger.info(f"Parsed {len(events)} events from AstroPixels almanac for {year}")
 
     except TimeoutError:
         logger.error(f"Timeout fetching almanac from {url}")
@@ -528,9 +525,7 @@ async def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[Astr
     return events
 
 
-async def cache_astropixels_events(
-    db_session: AsyncSession, year: int, timezone: str = "MST", force_refresh: bool = False
-) -> int:
+def cache_astropixels_events(db_session: Session, year: int, timezone: str = "MST", force_refresh: bool = False) -> int:
     """
     Fetch and cache AstroPixels events in the database.
 
@@ -551,7 +546,7 @@ async def cache_astropixels_events(
     if not force_refresh:
         from sqlalchemy import func
 
-        count = await db_session.scalar(
+        count = db_session.scalar(
             select(func.count(SpaceEventModel.id)).where(
                 SpaceEventModel.source == "AstroPixels",
                 SpaceEventModel.date >= datetime(year, 1, 1, tzinfo=UTC),
@@ -563,7 +558,7 @@ async def cache_astropixels_events(
             return count
 
     # Fetch events
-    events = await fetch_and_parse_almanac(year, timezone)
+    events = fetch_and_parse_almanac(year, timezone)
 
     if not events:
         logger.warning(f"No events found for {year}")
@@ -571,14 +566,14 @@ async def cache_astropixels_events(
 
     # Delete existing events for this year if forcing refresh
     if force_refresh:
-        await db_session.execute(
+        db_session.execute(
             delete(SpaceEventModel).where(
                 SpaceEventModel.source == "AstroPixels",
                 SpaceEventModel.date >= datetime(year, 1, 1, tzinfo=UTC),
                 SpaceEventModel.date < datetime(year + 1, 1, 1, tzinfo=UTC),
             )
         )
-        await db_session.commit()  # Commit the delete before adding new events
+        db_session.commit()  # Commit the delete before adding new events
         logger.info(f"Deleted existing AstroPixels events for {year} (force_refresh=True)")
 
     # Store events
@@ -587,7 +582,7 @@ async def cache_astropixels_events(
     updated = 0
     for event in events:
         # Check if event already exists (by name and date)
-        existing = await db_session.scalar(
+        existing = db_session.scalar(
             select(SpaceEventModel)
             .where(
                 SpaceEventModel.source == "AstroPixels",
@@ -634,14 +629,14 @@ async def cache_astropixels_events(
                     f"existing_date={existing.date if existing else None}"
                 )
 
-    await db_session.commit()
+    db_session.commit()
     logger.info(f"Cached {added} new AstroPixels events for {year} (updated {updated}, skipped {skipped} duplicates)")
 
     return added + updated
 
 
-async def get_cached_astropixels_events(
-    db_session: AsyncSession, start_date: datetime, end_date: datetime, timezone_offset: int | None = None
+def get_cached_astropixels_events(
+    db_session: Session, start_date: datetime, end_date: datetime, timezone_offset: int | None = None
 ) -> list[AstroPixelsEvent]:
     """
     Get cached AstroPixels events from database.
@@ -675,7 +670,7 @@ async def get_cached_astropixels_events(
         query_start = start_date - timedelta(hours=offset_hours)
         query_end = end_date + timedelta(hours=offset_hours)
 
-    result = await db_session.execute(
+    result = db_session.execute(
         select(SpaceEventModel)
         .where(
             and_(

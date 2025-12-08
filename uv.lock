@@ -311,6 +311,7 @@ dependencies = [
     { name = "deal" },
     { name = "feedparser" },
     { name = "fuzzysearch" },
+    { name = "geoalchemy2" },
     { name = "geopandas" },
     { name = "geopy" },
     { name = "greenlet" },
@@ -384,6 +385,7 @@ requires-dist = [
     { name = "deal", specifier = ">=4.24.5" },
     { name = "feedparser", specifier = ">=6.0.0" },
     { name = "fuzzysearch", specifier = ">=0.7.3" },
+    { name = "geoalchemy2", specifier = ">=0.18.0" },
     { name = "geopandas", specifier = ">=0.14.0" },
     { name = "geopy", specifier = ">=2.4.0" },
     { name = "greenlet", specifier = ">=3.0.0" },
@@ -1103,6 +1105,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ac/a6/c73e8ebc7e6e4ee7f8d2c509c232781dfc79451ebda2254915e0cef17566/fuzzysearch-0.8.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:f4f11634b0d22dbd36513dae77b2f794d63b0275879da050b379f91bab398225", size = 56718, upload-time = "2025-11-11T08:46:47.921Z" },
     { url = "https://files.pythonhosted.org/packages/9b/3f/29d666a60f711a77354a5b23082fe210b4d0277e5d6e9e5146cf56162315/fuzzysearch-0.8.1-cp312-cp312-win32.whl", hash = "sha256:040693ed5c6c3b15807a240b7acf535cacd12771ca5094cec1df62c960010642", size = 35104, upload-time = "2025-11-11T08:46:49.378Z" },
     { url = "https://files.pythonhosted.org/packages/58/10/f2cef42d66311554723cfc1f7295ba1a83b3dd763845219bba3120bb3c08/fuzzysearch-0.8.1-cp312-cp312-win_amd64.whl", hash = "sha256:46bb36a6c5a966d951125136379a8674377ceea9f755fd542536065a6d47d23e", size = 36766, upload-time = "2025-11-11T08:46:50.362Z" },
+]
+
+[[package]]
+name = "geoalchemy2"
+version = "0.18.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "sqlalchemy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/df/f6d689120a15a2287794e16696c3bdb4cf2e53038255d288b61a4d59e1fa/geoalchemy2-0.18.1.tar.gz", hash = "sha256:4bdc7daf659e36f6456e2f2c3bcce222b879584921a4f50a803ab05fa2bb3124", size = 239302, upload-time = "2025-11-18T15:12:05.296Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/25/b3d6fc757d8d909e0e666ec6fbf1b7914e9ad18d6e1b08994cd9d2e63330/geoalchemy2-0.18.1-py3-none-any.whl", hash = "sha256:a49d9559bf7acbb69129a01c6e1861657c15db420886ad0a09b1871fb0ff4bdb", size = 81261, upload-time = "2025-11-18T15:12:03.985Z" },
 ]
 
 [[package]]

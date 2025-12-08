@@ -9,8 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from celestron_nexstar.api.database.database import get_database
-from celestron_nexstar.api.database.models import FavoriteModel
+from celestron_nexstar.api.database.models import FavoriteModel, get_db_session
 
 
 if TYPE_CHECKING:
@@ -28,7 +27,7 @@ __all__ = [
 ]
 
 
-async def add_favorite(object_name: str, object_type: str | None = None) -> bool:
+def add_favorite(object_name: str, object_type: str | None = None) -> bool:
     """
     Add an object to favorites.
 
@@ -40,13 +39,12 @@ async def add_favorite(object_name: str, object_type: str | None = None) -> bool
         True if added successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             # Check if already a favorite (fast indexed lookup)
             stmt = select(FavoriteModel).where(FavoriteModel.object_name == object_name)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             existing = result.scalar_one_or_none()
 
             if existing:
@@ -60,7 +58,7 @@ async def add_favorite(object_name: str, object_type: str | None = None) -> bool
             )
             session.add(favorite)
 
-            await session.commit()
+            session.commit()
             logger.info(f"Added '{object_name}' to favorites")
             return True
 
@@ -69,7 +67,7 @@ async def add_favorite(object_name: str, object_type: str | None = None) -> bool
         return False
 
 
-async def remove_favorite(object_name: str) -> bool:
+def remove_favorite(object_name: str) -> bool:
     """
     Remove an object from favorites.
 
@@ -80,13 +78,12 @@ async def remove_favorite(object_name: str) -> bool:
         True if removed successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             # Find the favorite (fast indexed lookup)
             stmt = select(FavoriteModel).where(FavoriteModel.object_name == object_name)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             favorite = result.scalar_one_or_none()
 
             if not favorite:
@@ -94,8 +91,8 @@ async def remove_favorite(object_name: str) -> bool:
                 return False
 
             # Delete the favorite
-            await session.delete(favorite)
-            await session.commit()
+            session.delete(favorite)
+            session.commit()
             logger.info(f"Removed '{object_name}' from favorites")
             return True
 
@@ -104,7 +101,7 @@ async def remove_favorite(object_name: str) -> bool:
         return False
 
 
-async def is_favorite(object_name: str) -> bool:
+def is_favorite(object_name: str) -> bool:
     """
     Check if an object is a favorite.
 
@@ -115,13 +112,12 @@ async def is_favorite(object_name: str) -> bool:
         True if the object is a favorite, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             # Fast indexed lookup
             stmt = select(FavoriteModel).where(FavoriteModel.object_name == object_name)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             favorite = result.scalar_one_or_none()
 
             return favorite is not None
@@ -131,7 +127,7 @@ async def is_favorite(object_name: str) -> bool:
         return False
 
 
-async def get_favorites() -> list[dict[str, str | None]]:
+def get_favorites() -> list[dict[str, str | None]]:
     """
     Get all favorite objects.
 
@@ -139,13 +135,12 @@ async def get_favorites() -> list[dict[str, str | None]]:
         List of favorite objects, each as a dict with 'name' and optional 'type'
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             # Get all favorites ordered by creation date
             stmt = select(FavoriteModel).order_by(FavoriteModel.created_at)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             favorites = result.scalars().all()
 
             # Convert to dict format for backward compatibility
@@ -162,7 +157,7 @@ async def get_favorites() -> list[dict[str, str | None]]:
         return []
 
 
-async def are_favorites(object_names: list[str]) -> dict[str, bool]:
+def are_favorites(object_names: list[str]) -> dict[str, bool]:
     """
     Check if multiple objects are favorites in a single database query.
 
@@ -179,13 +174,12 @@ async def are_favorites(object_names: list[str]) -> dict[str, bool]:
         return {}
 
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             # Single query with IN clause for all objects
             stmt = select(FavoriteModel.object_name).where(FavoriteModel.object_name.in_(object_names))
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             favorite_names = {row[0] for row in result.all()}
 
             # Build result dict - True if in favorites, False otherwise
@@ -197,7 +191,7 @@ async def are_favorites(object_names: list[str]) -> dict[str, bool]:
         return dict.fromkeys(object_names, False)
 
 
-async def clear_favorites() -> bool:
+def clear_favorites() -> bool:
     """
     Clear all favorites.
 
@@ -205,20 +199,19 @@ async def clear_favorites() -> bool:
         True if cleared successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import delete, func, select
 
             # Count favorites before deletion
             count_stmt = select(func.count(FavoriteModel.id))
-            count_result = await session.execute(count_stmt)
+            count_result = session.execute(count_stmt)
             count = count_result.scalar() or 0
 
             if count > 0:
                 # Delete all favorites
                 stmt = delete(FavoriteModel)
-                await session.execute(stmt)
-                await session.commit()
+                session.execute(stmt)
+                session.commit()
                 logger.info(f"Cleared {count} favorites")
                 return True
 

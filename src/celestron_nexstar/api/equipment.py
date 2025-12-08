@@ -11,8 +11,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from celestron_nexstar.api.database.database import get_database
-from celestron_nexstar.api.database.models import CameraModel, EyepieceModel, FilterModel
+from celestron_nexstar.api.database.models import CameraModel, EyepieceModel, FilterModel, get_db_session
 from celestron_nexstar.api.observation.optics import EyepieceSpecs, get_telescope_specs
 
 
@@ -38,7 +37,7 @@ __all__ = [
 ]
 
 
-async def add_eyepiece(
+def add_eyepiece(
     name: str,
     focal_length_mm: float,
     apparent_fov_deg: float = 50.0,
@@ -63,8 +62,7 @@ async def add_eyepiece(
         ID of created eyepiece, or None if creation failed
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             eyepiece = EyepieceModel(
                 name=name,
                 focal_length_mm=focal_length_mm,
@@ -75,8 +73,8 @@ async def add_eyepiece(
                 notes=notes,
             )
             session.add(eyepiece)
-            await session.commit()
-            await session.refresh(eyepiece)
+            session.commit()
+            session.refresh(eyepiece)
             logger.info(f"Added eyepiece: {name}")
             return eyepiece.id
     except Exception as e:
@@ -84,7 +82,7 @@ async def add_eyepiece(
         return None
 
 
-async def get_eyepieces() -> list[dict[str, Any]]:
+def get_eyepieces() -> list[dict[str, Any]]:
     """
     Get all eyepieces.
 
@@ -92,12 +90,11 @@ async def get_eyepieces() -> list[dict[str, Any]]:
         List of eyepiece dictionaries
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(EyepieceModel).order_by(EyepieceModel.focal_length_mm)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             eyepieces = result.scalars().all()
 
             return [
@@ -121,7 +118,7 @@ async def get_eyepieces() -> list[dict[str, Any]]:
         return []
 
 
-async def update_eyepiece(
+def update_eyepiece(
     eyepiece_id: int,
     name: str | None = None,
     focal_length_mm: float | None = None,
@@ -148,12 +145,11 @@ async def update_eyepiece(
         True if updated successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(EyepieceModel).where(EyepieceModel.id == eyepiece_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             eyepiece = result.scalar_one_or_none()
 
             if not eyepiece:
@@ -176,7 +172,7 @@ async def update_eyepiece(
                 eyepiece.notes = notes
 
             eyepiece.updated_at = datetime.now(UTC)
-            await session.commit()
+            session.commit()
             logger.info(f"Updated eyepiece {eyepiece_id}")
             return True
     except Exception as e:
@@ -184,7 +180,7 @@ async def update_eyepiece(
         return False
 
 
-async def delete_eyepiece(eyepiece_id: int) -> bool:
+def delete_eyepiece(eyepiece_id: int) -> bool:
     """
     Delete an eyepiece.
 
@@ -195,20 +191,19 @@ async def delete_eyepiece(eyepiece_id: int) -> bool:
         True if deleted successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(EyepieceModel).where(EyepieceModel.id == eyepiece_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             eyepiece = result.scalar_one_or_none()
 
             if not eyepiece:
                 logger.warning(f"Eyepiece {eyepiece_id} not found")
                 return False
 
-            await session.delete(eyepiece)
-            await session.commit()
+            session.delete(eyepiece)
+            session.commit()
             logger.info(f"Deleted eyepiece {eyepiece_id}")
             return True
     except Exception as e:
@@ -216,7 +211,7 @@ async def delete_eyepiece(eyepiece_id: int) -> bool:
         return False
 
 
-async def add_filter(
+def add_filter(
     name: str,
     filter_type: str,
     barrel_size_mm: float | None = None,
@@ -241,8 +236,7 @@ async def add_filter(
         ID of created filter, or None if creation failed
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             filter_obj = FilterModel(
                 name=name,
                 filter_type=filter_type,
@@ -253,8 +247,8 @@ async def add_filter(
                 notes=notes,
             )
             session.add(filter_obj)
-            await session.commit()
-            await session.refresh(filter_obj)
+            session.commit()
+            session.refresh(filter_obj)
             logger.info(f"Added filter: {name}")
             return filter_obj.id
     except Exception as e:
@@ -262,7 +256,7 @@ async def add_filter(
         return None
 
 
-async def get_filters() -> list[dict[str, Any]]:
+def get_filters() -> list[dict[str, Any]]:
     """
     Get all filters.
 
@@ -270,12 +264,11 @@ async def get_filters() -> list[dict[str, Any]]:
         List of filter dictionaries
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(FilterModel).order_by(FilterModel.name)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             filters = result.scalars().all()
 
             return [
@@ -299,7 +292,7 @@ async def get_filters() -> list[dict[str, Any]]:
         return []
 
 
-async def update_filter(
+def update_filter(
     filter_id: int,
     name: str | None = None,
     filter_type: str | None = None,
@@ -326,12 +319,11 @@ async def update_filter(
         True if updated successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(FilterModel).where(FilterModel.id == filter_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             filter_obj = result.scalar_one_or_none()
 
             if not filter_obj:
@@ -354,7 +346,7 @@ async def update_filter(
                 filter_obj.notes = notes
 
             filter_obj.updated_at = datetime.now(UTC)
-            await session.commit()
+            session.commit()
             logger.info(f"Updated filter {filter_id}")
             return True
     except Exception as e:
@@ -362,7 +354,7 @@ async def update_filter(
         return False
 
 
-async def delete_filter(filter_id: int) -> bool:
+def delete_filter(filter_id: int) -> bool:
     """
     Delete a filter.
 
@@ -373,20 +365,19 @@ async def delete_filter(filter_id: int) -> bool:
         True if deleted successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(FilterModel).where(FilterModel.id == filter_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             filter_obj = result.scalar_one_or_none()
 
             if not filter_obj:
                 logger.warning(f"Filter {filter_id} not found")
                 return False
 
-            await session.delete(filter_obj)
-            await session.commit()
+            session.delete(filter_obj)
+            session.commit()
             logger.info(f"Deleted filter {filter_id}")
             return True
     except Exception as e:
@@ -394,7 +385,7 @@ async def delete_filter(filter_id: int) -> bool:
         return False
 
 
-async def add_camera(
+def add_camera(
     name: str,
     sensor_width_mm: float,
     sensor_height_mm: float,
@@ -427,8 +418,7 @@ async def add_camera(
         ID of created camera, or None if creation failed
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             camera = CameraModel(
                 name=name,
                 sensor_width_mm=sensor_width_mm,
@@ -443,8 +433,8 @@ async def add_camera(
                 notes=notes,
             )
             session.add(camera)
-            await session.commit()
-            await session.refresh(camera)
+            session.commit()
+            session.refresh(camera)
             logger.info(f"Added camera: {name}")
             return camera.id
     except Exception as e:
@@ -452,7 +442,7 @@ async def add_camera(
         return None
 
 
-async def get_cameras() -> list[dict[str, Any]]:
+def get_cameras() -> list[dict[str, Any]]:
     """
     Get all cameras.
 
@@ -460,12 +450,11 @@ async def get_cameras() -> list[dict[str, Any]]:
         List of camera dictionaries
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(CameraModel).order_by(CameraModel.name)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             cameras = result.scalars().all()
 
             return [
@@ -493,7 +482,7 @@ async def get_cameras() -> list[dict[str, Any]]:
         return []
 
 
-async def update_camera(
+def update_camera(
     camera_id: int,
     name: str | None = None,
     sensor_width_mm: float | None = None,
@@ -528,12 +517,11 @@ async def update_camera(
         True if updated successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(CameraModel).where(CameraModel.id == camera_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             camera = result.scalar_one_or_none()
 
             if not camera:
@@ -564,7 +552,7 @@ async def update_camera(
                 camera.notes = notes
 
             camera.updated_at = datetime.now(UTC)
-            await session.commit()
+            session.commit()
             logger.info(f"Updated camera {camera_id}")
             return True
     except Exception as e:
@@ -572,7 +560,7 @@ async def update_camera(
         return False
 
 
-async def delete_camera(camera_id: int) -> bool:
+def delete_camera(camera_id: int) -> bool:
     """
     Delete a camera.
 
@@ -583,20 +571,19 @@ async def delete_camera(camera_id: int) -> bool:
         True if deleted successfully, False otherwise
     """
     try:
-        db = get_database()
-        async with db._AsyncSession() as session:
+        with get_db_session() as session:
             from sqlalchemy import select
 
             stmt = select(CameraModel).where(CameraModel.id == camera_id)
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             camera = result.scalar_one_or_none()
 
             if not camera:
                 logger.warning(f"Camera {camera_id} not found")
                 return False
 
-            await session.delete(camera)
-            await session.commit()
+            session.delete(camera)
+            session.commit()
             logger.info(f"Deleted camera {camera_id}")
             return True
     except Exception as e:

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ class VariableStarEvent:
 # To regenerate seed files, run: python scripts/create_seed_files.py
 
 
-async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableStar]:
+def get_known_variable_stars(db_session: Session) -> list[VariableStar]:
     """
     Get list of known variable stars from database.
 
@@ -77,13 +77,13 @@ async def get_known_variable_stars(db_session: AsyncSession) -> list[VariableSta
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import VariableStarModel
 
-    count = await db_session.scalar(select(func.count(VariableStarModel.id)))
+    count = db_session.scalar(select(func.count(VariableStarModel.id)))
     if count == 0:
         raise DatabaseError(
             "No variable stars found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = await db_session.execute(select(VariableStarModel))
+    result = db_session.execute(select(VariableStarModel))
     models = result.scalars().all()
 
     return [model.to_variable_star() for model in models]
@@ -118,8 +118,8 @@ def _calculate_next_event(
     return event_date
 
 
-async def get_variable_star_events(
-    db_session: AsyncSession,
+def get_variable_star_events(
+    db_session: Session,
     location: ObserverLocation,
     months_ahead: int = 6,
     event_type: str | None = None,
@@ -128,6 +128,7 @@ async def get_variable_star_events(
     Get variable star events (minima, maxima, eclipses).
 
     Args:
+        db_session: Database session
         location: Observer location
         months_ahead: How many months ahead to search (default: 6)
         event_type: Filter by event type ("minimum", "maximum") or None for all
@@ -139,7 +140,7 @@ async def get_variable_star_events(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    stars = await get_known_variable_stars(db_session)
+    stars = get_known_variable_stars(db_session)
     for star in stars:
         # Calculate next minimum and maximum
         if event_type is None or event_type == "minimum":

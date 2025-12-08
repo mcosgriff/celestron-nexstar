@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import logging
 import re
-import ssl
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import aiohttp
+import requests
 
 from celestron_nexstar.api.core.exceptions import (
     EphemerisDownloadError,
@@ -82,7 +81,7 @@ class ParsedEphemerisSummary:
     file_type: Literal["planets", "satellites"]  # Which directory it's in
 
 
-async def _fetch_summaries(url: str) -> str:
+def _fetch_summaries(url: str) -> str:
     """Fetch summaries file from NAIF server."""
     try:
         # Create SSL context that uses system certificates
@@ -91,22 +90,15 @@ async def _fetch_summaries(url: str) -> str:
         try:
             import certifi
 
-            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            verify = certifi.where()
         except ImportError:
             # Fallback to system certificates
-            ssl_context = ssl.create_default_context()
+            verify = True
 
-        # Create connector with SSL context
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-
-        async with (
-            aiohttp.ClientSession(connector=connector) as session,
-            session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                raise EphemerisDownloadError(f"HTTP {response.status}")
-            text = await response.text()
-            return str(text)
+        response = requests.get(url, timeout=30, verify=verify)
+        if response.status_code != 200:
+            raise EphemerisDownloadError(f"HTTP {response.status_code}")
+        return response.text
     except Exception as e:
         logger.warning(f"Failed to fetch {url}: {e}")
         raise
@@ -334,7 +326,7 @@ def _generate_file_info(parsed: ParsedEphemerisSummary) -> EphemerisFileInfo:
     )
 
 
-async def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
+def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
     """Load ephemeris file information from NAIF summaries."""
     global _SUMMARIES_CACHE, _CACHE_TIMESTAMP
 
@@ -354,7 +346,7 @@ async def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
     # Fetch if not cached
     if not planets_content:
         try:
-            planets_content = await _fetch_summaries(NAIF_PLANETS_SUMMARY)
+            planets_content = _fetch_summaries(NAIF_PLANETS_SUMMARY)
             _SUMMARIES_CACHE["planets"] = planets_content
         except Exception as e:
             logger.warning(f"Failed to fetch planets summary: {e}")
@@ -362,7 +354,7 @@ async def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
 
     if not satellites_content:
         try:
-            satellites_content = await _fetch_summaries(NAIF_SATELLITES_SUMMARY)
+            satellites_content = _fetch_summaries(NAIF_SATELLITES_SUMMARY)
             _SUMMARIES_CACHE["satellites"] = satellites_content
         except Exception as e:
             logger.warning(f"Failed to fetch satellites summary: {e}")

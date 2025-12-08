@@ -19,7 +19,7 @@ from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    pass
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class Asterism:
 # Removed FAMOUS_ASTERISMS - data is now in asterisms.json seed file and loaded via get_famous_asterisms()
 
 
-async def get_prominent_constellations(db_session: AsyncSession) -> list[Constellation]:
+def get_prominent_constellations(db_session: Session) -> list[Constellation]:
     """
     Get list of prominent constellations from database.
 
@@ -98,19 +98,19 @@ async def get_prominent_constellations(db_session: AsyncSession) -> list[Constel
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import ConstellationModel
 
-    count = await db_session.scalar(select(func.count(ConstellationModel.id)))
+    count = db_session.scalar(select(func.count(ConstellationModel.id)))
     if count == 0:
         raise DatabaseError(
             "No constellations found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = await db_session.execute(select(ConstellationModel))
+    result = db_session.execute(select(ConstellationModel))
     models = result.scalars().all()
 
     return [model.to_constellation() for model in models]
 
 
-async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
+def get_famous_asterisms(db_session: Session) -> list[Asterism]:
     """
     Get list of famous asterisms from database.
 
@@ -128,18 +128,18 @@ async def get_famous_asterisms(db_session: AsyncSession) -> list[Asterism]:
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import AsterismModel
 
-    count = await db_session.scalar(select(func.count(AsterismModel.id)))
+    count = db_session.scalar(select(func.count(AsterismModel.id)))
     if count == 0:
         raise DatabaseError("No asterisms found in database. Please seed the database by running: nexstar data seed")
 
-    result = await db_session.execute(select(AsterismModel))
+    result = db_session.execute(select(AsterismModel))
     models = result.scalars().all()
 
     return [model.to_asterism() for model in models]
 
 
-async def get_visible_constellations(
-    db_session: AsyncSession,
+def get_visible_constellations(
+    db_session: Session,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
@@ -167,7 +167,7 @@ async def get_visible_constellations(
 
     visible = []
 
-    constellations = await get_prominent_constellations(db_session)
+    constellations = get_prominent_constellations(db_session)
     for constellation in constellations:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -187,8 +187,8 @@ async def get_visible_constellations(
     return visible
 
 
-async def get_visible_asterisms(
-    db_session: AsyncSession,
+def get_visible_asterisms(
+    db_session: Session,
     latitude: float,
     longitude: float,
     observation_time: datetime | None = None,
@@ -216,7 +216,7 @@ async def get_visible_asterisms(
 
     visible = []
 
-    asterisms = await get_famous_asterisms(db_session)
+    asterisms = get_famous_asterisms(db_session)
     for asterism in asterisms:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -246,16 +246,8 @@ def populate_constellation_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
-    import asyncio
-
     from celestron_nexstar.api.database.database_seeder import seed_asterisms, seed_constellations
-    from celestron_nexstar.api.database.models import get_db_session
 
     logger.info("Populating constellation database...")
-
-    async def _seed() -> None:
-        async with get_db_session() as async_session:
-            await seed_constellations(async_session, force=True)
-            await seed_asterisms(async_session, force=True)
-
-    asyncio.run(_seed())
+    seed_constellations(db_session, force=True)
+    seed_asterisms(db_session, force=True)

@@ -262,11 +262,9 @@ def _extract_norad_id(line1: str) -> int | None:
         return None
 
 
-async def _fetch_group_tle_from_celestrak(
-    url: str, group_name: str, max_satellites: int
-) -> list[tuple[int, str, str, str]]:
+def _fetch_group_tle_from_celestrak(url: str, group_name: str, max_satellites: int) -> list[tuple[int, str, str, str]]:
     """
-    Fetch TLE data from CelesTrak for a satellite group (async).
+    Fetch TLE data from CelesTrak for a satellite group.
 
     Args:
         url: CelesTrak URL for the group
@@ -279,48 +277,45 @@ async def _fetch_group_tle_from_celestrak(
     Raises:
         RuntimeError: If fetch fails
     """
-    import aiohttp
+    import urllib.request
 
     try:
         logger.info(f"Fetching {group_name} TLE data from CelesTrak...")
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
+        with urllib.request.urlopen(url, timeout=30) as response:
             if response.status != 200:
                 msg = f"Failed to fetch {group_name} TLE: HTTP {response.status}"
                 raise TLEFetchError(msg) from None
 
-            data = await response.text()
+            data = response.read().decode("utf-8")
             lines = data.strip().split("\n")
 
-            # Parse TLE data (format: Name\nLine1\nLine2\nName\nLine1\nLine2...)
-            tle_list = []
-            i = 0
-            while i < len(lines) - 2:
-                name = lines[i].strip()
-                line1 = lines[i + 1].strip()
-                line2 = lines[i + 2].strip()
+        # Parse TLE data (format: Name\nLine1\nLine2\nName\nLine1\nLine2...)
+        tle_list = []
+        i = 0
+        while i < len(lines) - 2:
+            name = lines[i].strip()
+            line1 = lines[i + 1].strip()
+            line2 = lines[i + 2].strip()
 
-                # Validate TLE format
-                if line1.startswith("1 ") and line2.startswith("2 "):
-                    norad_id = _extract_norad_id(line1)
-                    if norad_id:
-                        tle_list.append((norad_id, name, line1, line2))
-                        if len(tle_list) >= max_satellites:
-                            logger.info(f"Limiting to first {max_satellites} {group_name} satellites")
-                            break
+            # Validate TLE format
+            if line1.startswith("1 ") and line2.startswith("2 "):
+                norad_id = _extract_norad_id(line1)
+                if norad_id:
+                    tle_list.append((norad_id, name, line1, line2))
+                    if len(tle_list) >= max_satellites:
+                        logger.info(f"Limiting to first {max_satellites} {group_name} satellites")
+                        break
 
-                i += 3
+            i += 3
 
-            logger.info(f"Fetched {len(tle_list)} {group_name} TLE records")
-            return tle_list
+        logger.info(f"Fetched {len(tle_list)} {group_name} TLE records")
+        return tle_list
 
     except TLEFetchError:
         raise
     except (
-        aiohttp.ClientError,
+        OSError,
         TimeoutError,
         ValueError,
         TypeError,
@@ -328,20 +323,20 @@ async def _fetch_group_tle_from_celestrak(
         UnicodeDecodeError,
         RuntimeError,
     ) as e:
-        # aiohttp.ClientError: HTTP/network errors
+        # OSError: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid data format
         # TypeError: wrong data types
         # IndexError: missing array indices
         # UnicodeDecodeError: encoding errors
-        # RuntimeError: async/await errors
+        # RuntimeError: other errors
         msg = f"Failed to fetch {group_name} TLE: {e}"
         raise TLEFetchError(msg) from e
 
 
-async def _fetch_starlink_tle_from_celestrak() -> list[tuple[int, str, str, str]]:
+def _fetch_starlink_tle_from_celestrak() -> list[tuple[int, str, str, str]]:
     """
-    Fetch Starlink TLE data from CelesTrak (async).
+    Fetch Starlink TLE data from CelesTrak.
 
     Returns:
         List of tuples: (norad_id, satellite_name, line1, line2)
@@ -349,7 +344,7 @@ async def _fetch_starlink_tle_from_celestrak() -> list[tuple[int, str, str, str]
     Raises:
         RuntimeError: If fetch fails
     """
-    return await _fetch_group_tle_from_celestrak(CELESTRAK_STARLINK_URL, "Starlink", STARLINK_MAX_SATELLITES)
+    return _fetch_group_tle_from_celestrak(CELESTRAK_STARLINK_URL, "Starlink", STARLINK_MAX_SATELLITES)
 
 
 def _get_cached_group_tle(
@@ -413,7 +408,7 @@ def _get_cached_starlink_tle(db_session: Session | None = None) -> list[tuple[in
     return _get_cached_group_tle("starlink", STARLINK_MAX_SATELLITES, db_session)
 
 
-async def _store_group_tle(
+def _store_group_tle(
     tle_list: list[tuple[int, str, str, str]],
     group_name: str,
     db_session: Session | None = None,
@@ -464,7 +459,7 @@ async def _store_group_tle(
         db_session.rollback()
 
 
-async def _store_starlink_tle(
+def _store_starlink_tle(
     tle_list: list[tuple[int, str, str, str]],
     db_session: Session | None = None,
 ) -> None:
@@ -475,10 +470,10 @@ async def _store_starlink_tle(
         tle_list: List of tuples: (norad_id, satellite_name, line1, line2)
         db_session: Database session (optional)
     """
-    await _store_group_tle(tle_list, "starlink", db_session)
+    _store_group_tle(tle_list, "starlink", db_session)
 
 
-async def _get_group_satellites(
+def _get_group_satellites(
     url: str,
     group_name: str,
     max_satellites: int,
@@ -507,9 +502,9 @@ async def _get_group_satellites(
         tle_list = [(norad_id, name, line1, line2) for norad_id, name, line1, line2, _ in cached_tles]
     else:
         # Fetch fresh TLE
-        tle_list = await _fetch_group_tle_from_celestrak(url, group_name, max_satellites)
+        tle_list = _fetch_group_tle_from_celestrak(url, group_name, max_satellites)
         # Store in database
-        await _store_group_tle(tle_list, group_name, db_session)
+        _store_group_tle(tle_list, group_name, db_session)
 
     # Create satellite objects
     from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
@@ -534,11 +529,11 @@ async def _get_group_satellites(
     return satellites
 
 
-async def _get_starlink_satellites(
+def _get_starlink_satellites(
     db_session: Session | None = None,
 ) -> list[EarthSatellite]:
     """Get Starlink satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_STARLINK_URL, "starlink", STARLINK_MAX_SATELLITES, db_session)
+    return _get_group_satellites(CELESTRAK_STARLINK_URL, "starlink", STARLINK_MAX_SATELLITES, db_session)
 
 
 def get_starlink_passes(
@@ -565,13 +560,9 @@ def get_starlink_passes(
         List of SatellitePass objects, sorted by rise time
     """
 
-    import asyncio
-
     try:
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        satellites = asyncio.run(_get_starlink_satellites(db_session))
+        satellites = _get_starlink_satellites(db_session)
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
-        # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes
         # ValueError: invalid data format
         # TypeError: wrong data types
@@ -588,18 +579,18 @@ def get_starlink_passes(
     )
 
 
-async def _get_stations_satellites(
+def _get_stations_satellites(
     db_session: Session | None = None,
 ) -> list[EarthSatellite]:
     """Get space station satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_STATIONS_URL, "stations", STATIONS_MAX_SATELLITES, db_session)
+    return _get_group_satellites(CELESTRAK_STATIONS_URL, "stations", STATIONS_MAX_SATELLITES, db_session)
 
 
-async def _get_visual_satellites(
+def _get_visual_satellites(
     db_session: Session | None = None,
 ) -> list[EarthSatellite]:
     """Get visually observable satellite objects with current TLE."""
-    return await _get_group_satellites(CELESTRAK_VISUAL_URL, "visual", VISUAL_MAX_SATELLITES, db_session)
+    return _get_group_satellites(CELESTRAK_VISUAL_URL, "visual", VISUAL_MAX_SATELLITES, db_session)
 
 
 def _calculate_passes_for_satellites(
@@ -745,13 +736,9 @@ def get_stations_passes(
         List of SatellitePass objects, sorted by rise time
     """
 
-    import asyncio
-
     try:
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        satellites = asyncio.run(_get_stations_satellites(db_session))
+        satellites = _get_stations_satellites(db_session)
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
-        # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes
         # ValueError: invalid data format
         # TypeError: wrong data types
@@ -768,7 +755,7 @@ def get_stations_passes(
     )
 
 
-async def get_visual_passes(
+def get_visual_passes(
     location: ObserverLocation,
     days: int = 7,
     min_altitude_deg: float = 10.0,
@@ -794,7 +781,7 @@ async def get_visual_passes(
 
     try:
         # Await async function directly
-        satellites = await _get_visual_satellites(db_session)
+        satellites = _get_visual_satellites(db_session)
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError) as e:
         # RuntimeError: async/await errors, event loop errors
         # AttributeError: missing attributes

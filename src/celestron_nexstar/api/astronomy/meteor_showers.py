@@ -18,7 +18,7 @@ from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
 
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    pass
 
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class MeteorShower:
 # Data from IMO (International Meteor Organization) and reliable sources
 
 
-async def get_all_meteor_showers(db_session: AsyncSession) -> list[MeteorShower]:
+def get_all_meteor_showers(db_session: Session) -> list[MeteorShower]:
     """
     Get list of all major meteor showers from database.
 
@@ -77,13 +77,13 @@ async def get_all_meteor_showers(db_session: AsyncSession) -> list[MeteorShower]
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import MeteorShowerModel
 
-    count = await db_session.scalar(select(func.count(MeteorShowerModel.id)))
+    count = db_session.scalar(select(func.count(MeteorShowerModel.id)))
     if count == 0:
         raise DatabaseError(
             "No meteor showers found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = await db_session.execute(select(MeteorShowerModel))
+    result = db_session.execute(select(MeteorShowerModel))
     models = result.scalars().all()
 
     return [model.to_meteor_shower() for model in models]
@@ -124,7 +124,7 @@ def _is_date_in_range(
         return check_doy >= start_doy or check_doy <= end_doy
 
 
-async def get_active_showers(db_session: AsyncSession, date: datetime | None = None) -> list[MeteorShower]:
+def get_active_showers(db_session: Session, date: datetime | None = None) -> list[MeteorShower]:
     """
     Get meteor showers active on a given date.
 
@@ -142,7 +142,7 @@ async def get_active_showers(db_session: AsyncSession, date: datetime | None = N
     day = date.day
 
     active = []
-    showers = await get_all_meteor_showers(db_session)
+    showers = get_all_meteor_showers(db_session)
     for shower in showers:
         if _is_date_in_range(
             month,
@@ -157,8 +157,8 @@ async def get_active_showers(db_session: AsyncSession, date: datetime | None = N
     return active
 
 
-async def get_peak_showers(
-    db_session: AsyncSession,
+def get_peak_showers(
+    db_session: Session,
     date: datetime | None = None,
     tolerance_days: int = 2,
 ) -> list[MeteorShower]:
@@ -196,7 +196,7 @@ async def get_peak_showers(
         end_day = end_day - 28
 
     peak = []
-    showers = await get_all_meteor_showers(db_session)
+    showers = get_all_meteor_showers(db_session)
     for shower in showers:
         # Check if shower peak overlaps with our date range
         if _is_date_in_range(
@@ -265,15 +265,7 @@ def populate_meteor_shower_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
-    import asyncio
-
     from celestron_nexstar.api.database.database_seeder import seed_meteor_showers
-    from celestron_nexstar.api.database.models import get_db_session
 
     logger.info("Populating meteor shower database...")
-
-    async def _seed() -> None:
-        async with get_db_session() as async_session:
-            await seed_meteor_showers(async_session, force=True)
-
-    asyncio.run(_seed())
+    seed_meteor_showers(db_session, force=True)

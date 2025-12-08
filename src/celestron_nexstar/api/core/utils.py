@@ -37,6 +37,7 @@ __all__ = [
     "format_ra",
     "get_local_timezone",
     "hours_to_hms",
+    "point_in_polygon",
     "ra_dec_to_alt_az",
     "ra_to_degrees",
     "ra_to_hours",
@@ -440,3 +441,46 @@ def format_local_time(dt: datetime, lat: float, lon: float) -> str:
         return local_dt.strftime(f"%Y-%m-%d %I:%M %p {tz_name}")
     else:
         return dt.strftime("%Y-%m-%d %I:%M %p UTC")
+
+
+def point_in_polygon(ra_hours: float, dec_degrees: float, polygon_coords: list[list[float]]) -> bool:
+    """
+    Check if a point (RA, Dec) is inside a polygon using the ray casting algorithm.
+
+    The polygon coordinates should be in GeoJSON format: list of [lon, lat] pairs
+    where lon is RA in degrees (converted from hours) and lat is Dec in degrees.
+
+    Args:
+        ra_hours: Right ascension in hours (0-24)
+        dec_degrees: Declination in degrees (-90 to +90)
+        polygon_coords: List of [lon, lat] coordinate pairs forming the polygon boundary
+
+    Returns:
+        True if point is inside polygon, False otherwise
+    """
+    if not polygon_coords or len(polygon_coords) < 3:
+        return False
+
+    # Convert RA from hours to degrees (longitude in GeoJSON)
+    # GeoJSON uses: 0-12h RA = 0-180° lon, 12-24h RA = -180-0° lon
+    ra_degrees = ra_hours * 15.0  # Convert hours to degrees
+    if ra_degrees > 180:
+        ra_degrees = ra_degrees - 360  # Convert to -180 to 180 range
+
+    x, y = ra_degrees, dec_degrees
+    n = len(polygon_coords)
+    inside = False
+
+    # Ray casting algorithm
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon_coords[i][0], polygon_coords[i][1]
+        xj, yj = polygon_coords[j][0], polygon_coords[j][1]
+
+        # Check if ray crosses edge
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+
+        j = i
+
+    return inside

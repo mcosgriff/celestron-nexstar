@@ -7,10 +7,8 @@ capabilities to recommend what to observe tonight.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
-import warnings as warnings_module
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -249,7 +247,7 @@ class ObservationPlanner:
             # Check database for current weather first, then API if needed
             # fetch_weather already checks database and stores if missing
             with contextlib.suppress(Exception):
-                weather = asyncio.run(fetch_weather(observer_location))
+                weather = fetch_weather(observer_location)
 
         # If not using current weather, try hourly forecast
         if weather is None and target_weather_time:
@@ -257,14 +255,9 @@ class ObservationPlanner:
                 from celestron_nexstar.api.location.weather import WeatherData, fetch_hourly_weather_forecast
 
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
-                # Run async function - this is a sync entry point, so asyncio.run() is safe
-                # Suppress RuntimeWarning about unawaited coroutines - asyncio.run() properly awaits it
-                with warnings_module.catch_warnings():
-                    warnings_module.filterwarnings(
-                        "ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning
-                    )
-                    coro = fetch_hourly_weather_forecast(observer_location, hours=hours_ahead)
-                    hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(coro)
+                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
+                    observer_location, hours=hours_ahead
+                )
 
                 if hourly_forecasts:
                     # Find the forecast closest to target time
@@ -288,20 +281,18 @@ class ObservationPlanner:
                         )
             except Exception as e:
                 # Log the exception for debugging, but don't fail
-                # The coroutine is properly awaited by asyncio.run(), so this warning should not occur
                 logger.debug(f"Could not fetch hourly weather forecast: {e}")
 
         # Fall back to current weather if we don't have forecast data
         # Also prefer current weather if it's significantly different and more recent
         if weather is None:
-            # Run async function - this is a sync entry point, so asyncio.run() is safe
-            weather = asyncio.run(fetch_weather(observer_location))
+            weather = fetch_weather(observer_location)
         elif not use_current_weather:
             # Get current weather to compare - if current weather shows clear skies (0-20%)
             # and forecast shows heavy clouds (>80%), prefer current weather
             # This handles cases where forecast data is stale or incorrect
             try:
-                current_weather = asyncio.run(fetch_weather(observer_location))
+                current_weather = fetch_weather(observer_location)
                 if (
                     current_weather
                     and current_weather.cloud_cover_percent is not None
@@ -336,16 +327,10 @@ class ObservationPlanner:
         is_weather_suitable = weather_status in ("excellent", "good", "fair")
 
         # Get light pollution
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        from typing import Any
+        from celestron_nexstar.api.database.models import get_db_session
 
-        async def _get_light_data() -> Any:
-            from celestron_nexstar.api.database.models import get_db_session
-
-            async with get_db_session() as db_session:
-                return await get_light_pollution_data(db_session, lat, lon)
-
-        lp_data = asyncio.run(_get_light_data())
+        with get_db_session() as db_session:
+            lp_data = get_light_pollution_data(db_session, lat, lon)
 
         # Get telescope configuration
         config = get_current_configuration()
@@ -407,12 +392,7 @@ class ObservationPlanner:
         hours_needed = 72  # 3 days
 
         # Fetch hourly seeing forecast (if available - requires Pro subscription)
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        # Suppress RuntimeWarning about unawaited coroutines - asyncio.run() properly awaits it
-        with warnings_module.catch_warnings():
-            warnings_module.filterwarnings("ignore", message=".*coroutine.*was never awaited", category=RuntimeWarning)
-            coro = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
-            hourly_forecast = asyncio.run(coro)
+        hourly_forecast = fetch_hourly_weather_forecast(observer_location, hours=hours_needed)
         hourly_forecast_tuple = tuple(hourly_forecast)
 
         # Calculate best seeing time windows from hourly forecast
@@ -437,8 +417,7 @@ class ObservationPlanner:
         try:
             from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
 
-            # Run async function - this is a sync entry point, so asyncio.run() is safe
-            swx = asyncio.run(get_space_weather_conditions())
+            swx = get_space_weather_conditions()
             if swx.alerts:
                 space_weather_alerts_list.extend(swx.alerts)
 
@@ -558,8 +537,6 @@ class ObservationPlanner:
             min(2000, max_results * 20) if is_star_query else min(5000, max_results * 50)
         )  # Stars: up to 2k or 20x requested, Others: up to 5k or 50x requested
 
-        import asyncio
-
         # If filtering by a specific object type, pass it to filter_objects
         # This ensures objects without magnitudes are still included for that type
         filter_object_type = None
@@ -569,13 +546,11 @@ class ObservationPlanner:
             if isinstance(target_types, CelestialObjectType):
                 filter_object_type = target_types
 
-        all_objects = asyncio.run(
-            db.filter_objects(
-                object_type=filter_object_type,
-                max_magnitude=max_mag,
-                limit=initial_limit,
-                constellation=constellation,
-            )
+        all_objects = db.filter_objects(
+            object_type=filter_object_type,
+            max_magnitude=max_mag,
+            limit=initial_limit,
+            constellation=constellation,
         )
 
         # Filter by target types if specified

@@ -7,7 +7,6 @@ Includes geocoding support for city/address lookups.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -131,8 +130,7 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
 
                     if Confirm.ask("Detect location automatically?", default=True, console=console):
                         try:
-                            # Run async function - this is a sync entry point, so asyncio.run() is safe
-                            detected = asyncio.run(detect_location_automatically())
+                            detected = detect_location_automatically()
                             console.print(f"\n[green]✓[/green] Detected: {detected.name}")
                             console.print(
                                 f"[dim]Coordinates: {detected.latitude:.4f}°, {detected.longitude:.4f}°[/dim]\n"
@@ -279,11 +277,11 @@ def clear_observer_location() -> None:
 # Note: Postconditions on async functions check the coroutine, not the awaited result
 # Latitude/longitude validation happens in the function implementation
 @deal.raises(GeocodingError, LocationNotFoundError)
-async def geocode_location(query: str) -> ObserverLocation:
+def geocode_location(query: str) -> ObserverLocation:
     """
     Geocode a location from city name, address, or ZIP code.
 
-    Uses OpenStreetMap's Nominatim service via aiohttp.
+    Uses OpenStreetMap's Nominatim service via requests.
 
     Args:
         query: Location query (e.g., "New York, NY", "90210", "London, UK")
@@ -294,7 +292,7 @@ async def geocode_location(query: str) -> ObserverLocation:
     Raises:
         ValueError: If location could not be found or geocoding failed
     """
-    import aiohttp
+    import requests
 
     try:
         # Use Nominatim API directly
@@ -309,14 +307,11 @@ async def geocode_location(query: str) -> ObserverLocation:
             "User-Agent": "celestron-nexstar-cli",
         }
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response,
-        ):
-            if response.status != 200:
-                raise GeocodingError(f"Geocoding API returned HTTP {response.status}")
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        if response.status_code != 200:
+            raise GeocodingError(f"Geocoding API returned HTTP {response.status_code}")
 
-            data = await response.json()
+        data = response.json()
 
         if not data or len(data) == 0:
             raise LocationNotFoundError(f"Could not find location: '{query}'") from None
@@ -341,8 +336,8 @@ async def geocode_location(query: str) -> ObserverLocation:
 
     except (GeocodingError, LocationNotFoundError):
         raise
-    except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
-        # aiohttp.ClientError: HTTP/network errors
+    except (requests.RequestException, TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid coordinates or data format
         # TypeError: wrong data types
@@ -354,10 +349,9 @@ async def geocode_location(query: str) -> ObserverLocation:
 
 @deal.pre(lambda queries: isinstance(queries, list) and len(queries) > 0, message="Queries must be non-empty list")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, dict), message="Must return dictionary")
-# Note: Postconditions on async functions check the coroutine, not the awaited result
-async def geocode_location_batch(queries: list[str]) -> dict[str, ObserverLocation]:
+def geocode_location_batch(queries: list[str]) -> dict[str, ObserverLocation]:
     """
-    Geocode multiple locations concurrently.
+    Geocode multiple locations sequentially.
 
     Args:
         queries: List of location queries
@@ -365,20 +359,18 @@ async def geocode_location_batch(queries: list[str]) -> dict[str, ObserverLocati
     Returns:
         Dictionary mapping queries to ObserverLocation (failed queries excluded)
     """
-    tasks = [geocode_location(query) for query in queries]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
     data_map: dict[str, ObserverLocation] = {}
-    for query, result in zip(queries, results, strict=False):
-        if isinstance(result, Exception):
-            logger.warning(f"Error geocoding '{query}': {result}")
-        elif isinstance(result, ObserverLocation):
+    for query in queries:
+        try:
+            result = geocode_location(query)
             data_map[query] = result
+        except Exception as e:
+            logger.warning(f"Error geocoding '{query}': {e}")
 
     return data_map
 
 
-async def _get_location_from_ip() -> ObserverLocation | None:
+def _get_location_from_ip() -> ObserverLocation | None:
     """
     Get approximate location from IP address using a free geolocation service.
 
@@ -387,7 +379,7 @@ async def _get_location_from_ip() -> ObserverLocation | None:
     Returns:
         ObserverLocation if successful, None otherwise
     """
-    import aiohttp
+    import requests
 
     try:
         # Use ipapi.co (free, no API key required, rate limited)
@@ -396,15 +388,12 @@ async def _get_location_from_ip() -> ObserverLocation | None:
             "User-Agent": "celestron-nexstar-cli",
         }
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response,
-        ):
-            if response.status != 200:
-                logger.debug(f"IP geolocation API returned HTTP {response.status}")
-                return None
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            logger.debug(f"IP geolocation API returned HTTP {response.status_code}")
+            return None
 
-            data = await response.json()
+        data = response.json()
 
         if "latitude" not in data or "longitude" not in data:
             logger.debug("IP geolocation response missing coordinates")
@@ -434,34 +423,33 @@ async def _get_location_from_ip() -> ObserverLocation | None:
         )
 
     except (
-        aiohttp.ClientError,
+        requests.RequestException,
         TimeoutError,
         ValueError,
         TypeError,
         KeyError,
         IndexError,
         AttributeError,
-        RuntimeError,
     ) as e:
-        # aiohttp.ClientError: HTTP/network errors
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid coordinates or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
         # IndexError: missing array indices
         # AttributeError: missing attributes in response
-        # RuntimeError: async/await errors
         logger.debug(f"Failed to get location from IP: {e}")
         return None
 
 
-async def _get_location_from_system() -> ObserverLocation | None:
+def _get_location_from_system() -> ObserverLocation | None:
     """
     Try to get location from system location services (platform-specific).
 
     Returns:
         ObserverLocation if successful, None otherwise
     """
+    import asyncio
     import platform
 
     system = platform.system().lower()
@@ -553,7 +541,8 @@ async def _get_location_from_system() -> ObserverLocation | None:
             import winrt.windows.devices.geolocation as geolocation  # type: ignore[import-untyped]
 
             locator = geolocation.Geolocator()
-            location = await locator.get_geoposition_async()
+            # Windows Runtime async methods need to be run in an event loop
+            location = asyncio.run(locator.get_geoposition_async())
 
             return ObserverLocation(
                 latitude=location.coordinate.latitude,
@@ -578,7 +567,7 @@ async def _get_location_from_system() -> ObserverLocation | None:
 
 
 @deal.raises(LocationNotSetError)
-async def detect_location_automatically() -> ObserverLocation:
+def detect_location_automatically() -> ObserverLocation:
     """
     Automatically detect user's location.
 
@@ -593,13 +582,13 @@ async def detect_location_automatically() -> ObserverLocation:
         ValueError: If location could not be detected by any method
     """
     # Try system location services first (most accurate)
-    location = await _get_location_from_system()
+    location = _get_location_from_system()
     if location:
         logger.info("Detected location from system services")
         return location
 
     # Fall back to IP-based geolocation
-    location = await _get_location_from_ip()
+    location = _get_location_from_ip()
     if location:
         logger.info("Detected location from IP address")
         return location

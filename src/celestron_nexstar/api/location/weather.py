@@ -7,14 +7,13 @@ Uses Open-Meteo API (free, no API key required).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import aiohttp
 import numpy as np
+import requests
 
 from celestron_nexstar.api.database.models import HistoricalWeatherModel, WeatherForecastModel
 from celestron_nexstar.api.location.observer import ObserverLocation
@@ -356,7 +355,7 @@ def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
         return fetch_age_hours > 12
 
 
-async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
+def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
     """
     Fetch hourly weather forecast and calculate seeing conditions for each hour.
 
@@ -375,39 +374,33 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
     forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
 
     # Helper function to check database
-    async def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
+    def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
         """Check database for cached forecasts. Returns (forecasts, now)."""
         from sqlalchemy import and_, select, text
 
         from celestron_nexstar.api.database.database import get_database
-        from celestron_nexstar.api.database.models import Base, WeatherForecastModel
+        from celestron_nexstar.api.database.models import Base, WeatherForecastModel, get_db_session
 
         db = get_database()
 
         # Ensure weather_forecast table exists (create if migration hasn't run yet)
         try:
-
-            async def _check_and_create_table() -> None:
-                async with db._engine.begin() as conn:
-                    # Check if table exists by trying to query it
-                    # If it doesn't exist, create it
-                    try:
-                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                        # AttributeError: missing connection attributes
-                        # RuntimeError: database errors, table doesn't exist
-                        # ValueError: invalid SQL
-                        # TypeError: wrong argument types
-                        # Table doesn't exist, create it
-                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                        )
+            with get_db_session() as session:
+                # Check if table exists by trying to query it
+                # If it doesn't exist, create it
+                try:
+                    session.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
+                except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                    # AttributeError: missing connection attributes
+                    # RuntimeError: database errors, table doesn't exist
+                    # ValueError: invalid SQL
+                    # TypeError: wrong argument types
+                    # Table doesn't exist, create it
+                    logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
+                    Base.metadata.create_all(
+                        db._engine,
+                        tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
                     )
-
-            await _check_and_create_table()
         except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
             # AttributeError: missing database attributes
             # RuntimeError: database connection/creation errors
@@ -420,7 +413,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
         existing_forecasts = []
 
         try:
-            async with db._AsyncSession() as session:
+            with get_db_session() as session:
                 # Query for forecasts for this location (we'll filter stale ones after)
                 # Get a wider range to check staleness intelligently
                 stmt = (
@@ -435,7 +428,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp)
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 all_forecasts = result.scalars().all()
 
                 # Filter out stale forecasts using intelligent staleness check
@@ -453,7 +446,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
     # Check database for cached data
     try:
-        existing_forecasts, now = await _check_database_cache()
+        existing_forecasts, now = _check_database_cache()
 
         # If we have enough non-stale forecasts covering the requested hours, return them
         if existing_forecasts and len(existing_forecasts) >= hours:
@@ -515,7 +508,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
         # Continue to fetch from API
         now = datetime.now(UTC)
 
-    # Fetch from API using aiohttp (async)
+    # Fetch from API using requests
     try:
         url = "https://api.open-meteo.com/v1/forecast"
         params: dict[str, str | int | float | list[str]] = {
@@ -528,15 +521,12 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             "temperature_unit": "fahrenheit",
         }
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                logger.warning(f"Open-Meteo API returned status {response.status}")
-                return []
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo API returned status {response.status_code}")
+            return []
 
-            data = await response.json()
+        data = response.json()
 
         # Process hourly data from JSON response
         hourly = data.get("hourly", {})
@@ -615,17 +605,17 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
             )
 
         # Store forecasts in database (replace stale data)
-        async def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
+        def _store_forecasts_in_db(forecasts_to_store: list[HourlySeeingForecast]) -> None:
             """Store forecasts in database."""
-            from sqlalchemy import and_, select
+            from sqlalchemy import and_, delete, select
 
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.database.models import WeatherForecastModel
+            from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
             from celestron_nexstar.api.location.geohash_utils import encode
 
-            db = get_database()
+            get_database()
             try:
-                async with db._AsyncSession() as session:
+                with get_db_session() as session:
                     # Delete stale forecasts for this location using intelligent staleness check
                     now_db = datetime.now(UTC)
                     # Get all forecasts for this location to check staleness
@@ -635,7 +625,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                             WeatherForecastModel.longitude == location.longitude,
                         )
                     )
-                    result = await session.execute(stmt)
+                    result = session.execute(stmt)
                     all_location_forecasts = result.scalars().all()
 
                     # Collect IDs of stale forecasts for bulk delete
@@ -643,10 +633,8 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
 
                     # Bulk delete stale forecasts to avoid row count warnings
                     if stale_ids:
-                        from sqlalchemy import delete
-
                         delete_stmt = delete(WeatherForecastModel).where(WeatherForecastModel.id.in_(stale_ids))
-                        await session.execute(delete_stmt)
+                        session.execute(delete_stmt)
 
                     # Insert new forecasts
                     for forecast_item in forecasts_to_store:
@@ -662,7 +650,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                             )
                             .limit(1)
                         )
-                        result = await session.execute(stmt)
+                        result = session.execute(stmt)
                         existing = result.scalar_one_or_none()
 
                         # Calculate geohash for this location (precision 9 for ~5m accuracy)
@@ -695,7 +683,7 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                             )
                             session.add(db_forecast)
 
-                    await session.commit()
+                    session.commit()
                     logger.debug(f"Stored {len(forecasts_to_store)} weather forecasts in database")
             except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                 # AttributeError: missing database/model attributes
@@ -706,10 +694,10 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
                 logger.warning(f"Error storing weather forecasts in database: {e}")
 
         if forecasts:
-            await _store_forecasts_in_db(forecasts)
+            _store_forecasts_in_db(forecasts)
 
     except (
-        aiohttp.ClientError,
+        requests.RequestException,
         TimeoutError,
         ValueError,
         TypeError,
@@ -718,21 +706,21 @@ async def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int =
         AttributeError,
         RuntimeError,
     ) as e:
-        # aiohttp.ClientError: HTTP/network errors
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
         # IndexError: missing array indices
         # AttributeError: missing attributes in response
-        # RuntimeError: async/await errors
+        # RuntimeError: other errors
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
         return []
 
     return forecasts
 
 
-async def fetch_weather(location: ObserverLocation) -> WeatherData:
+def fetch_weather(location: ObserverLocation) -> WeatherData:
     """
     Fetch current weather data for the observer location.
 
@@ -751,39 +739,33 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
     current_hour_end = current_hour_start + timedelta(hours=1)
 
     # Helper function to check database
-    async def _check_database_cache() -> WeatherForecastModel | None:
+    def _check_database_cache() -> WeatherForecastModel | None:
         """Check database for cached weather. Returns cached forecast or None."""
         from sqlalchemy import and_, select, text
 
         from celestron_nexstar.api.database.database import get_database
-        from celestron_nexstar.api.database.models import Base, WeatherForecastModel
+        from celestron_nexstar.api.database.models import Base, WeatherForecastModel, get_db_session
 
         db = get_database()
 
         # Ensure weather_forecast table exists
         try:
-
-            async def _check_and_create_table() -> None:
-                async with db._engine.begin() as conn:
-                    # Check if table exists by trying to query it
-                    # If it doesn't exist, create it
-                    try:
-                        await conn.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                    except (AttributeError, RuntimeError, ValueError, TypeError) as e:
-                        # AttributeError: missing connection attributes
-                        # RuntimeError: database errors, table doesn't exist
-                        # ValueError: invalid SQL
-                        # TypeError: wrong argument types
-                        # Table doesn't exist, create it
-                        logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
-                    await conn.run_sync(
-                        lambda sync_conn: Base.metadata.create_all(
-                            sync_conn,
-                            tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
-                        )
+            with get_db_session() as session:
+                # Check if table exists by trying to query it
+                # If it doesn't exist, create it
+                try:
+                    session.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
+                except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                    # AttributeError: missing connection attributes
+                    # RuntimeError: database errors, table doesn't exist
+                    # ValueError: invalid SQL
+                    # TypeError: wrong argument types
+                    # Table doesn't exist, create it
+                    logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
+                    Base.metadata.create_all(
+                        db._engine,
+                        tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
                     )
-
-            await _check_and_create_table()
         except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
             # AttributeError: missing database attributes
             # RuntimeError: database connection/creation errors
@@ -793,7 +775,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         try:
-            async with db._AsyncSession() as session:
+            with get_db_session() as session:
                 # Look for forecasts for the current hour
                 stmt = (
                     select(WeatherForecastModel)
@@ -807,7 +789,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp.desc())
                 )
-                result = await session.execute(stmt)
+                result = session.execute(stmt)
                 candidates = result.scalars().all()
 
                 # Find the first non-stale forecast
@@ -827,7 +809,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
 
     # Check database for current weather (within the current hour)
     try:
-        existing = await _check_database_cache()
+        existing = _check_database_cache()
 
         if existing:
             # Convert database model to WeatherData
@@ -878,14 +860,11 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
             "forecast_days": 1,
         }
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                return WeatherData(error=f"HTTP {response.status}")
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            return WeatherData(error=f"HTTP {response.status_code}")
 
-            data = await response.json()
+        data = response.json()
 
         # Parse response
         current = data.get("current", {})
@@ -958,22 +937,22 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
         # Store in database for future use
         if not weather_data.error:
 
-            async def _store_weather_in_db(weather_to_store: WeatherData) -> None:
+            def _store_weather_in_db(weather_to_store: WeatherData) -> None:
                 """Store weather in database."""
                 from sqlalchemy import and_, select
 
                 from celestron_nexstar.api.database.database import get_database
-                from celestron_nexstar.api.database.models import WeatherForecastModel
+                from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
                 from celestron_nexstar.api.location.geohash_utils import encode
 
-                db = get_database()
+                get_database()
                 try:
                     location_geohash = encode(location.latitude, location.longitude, precision=9)
                     now_db = datetime.now(UTC)
                     current_hour_start_db = now_db.replace(minute=0, second=0, microsecond=0)
                     current_hour_end_db = current_hour_start_db + timedelta(hours=1)
 
-                    async with db._AsyncSession() as session:
+                    with get_db_session() as session:
                         # Check if forecast already exists for this hour
                         stmt = (
                             select(WeatherForecastModel)
@@ -987,7 +966,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                             )
                             .limit(1)
                         )
-                        result = await session.execute(stmt)
+                        result = session.execute(stmt)
                         existing = result.scalar_one_or_none()
 
                         # Calculate seeing score
@@ -1020,7 +999,7 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                             )
                             session.add(db_forecast)
 
-                        await session.commit()
+                        session.commit()
                         logger.debug("Stored current weather in database")
                 except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                     # AttributeError: missing database/model attributes
@@ -1030,12 +1009,12 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
                     # KeyError: missing keys in data
                     logger.warning(f"Error storing current weather in database: {e}")
 
-            await _store_weather_in_db(weather_data)
+            _store_weather_in_db(weather_data)
 
         return weather_data
 
     except (
-        aiohttp.ClientError,
+        requests.RequestException,
         TimeoutError,
         ValueError,
         TypeError,
@@ -1044,21 +1023,21 @@ async def fetch_weather(location: ObserverLocation) -> WeatherData:
         AttributeError,
         RuntimeError,
     ) as e:
-        # aiohttp.ClientError: HTTP/network errors
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
         # IndexError: missing array indices
         # AttributeError: missing attributes in response
-        # RuntimeError: async/await errors
-        logger.exception("Error fetching weather from Open-Meteo (async)")
+        # RuntimeError: other errors
+        logger.exception("Error fetching weather from Open-Meteo")
         return WeatherData(error=f"Error fetching weather: {e}")
 
 
-async def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[ObserverLocation, WeatherData]:
+def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[ObserverLocation, WeatherData]:
     """
-    Fetch weather data for multiple locations concurrently.
+    Fetch weather data for multiple locations.
 
     Args:
         locations: List of observer locations
@@ -1066,24 +1045,19 @@ async def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[Observe
     Returns:
         Dictionary mapping locations to WeatherData
     """
-    tasks = [fetch_weather(loc) for loc in locations]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
     data_map: dict[ObserverLocation, WeatherData] = {}
-    for location, result in zip(locations, results, strict=False):
-        if isinstance(result, Exception):
-            logger.error(f"Error fetching weather for {location}: {result}")
-            data_map[location] = WeatherData(error=f"Error: {result}")
-        elif isinstance(result, WeatherData):
+    for location in locations:
+        try:
+            result = fetch_weather(location)
             data_map[location] = result
-        else:
-            logger.warning(f"Unexpected result type for {location}: {type(result)}")
-            data_map[location] = WeatherData(error="Unexpected error")
+        except Exception as e:
+            logger.error(f"Error fetching weather for {location}: {e}")
+            data_map[location] = WeatherData(error=f"Error: {e}")
 
     return data_map
 
 
-async def fetch_historical_weather_climatology(
+def fetch_historical_weather_climatology(
     location: ObserverLocation,
     start_year: int = 2000,
     end_year: int | None = None,
@@ -1119,12 +1093,14 @@ async def fetch_historical_weather_climatology(
     from celestron_nexstar.api.database.database import get_database
     from celestron_nexstar.api.location.geohash_utils import encode
 
-    db = get_database()
+    get_database()
     monthly_stats: dict[int, dict[str, float | None]] = {}
     months_in_db: set[int] = set()
 
     try:
-        async with db._AsyncSession() as session:
+        from celestron_nexstar.api.database.models import get_db_session
+
+        with get_db_session() as session:
             # Check what months we have in the database
             stmt = (
                 select(HistoricalWeatherModel)
@@ -1136,7 +1112,7 @@ async def fetch_historical_weather_climatology(
                 )
                 .order_by(HistoricalWeatherModel.month)
             )
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             existing_data = result.scalars().all()
 
             # Build dictionary of months we have
@@ -1193,15 +1169,12 @@ async def fetch_historical_weather_climatology(
             "timezone": "auto",
         }
 
-        async with (
-            aiohttp.ClientSession() as http_session,
-            http_session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response,
-        ):
-            if response.status != 200:
-                logger.warning(f"Open-Meteo Historical API returned status {response.status}")
-                return None
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo Historical API returned status {response.status_code}")
+            return None
 
-            data = await response.json()
+        data = response.json()
 
         # Process hourly data to calculate monthly statistics
         hourly = data.get("hourly", {})
@@ -1294,7 +1267,9 @@ async def fetch_historical_weather_climatology(
 
             # Store in database
             try:
-                async with db._AsyncSession() as session:
+                from celestron_nexstar.api.database.models import get_db_session
+
+                with get_db_session() as session:
                     # Check if record exists
                     stmt = (
                         select(HistoricalWeatherModel)
@@ -1307,7 +1282,7 @@ async def fetch_historical_weather_climatology(
                         )
                         .limit(1)
                     )
-                    result = await session.execute(stmt)
+                    result = session.execute(stmt)
                     existing = result.scalar_one_or_none()
 
                     if existing:
@@ -1343,7 +1318,7 @@ async def fetch_historical_weather_climatology(
                         )
                         session.add(new_record)
 
-                    await session.commit()
+                    session.commit()
             except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
                 # AttributeError: missing database/model attributes
                 # RuntimeError: database connection/commit errors
@@ -1356,7 +1331,7 @@ async def fetch_historical_weather_climatology(
         return monthly_stats
 
     except (
-        aiohttp.ClientError,
+        requests.RequestException,
         TimeoutError,
         ValueError,
         TypeError,
@@ -1365,19 +1340,19 @@ async def fetch_historical_weather_climatology(
         AttributeError,
         RuntimeError,
     ) as e:
-        # aiohttp.ClientError: HTTP/network errors
+        # requests.RequestException: HTTP/network errors
         # TimeoutError: request timeout
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
         # IndexError: missing array indices
         # AttributeError: missing attributes in response
-        # RuntimeError: async/await errors
+        # RuntimeError: other errors
         logger.warning(f"Error fetching historical weather from Open-Meteo: {e}")
         return None
 
 
-async def get_historical_cloud_cover_for_month(
+def get_historical_cloud_cover_for_month(
     location: ObserverLocation,
     month: int,
     use_tighter_range: bool = True,
@@ -1401,9 +1376,11 @@ async def get_historical_cloud_cover_for_month(
 
     from celestron_nexstar.api.database.database import get_database
 
-    db = get_database()
+    get_database()
     try:
-        async with db._AsyncSession() as session:
+        from celestron_nexstar.api.database.models import get_db_session
+
+        with get_db_session() as session:
             stmt = (
                 select(HistoricalWeatherModel)
                 .where(
@@ -1415,7 +1392,7 @@ async def get_historical_cloud_cover_for_month(
                 )
                 .limit(1)
             )
-            result = await session.execute(stmt)
+            result = session.execute(stmt)
             record = result.scalar_one_or_none()
 
             if record:
@@ -1448,7 +1425,7 @@ async def get_historical_cloud_cover_for_month(
         logger.debug(f"Error checking database for historical weather month {month}: {e}")
 
     # If not in database, try to fetch all months (more efficient than fetching one at a time)
-    monthly_stats = await fetch_historical_weather_climatology(location)
+    monthly_stats = fetch_historical_weather_climatology(location)
     if monthly_stats and month in monthly_stats:
         stats = monthly_stats[month]
         if use_tighter_range:

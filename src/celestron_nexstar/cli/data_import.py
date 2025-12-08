@@ -11,7 +11,7 @@ import json
 import ssl
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar
@@ -34,45 +34,7 @@ console = Console()
 T = TypeVar("T")
 
 
-def _run_async_safe(coro: Coroutine[Any, Any, T]) -> T:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    import asyncio
-    import concurrent.futures
-    import threading
-
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[T] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
+# _run_async_safe removed - all database functions are now synchronous
 
 
 def get_cache_dir() -> Path:
@@ -85,6 +47,112 @@ def get_cache_dir() -> Path:
     cache_dir = Path.home() / ".cache" / "celestron-nexstar" / "celestial-data"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
+
+
+def geojson_to_spatialite_geometry_async(geojson_geom: dict[str, Any], db_session: Any) -> Any | None:
+    """
+    Convert GeoJSON geometry to SpatiaLite geometry BLOB (synchronous version).
+
+    Args:
+        geojson_geom: GeoJSON geometry object (dict with 'type' and 'coordinates')
+        db_session: SQLAlchemy session with GeoAlchemy2/SpatiaLite loaded
+
+    Returns:
+        SpatiaLite geometry BLOB or None if conversion fails
+    """
+    from sqlalchemy import text
+
+    geom_type = geojson_geom.get("type", "")
+    coords = geojson_geom.get("coordinates", [])
+
+    if not geom_type or not coords:
+        return None
+
+    try:
+        # Convert GeoJSON coordinates to WKT (Well-Known Text) format
+        # GeoJSON uses [lon, lat] = [RA_deg, Dec_deg] for celestial coordinates
+        wkt = None
+
+        if geom_type == "Point":
+            if len(coords) >= 2:
+                ra_deg, dec_deg = float(coords[0]), float(coords[1])
+                wkt = f"POINT({ra_deg} {dec_deg})"
+
+        elif geom_type == "LineString":
+            points = []
+            for coord in coords:
+                if len(coord) >= 2:
+                    ra_deg, dec_deg = float(coord[0]), float(coord[1])
+                    points.append(f"{ra_deg} {dec_deg}")
+            if points:
+                wkt = f"LINESTRING({', '.join(points)})"
+
+        elif geom_type == "MultiLineString":
+            lines = []
+            for line_coords in coords:
+                points = []
+                for coord in line_coords:
+                    if len(coord) >= 2:
+                        ra_deg, dec_deg = float(coord[0]), float(coord[1])
+                        points.append(f"{ra_deg} {dec_deg}")
+                if points:
+                    lines.append(f"({', '.join(points)})")
+            if lines:
+                wkt = f"MULTILINESTRING({', '.join(lines)})"
+
+        elif geom_type == "Polygon":
+            # Polygon: [[[lon, lat], ...], ...] - first ring is exterior, rest are holes
+            rings = []
+            for ring_coords in coords:
+                points = []
+                for coord in ring_coords:
+                    if len(coord) >= 2:
+                        ra_deg, dec_deg = float(coord[0]), float(coord[1])
+                        points.append(f"{ra_deg} {dec_deg}")
+                if points:
+                    # Close the ring (first point = last point)
+                    if points[0] != points[-1]:
+                        points.append(points[0])
+                    rings.append(f"({', '.join(points)})")
+            if rings:
+                wkt = f"POLYGON({', '.join(rings)})"
+
+        elif geom_type == "MultiPolygon":
+            # MultiPolygon: [[[[lon, lat], ...], ...], ...]
+            polygons = []
+            for poly_coords in coords:
+                rings = []
+                for ring_coords in poly_coords:
+                    points = []
+                    for coord in ring_coords:
+                        if len(coord) >= 2:
+                            ra_deg, dec_deg = float(coord[0]), float(coord[1])
+                            points.append(f"{ra_deg} {dec_deg}")
+                    if points:
+                        # Close the ring
+                        if points[0] != points[-1]:
+                            points.append(points[0])
+                        rings.append(f"({', '.join(points)})")
+                if rings:
+                    polygons.append(f"({', '.join(rings)})")
+            if polygons:
+                wkt = f"MULTIPOLYGON({', '.join(polygons)})"
+
+        if not wkt:
+            return None
+
+        # Use GeoAlchemy2's ST_GeomFromText function (automatically translated to SpatiaLite)
+        # SRID 0 = no projection (we're using angular coordinates directly)
+        result = db_session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
+        geometry = result.scalar()
+
+        if geometry:
+            return bytes(geometry) if isinstance(geometry, (bytes, bytearray)) else geometry
+        return None
+
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to convert geometry to SpatiaLite: {e}[/yellow]")
+        return None
 
 
 @dataclass
@@ -220,7 +288,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                 catalog_number = parse_catalog_number(name, catalog_name)
 
                 # Check for duplicates before inserting
-                existing = _run_async_safe(db.get_by_name(name))
+                existing = db.get_by_name(name)
                 if existing:
                     skipped += 1
                     console.print(f"[dim]Skipping duplicate: {name} (already exists)[/dim]")
@@ -228,9 +296,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     continue
 
                 # Also check by catalog + catalog_number if available
-                if catalog_number is not None and _run_async_safe(
-                    db.exists_by_catalog_number(catalog_name, catalog_number)
-                ):
+                if catalog_number is not None and db.exists_by_catalog_number(catalog_name, catalog_number):
                     skipped += 1
                     console.print(f"[dim]Skipping duplicate: {catalog_name} {catalog_number} (already exists)[/dim]")
                     progress.advance(task)
@@ -241,22 +307,20 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
 
                 # Insert into database
                 try:
-                    _run_async_safe(
-                        db.insert_object(
-                            name=name,
-                            catalog=catalog_name,
-                            ra_hours=ra_hours,
-                            dec_degrees=dec_degrees,
-                            object_type=object_type,
-                            magnitude=magnitude,
-                            common_name=common_name,
-                            catalog_number=catalog_number,
-                            description=description,
-                            constellation=constellation,  # Read from YAML if present
-                            is_dynamic=is_dynamic,
-                            ephemeris_name=name if is_dynamic else None,
-                            parent_planet=parent_planet,
-                        )
+                    db.insert_object(
+                        name=name,
+                        catalog=catalog_name,
+                        ra_hours=ra_hours,
+                        dec_degrees=dec_degrees,
+                        object_type=object_type,
+                        magnitude=magnitude,
+                        common_name=common_name,
+                        catalog_number=catalog_number,
+                        description=description,
+                        constellation=constellation,  # Read from YAML if present
+                        is_dynamic=is_dynamic,
+                        ephemeris_name=name if is_dynamic else None,
+                        parent_planet=parent_planet,
                     )
 
                     imported += 1
@@ -341,7 +405,7 @@ def import_celestial_data_geojson(
 
     # Pre-fetch existing objects for deduplication
     console.print(f"[dim]Loading existing {catalog} objects for deduplication...[/dim]")
-    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog=catalog))
+    existing_objects = db.get_existing_objects_set(catalog=catalog)
     console.print(f"[dim]Found {len(existing_objects):,} existing {catalog} objects[/dim]")
 
     imported = 0
@@ -568,7 +632,7 @@ def import_celestial_data_geojson(
         for i in range(0, len(deduplicated_objects), batch_size):
             batch = deduplicated_objects[i : i + batch_size]
             try:
-                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
                 progress.advance(task)
@@ -658,20 +722,24 @@ KNOWN_STAR_CONSTELLATIONS: dict[str, str] = {
 }
 
 
-def _find_constellation_by_coordinates(
-    ra_hours: float, dec_degrees: float, constellations: list[Any], star_name: str | None = None
+def _find_constellation_by_coordinates_async(
+    ra_hours: float,
+    dec_degrees: float,
+    constellations: list[Any],
+    star_name: str | None = None,
 ) -> str | None:
     """
     Find constellation for a star based on coordinates.
 
-    Uses known mappings for well-known stars, then constellation boundaries if available,
-    otherwise finds nearest constellation center.
+    Uses known mappings for well-known stars, then SpatiaLite spatial functions for accurate
+    point-in-polygon checks, then constellation boundaries, otherwise finds nearest constellation center.
 
     Args:
         ra_hours: Star's right ascension in hours
         dec_degrees: Star's declination in degrees
         constellations: List of ConstellationModel objects with boundary data
         star_name: Optional star name for known star lookup
+        db_session: Optional database session for SpatiaLite queries
 
     Returns:
         Constellation name or None if not found
@@ -679,9 +747,40 @@ def _find_constellation_by_coordinates(
     # First, check known star mappings for well-known stars
     if star_name and star_name in KNOWN_STAR_CONSTELLATIONS:
         return KNOWN_STAR_CONSTELLATIONS[star_name]
+
+    from sqlalchemy import select
+
     from celestron_nexstar.api.database.models import ConstellationModel
 
-    # First, try to find a constellation whose boundaries contain this star
+    # Convert RA from hours to degrees for SpatiaLite (treating as longitude)
+    ra_degrees = ra_hours * 15.0
+
+    # Get database session for SpatiaLite queries
+    from celestron_nexstar.api.database.models import get_db_session
+
+    with get_db_session() as db_session:
+        # First, try GeoAlchemy2 spatial query (most accurate)
+        try:
+            from geoalchemy2 import functions
+
+            # Create a point geometry for the star position
+            point_wkt = f"POINT({ra_degrees} {dec_degrees})"
+
+            # Query constellations where the point is within the geometry
+            # Use ST_Contains (GeoAlchemy2 automatically translates to SpatiaLite Contains)
+            stmt = select(ConstellationModel.name).where(
+                functions.ST_Contains(ConstellationModel.geometry, functions.ST_GeomFromText(point_wkt, 0))
+            )
+
+            result = db_session.execute(stmt)
+            constellation_name = result.scalar_one_or_none()
+            if constellation_name:
+                return constellation_name
+        except Exception:
+            # If spatial query fails, fall back to other methods
+            pass
+
+    # Fallback to bounding box check (faster but less accurate)
     for const in constellations:
         if not isinstance(const, ConstellationModel):
             continue
@@ -790,21 +889,21 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
 
     # Pre-fetch existing objects for deduplication
     console.print("[dim]Loading existing stars for deduplication...[/dim]")
-    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog="celestial_stars"))
+    existing_objects = db.get_existing_objects_set(catalog="celestial_stars")
     console.print(f"[dim]Found {len(existing_objects):,} existing stars[/dim]")
 
     # Pre-load constellations for coordinate-based lookup
     console.print("[dim]Loading constellations for coordinate-based lookup...[/dim]")
     from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
 
-    async def _load_constellations() -> list[ConstellationModel]:
-        async with get_db_session() as session:
+    def _load_constellations() -> list[ConstellationModel]:
+        with get_db_session() as session:
             from sqlalchemy import select
 
-            result = await session.execute(select(ConstellationModel))
+            result = session.execute(select(ConstellationModel))
             return list(result.scalars().all())
 
-    constellations = _run_async_safe(_load_constellations())
+    constellations = _load_constellations()
     console.print(f"[dim]Loaded {len(constellations):,} constellations for coordinate lookup[/dim]")
 
     imported = 0
@@ -942,7 +1041,10 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
 
                 # If not found in properties, determine from coordinates
                 if not constellation and constellations:
-                    constellation = _find_constellation_by_coordinates(ra_hours, dec_degrees, constellations, name)
+                    # Use sync wrapper since we're in a sync context
+                    constellation = _find_constellation_by_coordinates_async(
+                        ra_hours, dec_degrees, constellations, name
+                    )
 
                 # Build description
                 description_parts = []
@@ -1017,7 +1119,7 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
         for i in range(0, len(deduplicated_objects), batch_size):
             batch = deduplicated_objects[i : i + batch_size]
             try:
-                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
                 progress.advance(task)
@@ -1129,135 +1231,143 @@ def import_celestial_constellations(
     # Collect all constellations first, then deduplicate once, then batch insert
     all_constellations: list[ConstellationModel] = []
 
-    async def _import() -> tuple[int, int]:
-        nonlocal imported, skipped, errors, all_constellations
+    # Pre-fetch existing constellations for deduplication
+    # Check both name and abbreviation since both have unique constraints
+    existing_names: set[str] = set()
+    existing_abbreviations: set[str] = set()
+    with get_db_session() as db_session:
+        result = db_session.execute(select(ConstellationModel.name, ConstellationModel.abbreviation))
+        for row in result.all():
+            existing_names.add(row[0])
+            if row[1]:
+                existing_abbreviations.add(row[1])
+        console.print(f"[dim]Found {len(existing_names):,} existing constellations[/dim]")
 
-        # Pre-fetch existing constellations for deduplication
-        existing_names: set[str] = set()
-        async with get_db_session() as db_session:
-            result = await db_session.execute(select(ConstellationModel.name))
-            existing_names = {row[0] for row in result.all()}
-            console.print(f"[dim]Found {len(existing_names):,} existing constellations[/dim]")
+    with get_db_session() as db_session:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Importing constellations...", total=total_features)
 
-        async with get_db_session() as db_session:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Importing constellations...", total=total_features)
+            for feature in features:
+                try:
+                    properties = feature.get("properties", {})
+                    geometry = feature.get("geometry", {})
 
-                for feature in features:
-                    try:
-                        properties = feature.get("properties", {})
-                        geometry = feature.get("geometry", {})
+                    # Extract coordinates
+                    coords = geometry.get("coordinates", [])
+                    if not coords or len(coords) < 2:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
 
-                        # Extract coordinates
-                        coords = geometry.get("coordinates", [])
-                        if not coords or len(coords) < 2:
-                            skipped += 1
-                            progress.advance(task)
-                            continue
+                    # Convert RA from degrees to hours
+                    ra_degrees = float(coords[0])
+                    dec_degrees = float(coords[1])
+                    ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
 
-                        # Convert RA from degrees to hours
-                        ra_degrees = float(coords[0])
-                        dec_degrees = float(coords[1])
-                        ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
+                    # Extract constellation name (Latin name)
+                    name = properties.get("name") or properties.get("Name") or properties.get("id")
+                    if not name:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
 
-                        # Extract constellation name (Latin name)
-                        name = properties.get("name") or properties.get("Name") or properties.get("id")
-                        if not name:
-                            skipped += 1
-                            progress.advance(task)
-                            continue
+                    # Check if already exists using pre-fetched set
+                    if name in existing_names:
+                        skipped += 1
+                        progress.advance(task)
+                        continue
 
-                        # Check if already exists using pre-fetched set
-                        if name in existing_names:
-                            skipped += 1
-                            progress.advance(task)
-                            continue
+                    # Extract abbreviation (3-letter IAU code)
+                    abbreviation = (
+                        properties.get("abbr")
+                        or properties.get("Abbr")
+                        or properties.get("abbreviation")
+                        or properties.get("designation")
+                        or name[:3].upper()
+                    )
 
-                        # Extract abbreviation (3-letter IAU code)
-                        abbreviation = (
-                            properties.get("abbr")
-                            or properties.get("Abbr")
-                            or properties.get("abbreviation")
-                            or properties.get("designation")
-                            or name[:3].upper()
-                        )
+                    # Extract common name (English name)
+                    common_name = (
+                        properties.get("common_name") or properties.get("name_en") or properties.get("Name_en")
+                    )
 
-                        # Extract common name (English name)
-                        common_name = (
-                            properties.get("common_name") or properties.get("name_en") or properties.get("Name_en")
-                        )
+                    # Extract brightest star and magnitude
+                    brightest_star = properties.get("brightest_star") or properties.get("key_star")
+                    # Magnitude is not stored in ConstellationModel (calculated from brightest_star)
 
-                        # Extract brightest star and magnitude
-                        brightest_star = properties.get("brightest_star") or properties.get("key_star")
-                        # Magnitude is not stored in ConstellationModel (calculated from brightest_star)
+                    # Extract area
+                    area_sq_deg = None
+                    for area_field in ["area", "Area", "area_sq_deg", "size"]:
+                        if area_field in properties:
+                            try:
+                                area_sq_deg = float(properties[area_field])
+                                break
+                            except (ValueError, TypeError):
+                                pass
 
-                        # Extract area
-                        area_sq_deg = None
-                        for area_field in ["area", "Area", "area_sq_deg", "size"]:
-                            if area_field in properties:
-                                try:
-                                    area_sq_deg = float(properties[area_field])
-                                    break
-                                except (ValueError, TypeError):
-                                    pass
+                    # Extract mythology/description
+                    mythology = (
+                        properties.get("mythology") or properties.get("description") or properties.get("Description")
+                    )
 
-                        # Extract mythology/description
-                        mythology = (
-                            properties.get("mythology")
-                            or properties.get("description")
-                            or properties.get("Description")
-                        )
+                    # Extract season
+                    season = properties.get("season") or properties.get("Season")
 
-                        # Extract season
-                        season = properties.get("season") or properties.get("Season")
+                    # Store geometry for point-in-polygon checks and member star discovery
+                    # We'll use this to find stars within constellation boundaries
+                    constellation_geometry: dict[str, Any] | None = None
+                    polygon_coords_for_star_search: list[list[list[float]]] | None = None
 
-                        # Calculate boundaries from geometry
-                        # For Point geometry, use approximate bounds around center
-                        # For Polygon/MultiPolygon, calculate actual bounds
-                        geometry_type = geometry.get("type", "")
-                        if geometry_type == "Point":
-                            # Approximate bounds (will be improved with bounds file if available)
-                            ra_min_hours = ra_hours - 1.0
-                            ra_max_hours = ra_hours + 1.0
-                            dec_min_degrees = dec_degrees - 10.0
-                            dec_max_degrees = dec_degrees + 10.0
-                        elif geometry_type in ("Polygon", "MultiPolygon"):
-                            # Calculate bounds from polygon coordinates
-                            coords_list = coords
-                            if geometry_type == "Polygon":
-                                # Polygon: [[[lon, lat], ...], ...] - use outer ring
-                                coords_list = coords[0] if coords else []
-                            elif geometry_type == "MultiPolygon":
-                                # MultiPolygon: [[[[lon, lat], ...], ...], ...] - flatten all polygons
-                                coords_list = []
-                                for poly in coords:
-                                    if poly:
-                                        coords_list.extend(poly[0])
+                    # Calculate boundaries from geometry
+                    # For Point geometry, use approximate bounds around center
+                    # For Polygon/MultiPolygon, calculate actual bounds
+                    geometry_type = geometry.get("type", "")
+                    if geometry_type == "Point":
+                        # Approximate bounds (will be improved with bounds file if available)
+                        ra_min_hours = ra_hours - 1.0
+                        ra_max_hours = ra_hours + 1.0
+                        dec_min_degrees = dec_degrees - 10.0
+                        dec_max_degrees = dec_degrees + 10.0
+                    elif geometry_type in ("Polygon", "MultiPolygon"):
+                        # Store geometry for point-in-polygon checks
+                        constellation_geometry = geometry
 
-                            # Calculate min/max from all coordinates
+                        # Calculate bounds from polygon coordinates
+                        coords_list = coords
+                        if geometry_type == "Polygon":
+                            # Polygon: [[[lon, lat], ...], ...] - use outer ring
+                            coords_list = coords[0] if coords else []
+                            # Store polygon coordinates for star search
                             if coords_list:
-                                ra_values = [float(c[0]) for c in coords_list if len(c) >= 2]
-                                dec_values = [float(c[1]) for c in coords_list if len(c) >= 2]
-                                if ra_values and dec_values:
-                                    ra_min_deg = min(ra_values)
-                                    ra_max_deg = max(ra_values)
-                                    dec_min_degrees = min(dec_values)
-                                    dec_max_degrees = max(dec_values)
-                                    ra_min_hours = CoordinateConverter.ra_degrees_to_hours(ra_min_deg)
-                                    ra_max_hours = CoordinateConverter.ra_degrees_to_hours(ra_max_deg)
-                                else:
-                                    # Fallback to approximate
-                                    ra_min_hours = ra_hours - 1.0
-                                    ra_max_hours = ra_hours + 1.0
-                                    dec_min_degrees = dec_degrees - 10.0
-                                    dec_max_degrees = dec_degrees + 10.0
+                                polygon_coords_for_star_search = [coords_list]
+                        elif geometry_type == "MultiPolygon":
+                            # MultiPolygon: [[[[lon, lat], ...], ...], ...] - flatten all polygons
+                            coords_list = []
+                            polygon_coords_for_star_search = []
+                            for poly in coords:
+                                if poly and poly[0]:
+                                    outer_ring = poly[0]
+                                    coords_list.extend(outer_ring)
+                                    polygon_coords_for_star_search.append(outer_ring)
+
+                        # Calculate min/max from all coordinates
+                        if coords_list:
+                            ra_values = [float(c[0]) for c in coords_list if len(c) >= 2]
+                            dec_values = [float(c[1]) for c in coords_list if len(c) >= 2]
+                            if ra_values and dec_values:
+                                ra_min_deg = min(ra_values)
+                                ra_max_deg = max(ra_values)
+                                dec_min_degrees = min(dec_values)
+                                dec_max_degrees = max(dec_values)
+                                ra_min_hours = CoordinateConverter.ra_degrees_to_hours(ra_min_deg)
+                                ra_max_hours = CoordinateConverter.ra_degrees_to_hours(ra_max_deg)
                             else:
                                 # Fallback to approximate
                                 ra_min_hours = ra_hours - 1.0
@@ -1270,90 +1380,124 @@ def import_celestial_constellations(
                             ra_max_hours = ra_hours + 1.0
                             dec_min_degrees = dec_degrees - 10.0
                             dec_max_degrees = dec_degrees + 10.0
+                    else:
+                        # Fallback to approximate
+                        ra_min_hours = ra_hours - 1.0
+                        ra_max_hours = ra_hours + 1.0
+                        dec_min_degrees = dec_degrees - 10.0
+                        dec_max_degrees = dec_degrees + 10.0
 
-                        # Try to get bounds from properties if available (overrides geometry calculation)
-                        if "ra_min" in properties:
-                            ra_min_hours = CoordinateConverter.ra_degrees_to_hours(float(properties["ra_min"]))
-                        if "ra_max" in properties:
-                            ra_max_hours = CoordinateConverter.ra_degrees_to_hours(float(properties["ra_max"]))
-                        if "dec_min" in properties:
-                            dec_min_degrees = float(properties["dec_min"])
-                        if "dec_max" in properties:
-                            dec_max_degrees = float(properties["dec_max"])
+                    # Try to get bounds from properties if available (overrides geometry calculation)
+                    if "ra_min" in properties:
+                        ra_min_hours = CoordinateConverter.ra_degrees_to_hours(float(properties["ra_min"]))
+                    if "ra_max" in properties:
+                        ra_max_hours = CoordinateConverter.ra_degrees_to_hours(float(properties["ra_max"]))
+                    if "dec_min" in properties:
+                        dec_min_degrees = float(properties["dec_min"])
+                    if "dec_max" in properties:
+                        dec_max_degrees = float(properties["dec_max"])
 
-                        # Create constellation model
-                        constellation = ConstellationModel(
-                            name=name,
-                            abbreviation=abbreviation[:3],  # Ensure 3 characters
-                            common_name=common_name,
-                            ra_hours=ra_hours,
-                            dec_degrees=dec_degrees,
-                            ra_min_hours=ra_min_hours,
-                            ra_max_hours=ra_max_hours,
-                            dec_min_degrees=dec_min_degrees,
-                            dec_max_degrees=dec_max_degrees,
-                            area_sq_deg=area_sq_deg,
-                            brightest_star=brightest_star,
-                            mythology=mythology,
-                            season=season,
-                        )
+                    # Convert GeoJSON geometry to SpatiaLite geometry BLOB
+                    geometry_blob: bytes | None = None
+                    if constellation_geometry:
+                        # We'll convert this after we have a database session
+                        # Store the geometry dict for later conversion
+                        pass
 
-                        all_constellations.append(constellation)
+                    # Create constellation model (geometry will be set after batch insert)
+                    constellation = ConstellationModel(
+                        name=name,
+                        abbreviation=abbreviation[:3],  # Ensure 3 characters
+                        common_name=common_name,
+                        ra_hours=ra_hours,
+                        dec_degrees=dec_degrees,
+                        ra_min_hours=ra_min_hours,
+                        ra_max_hours=ra_max_hours,
+                        dec_min_degrees=dec_min_degrees,
+                        dec_max_degrees=dec_max_degrees,
+                        area_sq_deg=area_sq_deg,
+                        brightest_star=brightest_star,
+                        mythology=mythology,
+                        season=season,
+                        geometry=None,  # Will be set after conversion
+                    )
 
-                    except Exception as e:
-                        errors += 1
-                        if verbose:
-                            console.print(f"[yellow]Warning: Error processing constellation: {e}[/yellow]")
+                    # Store geometry dict for later conversion
+                    constellation._temp_geometry = constellation_geometry  # type: ignore[attr-defined]
 
+                    all_constellations.append(constellation)
+
+                except Exception as e:
+                    errors += 1
+                    if verbose:
+                        console.print(f"[yellow]Warning: Error processing constellation: {e}[/yellow]")
+
+                progress.advance(task)
+
+        # Deduplicate once after all constellations are created
+        console.print(f"[dim]Deduplicating {len(all_constellations):,} constellations...[/dim]")
+        seen_names: set[str] = set()
+        seen_abbreviations: set[str] = set()
+        deduplicated_constellations: list[ConstellationModel] = []
+        for const in all_constellations:
+            # Check both name and abbreviation for uniqueness
+            name_conflict = const.name in seen_names or const.name in existing_names
+            abbrev_conflict = const.abbreviation in seen_abbreviations or const.abbreviation in existing_abbreviations
+            if not name_conflict and not abbrev_conflict:
+                seen_names.add(const.name)
+                seen_abbreviations.add(const.abbreviation)
+                deduplicated_constellations.append(const)
+            else:
+                skipped += 1
+
+        console.print(
+            f"[dim]After deduplication: {len(deduplicated_constellations):,} unique constellations to import[/dim]"
+        )
+
+        # Convert geometries to SpatiaLite format before batch insert
+        console.print("[dim]Converting geometries to SpatiaLite format...[/dim]")
+        for const in deduplicated_constellations:
+            if hasattr(const, "_temp_geometry") and const._temp_geometry:  # type: ignore[attr-defined]
+                geometry_blob = geojson_to_spatialite_geometry_async(const._temp_geometry, db_session)  # type: ignore[attr-defined]
+                if geometry_blob:
+                    const.geometry = geometry_blob
+                # Clean up temp attribute
+                delattr(const, "_temp_geometry")  # type: ignore[attr-defined]
+
+        # Batch insert deduplicated constellations
+        batch_size = 100
+        num_batches = (len(deduplicated_constellations) + batch_size - 1) // batch_size  # Ceiling division
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Importing constellations...", total=num_batches)
+
+            for i in range(0, len(deduplicated_constellations), batch_size):
+                batch = deduplicated_constellations[i : i + batch_size]
+                try:
+                    db_session.add_all(batch)
+                    db_session.commit()
+                    imported += len(batch)
+                    # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+                    progress.advance(task)
+                except Exception as e:
+                    # Log the error (always show errors, not just in verbose mode)
+                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+                    if verbose:
+                        import traceback
+
+                        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                    errors += len(batch)
+                    db_session.rollback()
+                    # Still advance progress even on error
                     progress.advance(task)
 
-            # Deduplicate once after all constellations are created
-            console.print(f"[dim]Deduplicating {len(all_constellations):,} constellations...[/dim]")
-            seen_names: set[str] = set()
-            deduplicated_constellations: list[ConstellationModel] = []
-            for const in all_constellations:
-                if const.name not in seen_names and const.name not in existing_names:
-                    seen_names.add(const.name)
-                    deduplicated_constellations.append(const)
-                else:
-                    skipped += 1
-
-            console.print(
-                f"[dim]After deduplication: {len(deduplicated_constellations):,} unique constellations to import[/dim]"
-            )
-
-            # Batch insert deduplicated constellations
-            batch_size = 100
-            num_batches = (len(deduplicated_constellations) + batch_size - 1) // batch_size  # Ceiling division
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Importing constellations...", total=num_batches)
-
-                for i in range(0, len(deduplicated_constellations), batch_size):
-                    batch = deduplicated_constellations[i : i + batch_size]
-                    try:
-                        db_session.add_all(batch)
-                        await db_session.commit()
-                        imported += len(batch)
-                        # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                        progress.advance(task)
-                    except Exception as e:
-                        if verbose:
-                            console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
-                        errors += len(batch)
-                        await db_session.rollback()
-                        # Still advance progress even on error
-                        progress.advance(task)
-
-        return imported, skipped
-
-    return _run_async_safe(_import())
+    return imported, skipped
 
 
 def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
@@ -1368,8 +1512,6 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     Returns:
         (imported_count, skipped_count)
     """
-
-    from sqlalchemy import select
 
     from celestron_nexstar.api.database.models import AsterismModel, get_db_session
 
@@ -1398,17 +1540,19 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     # Collect all asterisms first, then deduplicate once, then batch insert
     all_asterisms: list[AsterismModel] = []
 
-    async def _import() -> tuple[int, int]:
+    def _import() -> tuple[int, int]:
         nonlocal imported, skipped, errors, all_asterisms
 
         # Pre-fetch existing asterisms for deduplication
         existing_names: set[str] = set()
-        async with get_db_session() as db_session:
-            result = await db_session.execute(select(AsterismModel.name))
+        with get_db_session() as db_session:
+            from sqlalchemy import select
+
+            result = db_session.execute(select(AsterismModel.name))
             existing_names = {row[0] for row in result.all()}
             console.print(f"[dim]Found {len(existing_names):,} existing asterisms[/dim]")
 
-        async with get_db_session() as db_session:
+        with get_db_session() as db_session:
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -1478,12 +1622,31 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             properties.get("description") or properties.get("Description") or properties.get("notes")
                         )
 
-                        # Extract component stars
+                        # Extract component stars from properties first
                         stars = (
                             properties.get("stars")
                             or properties.get("component_stars")
                             or properties.get("member_stars")
                         )
+
+                        # If no stars listed in properties, try to find them from geometry
+                        # The MULTILINESTRING geometry represents the pattern connecting stars
+                        # We'll find stars near the geometry points and store them for later processing
+                        geometry_points_for_star_search: list[tuple[float, float]] | None = None
+                        geometry_type = geometry.get("type", "")
+                        if not stars and geometry_type == "MULTILINESTRING":
+                            # Extract all points from MULTILINESTRING coordinates
+                            # MULTILINESTRING: [[[lon, lat], ...], ...] - each line is a list of points
+                            all_points: list[tuple[float, float]] = []
+                            if isinstance(coords, list):
+                                for line in coords:
+                                    if isinstance(line, list):
+                                        for point in line:
+                                            if isinstance(point, list) and len(point) >= 2:
+                                                all_points.append((float(point[0]), float(point[1])))
+                            if all_points:
+                                # Store geometry points to find stars later (after we have database access)
+                                geometry_points_for_star_search = all_points
 
                         # Extract season
                         season = properties.get("season") or properties.get("Season")
@@ -1518,7 +1681,94 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             or properties.get("appearance")
                         )
 
-                        # Create asterism model
+                        # If we need to find stars from geometry, do it now (we have database access)
+                        if geometry_points_for_star_search and not stars:
+                            try:
+                                from sqlalchemy import select
+
+                                from celestron_nexstar.api.core.utils import angular_separation
+                                from celestron_nexstar.api.database.database import get_database
+                                from celestron_nexstar.api.database.models import StarModel
+
+                                db_instance = get_database()
+
+                                # Search for stars near each geometry point
+                                def _find_stars_near_points(db: Any, points: list[tuple[float, float]]) -> set[str]:
+                                    found: set[str] = set()
+                                    with db._get_session() as session:
+                                        for lon_deg, lat_deg in points:
+                                            # Convert lon back to RA hours
+                                            point_ra_hours = CoordinateConverter.ra_degrees_to_hours(lon_deg)
+                                            point_dec_degrees = lat_deg
+
+                                            # Search for stars within 2 arcminutes of this point
+                                            # (asterism lines connect stars, so stars should be very close)
+                                            search_radius_deg = 2.0 / 60.0  # 2 arcminutes in degrees
+                                            ra_range_hours = search_radius_deg / 15.0
+                                            ra_min = (point_ra_hours - ra_range_hours) % 24.0
+                                            ra_max = (point_ra_hours + ra_range_hours) % 24.0
+                                            dec_min = max(-90.0, point_dec_degrees - search_radius_deg)
+                                            dec_max = min(90.0, point_dec_degrees + search_radius_deg)
+
+                                            # Query stars in bounding box
+                                            if ra_min <= ra_max:
+                                                stmt = (
+                                                    select(StarModel)
+                                                    .where(
+                                                        StarModel.ra_hours.between(ra_min, ra_max),
+                                                        StarModel.dec_degrees.between(dec_min, dec_max),
+                                                    )
+                                                    .limit(10)
+                                                )
+                                            else:
+                                                stmt = (
+                                                    select(StarModel)
+                                                    .where(
+                                                        (StarModel.ra_hours >= ra_min) | (StarModel.ra_hours <= ra_max),
+                                                        StarModel.dec_degrees.between(dec_min, dec_max),
+                                                    )
+                                                    .limit(10)
+                                                )
+
+                                            result = session.execute(stmt)
+                                            star_models = result.scalars().all()
+
+                                            # Check angular separation and find closest star
+                                            for star_model in star_models:
+                                                separation_deg = angular_separation(
+                                                    point_ra_hours,
+                                                    point_dec_degrees,
+                                                    star_model.ra_hours,
+                                                    star_model.dec_degrees,
+                                                )
+                                                separation_arcmin = separation_deg * 60.0
+
+                                                # If within 2 arcminutes, consider it part of the asterism
+                                                if separation_arcmin <= 2.0:
+                                                    # Prefer common name, fallback to name
+                                                    star_name = star_model.common_name or star_model.name
+                                                    if star_name:
+                                                        found.add(star_name)
+
+                                    return found
+
+                                # Run function
+                                found_star_names = _find_stars_near_points(db_instance, geometry_points_for_star_search)
+
+                                if found_star_names:
+                                    # Convert set to comma-separated string
+                                    stars = ",".join(sorted(found_star_names))
+                                    if verbose:
+                                        console.print(
+                                            f"[dim]Found {len(found_star_names)} stars from geometry for {name}[/dim]"
+                                        )
+                            except Exception as e:
+                                if verbose:
+                                    console.print(
+                                        f"[yellow]Warning: Could not find stars from geometry for {name}: {e}[/yellow]"
+                                    )
+
+                        # Create asterism model (geometry will be set after conversion)
                         asterism = AsterismModel(
                             name=name,
                             alt_names=alt_names,
@@ -1534,7 +1784,11 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             guidepost_info=guidepost_info,
                             historical_notes=historical_notes,
                             shape_description=shape_description,
+                            geometry=None,  # Will be set after conversion
                         )
+
+                        # Store geometry dict for later conversion
+                        asterism._temp_geometry = geometry  # type: ignore[attr-defined]
 
                         all_asterisms.append(asterism)
 
@@ -1558,6 +1812,16 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
 
             console.print(f"[dim]After deduplication: {len(deduplicated_asterisms):,} unique asterisms to import[/dim]")
 
+            # Convert geometries to SpatiaLite format before batch insert
+            console.print("[dim]Converting geometries to SpatiaLite format...[/dim]")
+            for asterism in deduplicated_asterisms:
+                if hasattr(asterism, "_temp_geometry") and asterism._temp_geometry:  # type: ignore[attr-defined]
+                    geometry_blob = geojson_to_spatialite_geometry_async(asterism._temp_geometry, db_session)  # type: ignore[attr-defined]
+                    if geometry_blob:
+                        asterism.geometry = geometry_blob
+                    # Clean up temp attribute
+                    delattr(asterism, "_temp_geometry")  # type: ignore[attr-defined]
+
             # Batch insert deduplicated asterisms
             batch_size = 100
             num_batches = (len(deduplicated_asterisms) + batch_size - 1) // batch_size  # Ceiling division
@@ -1575,7 +1839,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                     batch = deduplicated_asterisms[i : i + batch_size]
                     try:
                         db_session.add_all(batch)
-                        await db_session.commit()
+                        db_session.commit()
                         imported += len(batch)
                         # Advance by 1 per batch so TimeRemainingColumn can calculate properly
                         progress.advance(task)
@@ -1583,13 +1847,13 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         if verbose:
                             console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
                         errors += len(batch)
-                        await db_session.rollback()
+                        db_session.rollback()
                         # Still advance progress even on error
                         progress.advance(task)
 
         return imported, skipped
 
-    return _run_async_safe(_import())
+    return _import()
 
 
 def download_wds_catalog(output_path: Path) -> bool:
@@ -1680,7 +1944,7 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
 
     # Pre-fetch existing objects for deduplication
     console.print("[dim]Loading existing WDS objects for deduplication...[/dim]")
-    existing_objects = _run_async_safe(db.get_existing_objects_set(catalog="wds"))
+    existing_objects = db.get_existing_objects_set(catalog="wds")
     console.print(f"[dim]Found {len(existing_objects):,} existing WDS objects[/dim]")
 
     imported = 0
@@ -1902,7 +2166,7 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
         for i in range(0, len(deduplicated_objects), batch_size):
             batch = deduplicated_objects[i : i + batch_size]
             try:
-                batch_imported = _run_async_safe(db.insert_objects_batch(batch))
+                batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
                 progress.advance(task)
             except Exception as e:
@@ -2043,7 +2307,7 @@ def list_data_sources() -> None:
     """Display available data sources."""
 
     db = get_database()
-    stats = _run_async_safe(db.get_stats())
+    stats = db.get_stats()
 
     table = Table(title="Available Data Sources")
     table.add_column("Name", style="cyan")
@@ -2072,12 +2336,12 @@ def list_data_sources() -> None:
 
             from celestron_nexstar.api.database.models import AsterismModel, get_db_session
 
-            async def _count() -> int:
-                async with get_db_session() as session:
-                    result = await session.scalar(select(func.count(AsterismModel.id)))
+            def _count() -> int:
+                with get_db_session() as session:
+                    result = session.scalar(select(func.count(AsterismModel.id)))
                     return result or 0
 
-            imported = _run_async_safe(_count())
+            imported = _count()
         elif source_id == "celestial_constellations":
             # Count from constellations table, not objects table
 
@@ -2085,12 +2349,12 @@ def list_data_sources() -> None:
 
             from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
 
-            async def _count() -> int:
-                async with get_db_session() as session:
-                    result = await session.scalar(select(func.count(ConstellationModel.id)))
+            def _count() -> int:
+                with get_db_session() as session:
+                    result = session.scalar(select(func.count(ConstellationModel.id)))
                     return result or 0
 
-            imported = _run_async_safe(_count())
+            imported = _count()
         elif source_id == "celestial_local_group":
             imported = stats.objects_by_catalog.get("local_group", 0)
         elif source_id == "wds":
@@ -2158,7 +2422,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
             # Show updated stats
             db = get_database()
 
-            stats = _run_async_safe(db.get_stats())
+            stats = db.get_stats()
             console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
             return True
@@ -2200,7 +2464,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
         # Show updated stats
         db = get_database()
 
-        stats = _run_async_safe(db.get_stats())
+        stats = db.get_stats()
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True
@@ -2253,7 +2517,7 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
 
         # Show updated stats
         db = get_database()
-        stats = _run_async_safe(db.get_stats())
+        stats = db.get_stats()
         console.print(f"\n[bold]Database now contains {stats.total_objects:,} objects[/bold]")
 
         return True

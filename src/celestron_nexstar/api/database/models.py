@@ -7,15 +7,15 @@ and automatic migration management with Alembic.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import sqlalchemy as sa
+from geoalchemy2 import Geometry
 from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 
 if TYPE_CHECKING:
@@ -132,6 +132,13 @@ class CelestialObjectMixin:
     # Position (J2000 epoch for fixed objects)
     ra_hours: Mapped[float] = mapped_column(Float, nullable=False)
     dec_degrees: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Geometry (SpatiaLite POINT format for spatial queries)
+    # GeoAlchemy2 handles the geometry column management automatically
+    # This enables efficient spatial queries (within radius, within constellation boundaries, etc.)
+    geometry: Mapped[Any | None] = mapped_column(
+        Geometry(geometry_type="POINT", srid=0, spatial_index=True), nullable=True
+    )
 
     # Physical properties
     magnitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
@@ -665,6 +672,12 @@ class ConstellationModel(Base):
     dec_min_degrees: Mapped[float] = mapped_column(Float, nullable=False)
     dec_max_degrees: Mapped[float] = mapped_column(Float, nullable=False)
 
+    # Geometry (SpatiaLite format - Polygon/MultiPolygon for constellation boundaries)
+    # GeoAlchemy2 handles the geometry column management automatically
+    geometry: Mapped[Any | None] = mapped_column(
+        Geometry(geometry_type="GEOMETRY", srid=0, spatial_index=True), nullable=True
+    )
+
     # Metadata
     area_sq_deg: Mapped[float | None] = mapped_column(Float, nullable=True)  # Area in square degrees
     brightest_star: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Name of brightest star
@@ -741,6 +754,12 @@ class AsterismModel(Base):
 
     # Size
     size_degrees: Mapped[float | None] = mapped_column(Float, nullable=True)  # Approximate angular size
+
+    # Geometry (SpatiaLite format - MultiLineString/LineString for asterism patterns)
+    # GeoAlchemy2 handles the geometry column management automatically
+    geometry: Mapped[Any | None] = mapped_column(
+        Geometry(geometry_type="GEOMETRY", srid=0, spatial_index=True), nullable=True
+    )
 
     # Metadata
     parent_constellation: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Part of which constellation
@@ -1496,27 +1515,22 @@ class CameraModel(Base):
         return f"<Camera(id={self.id}, name='{self.name}', type='{self.camera_type}')>"
 
 
-@asynccontextmanager
-async def get_db_session() -> AsyncIterator[AsyncSession]:
+@contextmanager
+def get_db_session() -> Iterator[Session]:
     """
-    Get an async database session as a context manager.
+    Get a synchronous database session as a context manager.
 
-    Yields an AsyncSession that is automatically closed when exiting the context.
-    Use this for async database operations that need a session.
+    Yields a Session that is automatically closed when exiting the context.
+    Use this for database operations that need a session.
 
     Example:
-        async with get_db_session() as db:
+        with get_db_session() as db:
             # Use db session here
-            result = await db.execute(select(...))
-            await db.commit()
+            result = db.execute(select(...))
+            db.commit()
     """
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    async with db._AsyncSession() as session:
-        try:
-            yield session
-            await session.commit()
-        except BaseException:  # Catch all exceptions including KeyboardInterrupt, SystemExit
-            await session.rollback()
-            raise
+    with db._get_session() as session:
+        yield session

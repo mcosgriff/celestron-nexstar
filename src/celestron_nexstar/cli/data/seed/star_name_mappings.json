@@ -70,6 +70,8 @@
   {"hr_number": 5460, "common_name": "Toliman", "bayer_designation": "Beta Centauri"},
   {"hr_number": 1865, "common_name": "Menkar", "bayer_designation": "Alpha Ceti"},
   {"hr_number": 1464, "common_name": "Ain", "bayer_designation": "Epsilon Tauri"},
+  {"hr_number": 1411, "common_name": null, "bayer_designation": "Theta¹ Tauri"},
+  {"hr_number": 1412, "common_name": "Chamukuy", "bayer_designation": "Theta² Tauri"},
   {"hr_number": 2081, "common_name": "Mintaka", "bayer_designation": "Delta Orionis"},
   {"hr_number": 2067, "common_name": "Nair al Saif", "bayer_designation": "Iota Orionis"},
   {"hr_number": 2646, "common_name": "Furud", "bayer_designation": "Zeta Canis Majoris"},

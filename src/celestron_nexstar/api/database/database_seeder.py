@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import Session
 
 from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
 from celestron_nexstar.api.database.models import (
@@ -95,7 +95,7 @@ def load_seed_json(filename: str) -> Any:
     return data
 
 
-async def seed_star_name_mappings(db_session: AsyncSession, force: bool = False) -> int:
+def seed_star_name_mappings(db_session: Session, force: bool = False) -> int:
     """
     Seed star name mappings into the database.
 
@@ -109,8 +109,8 @@ async def seed_star_name_mappings(db_session: AsyncSession, force: bool = False)
     logger.info("Seeding star name mappings...")
 
     if force:
-        await db_session.execute(delete(StarNameMappingModel))
-        await db_session.commit()
+        db_session.execute(delete(StarNameMappingModel))
+        db_session.commit()
         logger.info("Cleared existing star name mappings")
 
     # Load seed data
@@ -121,9 +121,7 @@ async def seed_star_name_mappings(db_session: AsyncSession, force: bool = False)
         hr_number = item["hr_number"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(
-            select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number)
-        )
+        existing = db_session.scalar(select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number))
         if existing:
             continue
 
@@ -137,7 +135,7 @@ async def seed_star_name_mappings(db_session: AsyncSession, force: bool = False)
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} star name mappings")
     else:
         logger.info("Star name mappings already seeded (no new records)")
@@ -145,7 +143,7 @@ async def seed_star_name_mappings(db_session: AsyncSession, force: bool = False)
     return added
 
 
-async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> int:
+def seed_meteor_showers(db_session: Session, force: bool = False) -> int:
     """
     Seed meteor showers into the database.
 
@@ -159,8 +157,8 @@ async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> 
     logger.info("Seeding meteor showers...")
 
     if force:
-        await db_session.execute(delete(MeteorShowerModel))
-        await db_session.commit()
+        db_session.execute(delete(MeteorShowerModel))
+        db_session.commit()
         logger.info("Cleared existing meteor showers")
 
     # Load seed data
@@ -171,7 +169,7 @@ async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> 
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(MeteorShowerModel).where(MeteorShowerModel.name == name))
+        existing = db_session.scalar(select(MeteorShowerModel).where(MeteorShowerModel.name == name))
         if existing:
             continue
 
@@ -203,7 +201,7 @@ async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> 
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} meteor showers")
     else:
         logger.info("Meteor showers already seeded (no new records)")
@@ -211,7 +209,7 @@ async def seed_meteor_showers(db_session: AsyncSession, force: bool = False) -> 
     return added
 
 
-async def seed_constellations(db_session: AsyncSession, force: bool = False) -> int:
+def seed_constellations(db_session: Session, force: bool = False) -> int:
     """
     Seed constellations into the database.
 
@@ -225,8 +223,8 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
     logger.info("Seeding constellations...")
 
     if force:
-        await db_session.execute(delete(ConstellationModel))
-        await db_session.commit()
+        db_session.execute(delete(ConstellationModel))
+        db_session.commit()
         logger.info("Cleared existing constellations")
 
     # Load seed data
@@ -237,7 +235,7 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(ConstellationModel).where(ConstellationModel.name == name))
+        existing = db_session.scalar(select(ConstellationModel).where(ConstellationModel.name == name))
         if existing:
             continue
 
@@ -276,7 +274,7 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} constellations")
     else:
         logger.info("Constellations already seeded (no new records)")
@@ -284,7 +282,7 @@ async def seed_constellations(db_session: AsyncSession, force: bool = False) -> 
     return added
 
 
-async def seed_asterisms(db_session: AsyncSession, force: bool = False) -> int:
+def seed_asterisms(db_session: Session, force: bool = False) -> int:
     """
     Seed asterisms into the database.
 
@@ -298,8 +296,8 @@ async def seed_asterisms(db_session: AsyncSession, force: bool = False) -> int:
     logger.info("Seeding asterisms...")
 
     if force:
-        await db_session.execute(delete(AsterismModel))
-        await db_session.commit()
+        db_session.execute(delete(AsterismModel))
+        db_session.commit()
         logger.info("Cleared existing asterisms")
 
     # Load seed data
@@ -310,7 +308,7 @@ async def seed_asterisms(db_session: AsyncSession, force: bool = False) -> int:
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(AsterismModel).where(AsterismModel.name == name))
+        existing = db_session.scalar(select(AsterismModel).where(AsterismModel.name == name))
         if existing:
             continue
 
@@ -320,7 +318,7 @@ async def seed_asterisms(db_session: AsyncSession, force: bool = False) -> int:
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} asterisms")
     else:
         logger.info("Asterisms already seeded (no new records)")
@@ -328,7 +326,7 @@ async def seed_asterisms(db_session: AsyncSession, force: bool = False) -> int:
     return added
 
 
-async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> int:
+def seed_dark_sky_sites(db_session: Session, force: bool = False) -> int:
     """
     Seed dark sky sites into the database.
 
@@ -342,8 +340,8 @@ async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> 
     logger.info("Seeding dark sky sites...")
 
     if force:
-        await db_session.execute(delete(DarkSkySiteModel))
-        await db_session.commit()
+        db_session.execute(delete(DarkSkySiteModel))
+        db_session.commit()
         logger.info("Cleared existing dark sky sites")
 
     # Load seed data
@@ -360,7 +358,7 @@ async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> 
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(DarkSkySiteModel).where(DarkSkySiteModel.name == name))
+        existing = db_session.scalar(select(DarkSkySiteModel).where(DarkSkySiteModel.name == name))
         if existing:
             continue
 
@@ -374,7 +372,7 @@ async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> 
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} dark sky sites")
     else:
         logger.info("Dark sky sites already seeded (no new records)")
@@ -382,7 +380,7 @@ async def seed_dark_sky_sites(db_session: AsyncSession, force: bool = False) -> 
     return added
 
 
-async def seed_space_events(db_session: AsyncSession, force: bool = False) -> int:
+def seed_space_events(db_session: Session, force: bool = False) -> int:
     """
     Seed space events into the database.
 
@@ -396,8 +394,8 @@ async def seed_space_events(db_session: AsyncSession, force: bool = False) -> in
     logger.info("Seeding space events...")
 
     if force:
-        await db_session.execute(delete(SpaceEventModel))
-        await db_session.commit()
+        db_session.execute(delete(SpaceEventModel))
+        db_session.commit()
         logger.info("Cleared existing space events")
 
     # Load seed data
@@ -414,7 +412,7 @@ async def seed_space_events(db_session: AsyncSession, force: bool = False) -> in
         event_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
 
         # Check if already exists (idempotent) - match by name and date
-        existing = await db_session.scalar(
+        existing = db_session.scalar(
             select(SpaceEventModel).where(SpaceEventModel.name == name, SpaceEventModel.date == event_date)
         )
         if existing:
@@ -428,7 +426,7 @@ async def seed_space_events(db_session: AsyncSession, force: bool = False) -> in
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} space events")
     else:
         logger.info("Space events already seeded (no new records)")
@@ -436,7 +434,7 @@ async def seed_space_events(db_session: AsyncSession, force: bool = False) -> in
     return added
 
 
-async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> int:
+def seed_variable_stars(db_session: Session, force: bool = False) -> int:
     """
     Seed variable stars into the database.
 
@@ -450,8 +448,8 @@ async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> 
     logger.info("Seeding variable stars...")
 
     if force:
-        await db_session.execute(delete(VariableStarModel))
-        await db_session.commit()
+        db_session.execute(delete(VariableStarModel))
+        db_session.commit()
         logger.info("Cleared existing variable stars")
 
     # Load seed data
@@ -462,7 +460,7 @@ async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> 
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(VariableStarModel).where(VariableStarModel.name == name))
+        existing = db_session.scalar(select(VariableStarModel).where(VariableStarModel.name == name))
         if existing:
             continue
 
@@ -472,7 +470,7 @@ async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> 
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} variable stars")
     else:
         logger.info("Variable stars already seeded (no new records)")
@@ -480,7 +478,7 @@ async def seed_variable_stars(db_session: AsyncSession, force: bool = False) -> 
     return added
 
 
-async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
+def seed_comets(db_session: Session, force: bool = False) -> int:
     """
     Seed comets into the database.
 
@@ -494,8 +492,8 @@ async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
     logger.info("Seeding comets...")
 
     if force:
-        await db_session.execute(delete(CometModel))
-        await db_session.commit()
+        db_session.execute(delete(CometModel))
+        db_session.commit()
         logger.info("Cleared existing comets")
 
     # Load seed data
@@ -506,7 +504,7 @@ async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
         designation = item["designation"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(CometModel).where(CometModel.designation == designation))
+        existing = db_session.scalar(select(CometModel).where(CometModel.designation == designation))
         if existing:
             continue
 
@@ -522,7 +520,7 @@ async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} comets")
     else:
         logger.info("Comets already seeded (no new records)")
@@ -530,7 +528,7 @@ async def seed_comets(db_session: AsyncSession, force: bool = False) -> int:
     return added
 
 
-async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
+def seed_eclipses(db_session: Session, force: bool = False) -> int:
     """
     Seed eclipses into the database.
 
@@ -544,8 +542,8 @@ async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
     logger.info("Seeding eclipses...")
 
     if force:
-        await db_session.execute(delete(EclipseModel))
-        await db_session.commit()
+        db_session.execute(delete(EclipseModel))
+        db_session.commit()
         logger.info("Cleared existing eclipses")
 
     # Load seed data
@@ -562,7 +560,7 @@ async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
         eclipse_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
 
         # Check if already exists (idempotent) - match by type and date
-        existing = await db_session.scalar(
+        existing = db_session.scalar(
             select(EclipseModel).where(EclipseModel.eclipse_type == eclipse_type, EclipseModel.date == eclipse_date)
         )
         if existing:
@@ -576,7 +574,7 @@ async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} eclipses")
     else:
         logger.info("Eclipses already seeded (no new records)")
@@ -584,7 +582,7 @@ async def seed_eclipses(db_session: AsyncSession, force: bool = False) -> int:
     return added
 
 
-async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = False) -> int:
+def seed_bortle_characteristics(db_session: Session, force: bool = False) -> int:
     """
     Seed Bortle characteristics into the database.
 
@@ -598,8 +596,8 @@ async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = Fa
     logger.info("Seeding Bortle characteristics...")
 
     if force:
-        await db_session.execute(delete(BortleCharacteristicsModel))
-        await db_session.commit()
+        db_session.execute(delete(BortleCharacteristicsModel))
+        db_session.commit()
         logger.info("Cleared existing Bortle characteristics")
 
     # Load seed data
@@ -610,7 +608,7 @@ async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = Fa
         bortle_class = item["bortle_class"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(
+        existing = db_session.scalar(
             select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == bortle_class)
         )
         if existing:
@@ -622,7 +620,7 @@ async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = Fa
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} Bortle characteristics")
     else:
         logger.info("Bortle characteristics already seeded (no new records)")
@@ -630,7 +628,7 @@ async def seed_bortle_characteristics(db_session: AsyncSession, force: bool = Fa
     return added
 
 
-async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
+def seed_planets(db_session: Session, force: bool = False) -> int:
     """
     Seed planets into the database (planets table).
 
@@ -645,8 +643,8 @@ async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
 
     if force:
         # Delete existing planets
-        await db_session.execute(delete(PlanetModel))
-        await db_session.commit()
+        db_session.execute(delete(PlanetModel))
+        db_session.commit()
         logger.info("Cleared existing planets")
 
     # Load seed data
@@ -657,7 +655,7 @@ async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(PlanetModel).where(PlanetModel.name == name))
+        existing = db_session.scalar(select(PlanetModel).where(PlanetModel.name == name))
         if existing:
             continue
 
@@ -678,7 +676,7 @@ async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} planets")
     else:
         logger.info("Planets already seeded (no new records)")
@@ -686,7 +684,7 @@ async def seed_planets(db_session: AsyncSession, force: bool = False) -> int:
     return added
 
 
-async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
+def seed_moons(db_session: Session, force: bool = False) -> int:
     """
     Seed moons into the database (moons table).
 
@@ -701,8 +699,8 @@ async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
 
     if force:
         # Delete existing moons
-        await db_session.execute(delete(MoonModel))
-        await db_session.commit()
+        db_session.execute(delete(MoonModel))
+        db_session.commit()
         logger.info("Cleared existing moons")
 
     # Load seed data
@@ -713,7 +711,7 @@ async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
         name = item["name"]
 
         # Check if already exists (idempotent)
-        existing = await db_session.scalar(select(MoonModel).where(MoonModel.name == name))
+        existing = db_session.scalar(select(MoonModel).where(MoonModel.name == name))
         if existing:
             continue
 
@@ -735,7 +733,7 @@ async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
         added += 1
 
     if added > 0:
-        await db_session.commit()
+        db_session.commit()
         logger.info(f"Added {added} moons")
     else:
         logger.info("Moons already seeded (no new records)")
@@ -743,7 +741,7 @@ async def seed_moons(db_session: AsyncSession, force: bool = False) -> int:
     return added
 
 
-async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, int]:
+def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
     """
     Seed all static reference data into the database.
 
@@ -818,23 +816,12 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
         logger.error(f"Failed to seed constellations: {e}")
         results["constellations"] = 0
 
-    try:
-        results["asterisms"] = await seed_asterisms(db_session, force=force)
-    except FileNotFoundError:
-        logger.warning("Asterisms seed file not found, skipping")
-        results["asterisms"] = 0
-    except (
-        json.JSONDecodeError,
-        PermissionError,
-        ValueError,
-        TypeError,
-        KeyError,
-        AttributeError,
-        RuntimeError,
-        SQLAlchemyError,
-    ) as e:
-        logger.error(f"Failed to seed asterisms: {e}")
-        results["asterisms"] = 0
+    # Skip seeding asterisms - they should be imported from GeoJSON instead
+    # The GeoJSON file (asterisms.min.geojson) has more complete data (50+ asterisms)
+    # compared to the seed file (20-30 asterisms). Import via: nexstar data import celestial_asterisms
+    # or during database rebuild which imports all celestial_data sources.
+    logger.info("Skipping asterism seeding - use 'celestial_asterisms' data source import instead")
+    results["asterisms"] = 0
 
     try:
         results["dark_sky_sites"] = await seed_dark_sky_sites(db_session, force=force)
@@ -983,7 +970,7 @@ async def seed_all(db_session: AsyncSession, force: bool = False) -> dict[str, i
     return results
 
 
-async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
+def get_seed_status(db_session: Session) -> dict[str, int]:
     """
     Get current seed data status (counts for each data type).
 
@@ -997,7 +984,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Star name mappings
     try:
-        count_result = await db_session.scalar(select(func.count(StarNameMappingModel.hr_number)))
+        count_result = db_session.scalar(select(func.count(StarNameMappingModel.hr_number)))
         status["star_name_mappings"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         # AttributeError: missing model attributes
@@ -1009,7 +996,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Meteor showers
     try:
-        count_result = await db_session.scalar(select(func.count(MeteorShowerModel.id)))
+        count_result = db_session.scalar(select(func.count(MeteorShowerModel.id)))
         status["meteor_showers"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting meteor showers count: {e}")
@@ -1017,7 +1004,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Constellations
     try:
-        count_result = await db_session.scalar(select(func.count(ConstellationModel.id)))
+        count_result = db_session.scalar(select(func.count(ConstellationModel.id)))
         status["constellations"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting constellations count: {e}")
@@ -1025,7 +1012,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Asterisms
     try:
-        count_result = await db_session.scalar(select(func.count(AsterismModel.id)))
+        count_result = db_session.scalar(select(func.count(AsterismModel.id)))
         status["asterisms"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting asterisms count: {e}")
@@ -1033,7 +1020,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Dark sky sites
     try:
-        count_result = await db_session.scalar(select(func.count(DarkSkySiteModel.id)))
+        count_result = db_session.scalar(select(func.count(DarkSkySiteModel.id)))
         status["dark_sky_sites"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting dark sky sites count: {e}")
@@ -1041,7 +1028,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Space events
     try:
-        count_result = await db_session.scalar(select(func.count(SpaceEventModel.id)))
+        count_result = db_session.scalar(select(func.count(SpaceEventModel.id)))
         status["space_events"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting space events count: {e}")
@@ -1049,7 +1036,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Variable stars
     try:
-        count_result = await db_session.scalar(select(func.count(VariableStarModel.id)))
+        count_result = db_session.scalar(select(func.count(VariableStarModel.id)))
         status["variable_stars"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting variable stars count: {e}")
@@ -1057,7 +1044,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Comets
     try:
-        count_result = await db_session.scalar(select(func.count(CometModel.id)))
+        count_result = db_session.scalar(select(func.count(CometModel.id)))
         status["comets"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting comets count: {e}")
@@ -1065,7 +1052,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Eclipses
     try:
-        count_result = await db_session.scalar(select(func.count(EclipseModel.id)))
+        count_result = db_session.scalar(select(func.count(EclipseModel.id)))
         status["eclipses"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting eclipses count: {e}")
@@ -1073,7 +1060,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Bortle characteristics
     try:
-        count_result = await db_session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
+        count_result = db_session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
         status["bortle_characteristics"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting bortle characteristics count: {e}")
@@ -1081,7 +1068,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Planets
     try:
-        count_result = await db_session.scalar(select(func.count(PlanetModel.id)))
+        count_result = db_session.scalar(select(func.count(PlanetModel.id)))
         status["planets"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting planets count: {e}")
@@ -1089,7 +1076,7 @@ async def get_seed_status(db_session: AsyncSession) -> dict[str, int]:
 
     # Moons
     try:
-        count_result = await db_session.scalar(select(func.count(MoonModel.id)))
+        count_result = db_session.scalar(select(func.count(MoonModel.id)))
         status["moons"] = count_result or 0
     except (AttributeError, RuntimeError, SQLAlchemyError, TypeError) as e:
         logger.debug(f"Error getting moons count: {e}")

@@ -233,7 +233,7 @@ def get_object_visibility_timeline(
     )
 
 
-async def get_time_based_recommendations(
+def get_time_based_recommendations(
     time_slots: list[datetime],
     observer_lat: float | None = None,
     observer_lon: float | None = None,
@@ -307,7 +307,7 @@ async def get_time_based_recommendations(
 
     db = get_database()
     # Get a reasonable set of objects (limit to bright objects for performance)
-    all_objects = await db.filter_objects(max_magnitude=12.0, limit=1000)
+    all_objects = db.filter_objects(max_magnitude=12.0, limit=1000)
 
     # For each time slot, get recommendations
     recommendations: dict[datetime, list[CelestialObject]] = {}

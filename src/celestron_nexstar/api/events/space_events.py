@@ -7,12 +7,11 @@ Helps users find optimal viewing locations for upcoming space events.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from celestron_nexstar.api.core.exceptions import DatabaseError
 
@@ -95,18 +94,14 @@ def populate_space_events_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session
     """
-    import asyncio
 
     from celestron_nexstar.api.database.database_seeder import seed_space_events
     from celestron_nexstar.api.database.models import get_db_session
 
     logger.info("Populating space events database...")
 
-    async def _seed() -> None:
-        async with get_db_session() as async_session:
-            await seed_space_events(async_session, force=True)
-
-    asyncio.run(_seed())
+    with get_db_session() as db_session:
+        seed_space_events(db_session, force=True)
 
 
 def get_upcoming_events(
@@ -138,61 +133,40 @@ def get_upcoming_events(
 
     # Try to get from database first
     try:
-        import asyncio
-
         from sqlalchemy import select
 
         from celestron_nexstar.api.database.models import SpaceEventModel, get_db_session
-
-        async def _get_events() -> list[SpaceEventModel]:
-            async with get_db_session() as db:
-                result = await db.execute(
-                    select(SpaceEventModel).filter(
-                        and_(
-                            SpaceEventModel.date >= start_date,
-                            SpaceEventModel.date <= end_date,
-                        )
-                    )
-                )
-                return list(result.scalars().all())
 
         # Filter by event type if specified
         if event_types:
             type_values = [et.value for et in event_types]
 
-            async def _get_filtered_events() -> list[SpaceEventModel]:
-                async with get_db_session() as db:
-                    result = await db.execute(
-                        select(SpaceEventModel)
-                        .filter(
-                            and_(
-                                SpaceEventModel.date >= start_date,
-                                SpaceEventModel.date <= end_date,
-                                SpaceEventModel.event_type.in_(type_values),
-                            )
+            with get_db_session() as db:
+                result = db.execute(
+                    select(SpaceEventModel)
+                    .filter(
+                        and_(
+                            SpaceEventModel.date >= start_date,
+                            SpaceEventModel.date <= end_date,
+                            SpaceEventModel.event_type.in_(type_values),
                         )
-                        .order_by(SpaceEventModel.date)
                     )
-                    return list(result.scalars().all())
-
-            db_events = asyncio.run(_get_filtered_events())
+                    .order_by(SpaceEventModel.date)
+                )
+                db_events = list(result.scalars().all())
         else:
-
-            async def _get_ordered_events() -> list[SpaceEventModel]:
-                async with get_db_session() as db:
-                    result = await db.execute(
-                        select(SpaceEventModel)
-                        .filter(
-                            and_(
-                                SpaceEventModel.date >= start_date,
-                                SpaceEventModel.date <= end_date,
-                            )
+            with get_db_session() as db:
+                result = db.execute(
+                    select(SpaceEventModel)
+                    .filter(
+                        and_(
+                            SpaceEventModel.date >= start_date,
+                            SpaceEventModel.date <= end_date,
                         )
-                        .order_by(SpaceEventModel.date)
                     )
-                    return list(result.scalars().all())
-
-            db_events = asyncio.run(_get_ordered_events())
+                    .order_by(SpaceEventModel.date)
+                )
+                db_events = list(result.scalars().all())
 
         # If we have events in the database, use them
         if not db_events:
@@ -312,14 +286,11 @@ def find_best_viewing_location(
 
     # Check if dark sky is required
     if req.dark_sky_required or req.min_bortle_class:
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        async def _get_light_data() -> Any:
-            from celestron_nexstar.api.database.models import get_db_session
+        from celestron_nexstar.api.database.models import get_db_session
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
-            async with get_db_session() as db_session:
-                return await get_light_pollution_data(db_session, current_location.latitude, current_location.longitude)
-
-        current_light = asyncio.run(_get_light_data())
+        with get_db_session() as db_session:
+            current_light = get_light_pollution_data(db_session, current_location.latitude, current_location.longitude)
         current_bortle = current_light.bortle_class.value
 
         # Check if current location meets requirements

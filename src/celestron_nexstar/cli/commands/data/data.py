@@ -109,6 +109,163 @@ def sync_ephemeris_files(
         raise typer.Exit(code=1) from e
 
 
+@app.command("populate-geometries", rich_help_panel="Database Management")
+def populate_geometries() -> None:
+    """
+    Populate geometry columns for existing objects that have RA/Dec but no geometry.
+
+    Creates POINT geometries from RA/Dec coordinates for:
+    - Stars
+    - Double stars
+    - Galaxies
+    - Nebulae
+    - Clusters
+
+    Note: Constellations and asterisms require full GeoJSON geometry and should be
+    reimported using 'nexstar data import celestial_constellations' and
+    'nexstar data import celestial_asterisms'.
+
+    Examples:
+        nexstar data populate-geometries
+    """
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
+    from sqlalchemy import select
+
+    from celestron_nexstar.api.database.database import get_database
+    from celestron_nexstar.api.database.models import (
+        ClusterModel,
+        DoubleStarModel,
+        GalaxyModel,
+        NebulaModel,
+        StarModel,
+        get_db_session,
+    )
+
+    console.print("\n[bold cyan]Populating geometry columns for existing objects[/bold cyan]\n")
+
+    get_database()
+
+    def _populate_geometries() -> dict[str, int]:
+        """Populate geometries for all spatial object types."""
+        from sqlalchemy import text
+
+        results: dict[str, int] = {}
+
+        # Tables that need POINT geometry
+        model_classes = [
+            (StarModel, "stars"),
+            (DoubleStarModel, "double_stars"),
+            (GalaxyModel, "galaxies"),
+            (NebulaModel, "nebulae"),
+            (ClusterModel, "clusters"),
+        ]
+
+        with get_db_session() as session:
+            # Ensure SpatiaLite is loaded by executing a simple spatial query
+            # This will trigger the connect event handler to load SpatiaLite
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                session.execute(text("SELECT InitSpatialMetadata(1)"))
+                # Metadata might already be initialized
+            for model_class, table_name in model_classes:
+                console.print(f"[dim]Processing {table_name}...[/dim]")
+
+                # Find objects with RA/Dec but no geometry
+                # Query just the IDs first to avoid GeoAlchemy2 trying to use AsEWKB on geometry column
+                # before SpatiaLite is loaded
+                stmt_ids = select(model_class.id).where(
+                    model_class.ra_hours.isnot(None),
+                    model_class.dec_degrees.isnot(None),
+                    model_class.geometry.is_(None),
+                )
+                result_ids = session.execute(stmt_ids)
+                ids = [row[0] for row in result_ids.all()]
+
+                if not ids:
+                    console.print(f"  [dim]No {table_name} need geometry updates[/dim]")
+                    results[table_name] = 0
+                    continue
+
+                # Batch IDs to avoid SQLite's parameter limit (999)
+                # Load objects in batches
+                batch_size = 500
+                objects = []
+                for i in range(0, len(ids), batch_size):
+                    batch_ids = ids[i : i + batch_size]
+                    stmt = select(model_class).where(model_class.id.in_(batch_ids))
+                    result = session.execute(stmt)
+                    objects.extend(result.scalars().all())
+
+                if not objects:
+                    console.print(f"  [dim]No {table_name} need geometry updates[/dim]")
+                    results[table_name] = 0
+                    continue
+
+                console.print(f"  [dim]Found {len(objects):,} {table_name} to update[/dim]")
+
+                updated = 0
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TimeRemainingColumn(),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task(f"Updating {table_name}...", total=len(objects))
+
+                    for obj in objects:
+                        try:
+                            # Convert RA from hours to degrees for geometry
+                            ra_degrees = obj.ra_hours * 15.0
+                            dec_degrees = obj.dec_degrees
+                            point_wkt = f"POINT({ra_degrees} {dec_degrees})"
+
+                            # Create geometry using GeoAlchemy2
+                            geom_result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": point_wkt})
+                            geometry_obj = geom_result.scalar()
+
+                            if geometry_obj:
+                                # Update the object's geometry
+                                obj.geometry = geometry_obj
+                                updated += 1
+
+                        except Exception as e:
+                            console.print(f"  [yellow]Warning: Failed to create geometry for {obj.name}: {e}[/yellow]")
+
+                        progress.advance(task)
+
+                # Commit updates for this table
+                session.commit()
+                results[table_name] = updated
+                console.print(f"  [green]✓[/green] Updated {updated:,} {table_name}")
+
+        return results
+
+    try:
+        results = _populate_geometries()
+
+        total_updated = sum(results.values())
+        if total_updated > 0:
+            console.print("\n[bold green]✓ Geometry population complete![/bold green]")
+            console.print("\n[bold]Summary:[/bold]")
+            for table_name, count in results.items():
+                if count > 0:
+                    console.print(f"  [green]✓[/green] {table_name}: {count:,} record(s) updated")
+            console.print(f"\n[dim]Total records updated: {total_updated:,}[/dim]\n")
+        else:
+            console.print("\n[bold]✓ All objects already have geometries[/bold]")
+            console.print("[dim]No updates were needed.[/dim]\n")
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error populating geometries: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("update-star-names", rich_help_panel="Database Management")
 def update_star_names() -> None:
     """
@@ -119,7 +276,7 @@ def update_star_names() -> None:
     star name mappings after importing Yale BSC data.
     """
     from celestron_nexstar.api.database.database import get_database
-    from celestron_nexstar.api.database.models import CelestialObjectModel, StarNameMappingModel
+    from celestron_nexstar.api.database.models import StarModel, StarNameMappingModel
 
     console.print("\n[bold cyan]Updating star common names[/bold cyan]\n")
 
@@ -131,37 +288,77 @@ def update_star_names() -> None:
             from sqlalchemy import select
 
             async with db._AsyncSession() as session:
-                # Get all Yale BSC objects without common_name
-                stmt = select(CelestialObjectModel).where(
-                    CelestialObjectModel.catalog == "yale_bsc",
-                    (CelestialObjectModel.common_name.is_(None)) | (CelestialObjectModel.common_name == ""),
-                )
-                result = await session.execute(stmt)
-                objects_to_update = result.scalars().all()
+                # Get all star name mappings for lookup
+                all_mappings_stmt = select(StarNameMappingModel)
+                mappings_result = await session.execute(all_mappings_stmt)
+                all_mappings = mappings_result.scalars().all()
 
-                console.print(f"[dim]Found {len(objects_to_update)} Yale BSC objects without common names[/dim]")
+                # Create lookup dictionaries
+                # Map common_name -> HR number (for reverse lookup)
+                name_to_hr: dict[str, int] = {}
+                # Map HR number -> common_name
+                hr_to_name: dict[int, str] = {}
+                for mapping in all_mappings:
+                    if mapping.common_name and mapping.common_name.strip():
+                        name_to_hr[mapping.common_name.strip().lower()] = mapping.hr_number
+                        hr_to_name[mapping.hr_number] = mapping.common_name.strip()
+
+                console.print(f"[dim]Loaded {len(hr_to_name)} star name mappings from database[/dim]")
+
+                # Strategy 1: Find stars with HR numbers in their name (format: "HR 1708")
+                hr_stars_stmt = select(StarModel).where(
+                    StarModel.name.like("HR %"),
+                    (StarModel.common_name.is_(None)) | (StarModel.common_name == ""),
+                )
+                hr_result = await session.execute(hr_stars_stmt)
+                hr_stars = hr_result.scalars().all()
+
+                console.print(f"[dim]Found {len(hr_stars)} stars with HR numbers but no common names[/dim]")
 
                 updated = 0
-                for obj in objects_to_update:
-                    # Extract HR number from name (format: "HR 1708")
+                for obj in hr_stars:
                     if not obj.name or not obj.name.startswith("HR "):
                         continue
 
                     try:
                         hr_number = int(obj.name.replace("HR ", "").strip())
+                        if hr_number in hr_to_name:
+                            obj.common_name = hr_to_name[hr_number]
+                            updated += 1
                     except ValueError:
-                        continue
+                        pass
 
-                    # Look up common name
-                    mapping_stmt = (
-                        select(StarNameMappingModel).where(StarNameMappingModel.hr_number == hr_number).limit(1)
+                # Strategy 2: Find stars whose name matches a common name in mappings
+                # This handles cases where a star is stored with its common name but common_name field is empty
+                if name_to_hr:
+                    # Get stars without common_name but whose name might be a common name
+                    select(StarModel).where(
+                        (StarModel.common_name.is_(None)) | (StarModel.common_name == ""),
+                        StarModel.name.in_(list(name_to_hr.keys())),  # This won't work with case-insensitive
                     )
-                    mapping_result = await session.execute(mapping_stmt)
-                    mapping = mapping_result.scalar_one_or_none()
+                    # Instead, get a sample and check manually
+                    sample_stmt = (
+                        select(StarModel)
+                        .where(
+                            (StarModel.common_name.is_(None)) | (StarModel.common_name == ""),
+                        )
+                        .limit(10000)
+                    )  # Check first 10k to avoid memory issues
+                    sample_result = await session.execute(sample_stmt)
+                    sample_stars = sample_result.scalars().all()
 
-                    if mapping and mapping.common_name and mapping.common_name.strip():
-                        obj.common_name = mapping.common_name.strip()
-                        updated += 1
+                    name_matched = 0
+                    for obj in sample_stars:
+                        if not obj.name:
+                            continue
+                        name_lower = obj.name.lower().strip()
+                        if name_lower in name_to_hr:
+                            obj.common_name = hr_to_name[name_to_hr[name_lower]]
+                            name_matched += 1
+                            updated += 1
+
+                    if name_matched > 0:
+                        console.print(f"[dim]Matched {name_matched} stars by name in sample[/dim]")
 
                 if updated > 0:
                     await session.commit()
@@ -173,6 +370,12 @@ def update_star_names() -> None:
                     console.print("[green]✓[/green] Search index updated")
                 else:
                     console.print("[yellow]⚠[/yellow] No objects needed updating")
+                    console.print(
+                        "[dim]Note: Most stars are stored with HIP numbers (e.g., 'HIP 20885'), "
+                        "but star_name_mappings uses HR numbers. Without a HIP-to-HR cross-reference, "
+                        "these stars cannot be automatically matched. Stars with 'HR ' prefix or "
+                        "common names that match mappings can be updated.[/dim]"
+                    )
 
         asyncio.run(_update_star_names())
 
@@ -228,17 +431,42 @@ def rebuild_fts() -> None:
         # Get count of indexed objects
         from sqlalchemy import func, select, text
 
-        from celestron_nexstar.api.database.models import CelestialObjectModel
+        from celestron_nexstar.api.database.models import (
+            ClusterModel,
+            DoubleStarModel,
+            GalaxyModel,
+            MoonModel,
+            NebulaModel,
+            PlanetModel,
+            StarModel,
+        )
 
         async def _get_counts() -> tuple[int, int]:
             async with db._AsyncSession() as session:
-                # FTS5 table requires raw SQL (virtual table)
-                fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
-                fts_count = fts_result.scalar() or 0
-                # Use SQLAlchemy for objects count
-                objects_result = await session.scalar(select(func.count(CelestialObjectModel.id)))
-                objects_count = objects_result or 0
-                return fts_count, objects_count
+                # FTS5 table requires raw SQL (virtual table) - may not exist if using split schema
+                fts_count = 0
+                try:
+                    fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
+                    fts_count = fts_result.scalar() or 0
+                except Exception:
+                    # FTS table doesn't exist (using split schema) - that's okay
+                    pass
+
+                # Count objects across all type-specific tables
+                total_count = 0
+                for model_class in [
+                    StarModel,
+                    DoubleStarModel,
+                    GalaxyModel,
+                    NebulaModel,
+                    ClusterModel,
+                    PlanetModel,
+                    MoonModel,
+                ]:
+                    result = await session.scalar(select(func.count(model_class.id)))
+                    total_count += result or 0
+
+                return fts_count, total_count
 
         fts_count, objects_count = asyncio.run(_get_counts())
 

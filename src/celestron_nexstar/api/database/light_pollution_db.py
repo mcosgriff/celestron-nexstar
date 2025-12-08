@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
-from urllib import request
 
 
 try:
@@ -109,19 +108,17 @@ def _rgb_to_sqm(r: int, g: int, b: int) -> float:
     return max(17.0, min(22.0, sqm))
 
 
-async def _create_light_pollution_table(db: CatalogDatabase) -> None:
+def _create_light_pollution_table(db: CatalogDatabase) -> None:
     """Ensure light pollution grid table exists using SQLAlchemy model."""
     from celestron_nexstar.api.database.models import Base, LightPollutionGridModel
 
-    # Use SQLAlchemy to create the table if it doesn't exist (async-compatible)
+    # Use SQLAlchemy to create the table if it doesn't exist
     # This ensures consistency with the model definition
-    async with db._engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: Base.metadata.create_all(
-                sync_conn,
-                tables=[LightPollutionGridModel.__table__],  # type: ignore[list-item]
-                checkfirst=True,
-            )
+    with db._engine.begin() as conn:
+        Base.metadata.create_all(
+            conn,
+            tables=[LightPollutionGridModel.__table__],  # type: ignore[list-item]
+            checkfirst=True,
         )
 
 
@@ -323,67 +320,35 @@ def _point_in_boundaries(lat: float, lon: float, boundaries: list[dict[str, Any]
     return False
 
 
-async def _download_png(
-    url: str, output_path: Path, progress: Progress | None = None, task_id: int | None = None
-) -> bool:
-    """Download PNG image asynchronously with progress tracking."""
+def _download_png(url: str, output_path: Path, progress: Progress | None = None, task_id: int | None = None) -> bool:
+    """Download PNG image with progress tracking."""
+    import requests
+
     try:
-        import aiohttp
+        response = requests.get(url, timeout=300, stream=True)
+        if response.status_code == 200:
+            # Get content length for progress tracking
+            total_size = response.headers.get("Content-Length")
+            total_bytes = int(total_size) if total_size else None
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as response,
-        ):
-            if response.status == 200:
-                # Get content length for progress tracking
-                total_size = response.headers.get("Content-Length")
-                total_bytes = int(total_size) if total_size else None
+            if progress and task_id is not None and total_bytes:
+                progress.update(task_id, total=total_bytes)
 
-                if progress and task_id is not None and total_bytes:
-                    progress.update(task_id, total=total_bytes)
-
-                downloaded = 0
-                with open(output_path, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
+            downloaded = 0
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
                         if progress and task_id is not None and total_bytes:
                             progress.update(task_id, advance=len(chunk))
 
-                if progress and task_id is not None:
-                    progress.update(task_id, completed=downloaded)
+            if progress and task_id is not None:
+                progress.update(task_id, completed=downloaded)
 
-                return True
-            else:
-                logger.error(f"Failed to download {url}: HTTP {response.status}")
-                if progress and task_id is not None:
-                    progress.update(task_id, visible=False)
-                return False
-    except ImportError:
-        # Fallback to synchronous download
-        try:
-            with request.urlopen(url, timeout=300) as response:
-                if response.status == 200:
-                    total_size = response.headers.get("Content-Length")
-                    total_bytes = int(total_size) if total_size else None
-
-                    if progress and task_id is not None and total_bytes:
-                        progress.update(task_id, total=total_bytes)
-
-                    with open(output_path, "wb") as f:
-                        data = response.read()
-                        f.write(data)
-                        if progress and task_id is not None:
-                            progress.update(task_id, advance=len(data))
-
-                    return True
-                else:
-                    logger.error(f"Failed to download {url}: HTTP {response.status}")
-                    if progress and task_id is not None:
-                        progress.update(task_id, visible=False)
-                    return False
-        except Exception as e:
-            logger.error(f"Failed to download {url}: {e}")
+            return True
+        else:
+            logger.error(f"Failed to download {url}: HTTP {response.status_code}")
             if progress and task_id is not None:
                 progress.update(task_id, visible=False)
             return False
@@ -394,7 +359,7 @@ async def _download_png(
         return False
 
 
-async def _process_png_to_database(
+def _process_png_to_database(
     png_path: Path,
     region: str,
     db: CatalogDatabase,
@@ -452,7 +417,7 @@ async def _process_png_to_database(
     lon_step = (lon_max - lon_min) / width
 
     # Create table if needed
-    await _create_light_pollution_table(db)
+    _create_light_pollution_table(db)
 
     # Load state/province boundaries if filtering is requested
     boundary_filter = None
@@ -609,7 +574,7 @@ async def _process_png_to_database(
 
                     # Insert in batches
                     if len(batch_data) >= batch_size:
-                        await _insert_batch(db, batch_data)
+                        _insert_batch(db, batch_data)
                         inserted += len(batch_data)
                         batch_data = []
                         if progress and task_id is not None:
@@ -637,7 +602,7 @@ async def _process_png_to_database(
                 for batch_start in range(0, len(all_data), batch_size):
                     batch_end = min(batch_start + batch_size, len(all_data))
                     batch_chunk = all_data[batch_start:batch_end]
-                    await _insert_batch(db, batch_chunk)
+                    _insert_batch(db, batch_chunk)
                     inserted += len(batch_chunk)
                     if progress and task_id is not None:
                         progress.update(task_id, advance=len(batch_chunk))
@@ -664,7 +629,7 @@ async def _process_png_to_database(
             for batch_start in range(0, len(all_data), batch_size):
                 batch_end = min(batch_start + batch_size, len(all_data))
                 batch_chunk = all_data[batch_start:batch_end]
-                await _insert_batch(db, batch_chunk)
+                _insert_batch(db, batch_chunk)
                 inserted += len(batch_chunk)
                 if progress and task_id is not None:
                     progress.update(task_id, advance=len(batch_chunk))
@@ -705,7 +670,7 @@ async def _process_png_to_database(
 
                 # Insert in batches
                 if len(batch_data) >= batch_size:
-                    await _insert_batch(db, batch_data)
+                    _insert_batch(db, batch_data)
                     inserted += len(batch_data)
                     batch_data = []
                     if progress and task_id is not None:
@@ -713,7 +678,7 @@ async def _process_png_to_database(
 
     # Insert remaining
     if batch_data:
-        await _insert_batch(db, batch_data)
+        _insert_batch(db, batch_data)
         inserted += len(batch_data)
         if progress and task_id is not None:
             progress.update(task_id, advance=len(batch_data))
@@ -725,7 +690,7 @@ async def _process_png_to_database(
     return inserted
 
 
-async def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, float, str]]) -> None:
+def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, float, str]]) -> None:
     """Insert batch of light pollution data with geohash indexing."""
     from sqlalchemy import select
 
@@ -735,7 +700,7 @@ async def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float
         return
 
     try:
-        async with db._AsyncSession() as session:
+        with db.get_db_session() as session:
             # Pre-calculate geohashes for all records
             records_to_insert = []
             for lat, lon, sqm, region in batch_data:
@@ -756,14 +721,14 @@ async def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float
             # Use merge() approach: try to insert, if duplicate key error, update instead
             try:
                 session.add_all(records_to_insert)
-                await session.commit()
+                session.commit()
             except Exception as e:
                 # If bulk insert fails (e.g., due to unique constraint), fall back to individual inserts
-                await session.rollback()
+                session.rollback()
                 logger.debug(f"Bulk insert failed, falling back to individual inserts: {e}")
                 for record in records_to_insert:
                     # Check if record exists
-                    result = await session.execute(
+                    result = session.execute(
                         select(LightPollutionGridModel).where(
                             LightPollutionGridModel.latitude == record.latitude,
                             LightPollutionGridModel.longitude == record.longitude,
@@ -778,7 +743,7 @@ async def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float
                     else:
                         # Insert new record
                         session.add(record)
-                await session.commit()
+                session.commit()
     except Exception as e:
         logger.error(f"Error inserting light pollution batch: {e}", exc_info=True)
         raise
@@ -969,7 +934,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
         return sqm
 
 
-async def download_world_atlas_data(
+def download_world_atlas_data(
     regions: list[str] | None = None,
     grid_resolution: float = 0.1,
     force: bool = False,
@@ -990,7 +955,7 @@ async def download_world_atlas_data(
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    await _create_light_pollution_table(db)
+    _create_light_pollution_table(db)
 
     if regions is None:
         regions = list(WORLD_ATLAS_URLS.keys())
@@ -1023,7 +988,7 @@ async def download_world_atlas_data(
                 download_task = progress.add_task(f"Downloading {region}", total=None)
                 logger.info(f"Downloading {region} data from {url}...")
                 console.print(f"[dim]Downloading {region} data...[/dim]")
-                success = await _download_png(url, png_path, progress, download_task)
+                success = _download_png(url, png_path, progress, download_task)
                 progress.remove_task(download_task)
                 if not success:
                     logger.error(f"Failed to download {region}")
@@ -1041,7 +1006,7 @@ async def download_world_atlas_data(
                 process_task = progress.add_task(f"Processing {region}", total=None)
                 logger.info(f"Starting processing for {region}...")
                 console.print(f"[dim]Starting processing for {region}...[/dim]")
-                count = await _process_png_to_database(
+                count = _process_png_to_database(
                     png_path, region, db, grid_resolution, state_filter, progress, process_task
                 )
                 if process_task:
