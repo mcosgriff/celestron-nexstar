@@ -77,6 +77,7 @@ class VisibilityCountThread(QThread):
                 return
 
             from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
@@ -95,21 +96,26 @@ class VisibilityCountThread(QThread):
 
                 with db._get_session() as session:
                     # Get sky brightness from light pollution
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        # Light pollution data not available, use default
+                        logger.warning("Light pollution data not available, using default sky brightness")
+                        sky_brightness = SkyBrightness.FAIR
 
                     counts: dict[str, int] = {}
 
@@ -307,6 +313,7 @@ class ObjectsLoaderThread(QThread):
                 from celestron_nexstar.api.astronomy.variable_stars import get_known_variable_stars
                 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
                 from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+                from celestron_nexstar.api.core.exceptions import DatabaseError
                 from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                 from celestron_nexstar.api.observation.optics import get_current_configuration
@@ -318,21 +325,26 @@ class ObjectsLoaderThread(QThread):
 
                 with db._get_session() as session:
                     variable_stars = get_known_variable_stars(session)
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        # Light pollution data not available, use default
+                        logger.warning("Light pollution data not available, using default sky brightness")
+                        sky_brightness = SkyBrightness.FAIR
 
                     # Convert to RecommendedObject format
                     recommended_objects = []
@@ -390,6 +402,7 @@ class ObjectsLoaderThread(QThread):
             elif obj_type == CelestialObjectType.ZODIACAL:
                 # Load zodiacal objects (objects along the ecliptic - in zodiac constellations or near ecliptic)
                 from celestron_nexstar.api.core.enums import SkyBrightness
+                from celestron_nexstar.api.core.exceptions import DatabaseError
                 from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                 from celestron_nexstar.api.observation.optics import get_current_configuration
@@ -416,21 +429,26 @@ class ObjectsLoaderThread(QThread):
                 ]
 
                 with db._get_session() as session:
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        # Light pollution data not available, use default
+                        logger.warning("Light pollution data not available, using default sky brightness")
+                        sky_brightness = SkyBrightness.FAIR
 
                     # Get objects in zodiac constellations
                     all_objects = []
@@ -2176,6 +2194,7 @@ class MainWindow(QMainWindow):
         """Count the number of visible component stars for multiple asterisms in a single batch operation."""
         try:
             from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
@@ -2194,22 +2213,27 @@ class MainWindow(QMainWindow):
 
                 with db._get_session() as session:
                     # Get sky brightness from light pollution (once for all asterisms)
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        # Map Bortle class to SkyBrightness
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        # Light pollution data not available, use default
+                        logger.warning("Light pollution data not available, using default sky brightness")
+                        sky_brightness = SkyBrightness.FAIR
 
                     # Count visible stars for each asterism
                     counts: dict[str, int] = {}
@@ -2279,6 +2303,7 @@ class MainWindow(QMainWindow):
         print(f"DEBUG: _count_visible_stars_batch called with {len(constellation_names)} constellations")
         try:
             from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
@@ -2297,22 +2322,27 @@ class MainWindow(QMainWindow):
 
                 with db._get_session() as session:
                     # Get sky brightness from light pollution (once for all constellations)
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        # Map Bortle class to SkyBrightness
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        # Light pollution data not available, use default
+                        logger.warning("Light pollution data not available, using default sky brightness")
+                        sky_brightness = SkyBrightness.FAIR
 
                     # Debug: Log conditions once
                     seeing_score = conditions.seeing_score if hasattr(conditions, "seeing_score") else None
@@ -3516,6 +3546,7 @@ class MainWindow(QMainWindow):
             from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QVBoxLayout
 
             from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
@@ -3532,22 +3563,33 @@ class MainWindow(QMainWindow):
             location = get_observer_location()
             db = get_database()
 
-            with db._get_session() as session:
-                light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+            try:
+                with db._get_session() as session:
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
 
-            # Map Bortle class to SkyBrightness
-            bortle_to_sky_brightness = {
-                1: SkyBrightness.EXCELLENT,
-                2: SkyBrightness.EXCELLENT,
-                3: SkyBrightness.GOOD,
-                4: SkyBrightness.GOOD,
-                5: SkyBrightness.FAIR,
-                6: SkyBrightness.FAIR,
-                7: SkyBrightness.POOR,
-                8: SkyBrightness.POOR,
-                9: SkyBrightness.URBAN,
-            }
-            sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
+                # Map Bortle class to SkyBrightness
+                bortle_to_sky_brightness = {
+                    1: SkyBrightness.EXCELLENT,
+                    2: SkyBrightness.EXCELLENT,
+                    3: SkyBrightness.GOOD,
+                    4: SkyBrightness.GOOD,
+                    5: SkyBrightness.FAIR,
+                    6: SkyBrightness.FAIR,
+                    7: SkyBrightness.POOR,
+                    8: SkyBrightness.POOR,
+                    9: SkyBrightness.URBAN,
+                }
+                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
+            except DatabaseError as e:
+                # Light pollution data not available, show error message
+                progress.close()
+                QMessageBox.warning(
+                    self,
+                    "Light Pollution Data Not Available",
+                    f"Light pollution data is not available for your location.\n\n{e!s}\n\n"
+                    "Sky darkness information cannot be displayed without this data.",
+                )
+                return
 
             # Get telescope configuration and calculate telescope limiting magnitude
             telescope_limit = None

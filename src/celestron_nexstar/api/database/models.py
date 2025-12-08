@@ -459,7 +459,8 @@ class LightPollutionGridModel(Base):
     SQLAlchemy model for light pollution grid data.
 
     Stores light pollution SQM values for grid points across the world.
-    Uses geohash for efficient spatial indexing and proximity searches.
+    Uses SpatiaLite spatial indexes for efficient proximity searches.
+    Also maintains geohash for backward compatibility and as a fallback.
     """
 
     __tablename__ = "light_pollution_grid"
@@ -471,6 +472,13 @@ class LightPollutionGridModel(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     geohash: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+
+    # Geometry (SpatiaLite POINT format for spatial queries)
+    # GeoAlchemy2 handles the geometry column management automatically
+    # This enables efficient spatial queries using SpatiaLite spatial indexes
+    geometry: Mapped[Any | None] = mapped_column(
+        Geometry(geometry_type="POINT", srid=0, spatial_index=True), nullable=True
+    )
 
     # Light pollution data
     sqm_value: Mapped[float] = mapped_column(Float, nullable=False)

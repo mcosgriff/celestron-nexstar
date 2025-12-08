@@ -691,8 +691,8 @@ def _process_png_to_database(
 
 
 def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, float, str]]) -> None:
-    """Insert batch of light pollution data with geohash indexing."""
-    from sqlalchemy import select
+    """Insert batch of light pollution data with geohash and spatial indexing."""
+    from sqlalchemy import inspect, select, text
 
     from celestron_nexstar.api.database.models import LightPollutionGridModel
 
@@ -701,6 +701,11 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
 
     try:
         with db.get_db_session() as session:
+            # Check if geometry column exists
+            inspector = inspect(session.bind)
+            columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
+            has_geometry = "geometry" in columns
+
             # Pre-calculate geohashes for all records
             records_to_insert = []
             for lat, lon, sqm, region in batch_data:
@@ -744,6 +749,30 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
                         # Insert new record
                         session.add(record)
                 session.commit()
+
+            # Populate geometry column for newly inserted records if geometry column exists
+            if has_geometry:
+                try:
+                    # Update geometry for records that don't have it
+                    # Update all records in the batch (more efficient than per-record updates)
+                    for lat, lon, _, _ in batch_data:
+                        session.execute(
+                            text(
+                                """
+                                UPDATE light_pollution_grid
+                                SET geometry = MakePoint(:lon, :lat, 0)
+                                WHERE geometry IS NULL
+                                AND ABS(latitude - :lat) < 0.0001
+                                AND ABS(longitude - :lon) < 0.0001
+                                """
+                            ),
+                            {"lat": lat, "lon": lon},
+                        )
+                    session.commit()
+                except Exception as e:
+                    # If geometry update fails, log but don't fail the insert
+                    logger.debug(f"Failed to update geometry column: {e}")
+                    session.rollback()
     except Exception as e:
         logger.error(f"Error inserting light pollution batch: {e}", exc_info=True)
         raise
@@ -751,9 +780,10 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
 
 def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float | None:
     """
-    Get SQM value from database using geohash-based proximity search.
+    Get SQM value from database using spatial index or geohash-based proximity search.
 
-    Uses geohash for fast nearest neighbor queries with hierarchical spatial indexing.
+    Uses SpatiaLite spatial indexes when available for efficient proximity queries,
+    falling back to geohash-based queries if spatial indexes are not available.
 
     Args:
         lat: Latitude in degrees
@@ -780,48 +810,97 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
         return None
 
     search_radius_km = 22.0  # ~22km search radius
+    # Convert radius to degrees (approximate: 1 degree ≈ 111 km)
+    search_radius_deg = search_radius_km / 111.0
 
-    # Generate geohash for the search point
-    center_geohash = encode(lat, lon, precision=12)
-
-    # Get geohash prefixes to search (includes neighbors)
-    search_geohashes = get_neighbors_for_search(center_geohash, search_radius_km)
-
-    # Build query using geohash prefix matching
-    # Use LIKE to match geohash prefixes
-    geohash_patterns = [f"{gh}%" for gh in search_geohashes]
-
-    from sqlalchemy import func, or_, select
+    from sqlalchemy import func, inspect, or_, select
 
     from celestron_nexstar.api.database.models import LightPollutionGridModel
 
     result: list[Any]
     with db._get_session_sync() as session:
-        # Query using geohash prefix matching with SQLAlchemy ORM
-        # This is much faster than bounding box queries for large datasets
-        # Build OR conditions for geohash LIKE patterns
-        geohash_conditions = or_(*[LightPollutionGridModel.geohash.like(pattern) for pattern in geohash_patterns])
+        # Check if geometry column exists (SpatiaLite spatial index available)
+        inspector = inspect(session.bind)
+        columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
+        has_geometry = "geometry" in columns
 
-        # Build query - get more candidates than needed, we'll filter by accurate distance
-        # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
-        distance_expr = func.abs(LightPollutionGridModel.latitude - lat) + func.abs(
-            LightPollutionGridModel.longitude - lon
-        )
+        if has_geometry:
+            # Use SpatiaLite spatial index for efficient proximity search
+            # Distance function returns distance in degrees (for SRID 0)
+            # We'll use a bounding box first, then filter by distance
+            search_point_lon = lon
+            search_point_lat = lat
 
-        # Build query - get more candidates (up to 10) for better interpolation
-        query = (
-            select(
-                LightPollutionGridModel.latitude,
-                LightPollutionGridModel.longitude,
-                LightPollutionGridModel.sqm_value,
+            # Build query using SpatiaLite spatial functions
+            # Use Distance function with spatial index for efficient queries
+            # Distance returns degrees (for SRID 0), so we need to convert km to degrees
+            query = (
+                select(
+                    LightPollutionGridModel.latitude,
+                    LightPollutionGridModel.longitude,
+                    LightPollutionGridModel.sqm_value,
+                    func.Distance(
+                        LightPollutionGridModel.geometry,
+                        func.MakePoint(search_point_lon, search_point_lat, 0),
+                    ).label("distance"),
+                )
+                .where(
+                    # Use bounding box filter first (uses spatial index efficiently)
+                    func.X(LightPollutionGridModel.geometry).between(
+                        search_point_lon - search_radius_deg, search_point_lon + search_radius_deg
+                    ),
+                    func.Y(LightPollutionGridModel.geometry).between(
+                        search_point_lat - search_radius_deg, search_point_lat + search_radius_deg
+                    ),
+                    # Filter by actual distance (more accurate)
+                    func.Distance(
+                        LightPollutionGridModel.geometry,
+                        func.MakePoint(search_point_lon, search_point_lat, 0),
+                    )
+                    <= search_radius_deg,
+                    LightPollutionGridModel.geometry.isnot(None),
+                )
+                .order_by("distance")
+                .limit(10)  # Get more candidates for better selection
             )
-            .where(geohash_conditions)
-            .order_by(distance_expr)
-            .limit(10)  # Get more candidates for better selection
-        )
 
-        query_results = session.execute(query).fetchall()
-        result = list(query_results)
+            query_results = session.execute(query).fetchall()
+            result = list(query_results)
+        else:
+            # Fallback to geohash-based query if geometry column doesn't exist
+            # Generate geohash for the search point
+            center_geohash = encode(lat, lon, precision=12)
+
+            # Get geohash prefixes to search (includes neighbors)
+            search_geohashes = get_neighbors_for_search(center_geohash, search_radius_km)
+
+            # Build query using geohash prefix matching
+            # Use LIKE to match geohash prefixes
+            geohash_patterns = [f"{gh}%" for gh in search_geohashes]
+
+            # Build OR conditions for geohash LIKE patterns
+            geohash_conditions = or_(*[LightPollutionGridModel.geohash.like(pattern) for pattern in geohash_patterns])
+
+            # Build query - get more candidates than needed, we'll filter by accurate distance
+            # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
+            distance_expr = func.abs(LightPollutionGridModel.latitude - lat) + func.abs(
+                LightPollutionGridModel.longitude - lon
+            )
+
+            # Build query - get more candidates (up to 10) for better interpolation
+            query = (
+                select(
+                    LightPollutionGridModel.latitude,
+                    LightPollutionGridModel.longitude,
+                    LightPollutionGridModel.sqm_value,
+                )
+                .where(geohash_conditions)
+                .order_by(distance_expr)
+                .limit(10)  # Get more candidates for better selection
+            )
+
+            query_results = session.execute(query).fetchall()
+            result = list(query_results)
 
         if not result:
             logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")

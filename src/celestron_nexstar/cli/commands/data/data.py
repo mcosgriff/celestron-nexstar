@@ -2396,12 +2396,9 @@ def run_migrations(
         console.print("[cyan]Applying migrations...[/cyan]\n")
         try:
             # Dispose of existing connections to ensure Alembic uses fresh connections
-            import asyncio
-
-            async def _dispose_engine() -> None:
-                await db._engine.dispose()
-
-            asyncio.run(_dispose_engine())
+            # Engine is now synchronous, so dispose() is a direct call
+            if db._engine is not None:
+                db._engine.dispose()
 
             # Use upgrade to head - this will apply ALL pending migrations in sequence
             # Alembic will automatically apply all migrations from current state to head
@@ -2412,7 +2409,8 @@ def run_migrations(
 
             # Verify the new revision after applying migrations
             # Get a fresh connection to ensure we see the updated state
-            asyncio.run(_dispose_engine())
+            if db._engine is not None:
+                db._engine.dispose()
         except Exception as e:
             console.print(f"[red]✗[/red] Failed to apply migrations: {e}")
             import traceback
@@ -2698,19 +2696,17 @@ def rollback_migration(
         console.print("[bold yellow]Any data in tables that are removed will be lost![/bold yellow]\n")
 
         # Dispose of existing connections
-        import asyncio
-
-        async def _dispose_engine() -> None:
-            await db._engine.dispose()
-
-        asyncio.run(_dispose_engine())
+        # Engine is now synchronous, so dispose() is a direct call
+        if db._engine is not None:
+            db._engine.dispose()
 
         # Rollback
         command.downgrade(alembic_cfg, target_rev)
         console.print("\n[bold green]✓ Migration rolled back successfully![/bold green]\n")
 
         # Verify the new revision
-        asyncio.run(_dispose_engine())
+        if db._engine is not None:
+            db._engine.dispose()
         sync_engine = create_engine(f"sqlite:///{db.db_path}", connect_args={"check_same_thread": False})
         with sync_engine.connect() as connection:
             context = MigrationContext.configure(connection)

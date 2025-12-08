@@ -132,7 +132,7 @@ def upgrade() -> None:
                     )
                 )
     
-    conn.commit()
+    # Note: Don't commit here - Alembic manages transactions
 
 
 def downgrade() -> None:
@@ -167,5 +167,5 @@ def downgrade() -> None:
                     except Exception:
                         pass
     
-    conn.commit()
+    # Note: Don't commit here - Alembic manages transactions
 
