@@ -59,7 +59,7 @@ class MovementController:
                 if loop.is_running():
                     # If loop is running, schedule the move
                     # Store task reference to avoid garbage collection
-                    _move_task = asyncio.create_task(_move())  # noqa: RUF006
+                    _move_task = asyncio.create_task(_move())
                     # Task will run in background, we don't wait for it
                 else:
                     loop.run_until_complete(_move())
@@ -91,7 +91,7 @@ class MovementController:
                 if loop.is_running():
                     # If loop is running, schedule the stop
                     # Store task reference to avoid garbage collection
-                    _stop_task = asyncio.create_task(_stop())  # noqa: RUF006
+                    _stop_task = asyncio.create_task(_stop())
                     # Task will run in background, we don't wait for it
                 else:
                     loop.run_until_complete(_stop())
