@@ -6,7 +6,6 @@ Step-by-step wizard for telescope alignment with visual guides and quality indic
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -605,7 +604,7 @@ class AlignmentAssistantDialog(QDialog):
             updated_obj = obj.obj.with_current_position()
 
             # Perform sync
-            success = asyncio.run(self.telescope.sync_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees))
+            success = self.telescope.sync_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees)
 
             if success:
                 QMessageBox.information(self, "Sync Successful", f"Successfully synced on {obj.display_name}.")
@@ -628,7 +627,7 @@ class AlignmentAssistantDialog(QDialog):
             updated_obj = obj.obj.with_current_position()
 
             # Perform goto
-            success = asyncio.run(self.telescope.goto_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees))
+            success = self.telescope.goto_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees)
 
             if success:
                 QMessageBox.information(

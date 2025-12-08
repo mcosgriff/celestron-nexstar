@@ -5,7 +5,6 @@ Real-time dashboard showing current weather, moon phase, seeing conditions,
 and space weather data with auto-refresh.
 """
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -237,18 +236,18 @@ class LiveDashboardDialog(QDialog):
                 return
 
             # Fetch all data asynchronously
-            # Use asyncio.run() since we're in a sync context
-            asyncio.run(self._load_dashboard_data(location))
+            # Load dashboard data
+            self._load_dashboard_data(location)
         except Exception as e:
             logger.error(f"Error refreshing dashboard data: {e}", exc_info=True)
             self.status_label.setText(f"Error loading data: {e}")
 
-    async def _load_dashboard_data(self, location: ObserverLocation) -> None:
-        """Load all dashboard data asynchronously."""
+    def _load_dashboard_data(self, location: ObserverLocation) -> None:
+        """Load all dashboard data."""
         colors = self._get_theme_colors()
 
         # Fetch weather
-        weather = await fetch_weather(location)
+        weather = fetch_weather(location)
         self._update_weather(weather, colors)
 
         # Fetch moon info (synchronous function)
@@ -273,7 +272,7 @@ class LiveDashboardDialog(QDialog):
 
         # Fetch space weather
         try:
-            space_weather = await get_space_weather_conditions()
+            space_weather = get_space_weather_conditions()
             self._update_space_weather(space_weather, colors)
         except Exception as e:
             logger.debug(f"Could not fetch space weather: {e}")

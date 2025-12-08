@@ -4,15 +4,11 @@ Catalog Search Window
 A subwindow for searching celestial object catalogs.
 """
 
-import asyncio
-import concurrent.futures
 import json
 import logging
-import threading
 from collections import defaultdict
-from collections.abc import Coroutine
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSize, QStringListModel, Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QIcon, QPalette
@@ -46,43 +42,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 @dataclass
@@ -164,13 +123,13 @@ class AdvancedFiltersDialog(QDialog):
         super().showEvent(event)  # type: ignore[arg-type]
         # Load catalogs when dialog is shown
         if self.catalog_combo.count() == 1:  # Only "All Catalogs" item
-            _run_async_safe(self._load_catalogs())
+            self._load_catalogs()
 
-    async def _load_catalogs(self) -> None:
+    def _load_catalogs(self) -> None:
         """Load available catalogs."""
         try:
             db = get_database()
-            catalogs = await db.get_all_catalogs()
+            catalogs = db.get_all_catalogs()
             for catalog in sorted(catalogs):
                 self.catalog_combo.addItem(catalog, catalog)
         except Exception as e:
@@ -338,7 +297,7 @@ class CatalogSearchWindow(QMainWindow):
 
         try:
             # Get suggestions asynchronously
-            suggestions = _run_async_safe(get_object_names_for_completion(prefix=text, limit=20))
+            suggestions = get_object_names_for_completion(prefix=text, limit=20)
             self.completer_model.setStringList(suggestions)
         except Exception as e:
             logger.debug(f"Error updating autocomplete: {e}")
@@ -346,7 +305,7 @@ class CatalogSearchWindow(QMainWindow):
     def _load_recent_searches(self) -> None:
         """Load recent searches from database."""
         try:
-            recent_searches = _run_async_safe(self._get_recent_searches())
+            recent_searches = self._get_recent_searches()
             self.recent_searches_combo.clear()
             self.recent_searches_combo.addItem("Recent searches...")
             for search in recent_searches:
@@ -360,8 +319,8 @@ class CatalogSearchWindow(QMainWindow):
             from celestron_nexstar.api.database.models import UserPreferenceModel
 
             db = get_database()
-            async with db._AsyncSession() as session:
-                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
+            with db._get_session() as session:
+                pref = session.get(UserPreferenceModel, "catalog_recent_searches")
                 if pref:
                     data = json.loads(pref.value)
                     searches = data.get("searches", [])
@@ -383,8 +342,8 @@ class CatalogSearchWindow(QMainWindow):
             from celestron_nexstar.api.database.models import UserPreferenceModel
 
             db = get_database()
-            async with db._AsyncSession() as session:
-                pref = await session.get(UserPreferenceModel, "catalog_recent_searches")
+            with db._get_session() as session:
+                pref = session.get(UserPreferenceModel, "catalog_recent_searches")
                 searches: list[str] = []
                 if pref:
                     data = json.loads(pref.value)
@@ -412,7 +371,7 @@ class CatalogSearchWindow(QMainWindow):
                         description="Recent catalog search queries",
                     )
                     session.add(pref)
-                await session.commit()
+                session.commit()
 
                 # Reload recent searches in UI
                 self._load_recent_searches()
@@ -433,7 +392,7 @@ class CatalogSearchWindow(QMainWindow):
         if query:
             # Save to recent searches (async, but don't wait)
             try:
-                _run_async_safe(self._save_recent_search(query))
+                self._save_recent_search(query)
             except Exception as e:
                 logger.debug(f"Error saving recent search: {e}")
             # Perform search immediately
@@ -638,7 +597,7 @@ class CatalogSearchWindow(QMainWindow):
             # Apply catalog filter if specified
             catalog_name = self.current_filters.catalog_name
             try:
-                results = _run_async_safe(search_objects(query, catalog_name=catalog_name, update_positions=False))
+                results = search_objects(query, catalog_name=catalog_name, update_positions=False)
                 # Apply other filters
                 results = self._apply_filters(results)
             except Exception as search_error:
@@ -683,7 +642,7 @@ class CatalogSearchWindow(QMainWindow):
 
             # Save to recent searches (after successful search)
             try:
-                _run_async_safe(self._save_recent_search(query))
+                self._save_recent_search(query)
             except Exception as e:
                 logger.debug(f"Error saving recent search: {e}")
 

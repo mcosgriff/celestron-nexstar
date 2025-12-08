@@ -2,13 +2,9 @@
 Dialog to display comet visibility information.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -24,43 +20,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class CometsInfoDialog(QDialog):
@@ -236,28 +195,23 @@ class CometsInfoDialog(QDialog):
                 f"<p style='color: {colors['text_dim']}; margin-bottom: 10px;'>Searching next {months} months</p>"
             )
 
-            # Load async content using safe async runner
-            async def _load_async_content() -> list[str]:
-                """Load all async content."""
-                content_parts = []
+            # Load content
+            content_parts = []
 
-                from celestron_nexstar.api.astronomy.comets import get_visible_comets
-                from celestron_nexstar.api.database.models import get_db_session
+            from celestron_nexstar.api.astronomy.comets import get_visible_comets
+            from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    comets = await get_visible_comets(
-                        db_session, location, months_ahead=months, max_magnitude=max_magnitude
-                    )
+            with get_db_session() as db_session:
+                comets = get_visible_comets(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
 
-                if not comets:
-                    content_parts.append(
-                        f"<p><span style='color: {colors['yellow']};'>No bright comets found in the forecast period.</span></p>"
-                    )
-                    content_parts.append(
-                        f"<p style='color: {colors['text_dim']};'>Comet visibility is highly variable. Check regularly for new discoveries.</p>"
-                    )
-                    return content_parts
-
+            if not comets:
+                content_parts.append(
+                    f"<p><span style='color: {colors['yellow']};'>No bright comets found in the forecast period.</span></p>"
+                )
+                content_parts.append(
+                    f"<p style='color: {colors['text_dim']};'>Comet visibility is highly variable. Check regularly for new discoveries.</p>"
+                )
+            else:
                 # Display comets in a table
                 content_parts.append("<h2>Visible Comets</h2>")
                 content_parts.append("<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>")
@@ -362,11 +316,7 @@ class CometsInfoDialog(QDialog):
                     content_parts.append(f"<li>{vis.notes}</li>")
                     content_parts.append("</ul>")
 
-                return content_parts
-
-            # Run async content loading
-            async_content = _run_async_safe(_load_async_content())
-            html_content.extend(async_content)
+            html_content.extend(content_parts)
 
             # Viewing tips
             html_content.append(

@@ -381,12 +381,10 @@ def _load_ephemeris_files_from_naif() -> dict[str, EphemerisFileInfo]:
 def _get_ephemeris_files() -> dict[str, EphemerisFileInfo]:
     """Get ephemeris files from database, with fallback to hardcoded data."""
     try:
-        import asyncio
-
         from celestron_nexstar.api.database.database import get_ephemeris_files
 
         # Try to get from database first
-        db_files = asyncio.run(get_ephemeris_files())
+        db_files = get_ephemeris_files()
         if db_files:
             logger.info(f"Loaded {len(db_files)} ephemeris files from database")
             # Convert dict to EphemerisFileInfo objects
@@ -411,8 +409,7 @@ def _get_ephemeris_files() -> dict[str, EphemerisFileInfo]:
 
     # Fallback: try to load from NAIF
     try:
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        files = asyncio.run(_load_ephemeris_files_from_naif())
+        files = _load_ephemeris_files_from_naif()
         if files:
             logger.info(f"Loaded {len(files)} ephemeris files from NAIF summaries")
             # Merge with hardcoded files (hardcoded take precedence for known files)

@@ -11,11 +11,8 @@ Shows a full month calendar with upcoming astronomical events including:
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import logging
 import threading
-from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -51,43 +48,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 @dataclass
@@ -445,126 +405,123 @@ class AstronomicalCalendarDialog(QDialog):
             # Get location
             location = get_observer_location()
 
-            async def _load() -> None:
-                async with get_db_session() as session:
-                    # Determine year and timezone
-                    year = start_date.year
-                    # Get user's timezone
-                    try:
-                        from celestron_nexstar.api.core.utils import get_local_timezone
+            # Determine year and timezone
+            year = start_date.year
+            # Get user's timezone
+            try:
+                from celestron_nexstar.api.core.utils import get_local_timezone
 
-                        tz = get_local_timezone(location.latitude, location.longitude)
-                        # Map timezone to AstroPixels format
-                        # Default to MST if we can't determine
-                        if tz:
-                            tz_name = str(tz)
-                            timezone_map = {
-                                "America/New_York": "EST",
-                                "America/Chicago": "CST",
-                                "America/Denver": "MST",
-                                "America/Los_Angeles": "PST",
-                                "America/Anchorage": "AKST",
-                                "Pacific/Honolulu": "HST",
-                            }
-                            tz_str = timezone_map.get(tz_name, "MST")
-                        else:
-                            tz_str = "MST"
-                    except Exception:
-                        tz_str = "MST"  # Default to MST
+                tz = get_local_timezone(location.latitude, location.longitude)
+                # Map timezone to AstroPixels format
+                # Default to MST if we can't determine
+                if tz:
+                    tz_name = str(tz)
+                    timezone_map = {
+                        "America/New_York": "EST",
+                        "America/Chicago": "CST",
+                        "America/Denver": "MST",
+                        "America/Los_Angeles": "PST",
+                        "America/Anchorage": "AKST",
+                        "Pacific/Honolulu": "HST",
+                    }
+                    tz_str = timezone_map.get(tz_name, "MST")
+                else:
+                    tz_str = "MST"
+            except Exception:
+                tz_str = "MST"  # Default to MST
 
-                    # Check if events are cached, if not fetch and cache them
-                    end_date = start_date + timedelta(days=365)
+            # Check if events are cached, if not fetch and cache them
+            end_date = start_date + timedelta(days=365)
 
-                    # Get timezone offset for reconstructing local_date from database events
-                    tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)  # Default to MST
-                    cached_events = await get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+            # Get timezone offset for reconstructing local_date from database events
+            tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)  # Default to MST
 
-                    # Always fetch and cache to ensure we have all events (force_refresh=True to update event types)
-                    logger.info(f"Fetching AstroPixels almanac for {year} ({tz_str})")
-                    await cache_astropixels_events(session, year, tz_str, force_refresh=True)
-                    # Also cache next year if we're near the end of the year
-                    if start_date.month >= 11:
-                        await cache_astropixels_events(session, year + 1, tz_str, force_refresh=True)
+            with get_db_session() as session:
+                cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
 
-                    # Get cached events with timezone offset
-                    cached_events = await get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+                # Always fetch and cache to ensure we have all events (force_refresh=True to update event types)
+                logger.info(f"Fetching AstroPixels almanac for {year} ({tz_str})")
+                cache_astropixels_events(session, year, tz_str, force_refresh=True)
+                # Also cache next year if we're near the end of the year
+                if start_date.month >= 11:
+                    cache_astropixels_events(session, year + 1, tz_str, force_refresh=True)
 
-                    # Add events to calendar
-                    logger.info(f"Adding {len(cached_events)} AstroPixels events to calendar")
-                    events_by_month: dict[int, int] = {}
-                    december_events: list[str] = []
-                    for event in cached_events:
-                        # Determine color based on event type
-                        color_map = {
-                            "moon_phase": "#f39c12" if "Full" in event.event_name else "#3498db",
-                            "moon_perigee": "#95a5a6",
-                            "moon_apogee": "#95a5a6",
-                            "moon_ascending_node": "#95a5a6",
-                            "moon_descending_node": "#95a5a6",
-                            "meteor_shower": "#9b59b6",
-                            "lunar_eclipse": "#e74c3c",
-                            "solar_eclipse": "#c0392b",
-                            "planetary_opposition": "#16a085",
-                            "planetary_elongation": "#16a085",
-                            "planetary_perihelion": "#16a085",
-                            "planetary_aphelion": "#16a085",
-                            "planetary_inferior_conjunction": "#16a085",
-                            "planetary_superior_conjunction": "#16a085",
-                            "solstice": "#27ae60",
-                            "equinox": "#27ae60",
-                            "conjunction": "#16a085",
-                            "occultation": "#e67e22",
-                            "star_position": "#9b59b6",
-                            "other": "#34495e",
-                        }
-                        color = color_map.get(event.event_type, "#34495e")
+                # Get cached events with timezone offset
+                cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
 
-                        # Use local_date if available (for correct calendar date), otherwise use UTC date
-                        # For AstroPixels events, local_date is set; for database events, it's None
-                        if event.local_date:
-                            # Use the local date (timezone-naive) for correct calendar date
-                            event_date = event.local_date
-                            month = event.local_date.month
-                        else:
-                            # For database events without local_date, reconstruct local date from UTC
-                            # by adding back the timezone offset
-                            # This is approximate but should work for most cases
-                            event_date = event.date
-                            month = event.date.month
+            # Add events to calendar
+            logger.info(f"Adding {len(cached_events)} AstroPixels events to calendar")
+            events_by_month: dict[int, int] = {}
+            december_events: list[str] = []
+            for event in cached_events:
+                # Determine color based on event type
+                color_map = {
+                    "moon_phase": "#f39c12" if "Full" in event.event_name else "#3498db",
+                    "moon_perigee": "#95a5a6",
+                    "moon_apogee": "#95a5a6",
+                    "moon_ascending_node": "#95a5a6",
+                    "moon_descending_node": "#95a5a6",
+                    "meteor_shower": "#9b59b6",
+                    "lunar_eclipse": "#e74c3c",
+                    "solar_eclipse": "#c0392b",
+                    "planetary_opposition": "#16a085",
+                    "planetary_elongation": "#16a085",
+                    "planetary_perihelion": "#16a085",
+                    "planetary_aphelion": "#16a085",
+                    "planetary_inferior_conjunction": "#16a085",
+                    "planetary_superior_conjunction": "#16a085",
+                    "solstice": "#27ae60",
+                    "equinox": "#27ae60",
+                    "conjunction": "#16a085",
+                    "occultation": "#e67e22",
+                    "star_position": "#9b59b6",
+                    "other": "#34495e",
+                }
+                color = color_map.get(event.event_type, "#34495e")
 
-                        # Debug logging for FULL MOON events
-                        if "FULL MOON" in event.event_name.upper() or "full moon" in event.event_name.lower():
-                            logger.debug(
-                                f"Adding FULL MOON to calendar: {event.event_name}, "
-                                f"event_date={event_date}, local_date={event.local_date}, "
-                                f"utc_date={event.date}, type={event.event_type}"
-                            )
+                # Use local_date if available (for correct calendar date), otherwise use UTC date
+                # For AstroPixels events, local_date is set; for database events, it's None
+                if event.local_date:
+                    # Use the local date (timezone-naive) for correct calendar date
+                    event_date = event.local_date
+                    month = event.local_date.month
+                else:
+                    # For database events without local_date, reconstruct local date from UTC
+                    # by adding back the timezone offset
+                    # This is approximate but should work for most cases
+                    event_date = event.date
+                    month = event.date.month
 
-                        # Track events by month for debugging
-                        events_by_month[month] = events_by_month.get(month, 0) + 1
+                # Debug logging for FULL MOON events
+                if "FULL MOON" in event.event_name.upper() or "full moon" in event.event_name.lower():
+                    logger.debug(
+                        f"Adding FULL MOON to calendar: {event.event_name}, "
+                        f"event_date={event_date}, local_date={event.local_date}, "
+                        f"utc_date={event.date}, type={event.event_type}"
+                    )
 
-                        # Track December events specifically
-                        if month == 12:
-                            december_events.append(f"{event_date.day:02d} {event.event_name}")
+                # Track events by month for debugging
+                events_by_month[month] = events_by_month.get(month, 0) + 1
 
-                        self._add_event(
-                            event_date,
-                            event.event_name,
-                            event.description,
-                            event.event_type,
-                            color,
-                        )
+                # Track December events specifically
+                if month == 12:
+                    december_events.append(f"{event_date.day:02d} {event.event_name}")
 
-                    logger.info(f"Events by month: {events_by_month}")
-                    if december_events:
-                        logger.info(f"December events ({len(december_events)}): {sorted(december_events)}")
+                self._add_event(
+                    event_date,
+                    event.event_name,
+                    event.description,
+                    event.event_type,
+                    color,
+                )
 
-                    # Update calendar formatting after loading events
-                    # Use signal to ensure this runs on the main Qt thread
-                    self._update_formatting_signal.emit()
+            logger.info(f"Events by month: {events_by_month}")
+            if december_events:
+                logger.info(f"December events ({len(december_events)}): {sorted(december_events)}")
 
-            # Run async load - UI updates will be scheduled from the background thread
-            _run_async_safe(_load())
+            # Update calendar formatting after loading events
+            # Use signal to ensure this runs on the main Qt thread
+            self._update_formatting_signal.emit()
 
         except Exception as e:
             logger.error(f"Error loading AstroPixels events: {e}", exc_info=True)
@@ -654,95 +611,93 @@ class AstronomicalCalendarDialog(QDialog):
             from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
             from celestron_nexstar.api.database.models import get_db_session
 
-            async def _load() -> None:
-                async with get_db_session() as session:
-                    showers = await get_all_meteor_showers(session)
-                    current_date = start_date
-                    end_date = current_date + timedelta(days=365)
+            with get_db_session() as session:
+                showers = get_all_meteor_showers(session)
 
-                    for shower in showers:
-                        # Check if shower is active in the next year
-                        shower_start = datetime(
-                            current_date.year,
-                            shower.activity_start_month,
-                            shower.activity_start_day,
-                            tzinfo=UTC,
-                        )
+            current_date = start_date
+            end_date = current_date + timedelta(days=365)
+
+            for shower in showers:
+                # Check if shower is active in the next year
+                shower_start = datetime(
+                    current_date.year,
+                    shower.activity_start_month,
+                    shower.activity_start_day,
+                    tzinfo=UTC,
+                )
+                shower_end = datetime(
+                    current_date.year,
+                    shower.activity_end_month,
+                    shower.activity_end_day,
+                    tzinfo=UTC,
+                )
+
+                # Handle year wrap-around
+                if shower_end < shower_start:
+                    shower_end = datetime(
+                        current_date.year + 1,
+                        shower.activity_end_month,
+                        shower.activity_end_day,
+                        tzinfo=UTC,
+                    )
+
+                # Check if we need to look at next year too
+                if shower_start < current_date:
+                    shower_start = datetime(
+                        current_date.year + 1,
+                        shower.activity_start_month,
+                        shower.activity_start_day,
+                        tzinfo=UTC,
+                    )
+                    shower_end = datetime(
+                        current_date.year + 1,
+                        shower.activity_end_month,
+                        shower.activity_end_day,
+                        tzinfo=UTC,
+                    )
+                    if shower_end < shower_start:
                         shower_end = datetime(
-                            current_date.year,
+                            current_date.year + 2,
                             shower.activity_end_month,
                             shower.activity_end_day,
                             tzinfo=UTC,
                         )
 
-                        # Handle year wrap-around
-                        if shower_end < shower_start:
-                            shower_end = datetime(
-                                current_date.year + 1,
-                                shower.activity_end_month,
-                                shower.activity_end_day,
-                                tzinfo=UTC,
-                            )
+                # Add peak date
+                peak_date = datetime(
+                    shower_start.year,
+                    shower.peak_month,
+                    shower.peak_day,
+                    tzinfo=UTC,
+                )
 
-                        # Check if we need to look at next year too
-                        if shower_start < current_date:
-                            shower_start = datetime(
-                                current_date.year + 1,
-                                shower.activity_start_month,
-                                shower.activity_start_day,
-                                tzinfo=UTC,
-                            )
-                            shower_end = datetime(
-                                current_date.year + 1,
-                                shower.activity_end_month,
-                                shower.activity_end_day,
-                                tzinfo=UTC,
-                            )
-                            if shower_end < shower_start:
-                                shower_end = datetime(
-                                    current_date.year + 2,
-                                    shower.activity_end_month,
-                                    shower.activity_end_day,
-                                    tzinfo=UTC,
-                                )
+                if current_date <= peak_date <= end_date:
+                    self._add_event(
+                        peak_date,
+                        f"{shower.name} Peak",
+                        f"Peak activity: {shower.zhr_peak} meteors/hour",
+                        "meteor_shower",
+                        "#9b59b6",
+                    )
 
-                        # Add peak date
-                        peak_date = datetime(
-                            shower_start.year,
-                            shower.peak_month,
-                            shower.peak_day,
-                            tzinfo=UTC,
-                        )
+                # Add start and end dates if in range
+                if current_date <= shower_start <= end_date:
+                    self._add_event(
+                        shower_start,
+                        f"{shower.name} Begins",
+                        "Shower activity begins",
+                        "meteor_shower",
+                        "#8e44ad",
+                    )
 
-                        if current_date <= peak_date <= end_date:
-                            self._add_event(
-                                peak_date,
-                                f"{shower.name} Peak",
-                                f"Peak activity: {shower.zhr_peak} meteors/hour",
-                                "meteor_shower",
-                                "#9b59b6",
-                            )
-
-                        # Add start and end dates if in range
-                        if current_date <= shower_start <= end_date:
-                            self._add_event(
-                                shower_start,
-                                f"{shower.name} Begins",
-                                "Shower activity begins",
-                                "meteor_shower",
-                                "#8e44ad",
-                            )
-
-                        if current_date <= shower_end <= end_date:
-                            self._add_event(
-                                shower_end,
-                                f"{shower.name} Ends",
-                                "Shower activity ends",
-                                "meteor_shower",
-                                "#8e44ad",
-                            )
-
-            _run_async_safe(_load())
+                if current_date <= shower_end <= end_date:
+                    self._add_event(
+                        shower_end,
+                        f"{shower.name} Ends",
+                        "Shower activity ends",
+                        "meteor_shower",
+                        "#8e44ad",
+                    )
 
         except Exception as e:
             logger.error(f"Error loading meteor showers: {e}", exc_info=True)
@@ -756,31 +711,28 @@ class AstronomicalCalendarDialog(QDialog):
             )
             from celestron_nexstar.api.database.models import get_db_session
 
-            async def _load() -> None:
-                async with get_db_session() as session:
-                    # Load lunar eclipses
-                    lunar_eclipses = await get_next_lunar_eclipse(session, location, years_ahead=1)
-                    for eclipse in lunar_eclipses:
-                        self._add_event(
-                            eclipse.maximum_time,
-                            "Lunar Eclipse",
-                            f"{eclipse.eclipse_type.replace('_', ' ').title()}: {eclipse.notes}",
-                            "eclipse",
-                            "#e74c3c",  # Red for lunar
-                        )
+            with get_db_session() as session:
+                # Load lunar eclipses
+                lunar_eclipses = get_next_lunar_eclipse(session, location, years_ahead=1)
+                for eclipse in lunar_eclipses:
+                    self._add_event(
+                        eclipse.maximum_time,
+                        "Lunar Eclipse",
+                        f"{eclipse.eclipse_type.replace('_', ' ').title()}: {eclipse.notes}",
+                        "eclipse",
+                        "#e74c3c",  # Red for lunar
+                    )
 
-                    # Load solar eclipses
-                    solar_eclipses = await get_next_solar_eclipse(session, location, years_ahead=1)
-                    for eclipse in solar_eclipses:
-                        self._add_event(
-                            eclipse.maximum_time,
-                            "Solar Eclipse",
-                            f"{eclipse.eclipse_type.replace('_', ' ').title()}: {eclipse.notes}",
-                            "eclipse",
-                            "#c0392b",  # Dark red for solar
-                        )
-
-            _run_async_safe(_load())
+                # Load solar eclipses
+                solar_eclipses = get_next_solar_eclipse(session, location, years_ahead=1)
+                for eclipse in solar_eclipses:
+                    self._add_event(
+                        eclipse.maximum_time,
+                        "Solar Eclipse",
+                        f"{eclipse.eclipse_type.replace('_', ' ').title()}: {eclipse.notes}",
+                        "eclipse",
+                        "#c0392b",  # Dark red for solar
+                    )
 
         except Exception as e:
             logger.error(f"Error loading eclipses: {e}", exc_info=True)

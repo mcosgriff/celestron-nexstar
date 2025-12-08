@@ -7,7 +7,6 @@ what's visible and locating nearby dark sky sites.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 from dataclasses import dataclass
@@ -106,8 +105,7 @@ def find_dark_sites_near(
 
     # Handle string location
     if isinstance(location, str):
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        location = asyncio.run(geocode_location(location))
+        location = geocode_location(location)
 
     # Create search point geometry (WGS84 / EPSG:4326)
     search_point = Point(location.longitude, location.latitude)
@@ -122,21 +120,18 @@ def find_dark_sites_near(
 
     # Try database first (offline-capable)
     try:
+        from sqlalchemy import select
+
         from celestron_nexstar.api.database.models import DarkSkySiteModel, get_db_session
 
-        async def _get_sites() -> list[DarkSkySiteModel]:
-            async with get_db_session() as db:
-                from sqlalchemy import select
-
-                # Query all sites matching bortle class
-                result = await db.execute(
-                    select(DarkSkySiteModel).filter(
-                        DarkSkySiteModel.bortle_class <= min_bortle.value,
-                    )
+        with get_db_session() as db:
+            # Query all sites matching bortle class
+            result = db.execute(
+                select(DarkSkySiteModel).filter(
+                    DarkSkySiteModel.bortle_class <= min_bortle.value,
                 )
-                return list(result.scalars().all())
-
-        db_sites = asyncio.run(_get_sites())
+            )
+            db_sites = list(result.scalars().all())
 
         if db_sites:
             # Create GeoDataFrame from database sites
@@ -285,18 +280,14 @@ def populate_dark_sky_sites_database(db_session: Session) -> None:
     Args:
         db_session: SQLAlchemy database session (unused, kept for API compatibility)
     """
-    import asyncio
 
     from celestron_nexstar.api.database.database_seeder import seed_dark_sky_sites
     from celestron_nexstar.api.database.models import get_db_session
 
     logger.info("Populating dark sky sites database...")
 
-    async def _seed() -> None:
-        async with get_db_session() as async_session:
-            await seed_dark_sky_sites(async_session, force=True)
-
-    asyncio.run(_seed())
+    with get_db_session() as session:
+        seed_dark_sky_sites(session, force=True)
 
 
 def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewingInfo:
@@ -311,20 +302,13 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
     """
     # Handle string location
     if isinstance(location, str):
-        # Run async function - this is a sync entry point, so asyncio.run() is safe
-        location = asyncio.run(geocode_location(location))
+        location = geocode_location(location)
 
     # Get light pollution data
-    # Run async function - this is a sync entry point, so asyncio.run() is safe
-    from typing import Any
+    from celestron_nexstar.api.database.models import get_db_session
 
-    async def _get_light_data() -> Any:
-        from celestron_nexstar.api.database.models import get_db_session
-
-        async with get_db_session() as db_session:
-            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
-
-    light_data = asyncio.run(_get_light_data())
+    with get_db_session() as db_session:
+        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
 
     return VacationViewingInfo(
         location=location,

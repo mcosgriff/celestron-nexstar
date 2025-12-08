@@ -2,7 +2,6 @@
 Dialog to display transit times for celestial objects.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -120,7 +119,7 @@ class TransitTimesInfoDialog(QDialog):
 
             # Get objects from database
             db = get_database()
-            all_objects = asyncio.run(db.filter_objects(limit=self.limit * 2))  # Get more to filter
+            all_objects = db.filter_objects(limit=self.limit * 2)  # Get more to filter
 
             # Get transit times
             transit_times = get_transit_times(all_objects[: self.limit], location.latitude, location.longitude)

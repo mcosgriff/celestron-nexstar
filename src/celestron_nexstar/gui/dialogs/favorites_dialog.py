@@ -4,7 +4,6 @@ Favorites Dialog
 Dialog to view and manage favorite celestial objects.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -96,7 +95,7 @@ class FavoritesDialog(QDialog):
     def _load_favorites(self) -> None:
         """Load favorites from database and populate table."""
         try:
-            favorites = asyncio.run(get_favorites())
+            favorites = get_favorites()
             self.table.setRowCount(len(favorites))
 
             for row, fav in enumerate(favorites):
@@ -170,7 +169,7 @@ class FavoritesDialog(QDialog):
     def _on_remove_clicked(self, object_name: str) -> None:
         """Handle remove button click - remove from favorites."""
         try:
-            success = asyncio.run(remove_favorite(object_name))
+            success = remove_favorite(object_name)
             if success:
                 self._load_favorites()
         except Exception as e:
@@ -190,7 +189,7 @@ class FavoritesDialog(QDialog):
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                success = asyncio.run(clear_favorites())
+                success = clear_favorites()
                 if success:
                     self._load_favorites()
             except Exception as e:

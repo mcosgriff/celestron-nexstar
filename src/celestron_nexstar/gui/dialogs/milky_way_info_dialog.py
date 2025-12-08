@@ -2,13 +2,9 @@
 Dialog to display Milky Way visibility information with tabs for next, tonight, and when.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -27,43 +23,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class MilkyWayInfoDialog(QDialog):

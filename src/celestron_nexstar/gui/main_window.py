@@ -4,12 +4,8 @@ Main application window for telescope control.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import contextlib
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -52,43 +48,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
-
-
 class VisibilityCountThread(QThread):
     """Worker thread to count visible stars for constellations/asterisms in the background."""
 
@@ -112,7 +71,6 @@ class VisibilityCountThread(QThread):
             # Check if thread should stop
             if self.isInterruptionRequested():
                 return
-            import asyncio
 
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.database.database import get_database
@@ -122,18 +80,18 @@ class VisibilityCountThread(QThread):
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
-            # Get conditions outside async function to avoid nested event loop issues
+            # Get conditions
             location = get_observer_location()
             config = get_current_configuration()
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
 
-            async def _count_all_stars() -> dict[str, int]:
+            def _count_all_stars() -> dict[str, int]:
                 db = get_database()
 
-                async with db._AsyncSession() as session:
+                with db._get_session() as session:
                     # Get sky brightness from light pollution
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
                         2: SkyBrightness.EXCELLENT,
@@ -169,7 +127,7 @@ class VisibilityCountThread(QThread):
                             print(f"DEBUG: Asterism '{asterism_name}' has {len(asterism.member_stars)} member stars")
                             visible_count = 0
                             for star_name in asterism.member_stars:
-                                star = await db.get_by_name(star_name.strip())
+                                star = db.get_by_name(star_name.strip())
                                 if not star:
                                     if asterism_name == "Big Dipper":
                                         print(f"DEBUG: Asterism '{asterism_name}': Star '{star_name}' not found")
@@ -221,9 +179,7 @@ class VisibilityCountThread(QThread):
                     else:
                         # Count visible stars for each constellation
                         for constellation_name in self.constellation_names:
-                            stars = await db.filter_objects(
-                                object_type="star", constellation=constellation_name, limit=100
-                            )
+                            stars = db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
                             visible_count = 0
                             for star in stars:
@@ -279,8 +235,8 @@ class VisibilityCountThread(QThread):
 
                     return counts
 
-            print(f"DEBUG: VisibilityCountThread starting async count for {len(self.constellation_names)} items")
-            result = asyncio.run(_count_all_stars())
+            print(f"DEBUG: VisibilityCountThread starting count for {len(self.constellation_names)} items")
+            result = _count_all_stars()
             print(f"DEBUG: VisibilityCountThread got result: {result}")
             print(f"DEBUG: VisibilityCountThread emitting counts: {result}")
             logger.info(f"VisibilityCountThread emitting counts: {result}")
@@ -306,8 +262,6 @@ class ObjectsLoaderThread(QThread):
     def run(self) -> None:
         """Load objects data in background thread."""
         try:
-            import asyncio
-
             from celestron_nexstar.api.astronomy.constellations import get_visible_asterisms, get_visible_constellations
             from celestron_nexstar.api.core.enums import CelestialObjectType
             from celestron_nexstar.api.database.database import get_database
@@ -320,232 +274,216 @@ class ObjectsLoaderThread(QThread):
             # Special handling for constellation type: show constellations
             if obj_type == CelestialObjectType.CONSTELLATION:
                 # Load visible constellations
-                async def _load_constellations() -> list[Any]:
-                    db = get_database()
-                    async with db._AsyncSession() as session:
-                        return await get_visible_constellations(
-                            session,
-                            conditions.latitude,
-                            conditions.longitude,
-                            conditions.timestamp,
-                            min_altitude_deg=20.0,
-                        )
-
-                constellations = asyncio.run(_load_constellations())
+                db = get_database()
+                with db._get_session() as session:
+                    constellations = get_visible_constellations(
+                        session,
+                        conditions.latitude,
+                        conditions.longitude,
+                        conditions.timestamp,
+                        min_altitude_deg=20.0,
+                    )
                 # Convert to list of constellation names for display
                 objects = [const[0].name for const in constellations]  # const[0] is the Constellation object
             elif obj_type == CelestialObjectType.ASTERISM:
                 # Load visible asterisms
-                async def _load_asterisms() -> list[Any]:
-                    db = get_database()
-                    async with db._AsyncSession() as session:
-                        return await get_visible_asterisms(
-                            session,
-                            conditions.latitude,
-                            conditions.longitude,
-                            conditions.timestamp,
-                            min_altitude_deg=20.0,
-                        )
-
-                asterisms = asyncio.run(_load_asterisms())
+                db = get_database()
+                with db._get_session() as session:
+                    asterisms = get_visible_asterisms(
+                        session,
+                        conditions.latitude,
+                        conditions.longitude,
+                        conditions.timestamp,
+                        min_altitude_deg=20.0,
+                    )
                 # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
                 objects = asterisms  # Keep full objects for asterisms
             elif obj_type == CelestialObjectType.VARIABLE_STAR:
                 # Load variable stars and convert to RecommendedObject format
-                async def _load_variable_stars() -> list[Any]:
-                    from celestron_nexstar.api.astronomy.variable_stars import get_known_variable_stars
-                    from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-                    from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
-                    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-                    from celestron_nexstar.api.observation.observation_planner import RecommendedObject
-                    from celestron_nexstar.api.observation.optics import get_current_configuration
-                    from celestron_nexstar.api.observation.visibility import assess_visibility
+                from celestron_nexstar.api.astronomy.variable_stars import get_known_variable_stars
+                from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+                from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+                from celestron_nexstar.api.observation.optics import get_current_configuration
+                from celestron_nexstar.api.observation.visibility import assess_visibility
 
-                    db = get_database()
-                    config = get_current_configuration()
-                    location = get_observer_location()
+                db = get_database()
+                config = get_current_configuration()
+                location = get_observer_location()
 
-                    async with db._AsyncSession() as session:
-                        variable_stars = await get_known_variable_stars(session)
-                        light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                        bortle_to_sky_brightness = {
-                            1: SkyBrightness.EXCELLENT,
-                            2: SkyBrightness.EXCELLENT,
-                            3: SkyBrightness.GOOD,
-                            4: SkyBrightness.FAIR,
-                            5: SkyBrightness.FAIR,
-                            6: SkyBrightness.POOR,
-                            7: SkyBrightness.URBAN,
-                            8: SkyBrightness.URBAN,
-                            9: SkyBrightness.URBAN,
-                        }
-                        sky_brightness = bortle_to_sky_brightness.get(
-                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                with db._get_session() as session:
+                    variable_stars = get_known_variable_stars(session)
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
+
+                    # Convert to RecommendedObject format
+                    recommended_objects = []
+                    for var_star in variable_stars:
+                        # Use average magnitude for display
+                        avg_mag = (var_star.magnitude_min + var_star.magnitude_max) / 2.0
+                        obj = CelestialObject(
+                            name=var_star.name,
+                            common_name=var_star.designation,
+                            catalog="variable",
+                            ra_hours=var_star.ra_hours,
+                            dec_degrees=var_star.dec_degrees,
+                            magnitude=avg_mag,
+                            object_type=CelestialObjectType.VARIABLE_STAR,
+                            description=f"{var_star.variable_type} - Mag {var_star.magnitude_min:.1f} to {var_star.magnitude_max:.1f}, Period: {var_star.period_days:.1f} days. {var_star.notes}",
+                            constellation=None,
                         )
 
-                        # Convert to RecommendedObject format
-                        recommended_objects = []
-                        for var_star in variable_stars:
-                            # Use average magnitude for display
-                            avg_mag = (var_star.magnitude_min + var_star.magnitude_max) / 2.0
-                            obj = CelestialObject(
-                                name=var_star.name,
-                                common_name=var_star.designation,
-                                catalog="variable",
-                                ra_hours=var_star.ra_hours,
-                                dec_degrees=var_star.dec_degrees,
-                                magnitude=avg_mag,
-                                object_type=CelestialObjectType.VARIABLE_STAR,
-                                description=f"{var_star.variable_type} - Mag {var_star.magnitude_min:.1f} to {var_star.magnitude_max:.1f}, Period: {var_star.period_days:.1f} days. {var_star.notes}",
-                                constellation=None,
-                            )
+                        # Calculate visibility
+                        vis_info = assess_visibility(
+                            obj,
+                            config=config,
+                            sky_brightness=sky_brightness,
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
 
-                            # Calculate visibility
-                            vis_info = assess_visibility(
-                                obj,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                        visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
+                        if isinstance(visibility_prob_result, tuple):
+                            visibility_prob = visibility_prob_result[0]
+                        else:
+                            visibility_prob = visibility_prob_result
 
-                            visibility_prob_result = planner._calculate_visibility_probability(
-                                obj, conditions, vis_info
-                            )
-                            if isinstance(visibility_prob_result, tuple):
-                                visibility_prob = visibility_prob_result[0]
-                            else:
-                                visibility_prob = visibility_prob_result
+                        # Create RecommendedObject
+                        rec_obj = RecommendedObject(
+                            obj=obj,
+                            altitude=vis_info.altitude_deg or 0.0,
+                            azimuth=vis_info.azimuth_deg or 0.0,
+                            best_viewing_time=conditions.timestamp,
+                            visible_duration_hours=8.0,
+                            apparent_magnitude=avg_mag,
+                            observability_score=vis_info.observability_score,
+                            visibility_probability=visibility_prob,
+                            priority=1 if visibility_prob > 0.5 else 3,
+                            reason=f"Variable star: {var_star.variable_type}",
+                            viewing_tips=(),
+                        )
+                        recommended_objects.append(rec_obj)
 
-                            # Create RecommendedObject
-                            rec_obj = RecommendedObject(
-                                obj=obj,
-                                altitude=vis_info.altitude_deg or 0.0,
-                                azimuth=vis_info.azimuth_deg or 0.0,
-                                best_viewing_time=conditions.timestamp,
-                                visible_duration_hours=8.0,
-                                apparent_magnitude=avg_mag,
-                                observability_score=vis_info.observability_score,
-                                visibility_probability=visibility_prob,
-                                priority=1 if visibility_prob > 0.5 else 3,
-                                reason=f"Variable star: {var_star.variable_type}",
-                                viewing_tips=(),
-                            )
-                            recommended_objects.append(rec_obj)
-
-                        # Sort by visibility probability
-                        recommended_objects.sort(key=lambda x: -x.visibility_probability)
-                        return recommended_objects[:100]  # Limit to 100
-
-                objects = asyncio.run(_load_variable_stars())
+                    # Sort by visibility probability
+                    recommended_objects.sort(key=lambda x: -x.visibility_probability)
+                    objects = recommended_objects[:100]  # Limit to 100
             elif obj_type == CelestialObjectType.ZODIACAL:
                 # Load zodiacal objects (objects along the ecliptic - in zodiac constellations or near ecliptic)
-                async def _load_zodiacal_objects() -> list[Any]:
-                    from celestron_nexstar.api.core.enums import SkyBrightness
-                    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-                    from celestron_nexstar.api.observation.observation_planner import RecommendedObject
-                    from celestron_nexstar.api.observation.optics import get_current_configuration
-                    from celestron_nexstar.api.observation.visibility import assess_visibility
+                from celestron_nexstar.api.core.enums import SkyBrightness
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+                from celestron_nexstar.api.observation.optics import get_current_configuration
+                from celestron_nexstar.api.observation.visibility import assess_visibility
 
-                    db = get_database()
-                    config = get_current_configuration()
-                    location = get_observer_location()
+                db = get_database()
+                config = get_current_configuration()
+                location = get_observer_location()
 
-                    # Zodiac constellations
-                    zodiac_constellations = [
-                        "Aries",
-                        "Taurus",
-                        "Gemini",
-                        "Cancer",
-                        "Leo",
-                        "Virgo",
-                        "Libra",
-                        "Scorpius",
-                        "Sagittarius",
-                        "Capricornus",
-                        "Aquarius",
-                        "Pisces",
-                    ]
+                # Zodiac constellations
+                zodiac_constellations = [
+                    "Aries",
+                    "Taurus",
+                    "Gemini",
+                    "Cancer",
+                    "Leo",
+                    "Virgo",
+                    "Libra",
+                    "Scorpius",
+                    "Sagittarius",
+                    "Capricornus",
+                    "Aquarius",
+                    "Pisces",
+                ]
 
-                    async with db._AsyncSession() as session:
-                        light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                        bortle_to_sky_brightness = {
-                            1: SkyBrightness.EXCELLENT,
-                            2: SkyBrightness.EXCELLENT,
-                            3: SkyBrightness.GOOD,
-                            4: SkyBrightness.FAIR,
-                            5: SkyBrightness.FAIR,
-                            6: SkyBrightness.POOR,
-                            7: SkyBrightness.URBAN,
-                            8: SkyBrightness.URBAN,
-                            9: SkyBrightness.URBAN,
-                        }
-                        sky_brightness = bortle_to_sky_brightness.get(
-                            light_pollution.bortle_class.value, SkyBrightness.FAIR
-                        )
+                with db._get_session() as session:
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
 
-                        # Get objects in zodiac constellations
-                        all_objects = []
-                        seen_names = set()
-                        for const in zodiac_constellations:
-                            objects = await db.filter_objects(constellation=const, limit=50)
-                            for obj in objects:
-                                if obj.name not in seen_names:
-                                    all_objects.append(obj)
-                                    seen_names.add(obj.name)
-
-                        # Also get objects near ecliptic (declination between -8 and +8 degrees)
-                        all_db_objects = await db.filter_objects(limit=500)
-                        for obj in all_db_objects:
-                            if -8.0 <= obj.dec_degrees <= 8.0 and obj.name not in seen_names:
+                    # Get objects in zodiac constellations
+                    all_objects = []
+                    seen_names = set()
+                    for const in zodiac_constellations:
+                        objects = db.filter_objects(constellation=const, limit=50)
+                        for obj in objects:
+                            if obj.name not in seen_names:
                                 all_objects.append(obj)
                                 seen_names.add(obj.name)
 
-                        # Convert to RecommendedObject format
-                        recommended_objects = []
-                        for obj in all_objects:
-                            # Calculate visibility
-                            vis_info = assess_visibility(
-                                obj,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
+                    # Also get objects near ecliptic (declination between -8 and +8 degrees)
+                    all_db_objects = db.filter_objects(limit=500)
+                    for obj in all_db_objects:
+                        if -8.0 <= obj.dec_degrees <= 8.0 and obj.name not in seen_names:
+                            all_objects.append(obj)
+                            seen_names.add(obj.name)
 
-                            visibility_prob_result = planner._calculate_visibility_probability(
-                                obj, conditions, vis_info
-                            )
-                            if isinstance(visibility_prob_result, tuple):
-                                visibility_prob = visibility_prob_result[0]
-                            else:
-                                visibility_prob = visibility_prob_result
+                    # Convert to RecommendedObject format
+                    recommended_objects = []
+                    for obj in all_objects:
+                        # Calculate visibility
+                        vis_info = assess_visibility(
+                            obj,
+                            config=config,
+                            sky_brightness=sky_brightness,
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
 
-                            # Create RecommendedObject
-                            rec_obj = RecommendedObject(
-                                obj=obj,
-                                altitude=vis_info.altitude_deg or 0.0,
-                                azimuth=vis_info.azimuth_deg or 0.0,
-                                best_viewing_time=conditions.timestamp,
-                                visible_duration_hours=8.0,
-                                apparent_magnitude=obj.magnitude or 0.0,
-                                observability_score=vis_info.observability_score,
-                                visibility_probability=visibility_prob,
-                                priority=1 if visibility_prob > 0.5 else 3,
-                                reason=f"Zodiacal object in {obj.constellation or 'ecliptic region'}",
-                                viewing_tips=(),
-                            )
-                            recommended_objects.append(rec_obj)
+                        visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
+                        if isinstance(visibility_prob_result, tuple):
+                            visibility_prob = visibility_prob_result[0]
+                        else:
+                            visibility_prob = visibility_prob_result
 
-                        # Sort by visibility probability
-                        recommended_objects.sort(key=lambda x: -x.visibility_probability)
-                        return recommended_objects[:100]  # Limit to 100
+                        # Create RecommendedObject
+                        rec_obj = RecommendedObject(
+                            obj=obj,
+                            altitude=vis_info.altitude_deg or 0.0,
+                            azimuth=vis_info.azimuth_deg or 0.0,
+                            best_viewing_time=conditions.timestamp,
+                            visible_duration_hours=8.0,
+                            apparent_magnitude=obj.magnitude or 0.0,
+                            observability_score=vis_info.observability_score,
+                            visibility_probability=visibility_prob,
+                            priority=1 if visibility_prob > 0.5 else 3,
+                            reason=f"Zodiacal object in {obj.constellation or 'ecliptic region'}",
+                            viewing_tips=(),
+                        )
+                        recommended_objects.append(rec_obj)
 
-                objects = asyncio.run(_load_zodiacal_objects())
+                    # Sort by visibility probability
+                    recommended_objects.sort(key=lambda x: -x.visibility_probability)
+                    objects = recommended_objects[:100]  # Limit to 100
             else:
                 # Get recommended objects for this type
                 objects = planner.get_recommended_objects(conditions, obj_type, max_results=100, best_for_seeing=False)
@@ -2012,7 +1950,7 @@ class MainWindow(QMainWindow):
 
         object_names = [obj_rec.obj.name for obj_rec in objects]
         try:
-            favorite_dict = asyncio.run(are_favorites(object_names))
+            favorite_dict = are_favorites(object_names)
             # Convert dict to list in same order as objects
             favorite_statuses = [favorite_dict.get(name, False) for name in object_names]
         except Exception:
@@ -2237,18 +2175,18 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
-            # Get conditions outside async function to avoid nested event loop issues
+            # Get conditions
             location = get_observer_location()
             config = get_current_configuration()
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
 
-            async def _count_all_stars() -> dict[str, int]:
+            def _count_all_stars() -> dict[str, int]:
                 db = get_database()
 
-                async with db._AsyncSession() as session:
+                with db._get_session() as session:
                     # Get sky brightness from light pollution (once for all asterisms)
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                     # Map Bortle class to SkyBrightness
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
@@ -2277,7 +2215,7 @@ class MainWindow(QMainWindow):
                         # Look up each member star by name
                         for star_name in asterism.member_stars:
                             # Try to find the star in the database
-                            star = await db.get_by_name(star_name.strip())
+                            star = db.get_by_name(star_name.strip())
                             if not star:
                                 continue
 
@@ -2321,7 +2259,7 @@ class MainWindow(QMainWindow):
 
                     return counts
 
-            result = _run_async_safe(_count_all_stars())
+            result = _count_all_stars()
             return result if isinstance(result, dict) else dict.fromkeys(asterism_names, 0)
         except Exception as e:
             logger.debug(f"Error counting visible stars for asterisms: {e}")
@@ -2340,18 +2278,18 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
-            # Get conditions outside async function to avoid nested event loop issues
+            # Get conditions
             location = get_observer_location()
             config = get_current_configuration()
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
 
-            async def _count_all_stars() -> dict[str, int]:
+            def _count_all_stars() -> dict[str, int]:
                 db = get_database()
 
-                async with db._AsyncSession() as session:
+                with db._get_session() as session:
                     # Get sky brightness from light pollution (once for all constellations)
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                     # Map Bortle class to SkyBrightness
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
@@ -2384,7 +2322,7 @@ class MainWindow(QMainWindow):
                     print(f"DEBUG: Starting to count stars for {len(constellation_names)} constellations")
                     for constellation_name in constellation_names:
                         # Get stars in this constellation
-                        stars = await db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
+                        stars = db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
                         # Debug logging
                         print(f"DEBUG: Constellation '{constellation_name}': Found {len(stars)} stars")
@@ -2451,7 +2389,7 @@ class MainWindow(QMainWindow):
 
                     return counts
 
-            result = _run_async_safe(_count_all_stars())
+            result = _count_all_stars()
             print(f"DEBUG: _count_all_stars returned: {result}")
             if not isinstance(result, dict):
                 print(f"DEBUG: Expected dict from _count_all_stars, got {type(result)}: {result}")
@@ -2489,7 +2427,7 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.api.favorites import are_favorites
 
         try:
-            favorite_dict = asyncio.run(are_favorites(sorted_names))
+            favorite_dict = are_favorites(sorted_names)
             # Convert dict to list in same order as sorted_names
             favorite_statuses = [favorite_dict.get(name, False) for name in sorted_names]
         except Exception:
@@ -2926,12 +2864,11 @@ class MainWindow(QMainWindow):
             return
 
         # Check if favorite
-        import asyncio
 
         from celestron_nexstar.api.favorites import is_favorite
 
         try:
-            is_fav = asyncio.run(is_favorite(object_name))
+            is_fav = is_favorite(object_name)
         except Exception:
             is_fav = False
 
@@ -3019,14 +2956,12 @@ class MainWindow(QMainWindow):
 
     def _on_context_menu_favorite(self, object_name: str, table: QTableWidget) -> None:
         """Handle context menu add to favorites action."""
-        import asyncio
-
         from celestron_nexstar.api.favorites import add_favorite
 
         try:
             # Get object type from table property
             obj_type = table.property("object_type")
-            success = asyncio.run(add_favorite(object_name, obj_type))
+            success = add_favorite(object_name, obj_type)
             if success:
                 self._show_toast(f"Added '{object_name}' to favorites")
                 # Refresh the table to show the star indicator
@@ -3036,12 +2971,10 @@ class MainWindow(QMainWindow):
 
     def _on_context_menu_unfavorite(self, object_name: str, table: QTableWidget) -> None:
         """Handle context menu remove from favorites action."""
-        import asyncio
-
         from celestron_nexstar.api.favorites import remove_favorite
 
         try:
-            success = asyncio.run(remove_favorite(object_name))
+            success = remove_favorite(object_name)
             if success:
                 self._show_toast(f"Removed '{object_name}' from favorites")
                 # Refresh the table to remove the star indicator
@@ -3076,7 +3009,6 @@ class MainWindow(QMainWindow):
             return
 
         # Get the CelestialObjects
-        import asyncio
 
         from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
 
@@ -3085,7 +3017,7 @@ class MainWindow(QMainWindow):
             not_found = []
 
             for object_name in object_names:
-                matches = asyncio.run(get_object_by_name(object_name))
+                matches = get_object_by_name(object_name)
                 if not matches:
                     not_found.append(object_name)
                 else:
@@ -3146,8 +3078,6 @@ class MainWindow(QMainWindow):
         if not object_name:
             return
 
-        import asyncio
-
         from PySide6.QtWidgets import QMessageBox
 
         from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
@@ -3168,7 +3098,7 @@ class MainWindow(QMainWindow):
                     star_name = star_name.strip()
                     if not star_name:
                         continue
-                    matches = asyncio.run(get_object_by_name(star_name))
+                    matches = get_object_by_name(star_name)
                     if matches:
                         obj = matches[0].with_current_position()
                         stars_to_add.append(obj)
@@ -3176,7 +3106,7 @@ class MainWindow(QMainWindow):
             elif obj_type == "constellation":
                 # Query database for all stars in this constellation
                 db = get_database()
-                stars = asyncio.run(db.filter_objects(object_type="star", constellation=object_name, limit=200))
+                stars = db.filter_objects(object_type="star", constellation=object_name, limit=200)
                 for star in stars:
                     star = star.with_current_position()
                     stars_to_add.append(star)
@@ -3382,7 +3312,7 @@ class MainWindow(QMainWindow):
         # Update telescope position if connected
         if self.telescope and self.telescope.protocol.is_open():
             try:
-                coords = _run_async_safe(self.telescope.get_position_ra_dec())
+                coords = self.telescope.get_position_ra_dec()
                 self.position_label.setText(f"Position: RA {coords.ra_hours:.4f}h, Dec {coords.dec_degrees:+.4f}°")
             except Exception:
                 self.position_label.setText("Position: --")
@@ -3397,7 +3327,7 @@ class MainWindow(QMainWindow):
         # Check if telescope is connected
         if self.telescope and self.telescope.protocol.is_open():
             try:
-                location_result = _run_async_safe(self.telescope.get_location())
+                location_result = self.telescope.get_location()
                 if location_result:
                     lat = location_result.latitude
                     lon = location_result.longitude
@@ -3441,7 +3371,7 @@ class MainWindow(QMainWindow):
         """Handle disconnect button click."""
         if self.telescope:
             with contextlib.suppress(Exception):
-                _run_async_safe(self.telescope.disconnect())
+                self.telescope.disconnect()
 
             self.telescope = None
 
@@ -3568,12 +3498,8 @@ class MainWindow(QMainWindow):
             location = get_observer_location()
             db = get_database()
 
-            async def _load_data():
-                async with db._AsyncSession() as session:
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                    return light_pollution
-
-            light_pollution = asyncio.run(_load_data())
+            with db._get_session() as session:
+                light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
 
             # Map Bortle class to SkyBrightness
             bortle_to_sky_brightness = {

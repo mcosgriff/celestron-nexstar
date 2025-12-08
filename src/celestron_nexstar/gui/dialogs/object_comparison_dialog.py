@@ -6,7 +6,6 @@ Side-by-side comparison of celestial objects to help choose between similar obje
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -121,7 +120,7 @@ class ObjectComparisonDialog(QDialog):
         """Add an object to the comparison by name."""
         try:
             # Search for object
-            matches = asyncio.run(search_objects(object_name, update_positions=True))
+            matches = search_objects(object_name, update_positions=True)
             if not matches:
                 QMessageBox.warning(self, "Object Not Found", f"Could not find object: {object_name}")
                 return

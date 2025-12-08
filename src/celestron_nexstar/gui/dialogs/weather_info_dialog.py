@@ -2,7 +2,6 @@
 Dialog to display current weather information.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -146,7 +145,7 @@ class WeatherInfoDialog(QDialog):
 
             # Get location and weather
             location = get_observer_location()
-            weather = asyncio.run(fetch_weather(location))
+            weather = fetch_weather(location)
 
             # Build HTML content with inline styles for colors
             html_content = []

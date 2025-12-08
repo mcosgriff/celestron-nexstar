@@ -2,7 +2,6 @@
 Dialog to display detailed information about a celestial object.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -219,7 +218,7 @@ class ObjectInfoDialog(QDialog):
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
             # Get object by name
-            matches = asyncio.run(get_object_by_name(self.object_name))
+            matches = get_object_by_name(self.object_name)
 
             if not matches:
                 self.info_text.setHtml(
@@ -405,7 +404,7 @@ class ObjectInfoDialog(QDialog):
                     from celestron_nexstar.api.database.database import get_database
 
                     db = get_database()
-                    moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                    moons = db.get_moons_by_parent_planet(obj.name)
                     if moons:
                         html_parts.append(
                             f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Moons:</p>"
@@ -431,8 +430,8 @@ class ObjectInfoDialog(QDialog):
                     search_radius = min(search_radius, 5.0)
 
                     # Search for stars near the double star position
-                    nearby_objects = asyncio.run(
-                        db.search_by_coordinates(obj.ra_hours, obj.dec_degrees, radius_arcmin=search_radius, limit=10)
+                    nearby_objects = db.search_by_coordinates(
+                        obj.ra_hours, obj.dec_degrees, radius_arcmin=search_radius, limit=10
                     )
 
                     # Filter to only stars (exclude the double star itself and other object types)
@@ -710,7 +709,7 @@ class ObjectInfoDialog(QDialog):
     def _update_favorite_button(self) -> None:
         """Update the favorite button state and icon."""
         try:
-            is_fav = asyncio.run(is_favorite(self.object_name))
+            is_fav = is_favorite(self.object_name)
             self.favorite_button.setChecked(is_fav)
 
             # Set button text and tooltip
@@ -775,12 +774,12 @@ class ObjectInfoDialog(QDialog):
 
             if is_checked:
                 # Add to favorites
-                success = asyncio.run(add_favorite(self.object_name, self.object_type))
+                success = add_favorite(self.object_name, self.object_type)
                 if success:
                     self._update_favorite_button()
             else:
                 # Remove from favorites
-                success = asyncio.run(remove_favorite(self.object_name))
+                success = remove_favorite(self.object_name)
                 if success:
                     self._update_favorite_button()
         except Exception as e:

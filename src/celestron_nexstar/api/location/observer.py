@@ -449,7 +449,6 @@ def _get_location_from_system() -> ObserverLocation | None:
     Returns:
         ObserverLocation if successful, None otherwise
     """
-    import asyncio
     import platform
 
     system = platform.system().lower()
@@ -542,7 +541,7 @@ def _get_location_from_system() -> ObserverLocation | None:
 
             locator = geolocation.Geolocator()
             # Windows Runtime async methods need to be run in an event loop
-            location = asyncio.run(locator.get_geoposition_async())
+            location = locator.get_geoposition_async()
 
             return ObserverLocation(
                 latitude=location.coordinate.latitude,

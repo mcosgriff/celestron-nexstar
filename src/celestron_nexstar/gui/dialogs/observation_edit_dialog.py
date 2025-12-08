@@ -4,7 +4,6 @@ Observation Edit Dialog
 Dialog to create or edit an observation log entry.
 """
 
-import asyncio
 import logging
 from datetime import UTC
 from typing import TYPE_CHECKING
@@ -239,7 +238,7 @@ class ObservationEditDialog(QDialog):
         if self.observation_id is None:
             return
         try:
-            obs = asyncio.run(get_observation(self.observation_id))
+            obs = get_observation(self.observation_id)
             if not obs:
                 QMessageBox.warning(self, "Error", "Observation not found.")
                 self.reject()
@@ -313,9 +312,9 @@ class ObservationEditDialog(QDialog):
                 return
 
             # Fetch weather asynchronously
-            async def _fetch() -> None:
+            def _fetch() -> None:
                 try:
-                    weather = await fetch_weather(location)
+                    weather = fetch_weather(location)
                     if weather.error:
                         self.weather_display.setPlainText(f"Weather data unavailable: {weather.error}")
                         return
@@ -354,7 +353,7 @@ class ObservationEditDialog(QDialog):
                     self.weather_display.setPlainText(f"Error loading weather: {e}")
 
             # Run async function
-            asyncio.run(_fetch())
+            _fetch()
         except Exception as e:
             logger.warning(f"Could not load current weather: {e}")
             self.weather_display.setPlainText("Weather data unavailable")
@@ -417,23 +416,21 @@ class ObservationEditDialog(QDialog):
 
             if self.observation_id:
                 # Update existing observation
-                success = asyncio.run(
-                    update_observation(
-                        self.observation_id,
-                        observed_at=dt,
-                        location_lat=location_lat,
-                        location_lon=location_lon,
-                        location_name=location_name,
-                        seeing_quality=seeing_quality,
-                        transparency=transparency,
-                        sky_brightness=sky_brightness,
-                        weather_notes=weather_notes,
-                        telescope=telescope,
-                        eyepiece=eyepiece,
-                        filters=filters,
-                        notes=notes,
-                        rating=rating,
-                    )
+                success = update_observation(
+                    self.observation_id,
+                    observed_at=dt,
+                    location_lat=location_lat,
+                    location_lon=location_lon,
+                    location_name=location_name,
+                    seeing_quality=seeing_quality,
+                    transparency=transparency,
+                    sky_brightness=sky_brightness,
+                    weather_notes=weather_notes,
+                    telescope=telescope,
+                    eyepiece=eyepiece,
+                    filters=filters,
+                    notes=notes,
+                    rating=rating,
                 )
                 if not success:
                     QMessageBox.warning(self, "Error", "Failed to update observation.")
@@ -447,23 +444,21 @@ class ObservationEditDialog(QDialog):
                     QMessageBox.warning(self, "Error", "Object name is required.")
                     return
 
-                obs_id = asyncio.run(
-                    add_observation(
-                        object_name=object_name,
-                        observed_at=dt,
-                        location_lat=location_lat,
-                        location_lon=location_lon,
-                        location_name=location_name,
-                        seeing_quality=seeing_quality,
-                        transparency=transparency,
-                        sky_brightness=sky_brightness,
-                        weather_notes=weather_notes,
-                        telescope=telescope,
-                        eyepiece=eyepiece,
-                        filters=filters,
-                        notes=notes,
-                        rating=rating,
-                    )
+                obs_id = add_observation(
+                    object_name=object_name,
+                    observed_at=dt,
+                    location_lat=location_lat,
+                    location_lon=location_lon,
+                    location_name=location_name,
+                    seeing_quality=seeing_quality,
+                    transparency=transparency,
+                    sky_brightness=sky_brightness,
+                    weather_notes=weather_notes,
+                    telescope=telescope,
+                    eyepiece=eyepiece,
+                    filters=filters,
+                    notes=notes,
+                    rating=rating,
                 )
                 if not obs_id:
                     QMessageBox.warning(self, "Error", "Failed to create observation.")

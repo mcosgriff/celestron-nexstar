@@ -2,11 +2,7 @@
 Dialog to display eclipse information with tabs for lunar, next, and solar.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -26,43 +22,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class EclipseInfoDialog(QDialog):
@@ -434,16 +393,13 @@ class EclipseInfoDialog(QDialog):
 
             years = 5  # Default for lunar
 
-            async def _load_async_content() -> list[str]:
-                from celestron_nexstar.api.astronomy.eclipses import get_next_lunar_eclipse
-                from celestron_nexstar.api.database.models import get_db_session
+            from celestron_nexstar.api.astronomy.eclipses import get_next_lunar_eclipse
+            from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_next_lunar_eclipse(db_session, location, years_ahead=years)
+            with get_db_session() as db_session:
+                eclipses = get_next_lunar_eclipse(db_session, location, years_ahead=years)
 
-                return self._load_eclipse_content(eclipses, location, years, "Upcoming Lunar Eclipses")
-
-            html_content = _run_async_safe(_load_async_content())
+            html_content = self._load_eclipse_content(eclipses, location, years, "Upcoming Lunar Eclipses")
             self.lunar_text.setHtml("\n".join(html_content))
 
         except Exception as e:
@@ -468,16 +424,13 @@ class EclipseInfoDialog(QDialog):
 
             years = 5  # Default for next
 
-            async def _load_async_content() -> list[str]:
-                from celestron_nexstar.api.astronomy.eclipses import get_upcoming_eclipses
-                from celestron_nexstar.api.database.models import get_db_session
+            from celestron_nexstar.api.astronomy.eclipses import get_upcoming_eclipses
+            from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=None)
+            with get_db_session() as db_session:
+                eclipses = get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=None)
 
-                return self._load_eclipse_content(eclipses, location, years, "Upcoming Eclipses")
-
-            html_content = _run_async_safe(_load_async_content())
+            html_content = self._load_eclipse_content(eclipses, location, years, "Upcoming Eclipses")
             self.next_text.setHtml("\n".join(html_content))
 
         except Exception as e:
@@ -502,16 +455,13 @@ class EclipseInfoDialog(QDialog):
 
             years = 10  # Default for solar
 
-            async def _load_async_content() -> list[str]:
-                from celestron_nexstar.api.astronomy.eclipses import get_next_solar_eclipse
-                from celestron_nexstar.api.database.models import get_db_session
+            from celestron_nexstar.api.astronomy.eclipses import get_next_solar_eclipse
+            from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    eclipses = await get_next_solar_eclipse(db_session, location, years_ahead=years)
+            with get_db_session() as db_session:
+                eclipses = get_next_solar_eclipse(db_session, location, years_ahead=years)
 
-                return self._load_eclipse_content(eclipses, location, years, "Upcoming Solar Eclipses")
-
-            html_content = _run_async_safe(_load_async_content())
+            html_content = self._load_eclipse_content(eclipses, location, years, "Upcoming Solar Eclipses")
             self.solar_text.setHtml("\n".join(html_content))
 
         except Exception as e:

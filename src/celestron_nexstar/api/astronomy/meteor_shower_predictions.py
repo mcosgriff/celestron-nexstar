@@ -94,19 +94,12 @@ def get_enhanced_meteor_predictions(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    # This function is sync but calls async get_all_meteor_showers
-    # We need to handle this properly
-    import asyncio
-
+    # Get all meteor showers from database
+    from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
     from celestron_nexstar.api.database.models import get_db_session
 
-    async def _get_showers() -> list[MeteorShower]:
-        async with get_db_session() as db_session:
-            from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
-
-            return await get_all_meteor_showers(db_session)
-
-    all_showers = asyncio.run(_get_showers())
+    with get_db_session() as db_session:
+        all_showers = get_all_meteor_showers(db_session)
 
     # For each shower, find peak dates in the forecast period
     current_date = now

@@ -4,7 +4,6 @@ Observation Log Dialog
 Dialog to view and manage observation logs.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -98,7 +97,7 @@ class ObservationLogDialog(QDialog):
     def _load_observations(self) -> None:
         """Load observations from database and populate table."""
         try:
-            observations = asyncio.run(get_observations(limit=1000))
+            observations = get_observations(limit=1000)
             self.table.setRowCount(len(observations))
 
             for row, obs in enumerate(observations):
@@ -188,7 +187,7 @@ class ObservationLogDialog(QDialog):
             from celestron_nexstar.api.core.enums import CelestialObjectType
 
             db = get_database()
-            obj = asyncio.run(db.get_by_id(object_id, CelestialObjectType(object_type)))
+            obj = db.get_by_id(object_id, CelestialObjectType(object_type))
             if obj:
                 return obj.common_name or obj.name
             return f"{object_type} #{object_id}"
@@ -222,7 +221,7 @@ class ObservationLogDialog(QDialog):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            success = asyncio.run(delete_observation(observation_id))
+            success = delete_observation(observation_id)
             if success:
                 self._load_observations()
             else:

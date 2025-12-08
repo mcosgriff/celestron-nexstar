@@ -2,13 +2,9 @@
 Dialog to display binocular viewing information.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -24,43 +20,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class BinocularsInfoDialog(QDialog):
@@ -231,7 +190,7 @@ class BinocularsInfoDialog(QDialog):
             )
 
             # Load async content using safe async runner
-            async def _load_async_content() -> list[str]:
+            def _load_async_content() -> list[str]:
                 """Load all async content."""
                 content_parts = []
 
@@ -239,7 +198,7 @@ class BinocularsInfoDialog(QDialog):
                 from celestron_nexstar.api.events.iss_tracking import get_iss_passes_cached
                 from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point, format_object_path
 
-                iss_passes = await get_iss_passes_cached(
+                iss_passes = get_iss_passes_cached(
                     lat, lon, start_time=now, days=7, min_altitude_deg=10.0, db_session=None
                 )
 
@@ -318,9 +277,9 @@ class BinocularsInfoDialog(QDialog):
                 )
                 from celestron_nexstar.api.database.models import get_db_session
 
-                async with get_db_session() as db_session:
-                    active_showers = await get_active_showers(db_session, now)
-                    peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
+                with get_db_session() as db_session:
+                    active_showers = get_active_showers(db_session, now)
+                    peak_showers = get_peak_showers(db_session, now, tolerance_days=3)
 
                 content_parts.append(
                     "<h2>Active Meteor Showers</h2>"
@@ -398,8 +357,8 @@ class BinocularsInfoDialog(QDialog):
                     midnight = midnight + timedelta(days=1)
 
                 # Get visible constellations
-                async with get_db_session() as db_session:
-                    visible_constellations = await get_visible_constellations(
+                with get_db_session() as db_session:
+                    visible_constellations = get_visible_constellations(
                         db_session, lat, lon, midnight, min_altitude_deg=10.0
                     )
 
@@ -416,7 +375,7 @@ class BinocularsInfoDialog(QDialog):
                 # Get visible stars first to find their constellations
                 limiting_mag = optics.limiting_magnitude(SkyBrightness.GOOD)
                 db = get_database()
-                stars_for_const = await db.filter_objects(
+                stars_for_const = db.filter_objects(
                     object_type=CelestialObjectType.STAR,
                     max_magnitude=limiting_mag,
                     limit=500,
@@ -438,8 +397,8 @@ class BinocularsInfoDialog(QDialog):
                         constellations_with_stars.add(star.constellation)
 
                 # Add constellations that have visible stars but aren't already in the list
-                async with get_db_session() as db_session:
-                    all_prominent = await get_prominent_constellations(db_session)
+                with get_db_session() as db_session:
+                    all_prominent = get_prominent_constellations(db_session)
                 existing_names = {c.name for c, _, _ in visible_constellations}
 
                 for constellation in all_prominent:
@@ -645,10 +604,8 @@ class BinocularsInfoDialog(QDialog):
                     f"<p style='color: {colors['text_dim']};'>Easily recognizable patterns visible through binoculars</p>"
                 )
 
-                async with get_db_session() as db_session:
-                    visible_asterisms = await get_visible_asterisms(
-                        db_session, lat, lon, midnight, min_altitude_deg=20.0
-                    )
+                with get_db_session() as db_session:
+                    visible_asterisms = get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=20.0)
 
                 if visible_asterisms:
                     content_parts.append(
@@ -691,7 +648,7 @@ class BinocularsInfoDialog(QDialog):
                 return content_parts
 
             # Run async content loading
-            async_content = _run_async_safe(_load_async_content())
+            async_content = _load_async_content()
             html_content.extend(async_content)
 
             # Viewing tips

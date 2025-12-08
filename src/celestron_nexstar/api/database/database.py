@@ -2251,12 +2251,7 @@ def restore_database(backup_path: Path, db: CatalogDatabase | None = None) -> No
 
     # Close any existing connections
     # Run async dispose in sync context
-    import asyncio
-
-    def _dispose_engine() -> None:
-        db._engine.dispose()
-
-    asyncio.run(_dispose_engine())
+    db._engine.dispose()
 
     # Copy backup to database location
     shutil.copy2(backup_path, db.db_path)
@@ -2671,8 +2666,6 @@ def rebuild_database(
         # Step 7: Pre-fetch 3 days of weather forecast data (if location is configured)
         logger.info("Pre-fetching 3-day weather forecast data...")
         try:
-            import asyncio
-
             from celestron_nexstar.api.location.observer import (
                 ObserverLocation,
                 geocode_location,
@@ -2705,8 +2698,7 @@ def rebuild_database(
                         if location_query:
                             try:
                                 console.print(f"[dim]Geocoding: {location_query}...[/dim]")
-                                # Run async function - this is a sync entry point, so asyncio.run() is safe
-                                location = asyncio.run(geocode_location(location_query))
+                                location = geocode_location(location_query)
                                 set_observer_location(location, save=True)
                                 console.print(f"[green]✓[/green] Location set to: {location.name}")
                                 console.print(

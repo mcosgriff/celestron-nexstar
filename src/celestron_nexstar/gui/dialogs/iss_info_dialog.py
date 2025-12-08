@@ -2,7 +2,6 @@
 Dialog to display International Space Station (ISS) pass predictions.
 """
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -129,7 +128,7 @@ class ISSInfoDialog(QDialog):
         )
 
         try:
-            from celestron_nexstar.api.events.iss_tracking import ISSPass, get_iss_passes_cached
+            from celestron_nexstar.api.events.iss_tracking import get_iss_passes_cached
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
@@ -146,18 +145,17 @@ class ISSInfoDialog(QDialog):
             min_altitude = 10.0
             now = datetime.now(UTC)
 
-            # Get ISS passes (async call)
-            async def _get_passes() -> list[ISSPass]:
-                return await get_iss_passes_cached(
-                    location.latitude,
-                    location.longitude,
-                    start_time=now,
-                    days=days,
-                    min_altitude_deg=min_altitude,
-                    db_session=None,
-                )
+            # Get ISS passes
+            passes = get_iss_passes_cached(
+                location.latitude,
+                location.longitude,
+                start_time=now,
+                days=days,
+                min_altitude_deg=min_altitude,
+                db_session=None,
+            )
 
-            iss_passes = asyncio.run(_get_passes())
+            iss_passes = passes
 
             # Build HTML content
             html_content = []

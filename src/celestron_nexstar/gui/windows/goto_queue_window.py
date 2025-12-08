@@ -6,7 +6,6 @@ Manages a queue of objects for automatic slewing with sequence planning and auto
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -501,7 +500,7 @@ class GotoQueueWindow(QMainWindow):
 
         # Start slew
         try:
-            success = asyncio.run(self.telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees))
+            success = self.telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees)
             if not success:
                 QMessageBox.warning(self, "Slew Failed", f"Failed to slew to {display_name}")
                 self._advance_to_next()
@@ -523,7 +522,7 @@ class GotoQueueWindow(QMainWindow):
             return
 
         try:
-            is_slewing = asyncio.run(self.telescope.is_slewing())
+            is_slewing = self.telescope.is_slewing()
             if not is_slewing:
                 # Slew complete
                 self.slew_check_timer.stop()

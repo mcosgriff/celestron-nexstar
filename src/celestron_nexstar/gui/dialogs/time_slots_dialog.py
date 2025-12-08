@@ -2,7 +2,6 @@
 Dialog to display time-based observation recommendations.
 """
 
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
@@ -223,8 +222,8 @@ class TimeSlotsInfoDialog(QDialog):
                 current += timedelta(hours=self.interval)
 
             # Get recommendations for each time slot
-            recommendations = asyncio.run(
-                get_time_based_recommendations(time_slots, location.latitude, location.longitude, "telescope")
+            recommendations = get_time_based_recommendations(
+                time_slots, location.latitude, location.longitude, "telescope"
             )
 
             # Build HTML content

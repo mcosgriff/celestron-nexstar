@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import requests
 import requests_cache
@@ -683,8 +683,6 @@ def check_aurora_visibility(
     sqm_value = None
 
     try:
-        import asyncio
-
         from celestron_nexstar.api.astronomy.solar_system import get_moon_info
         from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast, fetch_weather
@@ -723,9 +721,8 @@ def check_aurora_visibility(
 
                 # Get enough hours to cover from now to target time + buffer
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
-                # Run async function - this is a sync entry point, so asyncio.run() is safe
-                hourly_forecasts: list[HourlySeeingForecast] = asyncio.run(
-                    fetch_hourly_weather_forecast(location, hours=hours_ahead)
+                hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
+                    location, hours=hours_ahead
                 )
 
                 if hourly_forecasts:
@@ -770,21 +767,13 @@ def check_aurora_visibility(
 
         # Fall back to current weather if we don't have forecasted data
         if cloud_cover is None or moon_illumination is None or bortle_class is None:
-            # Fetch weather, moon, and light pollution data in parallel
-            async def fetch_all() -> tuple[Any, Any, Any]:
-                from celestron_nexstar.api.database.models import get_db_session
+            # Fetch weather, moon, and light pollution data
+            from celestron_nexstar.api.database.models import get_db_session
 
-                weather_task = fetch_weather(location)
-                moon_task = asyncio.to_thread(get_moon_info, location.latitude, location.longitude, dt)
-                async with get_db_session() as db_session:
-                    lp_task = get_light_pollution_data(db_session, location.latitude, location.longitude)
-                    weather, moon_info, lp_data = await asyncio.gather(
-                        weather_task, moon_task, lp_task, return_exceptions=True
-                    )
-                return weather, moon_info, lp_data
-
-            # Run async function - this is a sync entry point, so asyncio.run() is safe
-            weather, moon_info, lp_data = asyncio.run(fetch_all())
+            weather = fetch_weather(location)
+            moon_info = get_moon_info(location.latitude, location.longitude, dt)
+            with get_db_session() as db_session:
+                lp_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
 
             if cloud_cover is None:
                 if isinstance(weather, Exception):

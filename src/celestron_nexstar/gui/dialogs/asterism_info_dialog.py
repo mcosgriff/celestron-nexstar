@@ -2,11 +2,7 @@
 Dialog to display detailed information about an asterism.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QUrl
@@ -68,43 +64,6 @@ class LinkClickableTextBrowser(QTextBrowser):
                 from PySide6.QtGui import QDesktopServices
 
                 QDesktopServices.openUrl(url)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class AsterismInfoDialog(QDialog):
@@ -171,18 +130,15 @@ class AsterismInfoDialog(QDialog):
         try:
             from celestron_nexstar.api.astronomy.constellations import get_famous_asterisms
             from celestron_nexstar.api.core.utils import format_dec, format_ra
+            from celestron_nexstar.api.database.models import get_db_session
 
-            async def _load_data() -> Any | None:
-                from celestron_nexstar.api.database.models import get_db_session
-
-                async with get_db_session() as session:
-                    asterisms = await get_famous_asterisms(session)
-                    for asterism in asterisms:
-                        if asterism.name == self.asterism_name:
-                            return asterism
-                    return None
-
-            asterism = _run_async_safe(_load_data())
+            with get_db_session() as session:
+                asterisms = get_famous_asterisms(session)
+                asterism = None
+                for asterism_obj in asterisms:
+                    if asterism_obj.name == self.asterism_name:
+                        asterism = asterism_obj
+                        break
 
             if not asterism:
                 self.info_text.setHtml(
@@ -243,7 +199,7 @@ class AsterismInfoDialog(QDialog):
 
                         if asterism.member_stars:
 
-                            async def _get_star_positions() -> tuple[list[float], list[float]]:
+                            def _get_star_positions() -> tuple[list[float], list[float]]:
                                 """Get RA/Dec positions of member stars from database."""
                                 from sqlalchemy import or_, select
 
@@ -252,7 +208,7 @@ class AsterismInfoDialog(QDialog):
                                 ra_positions: list[float] = []
                                 dec_positions: list[float] = []
 
-                                async with get_db_session() as session:
+                                with get_db_session() as session:
                                     # Query each member star by name
                                     for star_name in asterism.member_stars:
                                         # Try exact name match first
@@ -266,7 +222,7 @@ class AsterismInfoDialog(QDialog):
                                             )
                                             .limit(1)
                                         )
-                                        result = await session.execute(stmt)
+                                        result = session.execute(stmt)
                                         star_model = result.scalar_one_or_none()
 
                                         if star_model:
@@ -281,8 +237,8 @@ class AsterismInfoDialog(QDialog):
 
                                 return ra_positions, dec_positions
 
-                            # Get star positions (run in async context)
-                            star_ra_list, star_dec_list = _run_async_safe(_get_star_positions())
+                            # Get star positions
+                            star_ra_list, star_dec_list = _get_star_positions()
                             ra_values.extend(star_ra_list)
                             dec_values.extend(star_dec_list)
 

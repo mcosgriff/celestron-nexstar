@@ -2,11 +2,7 @@
 Dialog to display meteor shower predictions with tabs for best and next.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -26,43 +22,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class MeteorsInfoDialog(QDialog):
@@ -384,8 +343,7 @@ class MeteorsInfoDialog(QDialog):
 
             months = 12  # Default for next
 
-            # get_enhanced_meteor_predictions is sync but uses asyncio.run() internally
-            # We need to wrap it in a way that handles the async call properly
+            # get_enhanced_meteor_predictions is now synchronous
             from celestron_nexstar.api.astronomy.meteor_shower_predictions import (
                 get_enhanced_meteor_predictions,
             )
@@ -418,7 +376,7 @@ class MeteorsInfoDialog(QDialog):
             months = 12  # Default for best
             min_quality = "good"  # Default min quality
 
-            # get_best_viewing_windows is sync but calls get_enhanced_meteor_predictions which uses asyncio.run()
+            # get_best_viewing_windows is now synchronous
             from celestron_nexstar.api.astronomy.meteor_shower_predictions import get_best_viewing_windows
 
             predictions = get_best_viewing_windows(location, months_ahead=months, min_quality=min_quality)

@@ -2,11 +2,7 @@
 Dialog to display detailed information about a constellation, including its stars.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
-from collections.abc import Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -82,43 +78,6 @@ class DoubleClickableTextBrowser(QTextBrowser):
             self._double_click_handler(event)
         else:
             super().mouseDoubleClickEvent(event)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class ConstellationInfoDialog(QDialog):
@@ -235,40 +194,37 @@ class ConstellationInfoDialog(QDialog):
             location = get_observer_location()
             config = get_current_configuration()
 
-            async def _load_data() -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
-                db = get_database()
-                async with db._AsyncSession() as session:
-                    # Get sky brightness from light pollution
-                    light_pollution = await get_light_pollution_data(session, location.latitude, location.longitude)
-                    # Map Bortle class to SkyBrightness (matching observation_planner.py)
-                    bortle_to_sky_brightness = {
-                        1: SkyBrightness.EXCELLENT,
-                        2: SkyBrightness.EXCELLENT,
-                        3: SkyBrightness.GOOD,
-                        4: SkyBrightness.FAIR,
-                        5: SkyBrightness.FAIR,
-                        6: SkyBrightness.POOR,
-                        7: SkyBrightness.URBAN,  # Suburban/urban transition
-                        8: SkyBrightness.URBAN,
-                        9: SkyBrightness.URBAN,
-                    }
-                    sky_brightness = bortle_to_sky_brightness.get(
-                        light_pollution.bortle_class.value, SkyBrightness.FAIR
-                    )
-                    # Get constellation model with boundaries
-                    from sqlalchemy import select
+            db = get_database()
+            with db._get_session() as session:
+                # Get sky brightness from light pollution
+                light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                # Map Bortle class to SkyBrightness (matching observation_planner.py)
+                bortle_to_sky_brightness = {
+                    1: SkyBrightness.EXCELLENT,
+                    2: SkyBrightness.EXCELLENT,
+                    3: SkyBrightness.GOOD,
+                    4: SkyBrightness.FAIR,
+                    5: SkyBrightness.FAIR,
+                    6: SkyBrightness.POOR,
+                    7: SkyBrightness.URBAN,  # Suburban/urban transition
+                    8: SkyBrightness.URBAN,
+                    9: SkyBrightness.URBAN,
+                }
+                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
+                # Get constellation model with boundaries
+                from sqlalchemy import select
 
-                    from celestron_nexstar.api.database.models import ConstellationModel
+                from celestron_nexstar.api.database.models import ConstellationModel
 
-                    stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
-                    result = await session.execute(stmt)
-                    constellation_model = result.scalar_one_or_none()
+                stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
+                result = session.execute(stmt)
+                constellation_model = result.scalar_one_or_none()
 
-                    if not constellation_model:
-                        return {}, [], None
-
+                if not constellation_model:
+                    constellation_data, star_data, boundaries = {}, [], None
+                else:
                     # Get constellation info (for display)
-                    constellations = await get_prominent_constellations(session)
+                    constellations = get_prominent_constellations(session)
                     constellation = None
                     for const in constellations:
                         if const.name == self.constellation_name:
@@ -276,79 +232,78 @@ class ConstellationInfoDialog(QDialog):
                             break
 
                     if not constellation:
-                        return {}, [], None
+                        constellation_data, star_data, boundaries = {}, [], None
+                    else:
+                        # Get constellation boundaries for map generation
+                        boundaries = {
+                            "ra_min_hours": constellation_model.ra_min_hours,
+                            "ra_max_hours": constellation_model.ra_max_hours,
+                            "dec_min_degrees": constellation_model.dec_min_degrees,
+                            "dec_max_degrees": constellation_model.dec_max_degrees,
+                        }
 
-                    # Get constellation boundaries for map generation
-                    boundaries = {
-                        "ra_min_hours": constellation_model.ra_min_hours,
-                        "ra_max_hours": constellation_model.ra_max_hours,
-                        "dec_min_degrees": constellation_model.dec_min_degrees,
-                        "dec_max_degrees": constellation_model.dec_max_degrees,
-                    }
+                        # Get stars in this constellation
+                        stars = db.filter_objects(object_type="star", constellation=self.constellation_name, limit=100)
 
-                    # Get stars in this constellation
-                    stars = await db.filter_objects(
-                        object_type="star", constellation=self.constellation_name, limit=100
-                    )
-
-                    # Calculate visibility for each star directly (much faster than getting all recommended objects)
-                    # Note: stars are already CelestialObject instances from filter_objects
-                    star_data = []
-                    for star in stars:
-                        # Calculate visibility info (sky_brightness is defined in the async function scope)
-                        vis_info = assess_visibility(
-                            star,
-                            config=config,
-                            sky_brightness=sky_brightness,  # type: ignore[name-defined]  # Defined in async function scope
-                            min_altitude_deg=20.0,
-                            observer_lat=location.latitude,
-                            observer_lon=location.longitude,
-                            dt=conditions.timestamp,
-                        )
-
-                        # Calculate altitude/azimuth
-                        try:
-                            alt, az = ra_dec_to_alt_az(  # noqa: RUF059
-                                star.ra_hours,
-                                star.dec_degrees,
-                                location.latitude,
-                                location.longitude,
-                                conditions.timestamp,
+                        # Calculate visibility for each star directly (much faster than getting all recommended objects)
+                        # Note: stars are already CelestialObject instances from filter_objects
+                        star_data = []
+                        for star in stars:
+                            # Calculate visibility info
+                            vis_info = assess_visibility(
+                                star,
+                                config=config,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
                             )
-                        except Exception:
-                            alt, _az = 0.0, 0.0
 
-                        # Use the same visibility probability calculation as the stars table
-                        visibility_prob_result = planner._calculate_visibility_probability(star, conditions, vis_info)
+                            # Calculate altitude/azimuth
+                            try:
+                                alt, az = ra_dec_to_alt_az(  # noqa: RUF059
+                                    star.ra_hours,
+                                    star.dec_degrees,
+                                    location.latitude,
+                                    location.longitude,
+                                    conditions.timestamp,
+                                )
+                            except Exception:
+                                alt, _az = 0.0, 0.0
 
-                        # Handle tuple return (probability, explanations) or just probability
-                        if isinstance(visibility_prob_result, tuple):
-                            visibility_probability = visibility_prob_result[0]
-                        else:
-                            visibility_probability = visibility_prob_result
+                            # Use the same visibility probability calculation as the stars table
+                            visibility_prob_result = planner._calculate_visibility_probability(
+                                star, conditions, vis_info
+                            )
 
-                        star_data.append(
-                            {
-                                "obj": star,
-                                "apparent_magnitude": star.magnitude,
-                                "altitude": alt,
-                                "visibility_probability": visibility_probability,
-                                "vis_info": vis_info,
-                            }
-                        )
+                            # Handle tuple return (probability, explanations) or just probability
+                            if isinstance(visibility_prob_result, tuple):
+                                visibility_probability = visibility_prob_result[0]
+                            else:
+                                visibility_probability = visibility_prob_result
 
-                    # Sort by visibility probability descending, then by magnitude (brighter first)
-                    def sort_key(x: dict[str, Any]) -> tuple[float, float]:
-                        """Sort key function for star data."""
-                        prob = float(x["visibility_probability"])
-                        mag = x["apparent_magnitude"]
-                        mag_val = float(mag) if mag is not None else 0.0
-                        return (prob, -mag_val)
+                            star_data.append(
+                                {
+                                    "obj": star,
+                                    "apparent_magnitude": star.magnitude,
+                                    "altitude": alt,
+                                    "visibility_probability": visibility_probability,
+                                    "vis_info": vis_info,
+                                }
+                            )
 
-                    star_data.sort(key=sort_key, reverse=True)
+                        # Sort by visibility probability descending, then by magnitude (brighter first)
+                        def sort_key(x: dict[str, Any]) -> tuple[float, float]:
+                            """Sort key function for star data."""
+                            prob = float(x["visibility_probability"])
+                            mag = x["apparent_magnitude"]
+                            mag_val = float(mag) if mag is not None else 0.0
+                            return (prob, -mag_val)
 
-                    return (
-                        {
+                        star_data.sort(key=sort_key, reverse=True)
+
+                        constellation_data = {
                             "name": constellation.name,
                             "abbreviation": constellation.abbreviation,
                             "ra_hours": constellation.ra_hours,
@@ -359,12 +314,7 @@ class ConstellationInfoDialog(QDialog):
                             "season": constellation.season,
                             "hemisphere": constellation.hemisphere,
                             "description": constellation.description,
-                        },
-                        star_data,
-                        boundaries,
-                    )
-
-            constellation_data, star_data, boundaries = _run_async_safe(_load_data())
+                        }
 
             if not constellation_data or not boundaries:
                 self.info_text.setHtml(

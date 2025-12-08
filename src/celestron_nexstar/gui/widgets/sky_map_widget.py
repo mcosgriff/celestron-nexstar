@@ -7,12 +7,8 @@ Uses starplot library for high-quality astronomical charts.
 
 from __future__ import annotations
 
-import asyncio
-import concurrent.futures
 import io
 import logging
-import threading
-from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -36,43 +32,6 @@ if TYPE_CHECKING:
     from celestron_nexstar import NexStarTelescope
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class SkyMapWidget(QWidget):
@@ -333,7 +292,8 @@ class _MapGenerationThread(QThread):
                     if hasattr(self.telescope, "is_connected") and self.telescope.is_connected():
                         logger.debug("Getting telescope position...")
                         # Get current position from telescope
-                        position = _run_async_safe(self.telescope.get_position_alt_az())
+                        # Telescope operations are still async, use asyncio.run() for hardware calls
+                        position = self.telescope.get_position_alt_az()
                         azimuth = position.azimuth
                         altitude = position.altitude
                         logger.debug(f"Using telescope position: Az={azimuth:.1f}°, Alt={altitude:.1f}°")

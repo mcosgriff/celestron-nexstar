@@ -133,14 +133,11 @@ def get_bright_objects_for_skyalign(
 
     # 1. Get bright stars from database (magnitude ≤ 2.5)
     db = get_database()
-    import asyncio
 
-    bright_stars = asyncio.run(
-        db.filter_objects(
-            object_type=CelestialObjectType.STAR,
-            max_magnitude=SKYALIGN_MAX_MAGNITUDE,
-            limit=100,
-        )
+    bright_stars = db.filter_objects(
+        object_type=CelestialObjectType.STAR,
+        max_magnitude=SKYALIGN_MAX_MAGNITUDE,
+        limit=100,
     )
 
     # Assess visibility for each star

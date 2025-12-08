@@ -5,7 +5,6 @@ Dialog to manage astronomical equipment (eyepieces, filters, cameras)
 with field of view calculations and usage tracking.
 """
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -488,7 +487,7 @@ class EquipmentManagerDialog(QDialog):
     def _load_filters(self) -> None:
         """Load filters from database and populate table."""
         try:
-            filters = asyncio.run(get_filters())
+            filters = get_filters()
             self.filters_table.setRowCount(len(filters))
 
             for row, f in enumerate(filters):
@@ -531,7 +530,7 @@ class EquipmentManagerDialog(QDialog):
     def _load_cameras(self) -> None:
         """Load cameras from database and populate table."""
         try:
-            cameras = asyncio.run(get_cameras())
+            cameras = get_cameras()
             self.cameras_table.setRowCount(len(cameras))
 
             for row, cam in enumerate(cameras):
@@ -587,7 +586,7 @@ class EquipmentManagerDialog(QDialog):
     def _on_delete_filter(self, filter_id: int) -> None:
         """Handle delete filter button click."""
         try:
-            success = asyncio.run(delete_filter(filter_id))
+            success = delete_filter(filter_id)
             if success:
                 self._load_filters()
         except Exception as e:
@@ -606,7 +605,7 @@ class EquipmentManagerDialog(QDialog):
     def _on_delete_camera(self, camera_id: int) -> None:
         """Handle delete camera button click."""
         try:
-            success = asyncio.run(delete_camera(camera_id))
+            success = delete_camera(camera_id)
             if success:
                 self._load_cameras()
         except Exception as e:

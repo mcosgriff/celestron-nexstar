@@ -2,12 +2,8 @@
 Dialog to display satellite passes information with tabs for visual, bright, starlink, and stations.
 """
 
-import asyncio
-import concurrent.futures
 import logging
-import threading
 from collections import defaultdict
-from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -27,43 +23,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-def _run_async_safe(coro: Coroutine[Any, Any, Any]) -> Any:
-    """
-    Run an async coroutine from a sync context, handling both cases:
-    - If called from sync context: uses asyncio.run()
-    - If called from async context: creates new event loop in thread
-
-    Args:
-        coro: The coroutine to run
-
-    Returns:
-        The result of the coroutine
-    """
-    try:
-        # Check if we're in an async context
-        asyncio.get_running_loop()
-        # We're in an async context, need to use a thread with new event loop
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def run_in_thread() -> None:
-            try:
-                new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(new_loop)
-                result = new_loop.run_until_complete(coro)
-                future.set_result(result)
-                new_loop.close()
-            except Exception as e:
-                future.set_exception(e)
-
-        thread = threading.Thread(target=run_in_thread)
-        thread.start()
-        thread.join()
-        return future.result()
-    except RuntimeError:
-        # No running loop, use asyncio.run()
-        return asyncio.run(coro)
 
 
 class SatellitesInfoDialog(QDialog):
@@ -423,19 +382,18 @@ class SatellitesInfoDialog(QDialog):
             min_altitude = 10.0
             max_passes = 100
 
-            async def _load_async_content() -> list[str]:
-                from celestron_nexstar.api.events.satellite_flares import get_visual_passes
+            from celestron_nexstar.api.events.satellite_flares import get_visual_passes
 
-                passes = await get_visual_passes(
-                    location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
-                )
+            passes = get_visual_passes(
+                location, days=days, min_altitude_deg=min_altitude, max_passes=max_passes, db_session=None
+            )
 
-                # Filter to visible passes only
-                visible_passes = [p for p in passes if p.is_visible]
+            # Filter to visible passes only
+            visible_passes = [p for p in passes if p.is_visible]
 
-                return self._load_satellite_passes_content(visible_passes, location, days, "Visual Satellite Passes")
-
-            html_content = _run_async_safe(_load_async_content())
+            html_content = self._load_satellite_passes_content(
+                visible_passes, location, days, "Visual Satellite Passes"
+            )
             self.visual_text.setHtml("\n".join(html_content))
 
         except Exception as e:
