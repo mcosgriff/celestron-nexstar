@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from celestron_nexstar.api.location.observer import get_observer_location
+from celestron_nexstar.gui.workers.telescope_workers import GetLocationThread
 
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ class GPSInfoDialog(QDialog):
         self.setMinimumWidth(400)
 
         self.telescope = telescope
+        self._location_thread: GetLocationThread | None = None
 
         layout = QVBoxLayout(self)
 
@@ -105,37 +107,55 @@ class GPSInfoDialog(QDialog):
 
     def _load_gps_info(self, source_label: QLabel) -> None:
         """Load GPS information from telescope or user location."""
-        gps_lat: float | None = None
-        gps_lon: float | None = None
-        source = "User Configuration"
-        status = "Using configured location"
-        status_type = "info"
 
-        # Try to get GPS from telescope
+        # Try to get GPS from telescope using worker thread
         if self.telescope and self.telescope.protocol.is_open():
-            try:
-                # Telescope operations are still async, use asyncio.run() for hardware calls
-                location_result = self.telescope.get_location()
-                if location_result:
-                    lat = location_result.latitude
-                    lon = location_result.longitude
-                    # Check if GPS coordinates are valid (not 0,0)
-                    if lat != 0.0 and lon != 0.0:
-                        gps_lat = lat
-                        gps_lon = lon
-                        source = "Telescope GPS"
-                        status = "GPS Active"
-                        status_type = "active"
-                    else:
-                        source = "Telescope GPS (No Fix)"
-                        status = "GPS searching or no signal"
-                        status_type = "warning"
-            except Exception:
-                source = "Telescope GPS (Error)"
-                status = "Could not read GPS from telescope"
-                status_type = "error"
+            # Use worker thread to avoid blocking UI
+            self._location_thread = GetLocationThread(self.telescope)
+            self._location_thread.location_ready.connect(
+                lambda location_result: self._on_location_ready(location_result, source_label)
+            )
+            self._location_thread.error_occurred.connect(lambda _: self._on_location_error(source_label))
+            self._location_thread.finished.connect(lambda: setattr(self, "_location_thread", None))
+            self._location_thread.start()
+            # Show loading state
+            source_label.setText("Loading...")
+            self.lat_label.setText("Loading...")
+            self.lon_label.setText("Loading...")
+            self.status_label.setText("Loading...")
+            return  # Will update via signal
 
-        # Fallback to user location
+        # No telescope, use user location
+        self._update_gps_display(None, None, "User Configuration", "Using configured location", "info", source_label)
+
+    def _on_location_ready(self, location_result, source_label: QLabel) -> None:
+        """Handle location ready from worker thread."""
+        if location_result:
+            lat = location_result.latitude
+            lon = location_result.longitude
+            # Check if GPS coordinates are valid (not 0,0)
+            if lat != 0.0 and lon != 0.0:
+                self._update_gps_display(lat, lon, "Telescope GPS", "GPS Active", "active", source_label)
+            else:
+                self._update_gps_display(None, None, "Telescope GPS", "GPS Searching", "warning", source_label)
+        else:
+            self._update_gps_display(None, None, "Telescope GPS", "GPS Not Available", "error", source_label)
+
+    def _on_location_error(self, source_label: QLabel) -> None:
+        """Handle location error from worker thread."""
+        self._update_gps_display(None, None, "Telescope GPS", "Error Reading GPS", "error", source_label)
+
+    def _update_gps_display(
+        self,
+        gps_lat: float | None,
+        gps_lon: float | None,
+        source: str,
+        status: str,
+        status_type: str,
+        source_label: QLabel,
+    ) -> None:
+        """Update GPS display with location data."""
+        # Fallback to user location if no GPS data
         if gps_lat is None or gps_lon is None:
             try:
                 location = get_observer_location()

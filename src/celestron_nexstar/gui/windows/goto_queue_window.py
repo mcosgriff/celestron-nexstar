@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.utils import angular_separation, format_dec, format_ra
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+from celestron_nexstar.gui.workers.telescope_workers import GotoRADecThread
 
 
 if TYPE_CHECKING:
@@ -101,6 +102,7 @@ class GotoQueueWindow(QMainWindow):
         self.setMinimumHeight(600)
 
         self.telescope = telescope
+        self._goto_thread: GotoRADecThread | None = None
         self.queue: list[QueuedObject] = []
         self.current_index: int = -1  # -1 means not started
         self.is_running = False
@@ -498,23 +500,30 @@ class GotoQueueWindow(QMainWindow):
         display_name = obj.common_name or obj.name
         logger.info(f"Slewing to queue object {self.current_index + 1}/{len(self.queue)}: {display_name}")
 
-        # Start slew
+        # Start slew using worker thread
         try:
-            success = self.telescope.goto_ra_dec(obj.ra_hours, obj.dec_degrees)
-            if not success:
-                QMessageBox.warning(self, "Slew Failed", f"Failed to slew to {display_name}")
-                self._advance_to_next()
-                return
-
-            # Start checking for slew completion
-            self.slew_check_timer.start()
-            self._update_queue_table()
-            self._update_status()
-
+            if self._goto_thread is None or not self._goto_thread.isRunning():
+                self._goto_thread = GotoRADecThread(self.telescope, obj.ra_hours, obj.dec_degrees)
+                self._goto_thread.goto_complete.connect(lambda success: self._on_goto_complete(success, display_name))
+                self._goto_thread.error_occurred.connect(lambda error: self._on_goto_error(error, display_name))
+                self._goto_thread.finished.connect(lambda: setattr(self, "_goto_thread", None))
+                self._goto_thread.start()
         except Exception as e:
-            logger.error(f"Error slewing to {display_name}: {e}", exc_info=True)
-            QMessageBox.critical(self, "Slew Error", f"Error slewing to {display_name}: {e}")
+            logger.error(f"Error starting goto: {e}", exc_info=True)
+            QMessageBox.warning(self, "Slew Failed", f"Failed to slew to {display_name}: {e}")
             self._advance_to_next()
+
+    def _on_goto_complete(self, success: bool, display_name: str) -> None:
+        """Handle goto completion."""
+        if not success:
+            QMessageBox.warning(self, "Slew Failed", f"Failed to slew to {display_name}")
+            self._advance_to_next()
+            return
+
+        # Start checking for slew completion
+        self.slew_check_timer.start()
+        self._update_queue_table()
+        self._update_status()
 
     def _check_slew_completion(self) -> None:
         """Check if current slew is complete."""

@@ -10,6 +10,7 @@ movement control with features including:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,8 @@ class MovementController:
         self.slew_rate = 5  # Default rate 0-9
         self.active_direction: str | None = None  # Current movement direction
         self.moving = False
+        self._move_task: asyncio.Task[None] | None = None  # Store task reference to prevent garbage collection
+        self._stop_task: asyncio.Task[None] | None = None  # Store task reference to prevent garbage collection
 
     def start_move(self, direction: str) -> None:
         """Start moving in a direction.
@@ -59,7 +62,7 @@ class MovementController:
                 if loop.is_running():
                     # If loop is running, schedule the move
                     # Store task reference to avoid garbage collection
-                    _move_task = asyncio.create_task(_move())
+                    self._move_task = asyncio.create_task(_move())
                     # Task will run in background, we don't wait for it
                 else:
                     loop.run_until_complete(_move())
@@ -91,7 +94,7 @@ class MovementController:
                 if loop.is_running():
                     # If loop is running, schedule the stop
                     # Store task reference to avoid garbage collection
-                    _stop_task = asyncio.create_task(_stop())
+                    self._stop_task = asyncio.create_task(_stop())
                     # Task will run in background, we don't wait for it
                 else:
                     loop.run_until_complete(_stop())

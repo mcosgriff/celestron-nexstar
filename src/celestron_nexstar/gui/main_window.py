@@ -4,7 +4,6 @@ Main application window for telescope control.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -39,6 +38,11 @@ from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
 from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPanel
+from celestron_nexstar.gui.workers.telescope_workers import (
+    DisconnectThread,
+    GetLocationThread,
+    GetPositionRADecThread,
+)
 
 
 if TYPE_CHECKING:
@@ -763,6 +767,10 @@ class MainWindow(QMainWindow):
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
         # Track visibility counting threads to prevent premature destruction
         self._visibility_threads: dict[QTableWidget, VisibilityCountThread] = {}
+        # Track telescope worker threads
+        self._position_thread: GetPositionRADecThread | None = None
+        self._location_thread: GetLocationThread | None = None
+        self._disconnect_thread: DisconnectThread | None = None
 
         # Initialize theme (use provided theme or create default)
         if theme is None:
@@ -3311,37 +3319,50 @@ class MainWindow(QMainWindow):
 
         # Update telescope position if connected
         if self.telescope and self.telescope.protocol.is_open():
-            try:
-                coords = self.telescope.get_position_ra_dec()
-                self.position_label.setText(f"Position: RA {coords.ra_hours:.4f}h, Dec {coords.dec_degrees:+.4f}°")
-            except Exception:
-                self.position_label.setText("Position: --")
+            # Use worker thread to avoid blocking UI
+            if self._position_thread is None or not self._position_thread.isRunning():
+                self._position_thread = GetPositionRADecThread(self.telescope)
+                self._position_thread.position_ready.connect(
+                    lambda coords: self.position_label.setText(
+                        f"Position: RA {coords.ra_hours:.4f}h, Dec {coords.dec_degrees:+.4f}°"
+                    )
+                )
+                self._position_thread.error_occurred.connect(lambda _: self.position_label.setText("Position: --"))
+                self._position_thread.finished.connect(lambda: setattr(self, "_position_thread", None))
+                self._position_thread.start()
         else:
             self.position_label.setText("Position: --")
 
     def _update_gps_status(self) -> None:
         """Update GPS status indicator color based on connection and GPS availability."""
         # Default: red (not connected or no GPS)
-        icon_color = "#dc3545"  # Material red/danger color
 
         # Check if telescope is connected
         if self.telescope and self.telescope.protocol.is_open():
-            try:
-                location_result = self.telescope.get_location()
-                if location_result:
-                    lat = location_result.latitude
-                    lon = location_result.longitude
-                    # Check if GPS coordinates are valid (not 0,0)
-                    icon_color = (
-                        "#28a745" if lat != 0.0 and lon != 0.0 else "#ffc107"
-                    )  # Green if valid, yellow if searching
-            except Exception:
-                # Red: Error reading GPS
-                icon_color = "#dc3545"
+            # Use worker thread to avoid blocking UI
+            if self._location_thread is None or not self._location_thread.isRunning():
+                self._location_thread = GetLocationThread(self.telescope)
+                self._location_thread.location_ready.connect(
+                    lambda location_result: self._update_gps_icon_color(
+                        location_result.latitude, location_result.longitude
+                    )
+                )
+                self._location_thread.error_occurred.connect(lambda _: self._set_gps_icon_color("#dc3545"))
+                self._location_thread.finished.connect(lambda: setattr(self, "_location_thread", None))
+                self._location_thread.start()
+                return  # Icon color will be updated via signal
         else:
             # Red: Not connected
-            icon_color = "#dc3545"
+            self._set_gps_icon_color("#dc3545")
 
+    def _update_gps_icon_color(self, lat: float, lon: float) -> None:
+        """Update GPS icon color based on location validity."""
+        # Check if GPS coordinates are valid (not 0,0)
+        icon_color = "#28a745" if lat != 0.0 and lon != 0.0 else "#ffc107"  # Green if valid, yellow if searching
+        self._set_gps_icon_color(icon_color)
+
+    def _set_gps_icon_color(self, icon_color: str) -> None:
+        """Set GPS status indicator color."""
         # Set text with HTML formatting: colored icon
         status_text = f'GPS: <span style="color: {icon_color};">●</span>'
         self.gps_label.setText(status_text)
@@ -3370,11 +3391,24 @@ class MainWindow(QMainWindow):
     def _on_disconnect(self) -> None:
         """Handle disconnect button click."""
         if self.telescope:
-            with contextlib.suppress(Exception):
-                self.telescope.disconnect()
+            # Use worker thread to avoid blocking UI
+            if self._disconnect_thread is None or not self._disconnect_thread.isRunning():
+                self._disconnect_thread = DisconnectThread(self.telescope)
+                self._disconnect_thread.disconnect_complete.connect(self._on_disconnect_complete)
+                self._disconnect_thread.error_occurred.connect(
+                    lambda _: self._on_disconnect_complete()
+                )  # Still complete even on error
+                self._disconnect_thread.finished.connect(lambda: setattr(self, "_disconnect_thread", None))
+                self._disconnect_thread.start()
+            else:
+                # Thread already running, just update UI state
+                self._on_disconnect_complete()
+        else:
+            self._on_disconnect_complete()
 
-            self.telescope = None
-
+    def _on_disconnect_complete(self) -> None:
+        """Handle disconnect completion."""
+        self.telescope = None
         self.connect_action.setEnabled(True)
         self.disconnect_action.setEnabled(False)
         self.align_action.setEnabled(False)

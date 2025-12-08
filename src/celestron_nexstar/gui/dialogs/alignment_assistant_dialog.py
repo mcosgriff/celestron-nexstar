@@ -36,6 +36,7 @@ from celestron_nexstar.api.telescope.alignment import (
     suggest_skyalign_objects,
     suggest_two_star_align_objects,
 )
+from celestron_nexstar.gui.workers.telescope_workers import GotoRADecThread, SyncRADecThread
 
 
 if TYPE_CHECKING:
@@ -61,6 +62,9 @@ class AlignmentAssistantDialog(QDialog):
         self.selected_pair: TwoStarAlignPair | None = None
         self.selected_object: SkyAlignObject | None = None
         self.current_object_index = 0  # For SkyAlign (0, 1, 2)
+        # Track worker threads
+        self._sync_thread: SyncRADecThread | None = None
+        self._goto_thread: GotoRADecThread | None = None
 
         # Main layout
         main_layout = QVBoxLayout(self)
@@ -603,18 +607,29 @@ class AlignmentAssistantDialog(QDialog):
             # Update object position for dynamic objects
             updated_obj = obj.obj.with_current_position()
 
-            # Perform sync
-            success = self.telescope.sync_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees)
-
-            if success:
-                QMessageBox.information(self, "Sync Successful", f"Successfully synced on {obj.display_name}.")
-                # Enable Next button
-                self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
-            else:
-                QMessageBox.warning(self, "Sync Failed", "Failed to sync telescope position.")
+            # Perform sync using worker thread
+            if self._sync_thread is None or not self._sync_thread.isRunning():
+                self._sync_thread = SyncRADecThread(self.telescope, updated_obj.ra_hours, updated_obj.dec_degrees)
+                self._sync_thread.sync_complete.connect(
+                    lambda success: self._on_sync_complete(success, obj.display_name)
+                )
+                self._sync_thread.error_occurred.connect(
+                    lambda error: QMessageBox.critical(self, "Sync Error", f"Error syncing telescope: {error}")
+                )
+                self._sync_thread.finished.connect(lambda: setattr(self, "_sync_thread", None))
+                self._sync_thread.start()
         except Exception as e:
             logger.error(f"Error syncing object: {e}", exc_info=True)
             QMessageBox.critical(self, "Sync Error", f"Error syncing telescope: {e}")
+
+    def _on_sync_complete(self, success: bool, object_name: str) -> None:
+        """Handle sync completion."""
+        if success:
+            QMessageBox.information(self, "Sync Successful", f"Successfully synced on {object_name}.")
+            # Enable Next button
+            self.button_box.button(QDialogButtonBox.StandardButton.Ok).setEnabled(True)
+        else:
+            QMessageBox.warning(self, "Sync Failed", "Failed to sync telescope position.")
 
     def _goto_object(self, obj: SkyAlignObject) -> None:
         """Goto the selected object."""
@@ -626,15 +641,17 @@ class AlignmentAssistantDialog(QDialog):
             # Update object position for dynamic objects
             updated_obj = obj.obj.with_current_position()
 
-            # Perform goto
-            success = self.telescope.goto_ra_dec(updated_obj.ra_hours, updated_obj.dec_degrees)
-
-            if success:
-                QMessageBox.information(
-                    self, "Goto Started", f"Slewing to {obj.display_name}. Please wait for slew to complete."
+            # Perform goto using worker thread
+            if self._goto_thread is None or not self._goto_thread.isRunning():
+                self._goto_thread = GotoRADecThread(self.telescope, updated_obj.ra_hours, updated_obj.dec_degrees)
+                self._goto_thread.goto_complete.connect(
+                    lambda success: self._on_goto_complete(success, obj.display_name)
                 )
-            else:
-                QMessageBox.warning(self, "Goto Failed", "Failed to start goto operation.")
+                self._goto_thread.error_occurred.connect(
+                    lambda error: QMessageBox.critical(self, "Goto Error", f"Error going to object: {error}")
+                )
+                self._goto_thread.finished.connect(lambda: setattr(self, "_goto_thread", None))
+                self._goto_thread.start()
         except Exception as e:
             logger.error(f"Error going to object: {e}", exc_info=True)
             QMessageBox.critical(self, "Goto Error", f"Error slewing telescope: {e}")

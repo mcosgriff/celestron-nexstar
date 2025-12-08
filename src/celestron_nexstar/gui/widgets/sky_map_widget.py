@@ -291,9 +291,11 @@ class _MapGenerationThread(QThread):
                     # Check if telescope is connected
                     if hasattr(self.telescope, "is_connected") and self.telescope.is_connected():
                         logger.debug("Getting telescope position...")
-                        # Get current position from telescope
-                        # Telescope operations are still async, use asyncio.run() for hardware calls
-                        position = self.telescope.get_position_alt_az()
+                        # Get current position from telescope using worker thread
+                        # This is already in a background thread, so we can use asyncio.run() directly
+                        import asyncio
+
+                        position = asyncio.run(self.telescope.get_position_alt_az())
                         azimuth = position.azimuth
                         altitude = position.altitude
                         logger.debug(f"Using telescope position: Az={azimuth:.1f}°, Alt={altitude:.1f}°")
