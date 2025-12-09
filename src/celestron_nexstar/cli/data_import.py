@@ -382,6 +382,8 @@ def import_celestial_data_geojson(
     verbose: bool = False,
     object_type_map: dict[str, CelestialObjectType] | None = None,
     object_enhancer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> tuple[int, int]:
     """
     Import celestial data from a GeoJSON file.
@@ -403,9 +405,15 @@ def import_celestial_data_geojson(
     db = get_database()
 
     # Pre-fetch existing objects for deduplication
-    console.print(f"[dim]Loading existing {catalog} objects for deduplication...[/dim]")
+    status_msg = f"Loading existing {catalog} objects for deduplication..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
     existing_objects = db.get_existing_objects_set(catalog=catalog)
-    console.print(f"[dim]Found {len(existing_objects):,} existing {catalog} objects[/dim]")
+    status_msg = f"Found {len(existing_objects):,} existing {catalog} objects"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
 
     imported = 0
     skipped = 0
@@ -436,173 +444,198 @@ def import_celestial_data_geojson(
     # Collect all objects first, then deduplicate once, then batch insert
     all_objects: list[dict[str, Any]] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Processing {catalog} (mag ≤ {mag_limit})...", total=total_features)
+    # Use progress callback if provided, otherwise use Rich Progress
+    use_rich_progress = progress_callback is None
+    progress_obj = None
+    task = None
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task(f"Processing {catalog} (mag ≤ {mag_limit})...", total=total_features)
+    else:
+        # Emit initial progress via callback
+        if progress_callback:
+            progress_callback(f"Processing {catalog} (mag ≤ {mag_limit})...", 0, total_features)
 
-        for feature in features:
-            try:
-                properties = feature.get("properties", {})
-                geometry = feature.get("geometry", {})
+    for feature in features:
+        try:
+            properties = feature.get("properties", {})
+            geometry = feature.get("geometry", {})
 
-                # Extract coordinates (GeoJSON format: [lon, lat] = [RA in degrees, Dec in degrees])
-                coords = geometry.get("coordinates", [])
-                if not coords or len(coords) < 2:
-                    skipped += 1
-                    progress.advance(task)
-                    continue
+            # Extract coordinates (GeoJSON format: [lon, lat] = [RA in degrees, Dec in degrees])
+            coords = geometry.get("coordinates", [])
+            if not coords or len(coords) < 2:
+                skipped += 1
+                # Update progress
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback(f"Processing {catalog}...", processed, total_features)
+                continue
 
-                # Convert RA from degrees to hours
-                ra_degrees = float(coords[0])
-                dec_degrees = float(coords[1])
-                ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
+            # Convert RA from degrees to hours
+            ra_degrees = float(coords[0])
+            dec_degrees = float(coords[1])
+            ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
 
-                # Extract name (varies by data type)
-                name = (
-                    properties.get("name")
-                    or properties.get("id")
-                    or properties.get("designation")
-                    or properties.get("Name")
-                    or f"{catalog}_{imported + skipped + 1}"
-                )
+            # Extract name (varies by data type)
+            name = (
+                properties.get("name")
+                or properties.get("id")
+                or properties.get("designation")
+                or properties.get("Name")
+                or f"{catalog}_{imported + skipped + 1}"
+            )
 
-                # Extract magnitude
-                magnitude = None
-                for mag_field in ["mag", "magnitude", "Mag", "Magnitude", "vmag", "V-Mag"]:
-                    if mag_field in properties:
-                        try:
-                            mag_val = properties[mag_field]
-                            if mag_val is not None and mag_val != "":
-                                magnitude = float(mag_val)
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Extract magnitude
+            magnitude = None
+            for mag_field in ["mag", "magnitude", "Mag", "Magnitude", "vmag", "V-Mag"]:
+                if mag_field in properties:
+                    try:
+                        mag_val = properties[mag_field]
+                        if mag_val is not None and mag_val != "":
+                            magnitude = float(mag_val)
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-                # Filter by magnitude
-                if magnitude is not None and magnitude > mag_limit:
-                    skipped += 1
-                    progress.advance(task)
-                    continue
+            # Filter by magnitude
+            if magnitude is not None and magnitude > mag_limit:
+                skipped += 1
+                # Update progress
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback(f"Processing {catalog}...", processed, total_features)
+                continue
 
-                # Determine object type
-                # Default depends on catalog: DSO catalogs default to NEBULA, star catalogs default to STAR
-                default_type = CelestialObjectType.NEBULA if "dso" in catalog.lower() else CelestialObjectType.STAR
-                obj_type = default_type
-                type_str = (
-                    properties.get("type")
-                    or properties.get("Type")
-                    or properties.get("object_type")
-                    or properties.get("objtype")
-                )
+            # Determine object type
+            # Default depends on catalog: DSO catalogs default to NEBULA, star catalogs default to STAR
+            default_type = CelestialObjectType.NEBULA if "dso" in catalog.lower() else CelestialObjectType.STAR
+            obj_type = default_type
+            type_str = (
+                properties.get("type")
+                or properties.get("Type")
+                or properties.get("object_type")
+                or properties.get("objtype")
+            )
 
-                if type_str and type_str in object_type_map:
-                    obj_type = object_type_map[type_str]
-                elif type_str:
-                    # Try to map common type strings
-                    type_lower = str(type_str).lower()
-                    if "galaxy" in type_lower or "gal" in type_lower:
-                        obj_type = CelestialObjectType.GALAXY
-                    elif "nebula" in type_lower or "neb" in type_lower:
-                        obj_type = CelestialObjectType.NEBULA
-                    elif "cluster" in type_lower or "cl" in type_lower:
-                        obj_type = CelestialObjectType.CLUSTER
-                    elif "star" in type_lower or "*" in type_lower:
-                        obj_type = CelestialObjectType.STAR
+            if type_str and type_str in object_type_map:
+                obj_type = object_type_map[type_str]
+            elif type_str:
+                # Try to map common type strings
+                type_lower = str(type_str).lower()
+                if "galaxy" in type_lower or "gal" in type_lower:
+                    obj_type = CelestialObjectType.GALAXY
+                elif "nebula" in type_lower or "neb" in type_lower:
+                    obj_type = CelestialObjectType.NEBULA
+                elif "cluster" in type_lower or "cl" in type_lower:
+                    obj_type = CelestialObjectType.CLUSTER
+                elif "star" in type_lower or "*" in type_lower:
+                    obj_type = CelestialObjectType.STAR
 
-                # Extract catalog number if available
-                catalog_number = None
-                for num_field in ["catalog_number", "number", "id", "ID"]:
-                    if num_field in properties:
-                        try:
-                            num_val = properties[num_field]
-                            if isinstance(num_val, (int, float)) or (isinstance(num_val, str) and num_val.isdigit()):
-                                catalog_number = int(num_val)
-                            if catalog_number:
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Extract catalog number if available
+            catalog_number = None
+            for num_field in ["catalog_number", "number", "id", "ID"]:
+                if num_field in properties:
+                    try:
+                        num_val = properties[num_field]
+                        if isinstance(num_val, (int, float)) or (isinstance(num_val, str) and num_val.isdigit()):
+                            catalog_number = int(num_val)
+                        if catalog_number:
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-                # Extract common name
-                common_name = (
-                    properties.get("common_name")
-                    or properties.get("proper_name")
-                    or properties.get("ProperName")
-                    or properties.get("name_en")
-                )
+            # Extract common name
+            common_name = (
+                properties.get("common_name")
+                or properties.get("proper_name")
+                or properties.get("ProperName")
+                or properties.get("name_en")
+            )
 
-                # Extract size (in arcminutes)
-                size_arcmin = None
-                for size_field in ["size", "Size", "diam", "diameter", "majax", "MajAx"]:
-                    if size_field in properties:
-                        try:
-                            size_val = properties[size_field]
-                            if size_val:
-                                size_arcmin = float(size_val)
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Extract size (in arcminutes)
+            size_arcmin = None
+            for size_field in ["size", "Size", "diam", "diameter", "majax", "MajAx"]:
+                if size_field in properties:
+                    try:
+                        size_val = properties[size_field]
+                        if size_val:
+                            size_arcmin = float(size_val)
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-                # Extract constellation
-                constellation = (
-                    properties.get("constellation")
-                    or properties.get("Const")
-                    or properties.get("const")
-                    or properties.get("con")
-                )
+            # Extract constellation
+            constellation = (
+                properties.get("constellation")
+                or properties.get("Const")
+                or properties.get("const")
+                or properties.get("con")
+            )
 
-                # Build description from available properties
-                description_parts = []
-                for desc_field in ["description", "Description", "notes", "Notes", "note"]:
-                    desc_val = properties.get(desc_field)
-                    if desc_val:
-                        description_parts.append(str(desc_val))
-                        break
+            # Build description from available properties
+            description_parts = []
+            for desc_field in ["description", "Description", "notes", "Notes", "note"]:
+                desc_val = properties.get(desc_field)
+                if desc_val:
+                    description_parts.append(str(desc_val))
+                    break
 
-                # Add type information if available
-                if type_str and type_str not in description_parts:
-                    description_parts.insert(0, f"Type: {type_str}")
+            # Add type information if available
+            if type_str and type_str not in description_parts:
+                description_parts.insert(0, f"Type: {type_str}")
 
-                description = "; ".join(description_parts) if description_parts else None
+            description = "; ".join(description_parts) if description_parts else None
 
-                # Build object dictionary
-                obj_dict = {
-                    "name": name,
-                    "catalog": catalog,
-                    "ra_hours": ra_hours,
-                    "dec_degrees": dec_degrees,
-                    "object_type": obj_type,
-                    "magnitude": magnitude,
-                    "common_name": common_name,
-                    "catalog_number": catalog_number,
-                    "size_arcmin": size_arcmin,
-                    "description": description,
-                    "constellation": constellation,
-                }
+            # Build object dictionary
+            obj_dict = {
+                "name": name,
+                "catalog": catalog,
+                "ra_hours": ra_hours,
+                "dec_degrees": dec_degrees,
+                "object_type": obj_type,
+                "magnitude": magnitude,
+                "common_name": common_name,
+                "catalog_number": catalog_number,
+                "size_arcmin": size_arcmin,
+                "description": description,
+                "constellation": constellation,
+            }
 
-                # Store geometry dict for DSOs (will be converted after batch insert)
-                # For DSO catalogs, store the full geometry from GeoJSON
-                if "dso" in catalog.lower():
-                    obj_dict["_temp_geometry"] = geometry
+            # Store geometry dict for DSOs (will be converted after batch insert)
+            # For DSO catalogs, store the full geometry from GeoJSON
+            if "dso" in catalog.lower():
+                obj_dict["_temp_geometry"] = geometry
 
-                # Apply object enhancer if provided (e.g., for DSO name mapping)
-                if object_enhancer:
-                    obj_dict = object_enhancer(obj_dict)
+            # Apply object enhancer if provided (e.g., for DSO name mapping)
+            if object_enhancer:
+                obj_dict = object_enhancer(obj_dict)
 
-                # Add to collection (will deduplicate once at the end)
-                all_objects.append(obj_dict)
+            # Add to collection (will deduplicate once at the end)
+            all_objects.append(obj_dict)
 
-            except Exception as e:
-                errors += 1
-                if verbose:
-                    console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
+        except Exception as e:
+            errors += 1
+            if verbose:
+                console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
-            progress.advance(task)
+        # Update progress
+        if use_rich_progress and task is not None:
+            progress_obj.advance(task)  # type: ignore[union-attr]
+        elif progress_callback:
+            processed = len(all_objects) + skipped + errors
+            progress_callback(f"Processing {catalog}...", processed, total_features)
 
     # Deduplicate once after all objects are created
     console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
@@ -625,18 +658,30 @@ def import_celestial_data_geojson(
 
     console.print(f"[dim]After deduplication: {len(deduplicated_objects):,} unique objects to import[/dim]")
 
+    # Close processing progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
+
     # Batch insert deduplicated objects
     batch_size = 1000
     num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size  # Ceiling division
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Importing {catalog}...", total=num_batches)
+
+    # Use progress callback if provided, otherwise use Rich Progress
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task(f"Importing {catalog}...", total=num_batches)
+    else:
+        # Emit initial import progress via callback
+        if progress_callback:
+            progress_callback(f"Importing {catalog}...", 0, num_batches)
 
         for i in range(0, len(deduplicated_objects), batch_size):
             batch = deduplicated_objects[i : i + batch_size]
@@ -697,13 +742,25 @@ def import_celestial_data_geojson(
                                 db_session.rollback()
 
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                progress.advance(task)
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    batch_num = (i // batch_size) + 1
+                    progress_callback(f"Importing {catalog}...", batch_num, num_batches)
             except Exception as e:
                 if verbose:
                     console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
                 errors += len(batch)
                 # Still advance progress even on error
-                progress.advance(task)
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    batch_num = (i // batch_size) + 1
+                    progress_callback(f"Importing {catalog}...", batch_num, num_batches)
+
+    # Close import progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
 
     return imported, skipped
 
@@ -907,7 +964,13 @@ def _find_constellation_by_coordinates_async(
     return None
 
 
-def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
+def import_celestial_stars(
+    geojson_path: Path,
+    mag_limit: float = 15.0,
+    verbose: bool = False,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
     """
     Import stars from celestial_data GeoJSON with name matching from starnames.csv.
 
@@ -950,12 +1013,21 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     db = get_database()
 
     # Pre-fetch existing objects for deduplication
-    console.print("[dim]Loading existing stars for deduplication...[/dim]")
+    status_msg = "Loading existing stars for deduplication..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
     existing_objects = db.get_existing_objects_set(catalog="celestial_stars")
-    console.print(f"[dim]Found {len(existing_objects):,} existing stars[/dim]")
+    status_msg = f"Found {len(existing_objects):,} existing stars"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
 
     # Pre-load constellations for coordinate-based lookup
-    console.print("[dim]Loading constellations for coordinate-based lookup...[/dim]")
+    status_msg = "Loading constellations for coordinate-based lookup..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
     from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
 
     def _load_constellations() -> list[ConstellationModel]:
@@ -966,7 +1038,10 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
             return list(result.scalars().all())
 
     constellations = _load_constellations()
-    console.print(f"[dim]Loaded {len(constellations):,} constellations for coordinate lookup[/dim]")
+    status_msg = f"Loaded {len(constellations):,} constellations for coordinate lookup"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
 
     imported = 0
     skipped = 0
@@ -993,15 +1068,25 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     # Collect all objects first, then deduplicate once, then batch insert
     all_objects: list[dict[str, Any]] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(f"Processing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
+    # Use progress callback if provided, otherwise use Rich Progress
+    use_rich_progress = progress_callback is None
+    progress_obj = None
+    task = None
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task(f"Processing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
+    else:
+        # Emit initial progress via callback
+        if progress_callback:
+            progress_callback(f"Processing celestial_stars (mag ≤ {mag_limit})...", 0, total_features)
 
         for feature in features:
             try:
@@ -1012,7 +1097,12 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                 coords = geometry.get("coordinates", [])
                 if not coords or len(coords) < 2:
                     skipped += 1
-                    progress.advance(task)
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing celestial_stars...", processed, total_features)
                     continue
 
                 # Convert RA from degrees to hours
@@ -1087,7 +1177,12 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                 # Filter by magnitude
                 if magnitude is not None and magnitude > mag_limit:
                     skipped += 1
-                    progress.advance(task)
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing celestial_stars...", processed, total_features)
                     continue
 
                 # Extract catalog number (HIP number)
@@ -1142,7 +1237,16 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                 if verbose:
                     console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
-            progress.advance(task)
+            # Update progress
+            if use_rich_progress and task is not None:
+                progress_obj.advance(task)  # type: ignore[union-attr]
+            elif progress_callback:
+                processed = len(all_objects) + skipped + errors
+                progress_callback("Processing celestial_stars...", processed, total_features)
+
+    # Close processing progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
 
     # Deduplicate once after all objects are created
     console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
@@ -1168,15 +1272,23 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
     # Batch insert deduplicated objects
     batch_size = 1000
     num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size  # Ceiling division
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Importing celestial_stars...", total=num_batches)
+
+    # Use progress callback if provided, otherwise use Rich Progress
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task("Importing celestial_stars...", total=num_batches)
+    else:
+        # Emit initial import progress via callback
+        if progress_callback:
+            progress_callback("Importing celestial_stars...", 0, num_batches)
 
         for i in range(0, len(deduplicated_objects), batch_size):
             batch = deduplicated_objects[i : i + batch_size]
@@ -1184,18 +1296,36 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
                 batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                progress.advance(task)
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    batch_num = (i // batch_size) + 1
+                    progress_callback("Importing celestial_stars...", batch_num, num_batches)
             except Exception as e:
                 if verbose:
                     console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
                 errors += len(batch)
                 # Still advance progress even on error
-                progress.advance(task)
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    batch_num = (i // batch_size) + 1
+                    progress_callback("Importing celestial_stars...", batch_num, num_batches)
+
+    # Close import progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
 
     return imported, skipped
 
 
-def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
+def import_celestial_dsos(
+    geojson_path: Path,
+    mag_limit: float = 15.0,
+    verbose: bool = False,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
     """Import DSOs from celestial_data GeoJSON."""
     # Load DSO names mapping from dsonames.csv
     dso_names_map: dict[str, str] = {}
@@ -1222,7 +1352,13 @@ def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: 
             console.print("[yellow]Warning: dsonames.csv not found. DSO proper names will not be available.[/yellow]")
 
     # Map DSO types to our object types
+    # The celestial_data GeoJSON uses abbreviated type codes:
+    # Galaxy types: g, s, s0, e, i, sd (spiral, lenticular, elliptical, irregular, etc.)
+    # Cluster types: oc (open cluster), gc (globular cluster)
+    # Nebula types: bn (bright nebula), pn (planetary nebula), dn (dark nebula), snr (supernova remnant)
+    # Other: sfr (star forming region)
     dso_type_map = {
+        # Full names (for compatibility)
         "Galaxy": CelestialObjectType.GALAXY,
         "Nebula": CelestialObjectType.NEBULA,
         "Cluster": CelestialObjectType.CLUSTER,
@@ -1233,11 +1369,45 @@ def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: 
         "Reflection Nebula": CelestialObjectType.NEBULA,
         "Dark Nebula": CelestialObjectType.NEBULA,
         "Supernova Remnant": CelestialObjectType.NEBULA,
+        # Abbreviated codes from celestial_data GeoJSON
+        "g": CelestialObjectType.GALAXY,  # Galaxy (generic)
+        "s": CelestialObjectType.GALAXY,  # Spiral galaxy
+        "s0": CelestialObjectType.GALAXY,  # Lenticular galaxy
+        "e": CelestialObjectType.GALAXY,  # Elliptical galaxy
+        "i": CelestialObjectType.GALAXY,  # Irregular galaxy
+        "sd": CelestialObjectType.GALAXY,  # S0/a galaxy
+        "oc": CelestialObjectType.CLUSTER,  # Open cluster
+        "gc": CelestialObjectType.CLUSTER,  # Globular cluster
+        "bn": CelestialObjectType.NEBULA,  # Bright nebula
+        "pn": CelestialObjectType.NEBULA,  # Planetary nebula
+        "dn": CelestialObjectType.NEBULA,  # Dark nebula
+        "snr": CelestialObjectType.NEBULA,  # Supernova remnant
+        "sfr": CelestialObjectType.NEBULA,  # Star forming region (treat as nebula)
     }
 
-    # Custom function to enhance DSO objects with proper names
+    # Map abbreviated type codes to descriptive names for display in descriptions
+    dso_type_descriptions = {
+        # Galaxy types
+        "g": "Galaxy",
+        "s": "Spiral Galaxy",
+        "s0": "Lenticular Galaxy",
+        "e": "Elliptical Galaxy",
+        "i": "Irregular Galaxy",
+        "sd": "S0/a Galaxy",
+        # Cluster types
+        "oc": "Open Cluster",
+        "gc": "Globular Cluster",
+        # Nebula types
+        "bn": "Bright Nebula",
+        "pn": "Planetary Nebula",
+        "dn": "Dark Nebula",
+        "snr": "Supernova Remnant",
+        "sfr": "Star Forming Region",
+    }
+
+    # Custom function to enhance DSO objects with proper names and descriptive types
     def enhance_dso_object(obj: dict[str, Any]) -> dict[str, Any]:
-        """Enhance DSO object with proper name from dsonames.csv."""
+        """Enhance DSO object with proper name from dsonames.csv and descriptive type."""
         # Get the catalog ID (name field typically contains catalog ID like "NGC 40")
         catalog_id = obj.get("name", "").strip()
 
@@ -1249,6 +1419,21 @@ def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: 
             # If the name is just a catalog ID, we could optionally update it
             # For now, we'll keep the catalog ID as name and set proper name as common_name
 
+        # Replace abbreviated type codes in description with descriptive names
+        description = obj.get("description", "")
+        if description:
+            # Check if description contains "Type: <abbreviation>"
+            import re
+
+            pattern = r"Type:\s*([a-z0-9]+)"
+            match = re.search(pattern, description, re.IGNORECASE)
+            if match:
+                type_code = match.group(1).lower()
+                if type_code in dso_type_descriptions:
+                    # Replace the abbreviation with the descriptive name
+                    descriptive_name = dso_type_descriptions[type_code]
+                    obj["description"] = description.replace(f"Type: {type_code}", f"Type: {descriptive_name}")
+
         return obj
 
     # Import with name enhancement
@@ -1259,12 +1444,27 @@ def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: 
         verbose=verbose,
         object_type_map=dso_type_map,
         object_enhancer=enhance_dso_object,
+        progress_callback=progress_callback,
+        status_callback=status_callback,
     )
 
 
-def import_celestial_messier(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
+def import_celestial_messier(
+    geojson_path: Path,
+    mag_limit: float = 15.0,
+    verbose: bool = False,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
     """Import Messier objects from celestial_data GeoJSON."""
-    return import_celestial_data_geojson(geojson_path, catalog="messier", mag_limit=mag_limit, verbose=verbose)
+    return import_celestial_data_geojson(
+        geojson_path,
+        catalog="messier",
+        mag_limit=mag_limit,
+        verbose=verbose,
+        progress_callback=progress_callback,
+        status_callback=status_callback,
+    )
 
 
 def import_celestial_local_group(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
@@ -1278,17 +1478,42 @@ def import_celestial_local_group(geojson_path: Path, mag_limit: float = 15.0, ve
         # Globular clusters
         "GC": CelestialObjectType.CLUSTER,
         "Globular Cluster": CelestialObjectType.CLUSTER,
+        "GC/UFD": CelestialObjectType.CLUSTER,  # Globular cluster or ultra-faint dwarf (treat as cluster)
         # Dwarf galaxies
         "dSph": CelestialObjectType.GALAXY,  # Dwarf spheroidal
+        "dSph pec": CelestialObjectType.GALAXY,  # Dwarf spheroidal peculiar
+        "dSph pec::": CelestialObjectType.GALAXY,  # Dwarf spheroidal peculiar (variant)
+        "dSph(t)": CelestialObjectType.GALAXY,  # Dwarf spheroidal transition
+        "dSph/dE3": CelestialObjectType.GALAXY,  # Dwarf spheroidal/dwarf elliptical
         "dE": CelestialObjectType.GALAXY,  # Dwarf elliptical
+        "dE3": CelestialObjectType.GALAXY,  # Dwarf elliptical type 3
+        "dE4": CelestialObjectType.GALAXY,  # Dwarf elliptical type 4
         "dE5": CelestialObjectType.GALAXY,  # Dwarf elliptical type 5
+        "dE5/p": CelestialObjectType.GALAXY,  # Dwarf elliptical type 5 peculiar
         "UFD": CelestialObjectType.GALAXY,  # Ultra-faint dwarf
         # Irregular galaxies
         "IBm": CelestialObjectType.GALAXY,  # Irregular barred Magellanic
-        "IBm V-VI": CelestialObjectType.GALAXY,
+        "IBm V-VI": CelestialObjectType.GALAXY,  # Irregular barred Magellanic type V-VI
+        "IBm V-VI::": CelestialObjectType.GALAXY,  # Irregular barred Magellanic type V-VI (variant)
+        "IBm V-VI pec": CelestialObjectType.GALAXY,  # Irregular barred Magellanic type V-VI peculiar
+        "IAm": CelestialObjectType.GALAXY,  # Irregular Magellanic
+        "IAm V-VI": CelestialObjectType.GALAXY,  # Irregular Magellanic type V-VI
+        "IABm V-VI": CelestialObjectType.GALAXY,  # Irregular barred Magellanic type V-VI
         "Im": CelestialObjectType.GALAXY,  # Irregular Magellanic
-        "Im V-VI": CelestialObjectType.GALAXY,
-        # Other galaxy types
+        "Im V-VI": CelestialObjectType.GALAXY,  # Irregular Magellanic type V-VI
+        "Im V-VI::": CelestialObjectType.GALAXY,  # Irregular Magellanic type V-VI (variant)
+        "dIrr": CelestialObjectType.GALAXY,  # Dwarf irregular
+        "dIrr::": CelestialObjectType.GALAXY,  # Dwarf irregular (variant)
+        "dIrr/dSph": CelestialObjectType.GALAXY,  # Dwarf irregular/dwarf spheroidal
+        # Spiral galaxies
+        "SAb II": CelestialObjectType.GALAXY,  # Spiral unbarred type II
+        "SAcd III-IV": CelestialObjectType.GALAXY,  # Spiral unbarred type III-IV
+        "SABbc I-II": CelestialObjectType.GALAXY,  # Spiral barred type I-II
+        "SBm V": CelestialObjectType.GALAXY,  # Spiral barred Magellanic type V
+        "SBm V pec": CelestialObjectType.GALAXY,  # Spiral barred Magellanic type V peculiar
+        # Compact/other galaxy types
+        "cE2": CelestialObjectType.GALAXY,  # Compact elliptical type 2
+        # Generic
         "Galaxy": CelestialObjectType.GALAXY,
     }
     return import_celestial_data_geojson(
@@ -1773,6 +1998,19 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
             existing_names = {row[0] for row in result.all()}
             console.print(f"[dim]Found {len(existing_names):,} existing asterisms[/dim]")
 
+        # Pre-load constellations for spatial lookup using ST_Within
+        from celestron_nexstar.api.database.models import ConstellationModel
+
+        def _load_constellations() -> list[ConstellationModel]:
+            with get_db_session() as session:
+                from sqlalchemy import select
+
+                result = session.execute(select(ConstellationModel))
+                return list(result.scalars().all())
+
+        constellations = _load_constellations()
+        console.print(f"[dim]Loaded {len(constellations):,} constellations for spatial lookup[/dim]")
+
         with get_db_session() as db_session:
             with Progress(
                 SpinnerColumn(),
@@ -1790,19 +2028,45 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         geometry = feature.get("geometry", {})
 
                         # Extract coordinates
-                        coords = geometry.get("coordinates", [])
-                        if not coords or len(coords) < 2:
+                        # Asterisms use loc_lon/loc_lat properties for location, not geometry coordinates
+                        # (geometry is MultiLineString for drawing the pattern)
+                        ra_degrees = None
+                        dec_degrees = None
+                        if "loc_lon" in properties and "loc_lat" in properties:
+                            ra_degrees = float(properties["loc_lon"])
+                            dec_degrees = float(properties["loc_lat"])
+                        else:
+                            # Fallback: try to get from geometry if it's a Point
+                            coords = geometry.get("coordinates", [])
+                            if coords and len(coords) >= 2:
+                                if geometry.get("type") == "Point":
+                                    ra_degrees = float(coords[0])
+                                    dec_degrees = float(coords[1])
+                                elif geometry.get("type") == "MultiLineString" and coords:
+                                    # Use first point of first line as approximate location
+                                    first_line = coords[0] if isinstance(coords, list) and coords else []
+                                    if first_line and len(first_line) > 0:
+                                        first_point = first_line[0] if isinstance(first_line, list) else []
+                                        if first_point and len(first_point) >= 2:
+                                            ra_degrees = float(first_point[0])
+                                            dec_degrees = float(first_point[1])
+
+                        if ra_degrees is None or dec_degrees is None:
                             skipped += 1
                             progress.advance(task)
                             continue
 
                         # Convert RA from degrees to hours
-                        ra_degrees = float(coords[0])
-                        dec_degrees = float(coords[1])
                         ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
 
                         # Extract asterism name
-                        name = properties.get("name") or properties.get("Name") or properties.get("id")
+                        # Asterisms use abbreviated property 'n' for name
+                        name = (
+                            properties.get("n")
+                            or properties.get("name")
+                            or properties.get("Name")
+                            or properties.get("id")
+                        )
                         if not name:
                             skipped += 1
                             progress.advance(task)
@@ -1815,8 +2079,10 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             continue
 
                         # Extract alternative names
+                        # Asterisms use 'es' for Spanish name
                         alt_names = (
-                            properties.get("alt_names")
+                            properties.get("es")
+                            or properties.get("alt_names")
                             or properties.get("altNames")
                             or properties.get("alternative_names")
                         )
@@ -1831,36 +2097,44 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                 except (ValueError, TypeError):
                                     pass
 
-                        # Extract parent constellation
+                        # Extract parent constellation from properties first (if available)
                         parent_constellation = (
                             properties.get("parent_constellation")
                             or properties.get("constellation")
                             or properties.get("Const")
                         )
 
+                        # If not in properties, find it using ST_Within spatial query
+                        # Check if asterism position is within constellation boundaries
+                        if not parent_constellation:
+                            parent_constellation = _find_constellation_by_coordinates_async(
+                                ra_hours, dec_degrees, constellations, name
+                            )
+
                         # Extract description
                         description = (
                             properties.get("description") or properties.get("Description") or properties.get("notes")
                         )
 
-                        # Extract component stars from properties first
-                        stars = (
+                        # Extract component stars from properties first (if available)
+                        stars_from_props = (
                             properties.get("stars")
                             or properties.get("component_stars")
                             or properties.get("member_stars")
                         )
 
-                        # If no stars listed in properties, try to find them from geometry
+                        # Always try to find stars from MultiLineString geometry
                         # The MULTILINESTRING geometry represents the pattern connecting stars
-                        # We'll find stars near the geometry points and store them for later processing
+                        # We'll find stars near the geometry points
                         geometry_points_for_star_search: list[tuple[float, float]] | None = None
                         geometry_type = geometry.get("type", "")
-                        if not stars and geometry_type == "MULTILINESTRING":
+                        if geometry_type == "MULTILINESTRING":
                             # Extract all points from MULTILINESTRING coordinates
                             # MULTILINESTRING: [[[lon, lat], ...], ...] - each line is a list of points
                             all_points: list[tuple[float, float]] = []
-                            if isinstance(coords, list):
-                                for line in coords:
+                            geom_coords = geometry.get("coordinates", [])
+                            if isinstance(geom_coords, list):
+                                for line in geom_coords:
                                     if isinstance(line, list):
                                         for point in line:
                                             if isinstance(point, list) and len(point) >= 2:
@@ -1902,8 +2176,11 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             or properties.get("appearance")
                         )
 
-                        # If we need to find stars from geometry, do it now (we have database access)
-                        if geometry_points_for_star_search and not stars:
+                        # Always find stars from MultiLineString geometry if available
+                        # This gives us the actual stars that make up the asterism pattern
+                        stars = stars_from_props  # Start with stars from properties if available
+                        brightest_star = None
+                        if geometry_points_for_star_search:
                             try:
                                 from sqlalchemy import select
 
@@ -1914,8 +2191,12 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                 db_instance = get_database()
 
                                 # Search for stars near each geometry point
-                                def _find_stars_near_points(db: Any, points: list[tuple[float, float]]) -> set[str]:
-                                    found: set[str] = set()
+                                # Returns tuple of (star_name, star_model) for finding brightest
+                                def _find_stars_near_points(
+                                    db: Any, points: list[tuple[float, float]]
+                                ) -> tuple[set[str], list[StarModel]]:
+                                    found_names: set[str] = set()
+                                    found_models: list[StarModel] = []
                                     with db._get_session() as session:
                                         for lon_deg, lat_deg in points:
                                             # Convert lon back to RA hours
@@ -1967,27 +2248,67 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                                 # If within 2 arcminutes, consider it part of the asterism
                                                 if separation_arcmin <= 2.0:
                                                     # Prefer common name, fallback to name
+                                                    # Use name even if it's a catalog identifier (better than nothing)
                                                     star_name = star_model.common_name or star_model.name
-                                                    if star_name:
-                                                        found.add(star_name)
+                                                    if star_name and star_name not in found_names:
+                                                        found_names.add(star_name)
+                                                        found_models.append(star_model)
+                                                        # Only add the first star found at this point (closest match)
+                                                        break
 
-                                    return found
+                                    return found_names, found_models
 
-                                # Run function
-                                found_star_names = _find_stars_near_points(db_instance, geometry_points_for_star_search)
+                                # Run function to find stars from geometry
+                                found_star_names, found_star_models = _find_stars_near_points(
+                                    db_instance, geometry_points_for_star_search
+                                )
 
                                 if found_star_names:
-                                    # Convert set to comma-separated string
-                                    stars = ",".join(sorted(found_star_names))
+                                    # Use geometry-found stars (they're more accurate than properties)
+                                    # Merge with stars from properties if any
+                                    if stars_from_props:
+                                        # Merge both sets
+                                        props_stars = {s.strip() for s in stars_from_props.split(",") if s.strip()}
+                                        all_star_names = found_star_names | props_stars
+                                        stars = ",".join(sorted(all_star_names))
+                                    else:
+                                        stars = ",".join(sorted(found_star_names))
+
+                                    # Find brightest star from the found stars
+                                    # Brightest = smallest magnitude value (most negative is brightest)
+                                    if found_star_models:
+                                        brightest_star_model = min(
+                                            found_star_models,
+                                            key=lambda s: s.magnitude if s.magnitude is not None else float("inf"),
+                                        )
+                                        if brightest_star_model.magnitude is not None:
+                                            brightest_star = (
+                                                brightest_star_model.common_name or brightest_star_model.name
+                                            )
+
                                     if verbose:
                                         console.print(
-                                            f"[dim]Found {len(found_star_names)} stars from geometry for {name}[/dim]"
+                                            f"[dim]Found {len(found_star_names)} stars from geometry for {name}"
+                                            + (f", brightest: {brightest_star}" if brightest_star else "")
+                                            + "[/dim]"
                                         )
+                                else:
+                                    # No stars found from geometry, but we might have stars from properties
+                                    if verbose and not stars_from_props:
+                                        console.print(f"[dim]No stars found from geometry for {name}[/dim]")
                             except Exception as e:
                                 if verbose:
                                     console.print(
                                         f"[yellow]Warning: Could not find stars from geometry for {name}: {e}[/yellow]"
                                     )
+                                # On error, keep stars from properties if available
+                                if not stars:
+                                    stars = stars_from_props
+
+                        # Ensure stars is set (even if None/empty)
+                        # Convert None to empty string for database consistency
+                        stars_value = stars if stars else None
+                        brightest_star_value = brightest_star if brightest_star else None
 
                         # Create asterism model (geometry will be set after conversion)
                         asterism = AsterismModel(
@@ -1998,13 +2319,14 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             size_degrees=size_degrees,
                             parent_constellation=parent_constellation,
                             description=description,
-                            stars=stars,
+                            stars=stars_value,
                             season=season,
                             wikipedia_url=wikipedia_url,
                             cultural_info=cultural_info,
                             guidepost_info=guidepost_info,
                             historical_notes=historical_notes,
                             shape_description=shape_description,
+                            brightest_star=brightest_star_value,  # Brightest star found from geometry
                             geometry=None,  # Will be set after conversion
                         )
 
@@ -2146,7 +2468,13 @@ def download_wds_catalog(output_path: Path) -> bool:
     return False
 
 
-def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
+def import_wds_catalog(
+    wds_path: Path,
+    mag_limit: float = 15.0,
+    verbose: bool = False,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    status_callback: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
     """
     Import Washington Double Star Catalog (WDS) data.
 
@@ -2157,6 +2485,7 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
         wds_path: Path to WDS catalog text file
         mag_limit: Maximum magnitude to import (fainter objects are skipped)
         verbose: Show detailed progress
+        progress_callback: Optional callback function(status, current, total) for progress updates
 
     Returns:
         (imported_count, skipped_count)
@@ -2164,9 +2493,35 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
     db = get_database()
 
     # Pre-fetch existing objects for deduplication
-    console.print("[dim]Loading existing WDS objects for deduplication...[/dim]")
+    status_msg = "Loading existing WDS objects for deduplication..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
     existing_objects = db.get_existing_objects_set(catalog="wds")
-    console.print(f"[dim]Found {len(existing_objects):,} existing WDS objects[/dim]")
+    status_msg = f"Found {len(existing_objects):,} existing WDS objects"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
+
+    # Pre-load constellations for coordinate-based lookup
+    status_msg = "Loading constellations for coordinate-based lookup..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
+    from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
+
+    def _load_constellations() -> list[ConstellationModel]:
+        with get_db_session() as session:
+            from sqlalchemy import select
+
+            result = session.execute(select(ConstellationModel))
+            return list(result.scalars().all())
+
+    constellations = _load_constellations()
+    status_msg = f"Loaded {len(constellations):,} constellations for coordinate lookup"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
 
     imported = 0
     skipped = 0
@@ -2192,169 +2547,227 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
     # Read WDS catalog file
     all_objects: list[dict[str, Any]] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        # First pass: count lines
-        with open(wds_path, encoding="utf-8", errors="ignore") as f:
-            total_lines = sum(1 for _ in f)
+    # Use progress callback if provided, otherwise use Rich Progress
+    use_rich_progress = progress_callback is None
+    progress_obj = None
+    task = None
 
-        task = progress.add_task(f"Processing WDS catalog (mag ≤ {mag_limit})...", total=total_lines)
+    # First pass: count lines
+    with open(wds_path, encoding="utf-8", errors="ignore") as f:
+        total_lines = sum(1 for _ in f)
 
-        with open(wds_path, encoding="utf-8", errors="ignore") as f:
-            for line_num, line in enumerate(f, 1):
-                if len(line.strip()) < 10:  # Skip very short lines
-                    progress.advance(task)
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task(f"Processing WDS catalog (mag ≤ {mag_limit})...", total=total_lines)
+    else:
+        # Emit initial progress via callback
+        if progress_callback:
+            progress_callback(f"Processing WDS catalog (mag ≤ {mag_limit})...", 0, total_lines)
+
+    with open(wds_path, encoding="utf-8", errors="ignore") as f:
+        for line_num, line in enumerate(f, 1):
+            if len(line.strip()) < 10:  # Skip very short lines
+                # Update progress
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback("Processing WDS catalog...", processed, total_lines)
+                continue
+
+            try:
+                # Parse fixed-width format
+                wds_designation = line[0:10].strip()
+                discoverer = line[10:18].strip()
+
+                # Skip header lines or invalid entries
+                if not wds_designation or wds_designation.startswith("#") or "WDS" in wds_designation.upper():
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing WDS catalog...", processed, total_lines)
                     continue
 
+                # Parse RA (hours, minutes, seconds)
+                ra_h_str = line[18:21].strip()
+                ra_m_str = line[21:24].strip()
+                ra_s_str = line[24:28].strip()
+
                 try:
-                    # Parse fixed-width format
-                    wds_designation = line[0:10].strip()
-                    discoverer = line[10:18].strip()
+                    ra_h = float(ra_h_str) if ra_h_str else 0.0
+                    ra_m = float(ra_m_str) if ra_m_str else 0.0
+                    ra_s = float(ra_s_str) if ra_s_str else 0.0
+                    ra_hours = ra_h + (ra_m / 60.0) + (ra_s / 3600.0)
+                except (ValueError, TypeError):
+                    skipped += 1
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing WDS catalog...", processed, total_lines)
+                    continue
 
-                    # Skip header lines or invalid entries
-                    if not wds_designation or wds_designation.startswith("#") or "WDS" in wds_designation.upper():
-                        progress.advance(task)
-                        continue
+                # Parse Dec (degrees, arcminutes, arcseconds)
+                dec_sign = line[28:29].strip()
+                dec_d_str = line[29:32].strip()
+                dec_m_str = line[32:35].strip()
+                dec_s_str = line[35:38].strip()
 
-                    # Parse RA (hours, minutes, seconds)
-                    ra_h_str = line[18:21].strip()
-                    ra_m_str = line[21:24].strip()
-                    ra_s_str = line[24:28].strip()
+                try:
+                    dec_d = float(dec_d_str) if dec_d_str else 0.0
+                    dec_m = float(dec_m_str) if dec_m_str else 0.0
+                    dec_s = float(dec_s_str) if dec_s_str else 0.0
+                    dec_degrees = dec_d + (dec_m / 60.0) + (dec_s / 3600.0)
+                    if dec_sign == "-":
+                        dec_degrees = -dec_degrees
 
-                    try:
-                        ra_h = float(ra_h_str) if ra_h_str else 0.0
-                        ra_m = float(ra_m_str) if ra_m_str else 0.0
-                        ra_s = float(ra_s_str) if ra_s_str else 0.0
-                        ra_hours = ra_h + (ra_m / 60.0) + (ra_s / 3600.0)
-                    except (ValueError, TypeError):
-                        skipped += 1
-                        progress.advance(task)
-                        continue
+                    # Validate declination is within valid range (-90 to 90 degrees)
+                    if not (-90.0 <= dec_degrees <= 90.0):
+                        # Check if this might be a parsing error (e.g., arcminutes treated as degrees)
+                        # If dec_d is > 90, it might be arcminutes instead
+                        if abs(dec_d) > 90 and abs(dec_d) < 5400:  # 5400 arcmin = 90 degrees
+                            # Try treating dec_d as arcminutes
+                            dec_degrees = (dec_d / 60.0) + (dec_m / 3600.0) + (dec_s / 216000.0)
+                            if dec_sign == "-":
+                                dec_degrees = -dec_degrees
 
-                    # Parse Dec (degrees, arcminutes, arcseconds)
-                    dec_sign = line[28:29].strip()
-                    dec_d_str = line[29:32].strip()
-                    dec_m_str = line[32:35].strip()
-                    dec_s_str = line[35:38].strip()
-
-                    try:
-                        dec_d = float(dec_d_str) if dec_d_str else 0.0
-                        dec_m = float(dec_m_str) if dec_m_str else 0.0
-                        dec_s = float(dec_s_str) if dec_s_str else 0.0
-                        dec_degrees = dec_d + (dec_m / 60.0) + (dec_s / 3600.0)
-                        if dec_sign == "-":
-                            dec_degrees = -dec_degrees
-
-                        # Validate declination is within valid range (-90 to 90 degrees)
+                        # If still invalid, skip this entry
                         if not (-90.0 <= dec_degrees <= 90.0):
-                            # Check if this might be a parsing error (e.g., arcminutes treated as degrees)
-                            # If dec_d is > 90, it might be arcminutes instead
-                            if abs(dec_d) > 90 and abs(dec_d) < 5400:  # 5400 arcmin = 90 degrees
-                                # Try treating dec_d as arcminutes
-                                dec_degrees = (dec_d / 60.0) + (dec_m / 3600.0) + (dec_s / 216000.0)
-                                if dec_sign == "-":
-                                    dec_degrees = -dec_degrees
+                            if verbose:
+                                console.print(
+                                    f"[yellow]Warning: Skipping {wds_designation} - invalid declination {dec_degrees:.2f}° "
+                                    f"(parsed as d={dec_d}, m={dec_m}, s={dec_s})[/yellow]"
+                                )
+                            skipped += 1
+                            # Update progress
+                            if use_rich_progress and task is not None:
+                                progress_obj.advance(task)  # type: ignore[union-attr]
+                            elif progress_callback:
+                                processed = len(all_objects) + skipped + errors
+                                progress_callback("Processing WDS catalog...", processed, total_lines)
+                            continue
+                except (ValueError, TypeError):
+                    skipped += 1
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing WDS catalog...", processed, total_lines)
+                    continue
 
-                            # If still invalid, skip this entry
-                            if not (-90.0 <= dec_degrees <= 90.0):
-                                if verbose:
-                                    console.print(
-                                        f"[yellow]Warning: Skipping {wds_designation} - invalid declination {dec_degrees:.2f}° "
-                                        f"(parsed as d={dec_d}, m={dec_m}, s={dec_s})[/yellow]"
-                                    )
-                                skipped += 1
-                                progress.advance(task)
-                                continue
-                    except (ValueError, TypeError):
-                        skipped += 1
-                        progress.advance(task)
-                        continue
+                # Parse magnitudes (primary and secondary)
+                mag1_str = line[37:42].strip()
+                mag2_str = line[42:47].strip()
 
-                    # Parse magnitudes
-                    mag1_str = line[37:42].strip()
-                    mag2_str = line[42:47].strip()
+                primary_magnitude = None
+                secondary_magnitude = None
+                magnitude = None  # Combined magnitude (brighter of the two)
 
-                    magnitude = None
-                    try:
-                        if mag1_str:
-                            mag1 = float(mag1_str)
-                            if mag2_str:
-                                mag2 = float(mag2_str)
-                                # Use brighter magnitude
-                                magnitude = min(mag1, mag2)
-                            else:
-                                magnitude = mag1
-                    except (ValueError, TypeError):
-                        pass
+                try:
+                    if mag1_str:
+                        primary_magnitude = float(mag1_str)
+                        if mag2_str:
+                            secondary_magnitude = float(mag2_str)
+                            # Use brighter magnitude for filtering
+                            magnitude = min(primary_magnitude, secondary_magnitude)
+                        else:
+                            magnitude = primary_magnitude
+                except (ValueError, TypeError):
+                    pass
 
-                    # Filter by magnitude
-                    if magnitude is not None and magnitude > mag_limit:
-                        skipped += 1
-                        progress.advance(task)
-                        continue
+                # Filter by magnitude (use brighter of the two)
+                if magnitude is not None and magnitude > mag_limit:
+                    skipped += 1
+                    # Update progress
+                    if use_rich_progress and task is not None:
+                        progress_obj.advance(task)  # type: ignore[union-attr]
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing WDS catalog...", processed, total_lines)
+                    continue
 
-                    # Parse separation and position angle
-                    sep_str = line[47:52].strip()
-                    pa_str = line[52:56].strip()
+                # Parse separation and position angle
+                sep_str = line[47:52].strip()
+                pa_str = line[52:56].strip()
 
-                    separation = None
-                    position_angle = None
-                    try:
-                        if sep_str:
-                            separation = float(sep_str)
-                        if pa_str:
-                            position_angle = float(pa_str)
-                    except (ValueError, TypeError):
-                        pass
+                separation = None
+                position_angle = None
+                try:
+                    if sep_str:
+                        separation = float(sep_str)
+                    if pa_str:
+                        position_angle = float(pa_str)
+                except (ValueError, TypeError):
+                    pass
 
-                    # Build name (use WDS designation as primary name)
-                    name = wds_designation
-                    common_name = discoverer if discoverer else None
+                # Build name (use WDS designation as primary name)
+                name = wds_designation
+                common_name = discoverer if discoverer else None
 
-                    # Build description
-                    description_parts = []
-                    if discoverer:
-                        description_parts.append(f"Discoverer: {discoverer}")
-                    if separation is not None:
-                        description_parts.append(f'Separation: {separation:.2f}"')
-                    if position_angle is not None:
-                        description_parts.append(f"PA: {position_angle:.1f}°")
-                    if mag1_str and mag2_str:
-                        description_parts.append(f"Magnitudes: {mag1_str}, {mag2_str}")
-                    description = "; ".join(description_parts) if description_parts else "Double star from WDS"
+                # Determine constellation from coordinates using spatial query
+                constellation = _find_constellation_by_coordinates_async(ra_hours, dec_degrees, constellations, name)
 
-                    # Add to collection
-                    all_objects.append(
-                        {
-                            "name": name,
-                            "catalog": "wds",
-                            "ra_hours": ra_hours,
-                            "dec_degrees": dec_degrees,
-                            "object_type": CelestialObjectType.DOUBLE_STAR,
-                            "magnitude": magnitude,
-                            "common_name": common_name,
-                            "catalog_number": None,  # WDS doesn't use numeric catalog numbers
-                            "size_arcmin": separation / 60.0 if separation else None,  # Convert arcsec to arcmin
-                            "description": description,
-                            "constellation": None,  # Could be determined from coordinates if needed
-                        }
-                    )
+                # Build description
+                description_parts = []
+                if discoverer:
+                    description_parts.append(f"Discoverer: {discoverer}")
+                if separation is not None:
+                    description_parts.append(f'Separation: {separation:.2f}"')
+                if position_angle is not None:
+                    description_parts.append(f"PA: {position_angle:.1f}°")
+                if mag1_str and mag2_str:
+                    description_parts.append(f"Magnitudes: {mag1_str}, {mag2_str}")
+                description = "; ".join(description_parts) if description_parts else "Double star from WDS"
 
-                except Exception as e:
-                    errors += 1
-                    if verbose:
-                        console.print(f"[yellow]Warning: Error processing line {line_num}: {e}[/yellow]")
+                # Add to collection
+                # Note: insert_objects_batch will automatically create POINT geometry from RA/Dec
+                all_objects.append(
+                    {
+                        "name": name,
+                        "catalog": "wds",
+                        "ra_hours": ra_hours,
+                        "dec_degrees": dec_degrees,
+                        "object_type": CelestialObjectType.DOUBLE_STAR,
+                        "magnitude": magnitude,  # Brighter of the two for filtering/sorting
+                        "primary_magnitude": primary_magnitude,
+                        "secondary_magnitude": secondary_magnitude,
+                        "common_name": common_name,
+                        "catalog_number": None,  # WDS doesn't use numeric catalog numbers
+                        "size_arcmin": separation / 60.0 if separation else None,  # Convert arcsec to arcmin
+                        "description": description,
+                        "constellation": constellation,
+                    }
+                )
 
-                progress.advance(task)
+            except Exception as e:
+                errors += 1
+                if verbose:
+                    console.print(f"[yellow]Warning: Error processing line {line_num}: {e}[/yellow]")
+
+                # Update progress
+                if use_rich_progress and task is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
+                elif progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback("Processing WDS catalog...", processed, total_lines)
 
     # Deduplicate
-    console.print(f"[dim]Deduplicating {len(all_objects):,} objects...[/dim]")
+    status_msg = f"Deduplicating {len(all_objects):,} objects..."
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
     seen_keys: set[tuple[str, str | None, int | None]] = set()
     deduplicated_objects: list[dict[str, Any]] = []
     for obj in all_objects:
@@ -2369,32 +2782,60 @@ def import_wds_catalog(wds_path: Path, mag_limit: float = 15.0, verbose: bool = 
         else:
             skipped += 1
 
-    console.print(f"[dim]After deduplication: {len(deduplicated_objects):,} unique objects to import[/dim]")
+    status_msg = f"After deduplication: {len(deduplicated_objects):,} unique objects to import"
+    console.print(f"[dim]{status_msg}[/dim]")
+    if status_callback:
+        status_callback(status_msg)
+
+    # Close processing progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
 
     # Batch insert
     batch_size = 1000
     num_batches = (len(deduplicated_objects) + batch_size - 1) // batch_size
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Importing WDS catalog...", total=num_batches)
 
-        for i in range(0, len(deduplicated_objects), batch_size):
-            batch = deduplicated_objects[i : i + batch_size]
-            try:
-                batch_imported = db.insert_objects_batch(batch)
-                imported += batch_imported
-                progress.advance(task)
-            except Exception as e:
-                if verbose:
-                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
-                errors += len(batch)
-                progress.advance(task)
+    if use_rich_progress:
+        progress_obj = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+        )
+        progress_obj.__enter__()
+        task = progress_obj.add_task("Importing WDS catalog...", total=num_batches)
+    else:
+        # Emit initial import progress via callback
+        if progress_callback:
+            progress_callback("Importing WDS catalog...", 0, num_batches)
+
+    for i in range(0, len(deduplicated_objects), batch_size):
+        batch = deduplicated_objects[i : i + batch_size]
+        try:
+            batch_imported = db.insert_objects_batch(batch)
+            imported += batch_imported
+            # Update progress
+            if use_rich_progress and task is not None:
+                progress_obj.advance(task)  # type: ignore[union-attr]
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback("Importing WDS catalog...", batch_num, num_batches)
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+            errors += len(batch)
+            # Update progress even on error
+            if use_rich_progress and task is not None:
+                progress_obj.advance(task)  # type: ignore[union-attr]
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback("Importing WDS catalog...", batch_num, num_batches)
+
+    # Close import progress if using Rich
+    if use_rich_progress and progress_obj is not None:
+        progress_obj.__exit__(None, None, None)
 
     if errors > 0:
         console.print(f"[yellow]⚠[/yellow] {errors} errors occurred during import")
@@ -2722,6 +3163,26 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
                 return False
 
         # Download additional files for certain sources
+        if source_id.startswith("celestial_stars"):
+            # Also download starnames.csv for proper star names
+            starnames_filename = "starnames.csv"
+            starnames_path = cache_dir / starnames_filename
+            if not starnames_path.exists() or force_download:
+                if force_download and starnames_path.exists():
+                    starnames_path.unlink()
+                console.print("Downloading starnames.csv from celestial_data repository...")
+                download_celestial_data(starnames_filename, starnames_path)
+
+        if source_id.startswith("celestial_dsos"):
+            # Also download dsonames.csv for proper DSO names
+            dsonames_filename = "dsonames.csv"
+            dsonames_path = cache_dir / dsonames_filename
+            if not dsonames_path.exists() or force_download:
+                if force_download and dsonames_path.exists():
+                    dsonames_path.unlink()
+                console.print("Downloading dsonames.csv from celestial_data repository...")
+                download_celestial_data(dsonames_filename, dsonames_path)
+
         if source_id == "celestial_constellations":
             # Also download bounds file for accurate MultiPolygon boundaries
             bounds_filename = "constellations.bounds.min.geojson"

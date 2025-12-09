@@ -182,6 +182,10 @@ class DoubleStarModel(Base, CelestialObjectMixin):
 
     __tablename__ = "double_stars"
 
+    # Double star specific fields
+    primary_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)  # Magnitude of primary star
+    secondary_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)  # Magnitude of secondary star
+
     # Composite indexes
     __table_args__ = (
         Index("idx_double_star_catalog_number", "catalog", "catalog_number"),
@@ -773,6 +777,7 @@ class AsterismModel(Base):
     parent_constellation: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Part of which constellation
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     stars: Mapped[str | None] = mapped_column(Text, nullable=True)  # Component stars (comma-separated)
+    brightest_star: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Name of brightest star in asterism
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season
 
     # Extended information

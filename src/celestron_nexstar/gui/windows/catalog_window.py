@@ -313,7 +313,7 @@ class CatalogSearchWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error loading recent searches: {e}")
 
-    async def _get_recent_searches(self) -> list[str]:
+    def _get_recent_searches(self) -> list[str]:
         """Get recent searches from database."""
         try:
             from celestron_nexstar.api.database.models import UserPreferenceModel
@@ -331,7 +331,7 @@ class CatalogSearchWindow(QMainWindow):
             logger.debug(f"Error getting recent searches: {e}")
         return []
 
-    async def _save_recent_search(self, query: str) -> None:
+    def _save_recent_search(self, query: str) -> None:
         """Save a search query to recent searches."""
         if not query or not query.strip():
             return

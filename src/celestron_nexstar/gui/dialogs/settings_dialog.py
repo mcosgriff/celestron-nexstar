@@ -154,6 +154,20 @@ class SettingsDialog(QDialog):
         self.ephemeris_table = table
         layout.addWidget(table)
 
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 100)
+        self.ephemeris_progress = progress
+        layout.addWidget(progress)
+
+        # Status label
+        status_label = QLabel()
+        status_label.setVisible(False)
+        status_label.setWordWrap(True)
+        self.ephemeris_status_label = status_label
+        layout.addWidget(status_label)
+
         self.tab_widget.addTab(widget, "Ephemeris")
 
     def _create_location_tab(self) -> None:
@@ -544,6 +558,9 @@ class SettingsDialog(QDialog):
                 # Download button
                 download_btn = QPushButton("Download" if not installed else "Re-download")
                 download_btn.setFixedWidth(100)
+                download_btn.setToolTip(
+                    "Download this ephemeris file from NAIF. Re-download will replace the existing file if it exists."
+                )
                 download_btn.clicked.connect(lambda checked, key=file_key: self._on_download_ephemeris_file(key))
                 table.setCellWidget(row, 4, download_btn)
 
@@ -551,6 +568,11 @@ class SettingsDialog(QDialog):
                 sync_btn = QPushButton("Sync")
                 sync_btn.setFixedWidth(80)
                 sync_btn.setEnabled(installed)  # Only enable if file is downloaded
+                sync_btn.setToolTip(
+                    "Sync ephemeris file metadata from NAIF to the database. "
+                    "This updates file information, coverage dates, and descriptions. "
+                    "Only available after the file has been downloaded."
+                )
                 sync_btn.clicked.connect(lambda checked, key=file_key: self._on_sync_ephemeris_file(key))
                 table.setCellWidget(row, 5, sync_btn)
 
@@ -1066,21 +1088,42 @@ class SettingsDialog(QDialog):
 
     def _on_ephemeris_progress(self, file_key: str, status: str, current: int, total: int) -> None:
         """Handle ephemeris download progress update."""
-        # Update progress in table if needed
-        pass  # Progress updates can be shown in status bar or table
+        # Update progress bar and status label
+        if total > 0:
+            percentage = int((current / total) * 100) if total > 0 else 0
+            self.ephemeris_progress.setValue(percentage)
+            self.ephemeris_progress.setVisible(True)
+        else:
+            self.ephemeris_progress.setValue(0)
+            self.ephemeris_progress.setVisible(True)
+
+        if status:
+            self.ephemeris_status_label.setText(status)
+            self.ephemeris_status_label.setVisible(True)
 
     def _on_ephemeris_complete(self, file_key: str, success: bool, message: str) -> None:
         """Handle ephemeris download completion."""
+        # Hide progress bar and status label
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+
         if success:
             logger.info(f"Ephemeris download complete: {message}")
             # Reload ephemeris info to update table
             self._load_ephemeris_info()
+            self._show_toast(f"Ephemeris downloaded: {message}", duration_ms=3000, preset="success")
         else:
             logger.error(f"Ephemeris download failed: {message}")
+            self._show_toast(f"Ephemeris download failed: {message}", duration_ms=4000, preset="error")
 
     def _on_ephemeris_error(self, file_key: str, error: str) -> None:
         """Handle ephemeris download error."""
+        # Hide progress bar and status label
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+
         logger.error(f"Ephemeris download error for {file_key}: {error}")
+        self._show_toast(f"Ephemeris download error: {error}", duration_ms=4000, preset="error")
 
     def _on_sync_ephemeris_file(self, file_key: str) -> None:
         """Handle ephemeris file sync button click."""
@@ -1094,6 +1137,9 @@ class SettingsDialog(QDialog):
 
         # Create and start worker
         worker = SyncEphemerisThread(force=False)
+        worker.progress_updated.connect(
+            lambda status, current, total: self._on_ephemeris_sync_progress(file_key, status, current, total)
+        )
         worker.sync_complete.connect(
             lambda success, message: self._on_ephemeris_sync_complete(file_key, success, message)
         )
@@ -1103,16 +1149,44 @@ class SettingsDialog(QDialog):
         self._download_workers[worker_key] = worker
         worker.start()
 
+    def _on_ephemeris_sync_progress(self, file_key: str, status: str, current: int, total: int) -> None:
+        """Handle ephemeris sync progress update."""
+        # Update progress bar and status label
+        if total > 0:
+            percentage = int((current / total) * 100) if total > 0 else 0
+            self.ephemeris_progress.setValue(percentage)
+            self.ephemeris_progress.setVisible(True)
+        else:
+            self.ephemeris_progress.setValue(0)
+            self.ephemeris_progress.setVisible(True)
+
+        if status:
+            self.ephemeris_status_label.setText(status)
+            self.ephemeris_status_label.setVisible(True)
+
     def _on_ephemeris_sync_complete(self, file_key: str, success: bool, message: str) -> None:
         """Handle ephemeris sync completion."""
+        # Hide progress bar and status label
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+
         if success:
             logger.info(f"Ephemeris sync complete: {message}")
+            # Reload ephemeris info to update table
+            self._load_ephemeris_info()
+            self._show_toast(f"Ephemeris synced: {message}", duration_ms=3000, preset="success")
         else:
             logger.error(f"Ephemeris sync failed: {message}")
+            self._show_toast(f"Ephemeris sync failed: {message}", duration_ms=4000, preset="error")
 
     def _on_ephemeris_sync_error(self, file_key: str, error: str) -> None:
         """Handle ephemeris sync error."""
+        # Hide progress bar and status label
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+
         logger.error(f"Ephemeris sync error for {file_key}: {error}")
+        self._show_toast(f"Ephemeris sync error: {error}", duration_ms=4000, preset="error")
 
     def _on_download_celestial_data(self, source_id: str) -> None:
         """Handle celestial data download button click."""
@@ -1173,14 +1247,30 @@ class SettingsDialog(QDialog):
             logger.info(f"Celestial data download complete: {message}")
             # Reload celestial data info to update table (this will enable import buttons)
             self._load_celestial_data_info()
+            # Get source name for toast
+            from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+            source = DATA_SOURCES.get(source_id)
+            source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+            self._show_toast(f"{source_name} downloaded successfully", duration_ms=3000)
         else:
             self.celestial_data_status_label.setText(f"✗ Download failed: {message}")
             logger.error(f"Celestial data download failed: {message}")
+            from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+            source = DATA_SOURCES.get(source_id)
+            source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+            self._show_toast(f"{source_name} download failed: {message}", duration_ms=4000)
 
     def _on_celestial_download_error(self, source_id: str, error: str) -> None:
         """Handle celestial data download error."""
         self.celestial_data_status_label.setText(f"✗ Error: {error}")
         logger.error(f"Celestial data download error for {source_id}: {error}")
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+        self._show_toast(f"{source_name} download error: {error}", duration_ms=4000)
 
     def _on_import_celestial_data(self, source_id: str) -> None:
         """Handle celestial data import button click."""
@@ -1209,8 +1299,11 @@ class SettingsDialog(QDialog):
         def on_progress(status: str, current: int, total: int) -> None:
             self._on_celestial_import_progress(source_id, status, current, total)
 
-        def on_complete(success: bool, message: str, imported: int, skipped: int) -> None:
-            self._on_celestial_import_complete(source_id, success, message, imported, skipped)
+        def on_status_message(message: str) -> None:
+            self._on_celestial_import_status_message(message)
+
+        def on_complete(worker_source_id: str, success: bool, message: str, imported: int, skipped: int) -> None:
+            self._on_celestial_import_complete(worker_source_id, success, message, imported, skipped)
             self._download_workers.pop(worker_key, None)
             self.celestial_data_progress.setVisible(False)
 
@@ -1218,6 +1311,7 @@ class SettingsDialog(QDialog):
             self._on_celestial_import_error(worker_source_id, error)
 
         worker.progress_updated.connect(on_progress)
+        worker.status_message.connect(on_status_message)
         worker.import_complete.connect(on_complete)
         worker.error_occurred.connect(on_error)
         worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
@@ -1234,6 +1328,230 @@ class SettingsDialog(QDialog):
         else:
             self.celestial_data_status_label.setText(status)
 
+    def _on_celestial_import_status_message(self, message: str) -> None:
+        """Handle celestial data import status message (show toast notification)."""
+        self._show_toast(message, duration_ms=3000)
+
+    def _is_dark_theme(self) -> bool:
+        """Detect if the current theme is dark mode."""
+        from PySide6.QtGui import QGuiApplication, QPalette
+
+        app = QGuiApplication.instance()
+        if app and isinstance(app, QGuiApplication):
+            # Check palette brightness
+            palette = app.palette()
+            window_color = palette.color(QPalette.ColorRole.Window)
+            brightness = window_color.lightness()
+            return bool(brightness < 128)
+        return False
+
+    def _show_toast(self, message: str, duration_ms: int = 2000, preset: str | None = None) -> None:
+        """Show a temporary toast notification using pyqt-toast-notification.
+
+        Args:
+            message: The message to display
+            duration_ms: How long to show the toast (milliseconds)
+            preset: Optional preset type ('success', 'error', 'warning', 'info').
+                    If None, auto-detects from message content.
+        """
+        try:
+            from pyqttoast import Toast, ToastPreset
+
+            # Auto-detect preset from message if not provided
+            if preset is None:
+                message_lower = message.lower()
+                if "failed" in message_lower or "error" in message_lower:
+                    preset = "error"
+                elif (
+                    "complete" in message_lower
+                    or "success" in message_lower
+                    or "downloaded" in message_lower
+                    or "imported" in message_lower
+                ):
+                    preset = "success"
+                elif "warning" in message_lower:
+                    preset = "warning"
+                else:
+                    preset = "info"
+
+            # Detect dark mode
+            is_dark = self._is_dark_theme()
+
+            # Ensure dialog is shown and has valid geometry before creating toast
+            if not self.isVisible():
+                self.show()
+            # Ensure dialog has valid size
+            if self.width() < 100 or self.height() < 100:
+                self.resize(900, 700)
+
+            # Use QTimer to delay toast creation to ensure dialog is fully laid out
+            import logging
+
+            from PySide6.QtCore import QTimer
+
+            def create_toast() -> None:
+                # Double-check geometry is valid
+                if self.width() < 100 or self.height() < 100:
+                    return
+
+                # Suppress Qt warnings about window positioning
+                # The warning is harmless - Qt will use the primary screen
+                qt_logger = logging.getLogger("qt.qpa.window")
+                original_level = qt_logger.level
+                qt_logger.setLevel(logging.ERROR)
+
+                try:
+                    # Use the settings dialog itself as parent (it's a modal dialog)
+                    toast = Toast(self)
+                    toast.setDuration(duration_ms)
+                    toast.setText(message)
+
+                    # Apply preset based on type, with theme-aware dark variants
+                    # Note: ToastPreset may not have all presets, so we handle them carefully
+                    preset_map = {
+                        "success": ToastPreset.SUCCESS_DARK if is_dark else ToastPreset.SUCCESS,
+                        "error": ToastPreset.ERROR_DARK if is_dark else ToastPreset.ERROR,
+                        "warning": ToastPreset.WARNING_DARK if is_dark else ToastPreset.WARNING,
+                        "info": ToastPreset.INFORMATION_DARK if is_dark else ToastPreset.INFORMATION,
+                    }
+
+                    # Try to apply the preset, with fallback if dark variant doesn't exist
+                    if preset in preset_map:
+                        try:
+                            toast.applyPreset(preset_map[preset])
+                        except (AttributeError, TypeError):
+                            # Fallback to light variant if dark variant doesn't exist
+                            fallback_map = {
+                                "success": ToastPreset.SUCCESS,
+                                "error": ToastPreset.ERROR,
+                                "warning": ToastPreset.WARNING,
+                            }
+                            if preset in fallback_map:
+                                toast.applyPreset(fallback_map[preset])
+                            else:
+                                toast.applyPreset(ToastPreset.SUCCESS)
+                    else:
+                        # For unknown presets, use SUCCESS as default
+                        toast.applyPreset(ToastPreset.SUCCESS_DARK if is_dark else ToastPreset.SUCCESS)
+
+                    # Don't try to set position via library API - it seems to cause issues
+                    # We'll position it manually after it's shown
+
+                    # Show toast first
+                    toast.show()
+
+                    # Position toast manually after it's shown at top right of screen
+                    def position_toast() -> None:
+                        if toast.isVisible():
+                            from PySide6.QtWidgets import QApplication
+
+                            # Ensure toast has valid geometry
+                            toast.adjustSize()
+                            toast_width = toast.width()
+
+                            # Get primary screen geometry
+                            app = QApplication.instance()
+                            if app:
+                                screen = app.primaryScreen()
+                                if screen:
+                                    screen_geometry = screen.availableGeometry()
+                                    # Position at top right of screen
+                                    x = screen_geometry.right() - toast_width - 20  # 20px from right edge
+                                    y = screen_geometry.top() + 20  # 20px from top
+                                else:
+                                    # Fallback if no screen
+                                    x = 800 - toast_width - 20
+                                    y = 20
+                            else:
+                                # Fallback if no app
+                                x = 800 - toast_width - 20
+                                y = 20
+
+                            # Ensure coordinates are valid (non-negative)
+                            x = max(0, x)
+                            y = max(0, y)
+
+                            # Move toast to calculated position (global screen coordinates)
+                            # Since we're using global coordinates, we need to make the toast a window
+                            toast.setWindowFlags(toast.windowFlags() | 0x00000080)  # Qt::Window (top-level window)
+                            toast.move(x, y)
+
+                    # Position after a short delay to ensure toast is fully laid out
+                    QTimer.singleShot(50, position_toast)
+
+                finally:
+                    # Restore original logging level
+                    qt_logger.setLevel(original_level)
+
+            # Delay toast creation slightly to ensure dialog geometry is established
+            QTimer.singleShot(100, create_toast)
+        except ImportError:
+            # Fallback to simple QLabel if library not available
+            from PySide6.QtCore import QTimer
+            from PySide6.QtGui import QGuiApplication, QPalette
+            from PySide6.QtWidgets import QLabel
+
+            # Truncate long messages to prevent toast from being too wide
+            max_length = 80
+            display_message = message
+            if len(message) > max_length:
+                display_message = message[: max_length - 3] + "..."
+
+            # Detect theme for toast styling
+            is_dark = False
+            app = QGuiApplication.instance()
+            if app and isinstance(app, QGuiApplication):
+                palette = app.palette()
+                window_color = palette.color(QPalette.ColorRole.Window)
+                brightness = window_color.lightness()
+                is_dark = brightness < 128
+
+            # Create a label for the toast
+            toast = QLabel(display_message, self)
+            # Theme-aware toast styling
+            bg_color = "rgba(0, 0, 0, 200)" if not is_dark else "rgba(255, 255, 255, 200)"
+            text_color = "white" if not is_dark else "black"
+            toast.setStyleSheet(
+                f"""
+                QLabel {{
+                    background-color: {bg_color};
+                    color: {text_color};
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                }}
+            """
+            )
+            toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            toast.adjustSize()
+
+            # Ensure dialog is visible and has valid geometry
+            if not self.isVisible():
+                self.show()
+            if self.width() < 100 or self.height() < 100:
+                self.resize(900, 700)
+
+            # Position toast in the center of the dialog
+            # Ensure coordinates are within valid screen bounds
+            dialog_width = max(self.width(), 100)
+            dialog_height = max(self.height(), 100)
+            toast_width = toast.width()
+            toast_height = toast.height()
+
+            x = max(0, (dialog_width - toast_width) // 2)
+            y = max(0, dialog_height // 3)
+
+            # Ensure toast doesn't go outside dialog bounds
+            x = min(x, dialog_width - toast_width - 10)
+            y = min(y, dialog_height - toast_height - 10)
+
+            toast.move(x, y)
+            toast.raise_()
+            toast.show()
+
+            # Hide toast after duration
+            QTimer.singleShot(duration_ms, toast.deleteLater)
+
     def _on_celestial_import_complete(
         self, source_id: str, success: bool, message: str, imported: int, skipped: int
     ) -> None:
@@ -1243,14 +1561,35 @@ class SettingsDialog(QDialog):
             logger.info(f"Celestial data import complete: {message}")
             # Reload celestial data info to update table
             self._load_celestial_data_info()
+            # Toast is already shown via status_message signal, but show completion toast too
+            from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+            source = DATA_SOURCES.get(source_id)
+            source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+            # Ensure imported and skipped are integers (safety check)
+            imported_int = int(imported) if isinstance(imported, (int, float)) else 0
+            skipped_int = int(skipped) if isinstance(skipped, (int, float)) else 0
+            self._show_toast(
+                f"{source_name} import complete: {imported_int:,} imported, {skipped_int:,} skipped", duration_ms=3000
+            )
         else:
             self.celestial_data_status_label.setText(f"✗ Import failed: {message}")
             logger.error(f"Celestial data import failed: {message}")
+            from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+            source = DATA_SOURCES.get(source_id)
+            source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+            self._show_toast(f"{source_name} import failed: {message}", duration_ms=4000)
 
     def _on_celestial_import_error(self, source_id: str, error: str) -> None:
         """Handle celestial data import error."""
         self.celestial_data_status_label.setText(f"✗ Error: {error}")
         logger.error(f"Celestial data import error for {source_id}: {error}")
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+        self._show_toast(f"{source_name} import error: {error}", duration_ms=4000)
 
     def _on_download_wds(self) -> None:
         """Handle WDS catalog download button click."""
@@ -1306,12 +1645,15 @@ class SettingsDialog(QDialog):
             self.wds_status_label.setText(f"✓ {message}")
             # Reload WDS info to enable import button
             self._load_wds_info()
+            self._show_toast("WDS catalog downloaded successfully", duration_ms=3000)
         else:
             self.wds_status_label.setText(f"✗ Download failed: {message}")
+            self._show_toast(f"WDS catalog download failed: {message}", duration_ms=4000)
 
     def _on_wds_download_error(self, error: str) -> None:
         """Handle WDS download error."""
         self.wds_status_label.setText(f"✗ Error: {error}")
+        self._show_toast(f"WDS download error: {error}", duration_ms=4000)
 
     def _on_import_wds(self) -> None:
         """Handle WDS catalog import button click."""
@@ -1335,6 +1677,9 @@ class SettingsDialog(QDialog):
         def on_progress(status: str, current: int, total: int) -> None:
             self._on_wds_import_progress(status, current, total)
 
+        def on_status_message(message: str) -> None:
+            self._on_wds_import_status_message(message)
+
         def on_complete(success: bool, message: str, imported: int, skipped: int) -> None:
             self._on_wds_import_complete(success, message, imported, skipped)
             self._download_workers.pop(worker_key, None)
@@ -1345,6 +1690,7 @@ class SettingsDialog(QDialog):
             self._on_wds_import_error(error)
 
         worker.progress_updated.connect(on_progress)
+        worker.status_message.connect(on_status_message)
         worker.import_complete.connect(on_complete)
         worker.error_occurred.connect(on_error)
         worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
@@ -1361,16 +1707,26 @@ class SettingsDialog(QDialog):
         else:
             self.wds_status_label.setText(status)
 
+    def _on_wds_import_status_message(self, message: str) -> None:
+        """Handle WDS import status message (show toast notification)."""
+        self._show_toast(message, duration_ms=3000)
+
     def _on_wds_import_complete(self, success: bool, message: str, imported: int, skipped: int) -> None:
         """Handle WDS import completion."""
         if success:
             self.wds_status_label.setText(f"✓ {message}")
+            # Toast is already shown via status_message signal, but show completion toast too
+            self._show_toast(
+                f"WDS import complete: {int(imported):,} imported, {int(skipped):,} skipped", duration_ms=3000
+            )
         else:
             self.wds_status_label.setText(f"✗ Import failed: {message}")
+            self._show_toast(f"WDS import failed: {message}", duration_ms=4000)
 
     def _on_wds_import_error(self, error: str) -> None:
         """Handle WDS import error."""
         self.wds_status_label.setText(f"✗ Error: {error}")
+        self._show_toast(f"WDS import error: {error}", duration_ms=4000)
 
     def _on_download_light_pollution(self, region: str) -> None:
         """Handle light pollution download button click."""
@@ -1425,14 +1781,17 @@ class SettingsDialog(QDialog):
             logger.info(f"Light pollution download complete: {message}")
             # Reload light pollution info to update table (enable import button)
             self._load_light_pollution_info()
+            self._show_toast(f"Light pollution data ({region}) downloaded successfully", duration_ms=3000)
         else:
             self.light_pollution_status_label.setText(f"✗ Download failed: {message}")
             logger.error(f"Light pollution download failed: {message}")
+            self._show_toast(f"Light pollution download failed ({region}): {message}", duration_ms=4000)
 
     def _on_light_pollution_download_error(self, region: str, error: str) -> None:
         """Handle light pollution download error."""
         self.light_pollution_status_label.setText(f"✗ Error: {error}")
         logger.error(f"Light pollution download error for {region}: {error}")
+        self._show_toast(f"Light pollution download error ({region}): {error}", duration_ms=4000)
 
     def _on_import_light_pollution(self, region: str) -> None:
         """Handle light pollution import button click."""
@@ -1487,14 +1846,19 @@ class SettingsDialog(QDialog):
             logger.info(f"Light pollution import complete: {message}")
             # Reload light pollution info to update table
             self._load_light_pollution_info()
+            self._show_toast(
+                f"Light pollution ({region}) import complete: {int(points):,} points imported", duration_ms=3000
+            )
         else:
             self.light_pollution_status_label.setText(f"✗ Import failed: {message}")
             logger.error(f"Light pollution import failed: {message}")
+            self._show_toast(f"Light pollution import failed ({region}): {message}", duration_ms=4000)
 
     def _on_light_pollution_import_error(self, region: str, error: str) -> None:
         """Handle light pollution import error."""
         self.light_pollution_status_label.setText(f"✗ Error: {error}")
         logger.error(f"Light pollution import error for {region}: {error}")
+        self._show_toast(f"Light pollution import error ({region}): {error}", duration_ms=4000)
 
     def _on_import_custom_yaml(self) -> None:
         """Handle custom YAML import button click."""
@@ -1542,8 +1906,12 @@ class SettingsDialog(QDialog):
 
         if success:
             QMessageBox.information(self, "Import Complete", f"Successfully imported custom YAML catalog!\n\n{message}")
+            self._show_toast(
+                f"Custom YAML import complete: {int(imported):,} imported, {int(skipped):,} skipped", duration_ms=3000
+            )
         else:
             QMessageBox.warning(self, "Import Failed", f"Failed to import custom YAML catalog:\n\n{message}")
+            self._show_toast(f"Custom YAML import failed: {message}", duration_ms=4000)
 
     def _on_custom_yaml_import_error(self, error: str) -> None:
         """Handle custom YAML import error."""

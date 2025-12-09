@@ -45,6 +45,9 @@ class DownloadEphemerisFileThread(QThread):
             self.progress_updated.emit(f"Downloading {info.display_name}...", 0, 100)
 
             # Download the file (this is synchronous but runs in background thread)
+            # Note: Skyfield's download doesn't provide progress callbacks,
+            # so we show 50% progress while downloading to indicate activity
+            self.progress_updated.emit(f"Downloading {info.display_name}...", 50, 100)
             file_path = download_file(self.file_key, force=self.force)
 
             size_mb = file_path.stat().st_size / (1024 * 1024)
@@ -164,6 +167,16 @@ class DownloadCelestialDataThread(QThread):
                 size_mb = cache_path.stat().st_size / (1024 * 1024)
                 self.progress_updated.emit(f"Already downloaded ({size_mb:.1f} MB)", 0, 100)
 
+            # If downloading star data, also download starnames.csv
+            if success and "star" in self.source_id.lower() and "dso" not in self.source_id.lower():
+                starnames_path = cache_dir / "starnames.csv"
+                need_starnames = not starnames_path.exists() or self.force
+                if need_starnames:
+                    if self.force and starnames_path.exists():
+                        starnames_path.unlink()
+                    self.progress_updated.emit("Downloading starnames.csv...", 50, 100)
+                    download_celestial_data("starnames.csv", starnames_path)
+
             # If downloading DSO data, also download dsonames.csv
             if success and "dso" in self.source_id.lower():
                 dsonames_path = cache_dir / "dsonames.csv"
@@ -261,6 +274,7 @@ class ImportWDSCatalogThread(QThread):
     """Worker thread to import WDS catalog into database."""
 
     progress_updated = Signal(str, int, int)  # type: ignore[type-arg,misc]  # Emits (status, current, total)
+    status_message = Signal(str)  # type: ignore[type-arg,misc]  # Emits status messages (e.g., "Loading existing...", "Found X existing...")
     import_complete = Signal(bool, str, int, int)  # type: ignore[type-arg,misc]  # Emits (success, message, imported, skipped)
     error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits (error_message)
 
@@ -284,9 +298,24 @@ class ImportWDSCatalogThread(QThread):
 
             self.progress_updated.emit("Importing WDS catalog...", 0, 100)
 
-            # Import the catalog (this may take a while)
-            # Note: import_wds_catalog uses console.print, but that's okay in a worker thread
-            imported, skipped = import_wds_catalog(cache_path, mag_limit=self.mag_limit, verbose=False)
+            # Create progress callback to emit progress updates
+            def progress_callback(status: str, current: int, total: int) -> None:
+                # Convert to percentage (0-100) for GUI progress bar
+                percent = int(current / total * 100) if total > 0 else 0
+                self.progress_updated.emit(status, percent, 100)
+
+            # Create status callback to emit status messages (for toast notifications)
+            def status_callback(message: str) -> None:
+                self.status_message.emit(message)
+
+            # Import with progress and status callbacks
+            imported, skipped = import_wds_catalog(
+                cache_path,
+                mag_limit=self.mag_limit,
+                verbose=False,
+                progress_callback=progress_callback,
+                status_callback=status_callback,
+            )
 
             self.progress_updated.emit("Import complete", 100, 100)
             self.import_complete.emit(True, f"Imported {imported:,} objects, skipped {skipped:,}", imported, skipped)
@@ -300,6 +329,7 @@ class ImportCelestialDataThread(QThread):
     """Worker thread to import celestial data into database."""
 
     progress_updated = Signal(str, int, int)  # type: ignore[type-arg,misc]  # Emits (status, current, total)
+    status_message = Signal(str)  # type: ignore[type-arg,misc]  # Emits status messages (e.g., "Loading existing...", "Found X existing...")
     import_complete = Signal(str, bool, str, int, int)  # type: ignore[type-arg,misc]  # Emits (source_id, success, message, imported, skipped)
     error_occurred = Signal(str, str)  # type: ignore[type-arg,misc]  # Emits (source_id, error_message)
 
@@ -362,9 +392,55 @@ class ImportCelestialDataThread(QThread):
 
             self.progress_updated.emit(f"Importing {source.name}...", 0, 100)
 
+            # Create progress callback to emit progress updates
+            def progress_callback(status: str, current: int, total: int) -> None:
+                # Convert to percentage (0-100) for GUI progress bar
+                percent = int(current / total * 100) if total > 0 else 0
+                self.progress_updated.emit(status, percent, 100)
+
+            # Create status callback to emit status messages (for toast notifications)
+            def status_callback(message: str) -> None:
+                self.status_message.emit(message)
+
             # Import the data (requires bounds file for constellations)
+            # For DSO and star imports, we need to pass the progress callback
             try:
-                imported, skipped = source.importer(cache_path, self.mag_limit, verbose=False)
+                if self.source_id.startswith("celestial_dsos"):
+                    # Import DSOs with progress and status callbacks
+                    from celestron_nexstar.cli.data_import import import_celestial_dsos
+
+                    imported, skipped = import_celestial_dsos(
+                        cache_path,
+                        self.mag_limit,
+                        verbose=False,
+                        progress_callback=progress_callback,
+                        status_callback=status_callback,
+                    )
+                elif self.source_id.startswith("celestial_stars"):
+                    # Import stars with progress and status callbacks
+                    from celestron_nexstar.cli.data_import import import_celestial_stars
+
+                    imported, skipped = import_celestial_stars(
+                        cache_path,
+                        self.mag_limit,
+                        verbose=False,
+                        progress_callback=progress_callback,
+                        status_callback=status_callback,
+                    )
+                elif self.source_id == "celestial_messier":
+                    # Import Messier objects with progress and status callbacks
+                    from celestron_nexstar.cli.data_import import import_celestial_messier
+
+                    imported, skipped = import_celestial_messier(
+                        cache_path,
+                        self.mag_limit,
+                        verbose=False,
+                        progress_callback=progress_callback,
+                        status_callback=status_callback,
+                    )
+                else:
+                    # For other imports, use the standard importer (no progress callback yet)
+                    imported, skipped = source.importer(cache_path, self.mag_limit, verbose=False)
             except FileNotFoundError as e:
                 # Bounds file or other required file not found
                 error_msg = str(e)
@@ -447,17 +523,21 @@ class SyncEphemerisThread(QThread):
     def run(self) -> None:
         """Sync ephemeris metadata in background thread."""
         try:
-            import asyncio
-
             from celestron_nexstar.api.database.database import sync_ephemeris_files_from_naif
 
-            self.progress_updated.emit("Syncing ephemeris metadata...", 0, 100)
+            self.progress_updated.emit("Syncing ephemeris metadata from NAIF...", 0, 100)
+            self.progress_updated.emit("Fetching ephemeris file information...", 25, 100)
 
-            # Sync ephemeris files metadata to database
-            count = asyncio.run(sync_ephemeris_files_from_naif(force=self.force))
+            # Sync ephemeris files metadata to database (synchronous function)
+            count = sync_ephemeris_files_from_naif(force=self.force)
 
+            self.progress_updated.emit("Updating database...", 75, 100)
             self.progress_updated.emit("Sync complete", 100, 100)
-            self.sync_complete.emit(True, f"Synced {count} ephemeris files to database")
+
+            if count == 0:
+                self.sync_complete.emit(True, "Ephemeris metadata is up to date (synced within last 24 hours)")
+            else:
+                self.sync_complete.emit(True, f"Synced {count} ephemeris files to database")
         except Exception as e:
             logger.error(f"Error syncing ephemeris metadata: {e}", exc_info=True)
             self.error_occurred.emit(str(e))

@@ -925,6 +925,11 @@ class CatalogDatabase:
                         if object_type_enum == CelestialObjectType.MOON:
                             model_kwargs["parent_planet"] = obj.get("parent_planet")
 
+                    # Add double star specific fields
+                    if object_type_enum == CelestialObjectType.DOUBLE_STAR:
+                        model_kwargs["primary_magnitude"] = obj.get("primary_magnitude")
+                        model_kwargs["secondary_magnitude"] = obj.get("secondary_magnitude")
+
                     model = model_class(**model_kwargs)
                     # Store WKT for batch geometry creation
                     model._temp_geometry_wkt = geometry_wkt  # type: ignore[attr-defined]
@@ -934,18 +939,29 @@ class CatalogDatabase:
                     # Track this name as existing to avoid duplicates within the same batch
                     existing_names.add(obj_name)
 
-            # Create geometries in batch for all models
-            from sqlalchemy import text
-
+            # Create geometries in batch for all models using GeoAlchemy2 WKTElement
             for _model_class, models in models_by_type.items():
                 for model in models:
                     if hasattr(model, "_temp_geometry_wkt"):  # type: ignore[attr-defined]
                         wkt = model._temp_geometry_wkt  # type: ignore[attr-defined]
                         try:
-                            result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
-                            geometry_obj = result.scalar()
-                            if geometry_obj:
-                                model.geometry = geometry_obj
+                            from geoalchemy2 import WKTElement
+
+                            # Use WKTElement for proper GeoAlchemy2/SpatiaLite integration
+                            geometry_obj = WKTElement(wkt, srid=0)
+                            model.geometry = geometry_obj
+                        except ImportError:
+                            # Fallback to SQL if GeoAlchemy2 not available
+                            from sqlalchemy import text
+
+                            try:
+                                result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
+                                geometry_obj = result.scalar()
+                                if geometry_obj:
+                                    model.geometry = geometry_obj
+                            except Exception:
+                                # If geometry creation fails, continue without geometry
+                                pass
                         except Exception:
                             # If geometry creation fails, continue without geometry
                             pass
@@ -2940,7 +2956,11 @@ def sync_ephemeris_files_from_naif(force: bool = False) -> int:
             last_sync = result.scalar_one_or_none()
             if last_sync:
                 last_sync_time = datetime.fromisoformat(last_sync.value)
-                hours_since_sync = (datetime.now() - last_sync_time).total_seconds() / 3600
+                # Ensure both datetimes are timezone-aware for comparison
+                if last_sync_time.tzinfo is None:
+                    # If stored value was naive, assume UTC
+                    last_sync_time = last_sync_time.replace(tzinfo=UTC)
+                hours_since_sync = (datetime.now(UTC) - last_sync_time).total_seconds() / 3600
                 if hours_since_sync < 24:  # Sync once per day max
                     logger.info("Ephemeris files recently synced, skipping")
                     return 0
