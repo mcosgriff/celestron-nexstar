@@ -4,9 +4,9 @@ Light Pollution Database Integration
 Downloads and stores World Atlas 2015/2024 light pollution data in the database
 for offline access. Supports downloading PNG images and extracting SQM values.
 
-Uses geohash (https://en.wikipedia.org/wiki/Geohash) for fast geospatial queries
-with hierarchical spatial indexing. Geohash provides efficient proximity searches
-without requiring external spatial database extensions.
+Requires SpatiaLite spatial functions for efficient spatial queries using spatial
+indexes. Uses geometry columns with spatial indexes for fast proximity searches.
+Geohash is maintained for compatibility but spatial queries are required.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ except ImportError:
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
 
-from celestron_nexstar.api.location.geohash_utils import encode, get_neighbors_for_search
+from celestron_nexstar.api.location.geohash_utils import encode
 
 
 console = Console()
@@ -110,6 +110,9 @@ def _rgb_to_sqm(r: int, g: int, b: int) -> float:
 
 def _create_light_pollution_table(db: CatalogDatabase) -> None:
     """Ensure light pollution grid table exists using SQLAlchemy model."""
+    from sqlalchemy import inspect, text
+
+    from celestron_nexstar.api.core.exceptions import SpatialFunctionNotAvailableError
     from celestron_nexstar.api.database.models import Base, LightPollutionGridModel
 
     # Use SQLAlchemy to create the table if it doesn't exist
@@ -120,6 +123,35 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
             tables=[LightPollutionGridModel.__table__],  # type: ignore[list-item]
             checkfirst=True,
         )
+
+        # Verify geometry column exists (required for spatial queries)
+        inspector = inspect(conn)
+        columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
+        if "geometry" not in columns:
+            raise SpatialFunctionNotAvailableError(
+                "Geometry column is missing from light_pollution_grid table. "
+                "SpatiaLite spatial functions are required for light pollution data. "
+                "Please ensure SpatiaLite is installed and the database is properly configured."
+            )
+
+        # Ensure spatial index exists (SpatiaLite requirement)
+        try:
+            # Try to create spatial index if it doesn't exist
+            conn.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
+        except Exception as e:
+            # Check if it's because SpatiaLite isn't available
+            error_msg = str(e).lower()
+            if "spatialite" in error_msg or "spatial" in error_msg or "extension" in error_msg:
+                raise SpatialFunctionNotAvailableError(
+                    "SpatiaLite spatial functions are not available. "
+                    "Light pollution data requires SpatiaLite for efficient spatial queries. "
+                    "Please install SpatiaLite:\n"
+                    "  macOS: brew install spatialite-tools\n"
+                    "  Linux: apt-get install spatialite-bin libspatialite-dev\n"
+                    "  Or download from: https://www.gaia-gis.it/fossil/libspatialite/"
+                ) from e
+            # Index might already exist, which is fine
+            logger.debug(f"Spatial index check: {e}")
 
 
 def clear_light_pollution_data(db: CatalogDatabase) -> int:
@@ -138,7 +170,7 @@ def clear_light_pollution_data(db: CatalogDatabase) -> int:
 
     from celestron_nexstar.api.database.models import LightPollutionGridModel
 
-    with db._get_session_sync() as session:
+    with db._get_session() as session:
         # First, get count of rows to be deleted
         row_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
 
@@ -691,31 +723,60 @@ def _process_png_to_database(
 
 
 def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, float, str]]) -> None:
-    """Insert batch of light pollution data with geohash and spatial indexing."""
+    """Insert batch of light pollution data with spatial indexing."""
     from sqlalchemy import inspect, select, text
 
+    from celestron_nexstar.api.core.exceptions import SpatialFunctionNotAvailableError
     from celestron_nexstar.api.database.models import LightPollutionGridModel
 
     if not batch_data:
         return
 
     try:
-        with db.get_db_session() as session:
-            # Check if geometry column exists
+        with db._get_session() as session:
+            # Check if geometry column exists (required)
             inspector = inspect(session.bind)
             columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
             has_geometry = "geometry" in columns
 
-            # Pre-calculate geohashes for all records
+            if not has_geometry:
+                raise SpatialFunctionNotAvailableError(
+                    "Geometry column is missing from light_pollution_grid table. "
+                    "SpatiaLite spatial functions are required for light pollution data. "
+                    "Please ensure SpatiaLite is installed and the database is properly configured."
+                )
+
+            # Pre-calculate geohashes and geometry for all records
             records_to_insert = []
             for lat, lon, sqm, region in batch_data:
                 # Calculate geohash for indexing (use precision 9 for ~5m accuracy)
                 geohash_str = encode(lat, lon, precision=9)
+
+                # Create geometry point for spatial indexing (REQUIRED)
+                # Use GeoAlchemy2's WKTElement to create a POINT geometry
+                try:
+                    from geoalchemy2 import WKTElement
+
+                    # Create POINT geometry: POINT(longitude latitude) - note: lon first!
+                    wkt = f"POINT({lon} {lat})"
+                    geometry_point = WKTElement(wkt, srid=0)
+                except ImportError:
+                    raise SpatialFunctionNotAvailableError(
+                        "GeoAlchemy2 is required for spatial geometry creation. "
+                        "Please install it: pip install geoalchemy2"
+                    ) from ImportError
+                except Exception as e:
+                    raise SpatialFunctionNotAvailableError(
+                        f"Failed to create geometry point: {e}. "
+                        "SpatiaLite spatial functions are required for light pollution data."
+                    ) from e
+
                 records_to_insert.append(
                     LightPollutionGridModel(
                         latitude=lat,
                         longitude=lon,
                         geohash=geohash_str,
+                        geometry=geometry_point,
                         sqm_value=sqm,
                         region=region,
                     )
@@ -741,8 +802,9 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
                     )
                     existing = result.scalar_one_or_none()
                     if existing:
-                        # Update existing record
+                        # Update existing record (including geometry)
                         existing.geohash = record.geohash
+                        existing.geometry = record.geometry
                         existing.sqm_value = record.sqm_value
                         existing.region = record.region
                     else:
@@ -750,28 +812,16 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
                         session.add(record)
                 session.commit()
 
-            # Populate geometry column for newly inserted records if geometry column exists
+            # Geometry is now set during insert, but ensure spatial index is created
             if has_geometry:
                 try:
-                    # Update geometry for records that don't have it
-                    # Update all records in the batch (more efficient than per-record updates)
-                    for lat, lon, _, _ in batch_data:
-                        session.execute(
-                            text(
-                                """
-                                UPDATE light_pollution_grid
-                                SET geometry = MakePoint(:lon, :lat, 0)
-                                WHERE geometry IS NULL
-                                AND ABS(latitude - :lat) < 0.0001
-                                AND ABS(longitude - :lon) < 0.0001
-                                """
-                            ),
-                            {"lat": lat, "lon": lon},
-                        )
+                    # Ensure spatial index exists (SpatiaLite requirement)
+                    # This is usually handled by GeoAlchemy2, but we ensure it here
+                    session.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
                     session.commit()
                 except Exception as e:
-                    # If geometry update fails, log but don't fail the insert
-                    logger.debug(f"Failed to update geometry column: {e}")
+                    # Index might already exist, which is fine
+                    logger.debug(f"Spatial index check: {e}")
                     session.rollback()
     except Exception as e:
         logger.error(f"Error inserting light pollution batch: {e}", exc_info=True)
@@ -780,10 +830,10 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
 
 def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float | None:
     """
-    Get SQM value from database using spatial index or geohash-based proximity search.
+    Get SQM value from database using spatial index for proximity search.
 
-    Uses SpatiaLite spatial indexes when available for efficient proximity queries,
-    falling back to geohash-based queries if spatial indexes are not available.
+    Requires SpatiaLite spatial functions for efficient spatial queries.
+    Raises SpatialFunctionNotAvailableError if spatial functions are not available.
 
     Args:
         lat: Latitude in degrees
@@ -792,15 +842,18 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
     Returns:
         SQM value or None if not found
+
+    Raises:
+        SpatialFunctionNotAvailableError: If SpatiaLite spatial functions are not available
     """
+    from sqlalchemy import func, inspect, select
+
+    from celestron_nexstar.api.core.exceptions import SpatialFunctionNotAvailableError
+    from celestron_nexstar.api.database.models import LightPollutionGridModel
 
     # Check if table exists first
     try:
-        from sqlalchemy import inspect
-
-        from celestron_nexstar.api.database.models import LightPollutionGridModel
-
-        with db._get_session_sync() as session:
+        with db._get_session() as session:
             inspector = inspect(session.bind)
             if inspector is not None and "light_pollution_grid" not in inspector.get_table_names():
                 logger.debug("light_pollution_grid table does not exist")
@@ -813,24 +866,27 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     # Convert radius to degrees (approximate: 1 degree ≈ 111 km)
     search_radius_deg = search_radius_km / 111.0
 
-    from sqlalchemy import func, inspect, or_, select
-
-    from celestron_nexstar.api.database.models import LightPollutionGridModel
-
     result: list[Any]
-    with db._get_session_sync() as session:
-        # Check if geometry column exists (SpatiaLite spatial index available)
+    with db._get_session() as session:
+        # Check if geometry column exists (REQUIRED for spatial queries)
         inspector = inspect(session.bind)
         columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
         has_geometry = "geometry" in columns
 
-        if has_geometry:
-            # Use SpatiaLite spatial index for efficient proximity search
-            # Distance function returns distance in degrees (for SRID 0)
-            # We'll use a bounding box first, then filter by distance
-            search_point_lon = lon
-            search_point_lat = lat
+        if not has_geometry:
+            raise SpatialFunctionNotAvailableError(
+                "Geometry column is missing from light_pollution_grid table. "
+                "SpatiaLite spatial functions are required for light pollution data queries. "
+                "Please ensure SpatiaLite is installed and the database is properly configured."
+            )
 
+        # Use SpatiaLite spatial index for efficient proximity search
+        # Distance function returns distance in degrees (for SRID 0)
+        # We'll use a bounding box first, then filter by distance
+        search_point_lon = lon
+        search_point_lat = lat
+
+        try:
             # Build query using SpatiaLite spatial functions
             # Use Distance function with spatial index for efficient queries
             # Distance returns degrees (for SRID 0), so we need to convert km to degrees
@@ -866,41 +922,20 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
             query_results = session.execute(query).fetchall()
             result = list(query_results)
-        else:
-            # Fallback to geohash-based query if geometry column doesn't exist
-            # Generate geohash for the search point
-            center_geohash = encode(lat, lon, precision=12)
-
-            # Get geohash prefixes to search (includes neighbors)
-            search_geohashes = get_neighbors_for_search(center_geohash, search_radius_km)
-
-            # Build query using geohash prefix matching
-            # Use LIKE to match geohash prefixes
-            geohash_patterns = [f"{gh}%" for gh in search_geohashes]
-
-            # Build OR conditions for geohash LIKE patterns
-            geohash_conditions = or_(*[LightPollutionGridModel.geohash.like(pattern) for pattern in geohash_patterns])
-
-            # Build query - get more candidates than needed, we'll filter by accurate distance
-            # Using approximate distance for initial filtering, then GeoPandas for accurate calculation
-            distance_expr = func.abs(LightPollutionGridModel.latitude - lat) + func.abs(
-                LightPollutionGridModel.longitude - lon
-            )
-
-            # Build query - get more candidates (up to 10) for better interpolation
-            query = (
-                select(
-                    LightPollutionGridModel.latitude,
-                    LightPollutionGridModel.longitude,
-                    LightPollutionGridModel.sqm_value,
-                )
-                .where(geohash_conditions)
-                .order_by(distance_expr)
-                .limit(10)  # Get more candidates for better selection
-            )
-
-            query_results = session.execute(query).fetchall()
-            result = list(query_results)
+        except Exception as e:
+            # Check if error is related to spatial functions
+            error_msg = str(e).lower()
+            if "spatial" in error_msg or "distance" in error_msg or "makepoint" in error_msg or "geometry" in error_msg:
+                raise SpatialFunctionNotAvailableError(
+                    f"SpatiaLite spatial functions are not available: {e}. "
+                    "Light pollution data requires SpatiaLite for efficient spatial queries. "
+                    "Please install SpatiaLite:\n"
+                    "  macOS: brew install spatialite-tools\n"
+                    "  Linux: apt-get install spatialite-bin libspatialite-dev\n"
+                    "  Or download from: https://www.gaia-gis.it/fossil/libspatialite/"
+                ) from e
+            # Re-raise if it's a different error
+            raise
 
         if not result:
             logger.debug(f"No grid points found within {search_radius_km}km of {lat},{lon}")
@@ -984,7 +1019,8 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
                 p_gdf = gpd.GeoDataFrame([1], geometry=[p_point], crs="EPSG:4326")
                 p_projected = p_gdf.to_crs("EPSG:3857")
                 search_proj = search_gdf.to_crs("EPSG:3857")
-                dist = float(p_projected.geometry.distance(search_proj.geometry.iloc[0]) / 1000.0)  # km
+                dist_series = p_projected.geometry.distance(search_proj.geometry.iloc[0])
+                dist = float(dist_series.iloc[0] / 1000.0)  # km
                 if dist < min_dist:
                     min_dist = dist
                     nearest_val = p[2]

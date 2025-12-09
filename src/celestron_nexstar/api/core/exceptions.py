@@ -43,6 +43,7 @@ __all__ = [
     # Base exception
     "NexstarError",
     "NotConnectedError",
+    "SpatialFunctionNotAvailableError",
     "TLEFetchError",
     "TelescopeConnectionError",
     "TelescopeTimeoutError",
@@ -164,6 +165,22 @@ class DatabaseRebuildError(DatabaseError):
 
 class DatabaseMigrationError(DatabaseError):
     """Raised when Alembic migrations fail."""
+
+    pass
+
+
+class SpatialFunctionNotAvailableError(DatabaseError):
+    """
+    Raised when SpatiaLite spatial functions are required but not available.
+
+    This occurs when:
+    - SpatiaLite extension cannot be loaded
+    - Geometry column is missing from spatial tables
+    - Spatial functions are not available in the database
+
+    Light pollution data requires SpatiaLite for efficient spatial queries.
+    Please ensure SpatiaLite is installed and available.
+    """
 
     pass
 

@@ -51,17 +51,15 @@ def get_cache_dir() -> Path:
 
 def geojson_to_spatialite_geometry_async(geojson_geom: dict[str, Any], db_session: Any) -> Any | None:
     """
-    Convert GeoJSON geometry to SpatiaLite geometry BLOB (synchronous version).
+    Convert GeoJSON geometry to GeoAlchemy2 WKTElement for SpatiaLite.
 
     Args:
         geojson_geom: GeoJSON geometry object (dict with 'type' and 'coordinates')
         db_session: SQLAlchemy session with GeoAlchemy2/SpatiaLite loaded
 
     Returns:
-        SpatiaLite geometry BLOB or None if conversion fails
+        GeoAlchemy2 WKTElement or None if conversion fails
     """
-    from sqlalchemy import text
-
     geom_type = geojson_geom.get("type", "")
     coords = geojson_geom.get("coordinates", [])
 
@@ -141,15 +139,15 @@ def geojson_to_spatialite_geometry_async(geojson_geom: dict[str, Any], db_sessio
         if not wkt:
             return None
 
-        # Use GeoAlchemy2's ST_GeomFromText function (automatically translated to SpatiaLite)
+        # Use GeoAlchemy2's WKTElement to create geometry (properly handles SpatiaLite)
         # SRID 0 = no projection (we're using angular coordinates directly)
-        result = db_session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
-        geometry = result.scalar()
+        from geoalchemy2 import WKTElement
 
-        if geometry:
-            return bytes(geometry) if isinstance(geometry, (bytes, bytearray)) else geometry
+        return WKTElement(wkt, srid=0)
+
+    except ImportError:
+        console.print("[yellow]Warning: GeoAlchemy2 not available, cannot create geometry[/yellow]")
         return None
-
     except Exception as e:
         console.print(f"[yellow]Warning: Failed to convert geometry to SpatiaLite: {e}[/yellow]")
         return None
@@ -383,6 +381,7 @@ def import_celestial_data_geojson(
     mag_limit: float = 15.0,
     verbose: bool = False,
     object_type_map: dict[str, CelestialObjectType] | None = None,
+    object_enhancer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     """
     Import celestial data from a GeoJSON file.
@@ -571,22 +570,32 @@ def import_celestial_data_geojson(
 
                 description = "; ".join(description_parts) if description_parts else None
 
+                # Build object dictionary
+                obj_dict = {
+                    "name": name,
+                    "catalog": catalog,
+                    "ra_hours": ra_hours,
+                    "dec_degrees": dec_degrees,
+                    "object_type": obj_type,
+                    "magnitude": magnitude,
+                    "common_name": common_name,
+                    "catalog_number": catalog_number,
+                    "size_arcmin": size_arcmin,
+                    "description": description,
+                    "constellation": constellation,
+                }
+
+                # Store geometry dict for DSOs (will be converted after batch insert)
+                # For DSO catalogs, store the full geometry from GeoJSON
+                if "dso" in catalog.lower():
+                    obj_dict["_temp_geometry"] = geometry
+
+                # Apply object enhancer if provided (e.g., for DSO name mapping)
+                if object_enhancer:
+                    obj_dict = object_enhancer(obj_dict)
+
                 # Add to collection (will deduplicate once at the end)
-                all_objects.append(
-                    {
-                        "name": name,
-                        "catalog": catalog,
-                        "ra_hours": ra_hours,
-                        "dec_degrees": dec_degrees,
-                        "object_type": obj_type,
-                        "magnitude": magnitude,
-                        "common_name": common_name,
-                        "catalog_number": catalog_number,
-                        "size_arcmin": size_arcmin,
-                        "description": description,
-                        "constellation": constellation,
-                    }
-                )
+                all_objects.append(obj_dict)
 
             except Exception as e:
                 errors += 1
@@ -634,6 +643,59 @@ def import_celestial_data_geojson(
             try:
                 batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
+
+                # For DSO objects, update geometry from GeoJSON after insert
+                if "dso" in catalog.lower():
+                    with db._get_session() as db_session:
+                        from sqlalchemy import select
+
+                        from celestron_nexstar.api.database.models import (
+                            ClusterModel,
+                            GalaxyModel,
+                            NebulaModel,
+                        )
+
+                        # Map object types to model classes
+                        type_to_model = {
+                            CelestialObjectType.GALAXY: GalaxyModel,
+                            CelestialObjectType.NEBULA: NebulaModel,
+                            CelestialObjectType.CLUSTER: ClusterModel,
+                        }
+
+                        for obj in batch:
+                            if "_temp_geometry" not in obj or not obj["_temp_geometry"]:
+                                continue
+
+                            try:
+                                obj_type = obj.get("object_type")
+                                if isinstance(obj_type, str):
+                                    obj_type = CelestialObjectType(obj_type)
+
+                                model_class = type_to_model.get(obj_type)
+                                if not model_class:
+                                    continue
+
+                                # Find the inserted object by name
+                                result = db_session.execute(
+                                    select(model_class).where(model_class.name == obj["name"]).limit(1)
+                                )
+                                model_obj = result.scalar_one_or_none()
+
+                                if model_obj:
+                                    # Convert GeoJSON geometry to SpatiaLite geometry
+                                    geometry_blob = geojson_to_spatialite_geometry_async(
+                                        obj["_temp_geometry"], db_session
+                                    )
+                                    if geometry_blob:
+                                        model_obj.geometry = geometry_blob
+                                        db_session.commit()
+                            except Exception as e:
+                                if verbose:
+                                    console.print(
+                                        f"[yellow]Warning: Failed to update geometry for {obj.get('name', 'unknown')}: {e}[/yellow]"
+                                    )
+                                db_session.rollback()
+
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
                 progress.advance(task)
             except Exception as e:
@@ -1135,6 +1197,30 @@ def import_celestial_stars(geojson_path: Path, mag_limit: float = 15.0, verbose:
 
 def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
     """Import DSOs from celestial_data GeoJSON."""
+    # Load DSO names mapping from dsonames.csv
+    dso_names_map: dict[str, str] = {}
+    cache_dir = get_cache_dir()
+    dsonames_path = cache_dir / "dsonames.csv"
+
+    if dsonames_path.exists():
+        try:
+            with open(dsonames_path, encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Map catalog ID (id column) to proper name (name column)
+                    catalog_id = row.get("id", "").strip()
+                    proper_name = row.get("name", "").strip()
+                    if catalog_id and proper_name:
+                        dso_names_map[catalog_id] = proper_name
+            if verbose:
+                console.print(f"[dim]Loaded {len(dso_names_map):,} DSO names from dsonames.csv[/dim]")
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Could not load dsonames.csv: {e}[/yellow]")
+    else:
+        if verbose:
+            console.print("[yellow]Warning: dsonames.csv not found. DSO proper names will not be available.[/yellow]")
+
     # Map DSO types to our object types
     dso_type_map = {
         "Galaxy": CelestialObjectType.GALAXY,
@@ -1148,8 +1234,31 @@ def import_celestial_dsos(geojson_path: Path, mag_limit: float = 15.0, verbose: 
         "Dark Nebula": CelestialObjectType.NEBULA,
         "Supernova Remnant": CelestialObjectType.NEBULA,
     }
+
+    # Custom function to enhance DSO objects with proper names
+    def enhance_dso_object(obj: dict[str, Any]) -> dict[str, Any]:
+        """Enhance DSO object with proper name from dsonames.csv."""
+        # Get the catalog ID (name field typically contains catalog ID like "NGC 40")
+        catalog_id = obj.get("name", "").strip()
+
+        # Look up proper name in the mapping
+        if catalog_id in dso_names_map:
+            proper_name = dso_names_map[catalog_id]
+            # Set common_name to the proper name
+            obj["common_name"] = proper_name
+            # If the name is just a catalog ID, we could optionally update it
+            # For now, we'll keep the catalog ID as name and set proper name as common_name
+
+        return obj
+
+    # Import with name enhancement
     return import_celestial_data_geojson(
-        geojson_path, catalog="celestial_dsos", mag_limit=mag_limit, verbose=verbose, object_type_map=dso_type_map
+        geojson_path,
+        catalog="celestial_dsos",
+        mag_limit=mag_limit,
+        verbose=verbose,
+        object_type_map=dso_type_map,
+        object_enhancer=enhance_dso_object,
     )
 
 
@@ -1193,6 +1302,9 @@ def import_celestial_constellations(
     """
     Import constellations from celestial_data GeoJSON into ConstellationModel.
 
+    Uses constellations.min.geojson for metadata and constellations.bounds.min.geojson
+    for accurate MultiPolygon boundaries for spatial queries.
+
     Args:
         geojson_path: Path to constellations GeoJSON file
         mag_limit: Not used for constellations (kept for interface consistency)
@@ -1210,7 +1322,7 @@ def import_celestial_constellations(
     skipped = 0
     errors = 0
 
-    # Load GeoJSON file
+    # Load main constellations GeoJSON file (for metadata)
     try:
         with open(geojson_path, encoding="utf-8") as f:
             geojson_data = json.load(f)
@@ -1227,6 +1339,50 @@ def import_celestial_constellations(
 
     features = geojson_data.get("features", [])
     total_features = len(features)
+
+    # Load bounds file for accurate MultiPolygon boundaries (REQUIRED)
+    bounds_data: dict[str, dict[str, Any]] = {}
+    bounds_path = geojson_path.parent / "constellations.bounds.min.geojson"
+    if not bounds_path.exists():
+        error_msg = f"Constellation bounds file not found at {bounds_path}. This file is required for accurate spatial queries. Please download it first."
+        console.print(f"[red]✗[/red] {error_msg}")
+        raise FileNotFoundError(error_msg)
+
+    try:
+        with open(bounds_path, encoding="utf-8") as f:
+            bounds_geojson = json.load(f)
+        if bounds_geojson.get("type") != "FeatureCollection":
+            error_msg = f"Invalid bounds file format: expected FeatureCollection, got {bounds_geojson.get('type')}"
+            console.print(f"[red]✗[/red] {error_msg}")
+            raise InvalidCatalogFormatError(error_msg)
+
+        bounds_features = bounds_geojson.get("features", [])
+        # Create a mapping by constellation ID/name
+        for bound_feature in bounds_features:
+            props = bound_feature.get("properties", {})
+            const_id = props.get("id") or props.get("name")
+            if const_id:
+                bounds_data[const_id] = bound_feature.get("geometry")
+
+        if not bounds_data:
+            error_msg = f"No constellation boundaries found in bounds file: {bounds_path}"
+            console.print(f"[red]✗[/red] {error_msg}")
+            raise InvalidCatalogFormatError(error_msg)
+
+        console.print(f"[green]Loaded {len(bounds_data)} constellation boundaries from bounds file[/green]")
+        if verbose:
+            sample_ids = list(bounds_data.keys())[:5]
+            console.print(f"[dim]Sample bounds IDs: {sample_ids}[/dim]")
+    except FileNotFoundError:
+        raise
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON in bounds file: {e}"
+        console.print(f"[red]✗[/red] {error_msg}")
+        raise InvalidCatalogFormatError(error_msg) from e
+    except Exception as e:
+        error_msg = f"Error loading bounds file: {e}"
+        console.print(f"[red]✗[/red] {error_msg}")
+        raise RuntimeError(error_msg) from e
 
     # Collect all constellations first, then deduplicate once, then batch insert
     all_constellations: list[ConstellationModel] = []
@@ -1320,26 +1476,62 @@ def import_celestial_constellations(
                     # Extract season
                     season = properties.get("season") or properties.get("Season")
 
-                    # Store geometry for point-in-polygon checks and member star discovery
-                    # We'll use this to find stars within constellation boundaries
+                    # Get geometry from bounds file (REQUIRED - no fallback)
                     constellation_geometry: dict[str, Any] | None = None
                     polygon_coords_for_star_search: list[list[list[float]]] | None = None
+
+                    # Get geometry from bounds file (required for accurate spatial queries)
+                    const_id = properties.get("id") or name
+                    if not const_id:
+                        error_msg = f"Constellation {name} has no ID in properties. Cannot match with bounds file."
+                        console.print(f"[red]✗[/red] {error_msg}")
+                        errors += 1
+                        progress.advance(task)
+                        continue
+
+                    if const_id not in bounds_data:
+                        error_msg = f"Constellation {name} (ID: {const_id}) not found in bounds file. Available IDs: {list(bounds_data.keys())[:10]}"
+                        console.print(f"[red]✗[/red] {error_msg}")
+                        errors += 1
+                        progress.advance(task)
+                        continue
+
+                    constellation_geometry = bounds_data[const_id]
+                    geometry = constellation_geometry  # Use bounds geometry for calculations
+                    if verbose:
+                        geom_type = (
+                            constellation_geometry.get("type", "unknown")
+                            if isinstance(constellation_geometry, dict)
+                            else "unknown"
+                        )
+                        console.print(
+                            f"[dim]Using bounds geometry for {name} (ID: {const_id}, type: {geom_type})[/dim]"
+                        )
+
+                    if not constellation_geometry:
+                        error_msg = f"Constellation {name} (ID: {const_id}) has no geometry in bounds file."
+                        console.print(f"[red]✗[/red] {error_msg}")
+                        errors += 1
+                        progress.advance(task)
+                        continue
 
                     # Calculate boundaries from geometry
                     # For Point geometry, use approximate bounds around center
                     # For Polygon/MultiPolygon, calculate actual bounds
                     geometry_type = geometry.get("type", "")
                     if geometry_type == "Point":
-                        # Approximate bounds (will be improved with bounds file if available)
+                        # Approximate bounds (bounds file should have MultiPolygon, but fallback if needed)
                         ra_min_hours = ra_hours - 1.0
                         ra_max_hours = ra_hours + 1.0
                         dec_min_degrees = dec_degrees - 10.0
                         dec_max_degrees = dec_degrees + 10.0
                     elif geometry_type in ("Polygon", "MultiPolygon"):
-                        # Store geometry for point-in-polygon checks
-                        constellation_geometry = geometry
+                        # Store geometry for point-in-polygon checks (use bounds geometry if available)
+                        if not constellation_geometry:
+                            constellation_geometry = geometry
 
                         # Calculate bounds from polygon coordinates
+                        coords = geometry.get("coordinates", [])
                         coords_list = coords
                         if geometry_type == "Polygon":
                             # Polygon: [[[lon, lat], ...], ...] - use outer ring
@@ -1454,16 +1646,6 @@ def import_celestial_constellations(
             f"[dim]After deduplication: {len(deduplicated_constellations):,} unique constellations to import[/dim]"
         )
 
-        # Convert geometries to SpatiaLite format before batch insert
-        console.print("[dim]Converting geometries to SpatiaLite format...[/dim]")
-        for const in deduplicated_constellations:
-            if hasattr(const, "_temp_geometry") and const._temp_geometry:  # type: ignore[attr-defined]
-                geometry_blob = geojson_to_spatialite_geometry_async(const._temp_geometry, db_session)  # type: ignore[attr-defined]
-                if geometry_blob:
-                    const.geometry = geometry_blob
-                # Clean up temp attribute
-                delattr(const, "_temp_geometry")  # type: ignore[attr-defined]
-
         # Batch insert deduplicated constellations
         batch_size = 100
         num_batches = (len(deduplicated_constellations) + batch_size - 1) // batch_size  # Ceiling division
@@ -1480,6 +1662,45 @@ def import_celestial_constellations(
             for i in range(0, len(deduplicated_constellations), batch_size):
                 batch = deduplicated_constellations[i : i + batch_size]
                 try:
+                    # Convert geometries to SpatiaLite format for this batch before inserting
+                    for const in batch:
+                        if hasattr(const, "_temp_geometry") and const._temp_geometry:  # type: ignore[attr-defined]
+                            try:
+                                geometry_blob = geojson_to_spatialite_geometry_async(const._temp_geometry, db_session)  # type: ignore[attr-defined]
+                                if geometry_blob:
+                                    const.geometry = geometry_blob
+                                    if verbose:
+                                        geom_type = (
+                                            const._temp_geometry.get("type", "unknown")
+                                            if isinstance(const._temp_geometry, dict)
+                                            else "unknown"
+                                        )  # type: ignore[attr-defined]
+                                        console.print(f"[dim]Set geometry for {const.name} (type: {geom_type})[/dim]")
+                                else:
+                                    console.print(
+                                        f"[yellow]Warning: Failed to convert geometry for {const.name} - conversion returned None[/yellow]"
+                                    )
+                                    if verbose:
+                                        geom_type = (
+                                            const._temp_geometry.get("type", "unknown")
+                                            if isinstance(const._temp_geometry, dict)
+                                            else "unknown"
+                                        )  # type: ignore[attr-defined]
+                                        console.print(f"[dim]Geometry type was: {geom_type}[/dim]")
+                            except Exception as e:
+                                console.print(
+                                    f"[yellow]Warning: Error converting geometry for {const.name}: {e}[/yellow]"
+                                )
+                                if verbose:
+                                    import traceback
+
+                                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                            # Clean up temp attribute
+                            delattr(const, "_temp_geometry")  # type: ignore[attr-defined]
+                        else:
+                            if verbose:
+                                console.print(f"[yellow]Warning: No _temp_geometry found for {const.name}[/yellow]")
+
                     db_session.add_all(batch)
                     db_session.commit()
                     imported += len(batch)
@@ -2499,6 +2720,17 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
             console.print("Downloading data from celestial_data repository...")
             if not download_celestial_data(filename, cache_path):
                 return False
+
+        # Download additional files for certain sources
+        if source_id == "celestial_constellations":
+            # Also download bounds file for accurate MultiPolygon boundaries
+            bounds_filename = "constellations.bounds.min.geojson"
+            bounds_path = cache_dir / bounds_filename
+            if not bounds_path.exists() or force_download:
+                if force_download and bounds_path.exists():
+                    bounds_path.unlink()
+                console.print("Downloading constellation bounds from celestial_data repository...")
+                download_celestial_data(bounds_filename, bounds_path)
 
         # Import data for celestial sources
         console.print(f"\nImporting with magnitude limit: {mag_limit}")

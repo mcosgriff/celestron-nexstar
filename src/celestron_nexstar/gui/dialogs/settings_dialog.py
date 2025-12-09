@@ -6,9 +6,16 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -55,10 +62,17 @@ class SettingsDialog(QDialog):
         # Create tabs
         self._create_config_tab()
         self._create_ephemeris_tab()
+        self._create_celestial_data_tab()
+        self._create_custom_yaml_tab()
+        self._create_wds_tab()
+        self._create_light_pollution_tab()
         self._create_location_tab()
         self._create_optics_tab()
         self._create_time_tab()
         self._create_data_tab()
+
+        # Track active download workers
+        self._download_workers: dict[str, object] = {}
 
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
@@ -68,6 +82,10 @@ class SettingsDialog(QDialog):
         # Load all tab data
         self._load_config_info()
         self._load_ephemeris_info()
+        self._load_celestial_data_info()
+        self._load_custom_yaml_info()
+        self._load_wds_info()
+        self._load_light_pollution_info()
         self._load_location_info()
         self._load_optics_info()
         self._load_time_info()
@@ -117,21 +135,26 @@ class SettingsDialog(QDialog):
         self.tab_widget.addTab(config_text, "Config")
 
     def _create_ephemeris_tab(self) -> None:
-        """Create the ephemeris tab."""
-        ephemeris_text = QTextEdit()
-        ephemeris_text.setReadOnly(True)
-        ephemeris_text.setAcceptRichText(True)
-        ephemeris_text.setStyleSheet(
-            f"""
-            QTextEdit {{
-                font-family: {self._font_family};
-                background-color: transparent;
-                border: none;
-            }}
-        """
-        )
-        self.ephemeris_text = ephemeris_text
-        self.tab_widget.addTab(ephemeris_text, "Ephemeris")
+        """Create the ephemeris tab with download functionality."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header = QLabel("Ephemeris Files")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        # Table for ephemeris files
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["File", "Status", "Size", "Coverage", "Download", "Sync"])
+        table.horizontalHeader().setStretchLastSection(False)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.ephemeris_table = table
+        layout.addWidget(table)
+
+        self.tab_widget.addTab(widget, "Ephemeris")
 
     def _create_location_tab(self) -> None:
         """Create the location tab."""
@@ -183,6 +206,158 @@ class SettingsDialog(QDialog):
         )
         self.time_text = time_text
         self.tab_widget.addTab(time_text, "Time")
+
+    def _create_celestial_data_tab(self) -> None:
+        """Create the celestial data tab with download functionality."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header = QLabel("Celestial Data Sources")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        # Table for celestial data sources
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["Source", "Description", "Status", "Size", "Download", "Import"])
+        table.horizontalHeader().setStretchLastSection(False)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.celestial_data_table = table
+        layout.addWidget(table)
+
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 100)
+        self.celestial_data_progress = progress
+        layout.addWidget(progress)
+
+        # Status label
+        status_label = QLabel()
+        status_label.setWordWrap(True)
+        self.celestial_data_status_label = status_label
+        layout.addWidget(status_label)
+
+        self.tab_widget.addTab(widget, "Celestial Data")
+
+    def _create_custom_yaml_tab(self) -> None:
+        """Create the custom YAML tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header = QLabel("Custom YAML Catalog")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        # Info label
+        info_label = QLabel()
+        info_label.setWordWrap(True)
+        self.custom_yaml_info = info_label
+        layout.addWidget(info_label)
+
+        # Import button
+        import_btn = QPushButton("Import Custom YAML")
+        import_btn.clicked.connect(self._on_import_custom_yaml)
+        self.custom_yaml_import_btn = import_btn
+        layout.addWidget(import_btn)
+
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        self.custom_yaml_progress = progress
+        layout.addWidget(progress)
+
+        layout.addStretch()
+        self.tab_widget.addTab(widget, "Custom YAML")
+
+    def _create_wds_tab(self) -> None:
+        """Create the WDS catalog tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header = QLabel("Washington Double Star Catalog (WDS)")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        # Info label
+        info_label = QLabel()
+        info_label.setWordWrap(True)
+        self.wds_info = info_label
+        layout.addWidget(info_label)
+
+        # Button layout
+        button_layout = QHBoxLayout()
+
+        # Download button
+        download_btn = QPushButton("Download WDS Catalog")
+        download_btn.clicked.connect(self._on_download_wds)
+        self.wds_download_btn = download_btn
+        button_layout.addWidget(download_btn)
+
+        # Import button
+        import_btn = QPushButton("Import WDS Catalog")
+        import_btn.clicked.connect(self._on_import_wds)
+        import_btn.setEnabled(False)  # Disabled until file is downloaded
+        self.wds_import_btn = import_btn
+        button_layout.addWidget(import_btn)
+
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 100)
+        self.wds_progress = progress
+        layout.addWidget(progress)
+
+        # Status label
+        status_label = QLabel()
+        status_label.setWordWrap(True)
+        self.wds_status_label = status_label
+        layout.addWidget(status_label)
+
+        layout.addStretch()
+        self.tab_widget.addTab(widget, "WDS")
+
+    def _create_light_pollution_tab(self) -> None:
+        """Create the light pollution tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header = QLabel("Light Pollution Data")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        # Table for regions
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Region", "Status", "Grid Points", "Download", "Import"])
+        table.horizontalHeader().setStretchLastSection(False)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.light_pollution_table = table
+        layout.addWidget(table)
+
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 100)
+        self.light_pollution_progress = progress
+        layout.addWidget(progress)
+
+        # Status label
+        status_label = QLabel()
+        status_label.setWordWrap(True)
+        self.light_pollution_status_label = status_label
+        layout.addWidget(status_label)
+
+        self.tab_widget.addTab(widget, "Light Pollution")
 
     def _create_data_tab(self) -> None:
         """Create the data tab."""
@@ -330,56 +505,280 @@ class SettingsDialog(QDialog):
             )
 
     def _load_ephemeris_info(self) -> None:
-        """Load ephemeris file information."""
-        colors = self._get_theme_colors()
+        """Load ephemeris file information into table."""
         try:
-            from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory, get_installed_files
-
-            eph_dir = get_ephemeris_directory()
-            installed_files = get_installed_files()
-
-            html_content = []
-            html_content.append(
-                f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Ephemeris Files</span></p>"
+            from celestron_nexstar.api.ephemeris.ephemeris_manager import (
+                EPHEMERIS_FILES,
+                get_file_size,
+                is_file_installed,
             )
 
-            html_content.append(
-                f"<p style='color: {colors['text']}; margin-bottom: 10px;'><b>Ephemeris Directory:</b> <span style='color: {colors['text_dim']};'>{eph_dir}</span></p>"
-            )
+            table = self.ephemeris_table
+            table.setRowCount(len(EPHEMERIS_FILES))
 
-            if installed_files:
-                html_content.append(
-                    f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>Installed Files</span></p>"
-                )
-                html_content.append(
-                    "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse;'>"
-                )
-                html_content.append(
-                    f"<tr><td style='color: {colors['cyan']};'><b>File</b></td><td style='color: {colors['green']};'><b>Size</b></td></tr>"
-                )
-                for _file_key, file_info, file_path in sorted(installed_files, key=lambda x: x[0]):
-                    size_mb = (
-                        file_info.size_mb
-                        if hasattr(file_info, "size_mb")
-                        else (file_path.stat().st_size / 1024 / 1024 if file_path.exists() else 0)
-                    )
-                    html_content.append(
-                        f"<tr><td style='color: {colors['text']};'>{file_info.filename}</td><td style='color: {colors['text']};'>{size_mb:.1f} MB</td></tr>"
-                    )
-                html_content.append("</table>")
-            else:
-                html_content.append(f"<p style='color: {colors['text_dim']};'>No ephemeris files installed.</p>")
-                html_content.append(
-                    f"<p style='color: {colors['text']};'>Use the CLI command <code>nexstar data ephemeris download</code> to install ephemeris files.</p>"
-                )
+            for row, (file_key, file_info) in enumerate(sorted(EPHEMERIS_FILES.items())):
+                # File name
+                table.setItem(row, 0, QTableWidgetItem(file_info.display_name))
 
-            self.ephemeris_text.setHtml("\n".join(html_content))
+                # Status
+                installed = is_file_installed(file_key)
+                status_text = "✓ Downloaded" if installed else "Not downloaded"
+                status_item = QTableWidgetItem(status_text)
+                if installed:
+                    status_item.setForeground(Qt.GlobalColor.green)
+                table.setItem(row, 1, status_item)
+
+                # Size
+                if installed:
+                    size = get_file_size(file_key)
+                    size_mb = size / (1024 * 1024) if size else 0
+                    size_text = f"{size_mb:.1f} MB"
+                else:
+                    size_text = f"{file_info.size_mb:.0f} MB (est.)"
+                table.setItem(row, 2, QTableWidgetItem(size_text))
+
+                # Coverage
+                coverage_text = f"{file_info.coverage_start}-{file_info.coverage_end}"
+                table.setItem(row, 3, QTableWidgetItem(coverage_text))
+
+                # Download button
+                download_btn = QPushButton("Download" if not installed else "Re-download")
+                download_btn.setFixedWidth(100)
+                download_btn.clicked.connect(lambda checked, key=file_key: self._on_download_ephemeris_file(key))
+                table.setCellWidget(row, 4, download_btn)
+
+                # Sync button (syncs metadata to database)
+                sync_btn = QPushButton("Sync")
+                sync_btn.setFixedWidth(80)
+                sync_btn.setEnabled(installed)  # Only enable if file is downloaded
+                sync_btn.clicked.connect(lambda checked, key=file_key: self._on_sync_ephemeris_file(key))
+                table.setCellWidget(row, 5, sync_btn)
+
+            table.resizeColumnsToContents()
 
         except Exception as e:
             logger.error(f"Error loading ephemeris info: {e}", exc_info=True)
-            self.ephemeris_text.setHtml(
-                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load ephemeris information: {e}</span></p>"
-            )
+
+    def _load_celestial_data_info(self) -> None:
+        """Load celestial data sources into table."""
+        try:
+            from celestron_nexstar.cli.data_import import DATA_SOURCES, get_cache_dir
+
+            # Filter to only celestial data sources
+            celestial_sources = {k: v for k, v in DATA_SOURCES.items() if k.startswith("celestial_")}
+
+            table = self.celestial_data_table
+            table.setRowCount(len(celestial_sources))
+
+            filename_map = {
+                "celestial_stars_6": "stars.6.min.geojson",
+                "celestial_stars_8": "stars.8.min.geojson",
+                "celestial_stars_14": "stars.14.min.geojson",
+                "celestial_dsos_6": "dsos.6.min.geojson",
+                "celestial_dsos_14": "dsos.14.min.geojson",
+                "celestial_dsos_20": "dsos.20.min.geojson",
+                "celestial_dsos_bright": "dsos.bright.min.geojson",
+                "celestial_messier": "messier.min.geojson",
+                "celestial_asterisms": "asterisms.min.geojson",
+                "celestial_constellations": "constellations.min.geojson",
+                "celestial_local_group": "lg.min.geojson",
+            }
+
+            cache_dir = get_cache_dir()
+
+            for row, (source_id, source) in enumerate(sorted(celestial_sources.items())):
+                # Source name (remove "Celestial Data - " prefix if present)
+                display_name = source.name.replace("Celestial Data - ", "")
+                table.setItem(row, 0, QTableWidgetItem(display_name))
+
+                # Description
+                desc = source.description[:60] + "..." if len(source.description) > 60 else source.description
+                table.setItem(row, 1, QTableWidgetItem(desc))
+
+                # Status
+                filename = filename_map.get(source_id)
+                if filename:
+                    cache_path = cache_dir / filename
+                    if cache_path.exists():
+                        size_mb = cache_path.stat().st_size / (1024 * 1024)
+                        status_text = f"✓ Downloaded ({size_mb:.1f} MB)"
+                        status_item = QTableWidgetItem(status_text)
+                        status_item.setForeground(Qt.GlobalColor.green)
+                    else:
+                        status_text = "Not downloaded"
+                        status_item = QTableWidgetItem(status_text)
+                else:
+                    status_text = "N/A"
+                    status_item = QTableWidgetItem(status_text)
+                table.setItem(row, 2, status_item)
+
+                # Size (estimated)
+                size_text = f"~{source.objects_available:,} objects"
+                table.setItem(row, 3, QTableWidgetItem(size_text))
+
+                # Download button
+                download_btn = QPushButton("Download")
+                download_btn.setFixedWidth(100)
+                if filename and cache_path.exists():
+                    download_btn.setText("Re-download")
+                download_btn.clicked.connect(lambda checked, sid=source_id: self._on_download_celestial_data(sid))
+                table.setCellWidget(row, 4, download_btn)
+
+                # Import button
+                import_btn = QPushButton("Import")
+                import_btn.setFixedWidth(80)
+                import_btn.setEnabled(filename and cache_path.exists())
+                import_btn.clicked.connect(lambda checked, sid=source_id: self._on_import_celestial_data(sid))
+                table.setCellWidget(row, 5, import_btn)
+
+            table.resizeColumnsToContents()
+
+            # Clear status label
+            self.celestial_data_status_label.clear()
+
+        except Exception as e:
+            logger.error(f"Error loading celestial data info: {e}", exc_info=True)
+            self.celestial_data_status_label.setText(f"Error: {e}")
+
+    def _load_custom_yaml_info(self) -> None:
+        """Load custom YAML catalog information."""
+        try:
+            module_path = Path(__file__).parent.parent.parent.parent / "cli" / "data"
+            yaml_path = module_path / "catalogs.yaml"
+
+            info_text = "<b>Custom YAML Catalog</b><br><br>"
+            info_text += f"<b>Location:</b> {yaml_path}<br><br>"
+
+            if yaml_path.exists():
+                size = yaml_path.stat().st_size
+                info_text += f"<span style='color: green;'>✓ File exists ({size:,} bytes)</span><br><br>"
+                info_text += "Click 'Import Custom YAML' to import objects into the database."
+                # Enable import button
+                self.custom_yaml_import_btn.setEnabled(True)
+            else:
+                info_text += "<span style='color: red;'>✗ File not found</span><br><br>"
+                info_text += f"Create a catalogs.yaml file at:<br>{yaml_path}"
+                # Disable import button
+                self.custom_yaml_import_btn.setEnabled(False)
+
+            self.custom_yaml_info.setText(info_text)
+
+        except Exception as e:
+            logger.error(f"Error loading custom YAML info: {e}", exc_info=True)
+            self.custom_yaml_info.setText(f"<b>Error:</b> {e}")
+
+    def _load_wds_info(self) -> None:
+        """Load WDS catalog information."""
+        try:
+            from celestron_nexstar.cli.data_import import get_cache_dir
+
+            cache_dir = get_cache_dir()
+            wds_path = cache_dir / "wdsweb_summ2.txt"
+
+            info_text = "<b>Washington Double Star Catalog (WDS)</b><br><br>"
+            info_text += f"<b>Location:</b> {wds_path}<br><br>"
+
+            if wds_path.exists():
+                size_mb = wds_path.stat().st_size / (1024 * 1024)
+                info_text += f"<span style='color: green;'>✓ Downloaded ({size_mb:.1f} MB)</span><br><br>"
+                info_text += "The WDS catalog is ready to import into the database."
+                # Enable import button
+                self.wds_import_btn.setEnabled(True)
+            else:
+                info_text += "<span style='color: orange;'>Not downloaded</span><br><br>"
+                info_text += "Click 'Download WDS Catalog' to download from US Naval Observatory."
+                # Disable import button
+                self.wds_import_btn.setEnabled(False)
+
+            self.wds_info.setText(info_text)
+            self.wds_status_label.clear()
+
+        except Exception as e:
+            logger.error(f"Error loading WDS info: {e}", exc_info=True)
+            self.wds_info.setText(f"<b>Error:</b> {e}")
+
+    def _load_light_pollution_info(self) -> None:
+        """Load light pollution regions into table."""
+        try:
+            from sqlalchemy import func, select
+
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.database.light_pollution_db import WORLD_ATLAS_URLS
+            from celestron_nexstar.api.database.models import LightPollutionGridModel, get_db_session
+
+            table = self.light_pollution_table
+            regions = list(WORLD_ATLAS_URLS.keys())
+            table.setRowCount(len(regions))
+
+            # Get counts from database
+            get_database()
+            region_counts: dict[str, int] = {}
+
+            try:
+                with get_db_session() as session:
+                    for region in regions:
+                        # Count grid points for this region (we'll use a simple query)
+                        # Note: The database doesn't store region names, so we'll check if data exists
+                        result = session.scalar(select(func.count(LightPollutionGridModel.id)))
+                        if result and result > 0:
+                            # We have some data, but can't distinguish regions easily
+                            # For now, just show if we have any data
+                            region_counts[region] = result if region == "north_america" else 0
+            except Exception:
+                pass  # Table might not exist yet
+
+            # Check for downloaded PNG files
+            from pathlib import Path
+
+            cache_dir = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
+            png_files = {region: (cache_dir / f"{region}2024.png").exists() for region in regions}
+
+            for row, region in enumerate(sorted(regions)):
+                # Region name
+                region_display = region.replace("_", " ").title()
+                table.setItem(row, 0, QTableWidgetItem(region_display))
+
+                # Status - check both PNG file and database
+                count = region_counts.get(region, 0)
+                png_exists = png_files.get(region, False)
+
+                if count > 0:
+                    status_text = "✓ Imported"
+                    status_item = QTableWidgetItem(status_text)
+                    status_item.setForeground(Qt.GlobalColor.green)
+                elif png_exists:
+                    status_text = "Downloaded (not imported)"
+                    status_item = QTableWidgetItem(status_text)
+                    status_item.setForeground(Qt.GlobalColor.yellow)
+                else:
+                    status_text = "Not downloaded"
+                    status_item = QTableWidgetItem(status_text)
+                table.setItem(row, 1, status_item)
+
+                # Grid points
+                points_text = f"{count:,}" if count > 0 else "-"
+                table.setItem(row, 2, QTableWidgetItem(points_text))
+
+                # Download button
+                download_btn = QPushButton("Download")
+                download_btn.setFixedWidth(100)
+                if png_exists:
+                    download_btn.setText("Re-download")
+                download_btn.clicked.connect(lambda checked, r=region: self._on_download_light_pollution(r))
+                table.setCellWidget(row, 3, download_btn)
+
+                # Import button
+                import_btn = QPushButton("Import")
+                import_btn.setFixedWidth(80)
+                import_btn.setEnabled(png_exists)  # Only enable if PNG is downloaded
+                import_btn.clicked.connect(lambda checked, r=region: self._on_import_light_pollution(r))
+                table.setCellWidget(row, 4, import_btn)
+
+            table.resizeColumnsToContents()
+            self.light_pollution_status_label.clear()
+
+        except Exception as e:
+            logger.error(f"Error loading light pollution info: {e}", exc_info=True)
 
     def _load_location_info(self) -> None:
         """Load location configuration information."""
@@ -641,3 +1040,513 @@ class SettingsDialog(QDialog):
             self.data_text.setHtml(
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load data information: {e}</span></p>"
             )
+
+    def _on_download_ephemeris_file(self, file_key: str) -> None:
+        """Handle ephemeris file download button click."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadEphemerisFileThread
+
+        # Check if already downloading
+        worker_key = f"ephemeris_{file_key}"
+        if worker_key in self._download_workers:
+            return
+
+        # Create and start worker
+        worker = DownloadEphemerisFileThread(file_key, force=False)
+        worker.progress_updated.connect(
+            lambda status, current, total, key=file_key: self._on_ephemeris_progress(key, status, current, total)
+        )
+        worker.download_complete.connect(
+            lambda key, success, message: self._on_ephemeris_complete(key, success, message)
+        )
+        worker.error_occurred.connect(lambda key, error: self._on_ephemeris_error(key, error))
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_ephemeris_progress(self, file_key: str, status: str, current: int, total: int) -> None:
+        """Handle ephemeris download progress update."""
+        # Update progress in table if needed
+        pass  # Progress updates can be shown in status bar or table
+
+    def _on_ephemeris_complete(self, file_key: str, success: bool, message: str) -> None:
+        """Handle ephemeris download completion."""
+        if success:
+            logger.info(f"Ephemeris download complete: {message}")
+            # Reload ephemeris info to update table
+            self._load_ephemeris_info()
+        else:
+            logger.error(f"Ephemeris download failed: {message}")
+
+    def _on_ephemeris_error(self, file_key: str, error: str) -> None:
+        """Handle ephemeris download error."""
+        logger.error(f"Ephemeris download error for {file_key}: {error}")
+
+    def _on_sync_ephemeris_file(self, file_key: str) -> None:
+        """Handle ephemeris file sync button click."""
+        # Sync ephemeris metadata to database
+        from celestron_nexstar.gui.workers.download_workers import SyncEphemerisThread
+
+        # Check if already syncing
+        worker_key = f"ephemeris_sync_{file_key}"
+        if worker_key in self._download_workers:
+            return
+
+        # Create and start worker
+        worker = SyncEphemerisThread(force=False)
+        worker.sync_complete.connect(
+            lambda success, message: self._on_ephemeris_sync_complete(file_key, success, message)
+        )
+        worker.error_occurred.connect(lambda error: self._on_ephemeris_sync_error(file_key, error))
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_ephemeris_sync_complete(self, file_key: str, success: bool, message: str) -> None:
+        """Handle ephemeris sync completion."""
+        if success:
+            logger.info(f"Ephemeris sync complete: {message}")
+        else:
+            logger.error(f"Ephemeris sync failed: {message}")
+
+    def _on_ephemeris_sync_error(self, file_key: str, error: str) -> None:
+        """Handle ephemeris sync error."""
+        logger.error(f"Ephemeris sync error for {file_key}: {error}")
+
+    def _on_download_celestial_data(self, source_id: str) -> None:
+        """Handle celestial data download button click."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadCelestialDataThread
+
+        # Check if already downloading
+        worker_key = f"celestial_download_{source_id}"
+        if worker_key in self._download_workers:
+            return
+
+        # Get source name for display (remove "Celestial Data - " prefix if present)
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+
+        # Show progress bar
+        self.celestial_data_progress.setVisible(True)
+        self.celestial_data_progress.setRange(0, 100)
+        self.celestial_data_progress.setValue(0)
+        self.celestial_data_status_label.setText(f"Downloading {source_name}...")
+
+        # Create and start worker
+        worker = DownloadCelestialDataThread(source_id, force=False)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_celestial_download_progress(source_id, status, current, total)
+
+        def on_complete(success: bool, message: str) -> None:
+            self._on_celestial_download_complete(source_id, success, message)
+            self._download_workers.pop(worker_key, None)
+            self.celestial_data_progress.setVisible(False)
+
+        def on_error(error: str) -> None:
+            self._on_celestial_download_error(source_id, error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.download_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_celestial_download_progress(self, source_id: str, status: str, current: int, total: int) -> None:
+        """Handle celestial data download progress update."""
+        if total > 0:
+            self.celestial_data_progress.setRange(0, total)
+            self.celestial_data_progress.setValue(current)
+            self.celestial_data_status_label.setText(f"{status} ({current}/{total})")
+        else:
+            self.celestial_data_status_label.setText(status)
+
+    def _on_celestial_download_complete(self, source_id: str, success: bool, message: str) -> None:
+        """Handle celestial data download completion."""
+        if success:
+            self.celestial_data_status_label.setText(f"✓ {message}")
+            logger.info(f"Celestial data download complete: {message}")
+            # Reload celestial data info to update table (this will enable import buttons)
+            self._load_celestial_data_info()
+        else:
+            self.celestial_data_status_label.setText(f"✗ Download failed: {message}")
+            logger.error(f"Celestial data download failed: {message}")
+
+    def _on_celestial_download_error(self, source_id: str, error: str) -> None:
+        """Handle celestial data download error."""
+        self.celestial_data_status_label.setText(f"✗ Error: {error}")
+        logger.error(f"Celestial data download error for {source_id}: {error}")
+
+    def _on_import_celestial_data(self, source_id: str) -> None:
+        """Handle celestial data import button click."""
+        from celestron_nexstar.gui.workers.download_workers import ImportCelestialDataThread
+
+        # Check if already importing
+        worker_key = f"celestial_import_{source_id}"
+        if worker_key in self._download_workers:
+            return
+
+        # Get source name for display (remove "Celestial Data - " prefix if present)
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+
+        # Show progress bar
+        self.celestial_data_progress.setVisible(True)
+        self.celestial_data_progress.setRange(0, 100)
+        self.celestial_data_progress.setValue(0)
+        self.celestial_data_status_label.setText(f"Importing {source_name}...")
+
+        # Create and start worker
+        worker = ImportCelestialDataThread(source_id, mag_limit=15.0)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_celestial_import_progress(source_id, status, current, total)
+
+        def on_complete(success: bool, message: str, imported: int, skipped: int) -> None:
+            self._on_celestial_import_complete(source_id, success, message, imported, skipped)
+            self._download_workers.pop(worker_key, None)
+            self.celestial_data_progress.setVisible(False)
+
+        def on_error(worker_source_id: str, error: str) -> None:
+            self._on_celestial_import_error(worker_source_id, error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.import_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_celestial_import_progress(self, source_id: str, status: str, current: int, total: int) -> None:
+        """Handle celestial data import progress update."""
+        if total > 0:
+            self.celestial_data_progress.setRange(0, total)
+            self.celestial_data_progress.setValue(current)
+            self.celestial_data_status_label.setText(f"{status} ({current}%)")
+        else:
+            self.celestial_data_status_label.setText(status)
+
+    def _on_celestial_import_complete(
+        self, source_id: str, success: bool, message: str, imported: int, skipped: int
+    ) -> None:
+        """Handle celestial data import completion."""
+        if success:
+            self.celestial_data_status_label.setText(f"✓ {message}")
+            logger.info(f"Celestial data import complete: {message}")
+            # Reload celestial data info to update table
+            self._load_celestial_data_info()
+        else:
+            self.celestial_data_status_label.setText(f"✗ Import failed: {message}")
+            logger.error(f"Celestial data import failed: {message}")
+
+    def _on_celestial_import_error(self, source_id: str, error: str) -> None:
+        """Handle celestial data import error."""
+        self.celestial_data_status_label.setText(f"✗ Error: {error}")
+        logger.error(f"Celestial data import error for {source_id}: {error}")
+
+    def _on_download_wds(self) -> None:
+        """Handle WDS catalog download button click."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadWDSCatalogThread
+
+        # Check if already downloading
+        worker_key = "wds_download"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.wds_progress.setVisible(True)
+        self.wds_progress.setRange(0, 100)
+        self.wds_progress.setValue(0)
+        self.wds_download_btn.setEnabled(False)
+        self.wds_status_label.setText("Downloading...")
+
+        # Create and start worker
+        worker = DownloadWDSCatalogThread(force=False)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_wds_download_progress(status, current, total)
+
+        def on_complete(success: bool, message: str) -> None:
+            self._on_wds_download_complete(success, message)
+            self._download_workers.pop(worker_key, None)
+            self.wds_progress.setVisible(False)
+            self.wds_download_btn.setEnabled(True)
+
+        def on_error(error: str) -> None:
+            self._on_wds_download_error(error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.download_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_wds_download_progress(self, status: str, current: int, total: int) -> None:
+        """Handle WDS download progress update."""
+        if total > 0:
+            self.wds_progress.setRange(0, total)
+            self.wds_progress.setValue(current)
+            self.wds_status_label.setText(f"{status} ({current}/{total})")
+        else:
+            self.wds_status_label.setText(status)
+
+    def _on_wds_download_complete(self, success: bool, message: str) -> None:
+        """Handle WDS download completion."""
+        if success:
+            self.wds_status_label.setText(f"✓ {message}")
+            # Reload WDS info to enable import button
+            self._load_wds_info()
+        else:
+            self.wds_status_label.setText(f"✗ Download failed: {message}")
+
+    def _on_wds_download_error(self, error: str) -> None:
+        """Handle WDS download error."""
+        self.wds_status_label.setText(f"✗ Error: {error}")
+
+    def _on_import_wds(self) -> None:
+        """Handle WDS catalog import button click."""
+        from celestron_nexstar.gui.workers.download_workers import ImportWDSCatalogThread
+
+        # Check if already importing
+        worker_key = "wds_import"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.wds_progress.setVisible(True)
+        self.wds_progress.setRange(0, 100)
+        self.wds_progress.setValue(0)
+        self.wds_import_btn.setEnabled(False)
+        self.wds_status_label.setText("Importing...")
+
+        # Create and start worker
+        worker = ImportWDSCatalogThread(mag_limit=15.0)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_wds_import_progress(status, current, total)
+
+        def on_complete(success: bool, message: str, imported: int, skipped: int) -> None:
+            self._on_wds_import_complete(success, message, imported, skipped)
+            self._download_workers.pop(worker_key, None)
+            self.wds_progress.setVisible(False)
+            self.wds_import_btn.setEnabled(True)
+
+        def on_error(error: str) -> None:
+            self._on_wds_import_error(error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.import_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_wds_import_progress(self, status: str, current: int, total: int) -> None:
+        """Handle WDS import progress update."""
+        if total > 0:
+            self.wds_progress.setRange(0, total)
+            self.wds_progress.setValue(current)
+            self.wds_status_label.setText(f"{status} ({current}%)")
+        else:
+            self.wds_status_label.setText(status)
+
+    def _on_wds_import_complete(self, success: bool, message: str, imported: int, skipped: int) -> None:
+        """Handle WDS import completion."""
+        if success:
+            self.wds_status_label.setText(f"✓ {message}")
+        else:
+            self.wds_status_label.setText(f"✗ Import failed: {message}")
+
+    def _on_wds_import_error(self, error: str) -> None:
+        """Handle WDS import error."""
+        self.wds_status_label.setText(f"✗ Error: {error}")
+
+    def _on_download_light_pollution(self, region: str) -> None:
+        """Handle light pollution download button click."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadLightPollutionThread
+
+        # Check if already downloading
+        worker_key = f"light_pollution_download_{region}"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.light_pollution_progress.setVisible(True)
+        self.light_pollution_progress.setRange(0, 100)
+        self.light_pollution_progress.setValue(0)
+        self.light_pollution_status_label.setText(f"Downloading {region}...")
+
+        # Create and start worker
+        worker = DownloadLightPollutionThread(region, force=False)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_light_pollution_download_progress(region, status, current, total)
+
+        def on_complete(success: bool, message: str) -> None:
+            self._on_light_pollution_download_complete(region, success, message)
+            self._download_workers.pop(worker_key, None)
+            self.light_pollution_progress.setVisible(False)
+
+        def on_error(error: str) -> None:
+            self._on_light_pollution_download_error(region, error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.download_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_light_pollution_download_progress(self, region: str, status: str, current: int, total: int) -> None:
+        """Handle light pollution download progress update."""
+        if total > 0:
+            self.light_pollution_progress.setRange(0, total)
+            self.light_pollution_progress.setValue(current)
+            self.light_pollution_status_label.setText(f"{status} ({current}/{total})")
+        else:
+            self.light_pollution_status_label.setText(status)
+
+    def _on_light_pollution_download_complete(self, region: str, success: bool, message: str) -> None:
+        """Handle light pollution download completion."""
+        if success:
+            self.light_pollution_status_label.setText(f"✓ {message}")
+            logger.info(f"Light pollution download complete: {message}")
+            # Reload light pollution info to update table (enable import button)
+            self._load_light_pollution_info()
+        else:
+            self.light_pollution_status_label.setText(f"✗ Download failed: {message}")
+            logger.error(f"Light pollution download failed: {message}")
+
+    def _on_light_pollution_download_error(self, region: str, error: str) -> None:
+        """Handle light pollution download error."""
+        self.light_pollution_status_label.setText(f"✗ Error: {error}")
+        logger.error(f"Light pollution download error for {region}: {error}")
+
+    def _on_import_light_pollution(self, region: str) -> None:
+        """Handle light pollution import button click."""
+        from celestron_nexstar.gui.workers.download_workers import ImportLightPollutionThread
+
+        # Check if already importing
+        worker_key = f"light_pollution_import_{region}"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.light_pollution_progress.setVisible(True)
+        self.light_pollution_progress.setRange(0, 100)
+        self.light_pollution_progress.setValue(0)
+        self.light_pollution_status_label.setText(f"Importing {region}...")
+
+        # Create and start worker
+        worker = ImportLightPollutionThread(region, grid_resolution=0.1)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self._on_light_pollution_import_progress(region, status, current, total)
+
+        def on_complete(success: bool, message: str, points: int) -> None:
+            self._on_light_pollution_import_complete(region, success, message, points)
+            self._download_workers.pop(worker_key, None)
+            self.light_pollution_progress.setVisible(False)
+
+        def on_error(error: str) -> None:
+            self._on_light_pollution_import_error(region, error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.import_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_light_pollution_import_progress(self, region: str, status: str, current: int, total: int) -> None:
+        """Handle light pollution import progress update."""
+        if total > 0:
+            self.light_pollution_progress.setRange(0, total)
+            self.light_pollution_progress.setValue(current)
+            self.light_pollution_status_label.setText(f"{status} ({current}%)")
+        else:
+            self.light_pollution_status_label.setText(status)
+
+    def _on_light_pollution_import_complete(self, region: str, success: bool, message: str, points: int) -> None:
+        """Handle light pollution import completion."""
+        if success:
+            self.light_pollution_status_label.setText(f"✓ {message}")
+            logger.info(f"Light pollution import complete: {message}")
+            # Reload light pollution info to update table
+            self._load_light_pollution_info()
+        else:
+            self.light_pollution_status_label.setText(f"✗ Import failed: {message}")
+            logger.error(f"Light pollution import failed: {message}")
+
+    def _on_light_pollution_import_error(self, region: str, error: str) -> None:
+        """Handle light pollution import error."""
+        self.light_pollution_status_label.setText(f"✗ Error: {error}")
+        logger.error(f"Light pollution import error for {region}: {error}")
+
+    def _on_import_custom_yaml(self) -> None:
+        """Handle custom YAML import button click."""
+        from celestron_nexstar.gui.workers.download_workers import ImportCustomYAMLThread
+
+        # Check if already importing
+        worker_key = "custom_yaml_import"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.custom_yaml_progress.setVisible(True)
+        self.custom_yaml_progress.setRange(0, 100)
+        self.custom_yaml_progress.setValue(0)
+        self.custom_yaml_import_btn.setEnabled(False)
+
+        # Create and start worker
+        worker = ImportCustomYAMLThread(mag_limit=99.0)
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            if total > 0:
+                self.custom_yaml_progress.setRange(0, total)
+                self.custom_yaml_progress.setValue(current)
+
+        def on_complete(success: bool, message: str, imported: int, skipped: int) -> None:
+            self._on_custom_yaml_import_complete(success, message, imported, skipped)
+            self._download_workers.pop(worker_key, None)
+            self.custom_yaml_progress.setVisible(False)
+            self.custom_yaml_import_btn.setEnabled(True)
+
+        def on_error(error: str) -> None:
+            self._on_custom_yaml_import_error(error)
+
+        worker.progress_updated.connect(on_progress)
+        worker.import_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_custom_yaml_import_complete(self, success: bool, message: str, imported: int, skipped: int) -> None:
+        """Handle custom YAML import completion."""
+        from PySide6.QtWidgets import QMessageBox
+
+        if success:
+            QMessageBox.information(self, "Import Complete", f"Successfully imported custom YAML catalog!\n\n{message}")
+        else:
+            QMessageBox.warning(self, "Import Failed", f"Failed to import custom YAML catalog:\n\n{message}")
+
+    def _on_custom_yaml_import_error(self, error: str) -> None:
+        """Handle custom YAML import error."""
+        from PySide6.QtWidgets import QMessageBox
+
+        QMessageBox.critical(self, "Import Error", f"Error importing custom YAML catalog:\n\n{error}")

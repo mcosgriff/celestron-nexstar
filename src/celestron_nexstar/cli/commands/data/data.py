@@ -164,10 +164,20 @@ def populate_geometries() -> None:
             # Ensure SpatiaLite is loaded by executing a simple spatial query
             # This will trigger the connect event handler to load SpatiaLite
             import contextlib
+            import os
 
-            with contextlib.suppress(Exception):
-                session.execute(text("SELECT InitSpatialMetadata(1)"))
-                # Metadata might already be initialized
+            # Initialize SpatiaLite metadata if needed (suppress "already exists" errors)
+            # Suppress stderr to hide "table spatial_ref_sys already exists" message
+            with open(os.devnull, "w") as devnull, contextlib.redirect_stderr(devnull):
+                try:
+                    session.execute(text("SELECT InitSpatialMetadata(1)"))
+                except Exception as e:
+                    # Suppress the "table spatial_ref_sys already exists" error - it's harmless
+                    error_msg = str(e).lower()
+                    if "already exists" not in error_msg and "spatial_ref_sys" not in error_msg:
+                        # Only log if it's a different error
+                        pass
+                        # Otherwise silently ignore - metadata is already initialized
             for model_class, table_name in model_classes:
                 console.print(f"[dim]Processing {table_name}...[/dim]")
 
