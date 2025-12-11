@@ -701,7 +701,9 @@ def import_celestial_data_geojson(
                         )
 
                         # Map object types to model classes
-                        type_to_model = {
+                        from typing import cast
+
+                        type_to_model: dict[CelestialObjectType, type[GalaxyModel | NebulaModel | ClusterModel]] = {
                             CelestialObjectType.GALAXY: GalaxyModel,
                             CelestialObjectType.NEBULA: NebulaModel,
                             CelestialObjectType.CLUSTER: ClusterModel,
@@ -712,17 +714,21 @@ def import_celestial_data_geojson(
                                 continue
 
                             try:
-                                obj_type = obj.get("object_type")
+                                obj_type: CelestialObjectType | str | None = obj.get("object_type")
                                 if isinstance(obj_type, str):
                                     obj_type = CelestialObjectType(obj_type)
+
+                                if not isinstance(obj_type, CelestialObjectType):
+                                    continue
 
                                 model_class = type_to_model.get(obj_type)
                                 if not model_class:
                                     continue
 
                                 # Find the inserted object by name
+                                # Type ignore: model_class is a union of model types, but select() needs a specific type
                                 result = db_session.execute(
-                                    select(model_class).where(model_class.name == obj["name"]).limit(1)
+                                    select(model_class).where(model_class.name == obj["name"]).limit(1)  # type: ignore[arg-type]
                                 )
                                 model_obj = result.scalar_one_or_none()
 
@@ -732,7 +738,8 @@ def import_celestial_data_geojson(
                                         obj["_temp_geometry"], db_session
                                     )
                                     if geometry_blob:
-                                        model_obj.geometry = geometry_blob
+                                        # Type ignore: model_obj is a union type, but we know it has geometry attribute
+                                        model_obj.geometry = geometry_blob  # type: ignore[misc]
                                         db_session.commit()
                             except Exception as e:
                                 if verbose:
@@ -1098,7 +1105,7 @@ def import_celestial_stars(
                 if not coords or len(coords) < 2:
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -1178,7 +1185,7 @@ def import_celestial_stars(
                 if magnitude is not None and magnitude > mag_limit:
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -1239,7 +1246,8 @@ def import_celestial_stars(
 
             # Update progress
             if use_rich_progress and task is not None:
-                progress_obj.advance(task)  # type: ignore[union-attr]
+                if progress_obj is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
             elif progress_callback:
                 processed = len(all_objects) + skipped + errors
                 progress_callback("Processing celestial_stars...", processed, total_features)
@@ -1680,7 +1688,7 @@ def import_celestial_constellations(
                     )
 
                     # Extract brightest star and magnitude
-                    brightest_star = properties.get("brightest_star") or properties.get("key_star")
+                    properties.get("brightest_star") or properties.get("key_star")
                     # Magnitude is not stored in ConstellationModel (calculated from brightest_star)
 
                     # Extract area
@@ -1822,6 +1830,8 @@ def import_celestial_constellations(
                         pass
 
                     # Create constellation model (geometry will be set after batch insert)
+                    # Note: brightest_star is now a foreign key (brightest_star_id), not a string field
+                    # It will be set during sync operation
                     constellation = ConstellationModel(
                         name=name,
                         abbreviation=abbreviation[:3],  # Ensure 3 characters
@@ -1833,7 +1843,7 @@ def import_celestial_constellations(
                         dec_min_degrees=dec_min_degrees,
                         dec_max_degrees=dec_max_degrees,
                         area_sq_deg=area_sq_deg,
-                        brightest_star=brightest_star,
+                        brightest_star_id=None,  # Will be set during sync operation
                         mythology=mythology,
                         season=season,
                         geometry=None,  # Will be set after conversion
@@ -1889,17 +1899,19 @@ def import_celestial_constellations(
                 try:
                     # Convert geometries to SpatiaLite format for this batch before inserting
                     for const in batch:
-                        if hasattr(const, "_temp_geometry") and const._temp_geometry:  # type: ignore[attr-defined]
+                        if hasattr(const, "_temp_geometry") and getattr(const, "_temp_geometry", None):
                             try:
-                                geometry_blob = geojson_to_spatialite_geometry_async(const._temp_geometry, db_session)  # type: ignore[attr-defined]
+                                temp_geom = getattr(const, "_temp_geometry", None)
+                                if temp_geom:
+                                    geometry_blob = geojson_to_spatialite_geometry_async(temp_geom, db_session)
                                 if geometry_blob:
                                     const.geometry = geometry_blob
                                     if verbose:
                                         geom_type = (
-                                            const._temp_geometry.get("type", "unknown")
-                                            if isinstance(const._temp_geometry, dict)
+                                            temp_geom.get("type", "unknown")
+                                            if isinstance(temp_geom, dict)
                                             else "unknown"
-                                        )  # type: ignore[attr-defined]
+                                        )
                                         console.print(f"[dim]Set geometry for {const.name} (type: {geom_type})[/dim]")
                                 else:
                                     console.print(
@@ -1907,10 +1919,10 @@ def import_celestial_constellations(
                                     )
                                     if verbose:
                                         geom_type = (
-                                            const._temp_geometry.get("type", "unknown")
-                                            if isinstance(const._temp_geometry, dict)
+                                            temp_geom.get("type", "unknown")
+                                            if isinstance(temp_geom, dict)
                                             else "unknown"
-                                        )  # type: ignore[attr-defined]
+                                        )
                                         console.print(f"[dim]Geometry type was: {geom_type}[/dim]")
                             except Exception as e:
                                 console.print(
@@ -1921,7 +1933,8 @@ def import_celestial_constellations(
 
                                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
                             # Clean up temp attribute
-                            delattr(const, "_temp_geometry")  # type: ignore[attr-defined]
+                            if hasattr(const, "_temp_geometry"):
+                                delattr(const, "_temp_geometry")
                         else:
                             if verbose:
                                 console.print(f"[yellow]Warning: No _temp_geometry found for {const.name}[/yellow]")
@@ -2591,7 +2604,7 @@ def import_wds_catalog(
                 # Skip header lines or invalid entries
                 if not wds_designation or wds_designation.startswith("#") or "WDS" in wds_designation.upper():
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -2611,7 +2624,7 @@ def import_wds_catalog(
                 except (ValueError, TypeError):
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -2660,7 +2673,7 @@ def import_wds_catalog(
                 except (ValueError, TypeError):
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -2691,7 +2704,7 @@ def import_wds_catalog(
                 if magnitude is not None and magnitude > mag_limit:
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None:
+                    if use_rich_progress and task is not None and progress_obj is not None:
                         progress_obj.advance(task)  # type: ignore[union-attr]
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
@@ -2818,7 +2831,8 @@ def import_wds_catalog(
             imported += batch_imported
             # Update progress
             if use_rich_progress and task is not None:
-                progress_obj.advance(task)  # type: ignore[union-attr]
+                if progress_obj is not None:
+                    progress_obj.advance(task)  # type: ignore[union-attr]
             elif progress_callback:
                 batch_num = (i // batch_size) + 1
                 progress_callback("Importing WDS catalog...", batch_num, num_batches)

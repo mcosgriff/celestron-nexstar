@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import Session
+from sqlalchemy.orm import Session
 
 from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
 from celestron_nexstar.api.database.models import (
@@ -252,7 +252,7 @@ def seed_constellations(db_session: Session, force: bool = False) -> int:
             "dec_min_degrees",
             "dec_max_degrees",
             "area_sq_deg",
-            "brightest_star",
+            # Note: brightest_star is now a foreign key (brightest_star_id), not a string field
             "mythology",
             "season",
         }
@@ -284,46 +284,63 @@ def seed_constellations(db_session: Session, force: bool = False) -> int:
 
 def seed_asterisms(db_session: Session, force: bool = False) -> int:
     """
-    Seed asterisms into the database.
+    Decorate existing asterisms with metadata from JSON seed file.
+
+    Note: This function does NOT create new asterisms. Asterisms should be imported
+    from GeoJSON files in ~/.cache/celestron-nexstar/celestial-data/ (asterisms.min.geojson)
+    which is the source of truth. This function only enriches existing asterisms with
+    decoration fields like stars, description, season, cultural_info, etc.
 
     Args:
         db_session: Database session
-        force: If True, clear existing data before seeding
+        force: If True, overwrite existing decoration fields with seed data
 
     Returns:
-        Number of records added
+        Number of asterism records updated
     """
-    logger.info("Seeding asterisms...")
+    logger.info("Decorating asterisms with seed data...")
 
-    if force:
-        db_session.execute(delete(AsterismModel))
-        db_session.commit()
-        logger.info("Cleared existing asterisms")
-
-    # Load seed data
+    # Load seed data for decoration only
     data = load_seed_json("asterisms.json")
 
-    added = 0
+    # Decoration fields from JSON (not position/geometry - those come from GeoJSON)
+    decoration_fields = {
+        "stars",
+        "description",
+        "season",
+        "cultural_info",
+        "guidepost_info",
+        "historical_notes",
+        "shape_description",
+        "wikipedia_url",
+        "alt_names",
+    }
+
+    updated = 0
     for item in data:
         name = item["name"]
 
-        # Check if already exists (idempotent)
+        # Only update existing asterisms (source of truth is GeoJSON)
         existing = db_session.scalar(select(AsterismModel).where(AsterismModel.name == name))
         if existing:
-            continue
+            # Update only decoration fields from JSON
+            for field in decoration_fields:
+                if field in item and item[field] is not None:
+                    current_value = getattr(existing, field, None)
+                    # Only update if the field is None/empty or if we're forcing
+                    if current_value is None or current_value == "" or force:
+                        setattr(existing, field, item[field])
+                        updated += 1
+        else:
+            logger.debug(f"Asterism '{name}' not found in database - skipping (should be imported from GeoJSON)")
 
-        # Create new asterism
-        asterism = AsterismModel(**item)
-        db_session.add(asterism)
-        added += 1
-
-    if added > 0:
+    if updated > 0:
         db_session.commit()
-        logger.info(f"Added {added} asterisms")
+        logger.info(f"Updated {updated} asterism decoration fields from seed data")
     else:
-        logger.info("Asterisms already seeded (no new records)")
+        logger.info("Asterisms already decorated (no updates needed)")
 
-    return added
+    return updated
 
 
 def seed_dark_sky_sites(db_session: Session, force: bool = False) -> int:
@@ -755,7 +772,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
     results: dict[str, int] = {}
 
     try:
-        results["star_name_mappings"] = await seed_star_name_mappings(db_session, force=force)
+        results["star_name_mappings"] = seed_star_name_mappings(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Star name mappings seed file not found, skipping")
         results["star_name_mappings"] = 0
@@ -781,7 +798,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["star_name_mappings"] = 0
 
     try:
-        results["meteor_showers"] = await seed_meteor_showers(db_session, force=force)
+        results["meteor_showers"] = seed_meteor_showers(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Meteor showers seed file not found, skipping")
         results["meteor_showers"] = 0
@@ -799,7 +816,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["meteor_showers"] = 0
 
     try:
-        results["constellations"] = await seed_constellations(db_session, force=force)
+        results["constellations"] = seed_constellations(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Constellations seed file not found, skipping")
         results["constellations"] = 0
@@ -824,7 +841,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
     results["asterisms"] = 0
 
     try:
-        results["dark_sky_sites"] = await seed_dark_sky_sites(db_session, force=force)
+        results["dark_sky_sites"] = seed_dark_sky_sites(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Dark sky sites seed file not found, skipping")
         results["dark_sky_sites"] = 0
@@ -842,7 +859,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["dark_sky_sites"] = 0
 
     try:
-        results["space_events"] = await seed_space_events(db_session, force=force)
+        results["space_events"] = seed_space_events(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Space events seed file not found, skipping")
         results["space_events"] = 0
@@ -860,7 +877,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["space_events"] = 0
 
     try:
-        results["variable_stars"] = await seed_variable_stars(db_session, force=force)
+        results["variable_stars"] = seed_variable_stars(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Variable stars seed file not found, skipping")
         results["variable_stars"] = 0
@@ -878,7 +895,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["variable_stars"] = 0
 
     try:
-        results["comets"] = await seed_comets(db_session, force=force)
+        results["comets"] = seed_comets(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Comets seed file not found, skipping")
         results["comets"] = 0
@@ -896,7 +913,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["comets"] = 0
 
     try:
-        results["eclipses"] = await seed_eclipses(db_session, force=force)
+        results["eclipses"] = seed_eclipses(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Eclipses seed file not found, skipping")
         results["eclipses"] = 0
@@ -914,7 +931,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["eclipses"] = 0
 
     try:
-        results["bortle_characteristics"] = await seed_bortle_characteristics(db_session, force=force)
+        results["bortle_characteristics"] = seed_bortle_characteristics(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Bortle characteristics seed file not found, skipping")
         results["bortle_characteristics"] = 0
@@ -932,7 +949,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["bortle_characteristics"] = 0
 
     try:
-        results["planets"] = await seed_planets(db_session, force=force)
+        results["planets"] = seed_planets(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Planets seed file not found, skipping")
         results["planets"] = 0
@@ -950,7 +967,7 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         results["planets"] = 0
 
     try:
-        results["moons"] = await seed_moons(db_session, force=force)
+        results["moons"] = seed_moons(db_session, force=force)
     except FileNotFoundError:
         logger.warning("Moons seed file not found, skipping")
         results["moons"] = 0

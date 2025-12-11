@@ -226,10 +226,30 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Header
+        # Header with sync buttons
+        header_layout = QHBoxLayout()
         header = QLabel("Celestial Data Sources")
         header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(header)
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+
+        sync_constellations_button = QPushButton("Sync Constellations")
+        sync_constellations_button.setToolTip(
+            "Sync constellation relationships: map stars to constellations, find brightest stars, update decoration data"
+        )
+        sync_constellations_button.clicked.connect(self._on_sync_constellations)
+        self.celestial_data_sync_constellations_button = sync_constellations_button
+        header_layout.addWidget(sync_constellations_button)
+
+        sync_asterisms_button = QPushButton("Sync Asterisms")
+        sync_asterisms_button.setToolTip(
+            "Sync asterism relationships: map stars to asterisms, find brightest stars, update decoration data"
+        )
+        sync_asterisms_button.clicked.connect(self._on_sync_asterisms)
+        self.celestial_data_sync_asterisms_button = sync_asterisms_button
+        header_layout.addWidget(sync_asterisms_button)
+
+        layout.addLayout(header_layout)
 
         # Table for celestial data sources
         table = QTableWidget()
@@ -1271,6 +1291,110 @@ class SettingsDialog(QDialog):
         source = DATA_SOURCES.get(source_id)
         source_name = source.name.replace("Celestial Data - ", "") if source else source_id
         self._show_toast(f"{source_name} download error: {error}", duration_ms=4000)
+
+    def _on_sync_constellations(self) -> None:
+        """Handle sync constellations button click."""
+        from celestron_nexstar.gui.workers.download_workers import SyncStarRelationshipsThread
+
+        # Check if already syncing
+        worker_key = "constellations_sync"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.celestial_data_progress.setVisible(True)
+        self.celestial_data_progress.setRange(0, 100)
+        self.celestial_data_progress.setValue(0)
+        self.celestial_data_status_label.setText("Syncing constellations...")
+
+        # Create and start worker (only constellations operations)
+        worker = SyncStarRelationshipsThread(operations=["constellations"])
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            if total > 0:
+                percentage = int((current / total) * 100)
+                self.celestial_data_progress.setValue(percentage)
+            self.celestial_data_status_label.setText(status)
+
+        def on_operation_complete(operation: str, success: bool, message: str) -> None:
+            if success:
+                operation_names = {
+                    "stars_to_constellations": "Stars to Constellations",
+                    "brightest_stars_constellations": "Brightest Stars in Constellations",
+                }
+                op_name = operation_names.get(operation, operation)
+                self._show_toast(f"{op_name}: {message}", duration_ms=3000, preset="success")
+            else:
+                self._show_toast(f"Sync operation failed: {message}", duration_ms=4000, preset="error")
+
+        def on_error(operation: str, error: str) -> None:
+            logger.error(f"Sync error for {operation}: {error}")
+            self._show_toast(f"Sync error: {error}", duration_ms=4000, preset="error")
+
+        def on_finished() -> None:
+            self._download_workers.pop(worker_key, None)
+            self.celestial_data_progress.setVisible(False)
+            self.celestial_data_status_label.setText("Constellation sync complete")
+
+        worker.progress_updated.connect(on_progress)
+        worker.operation_complete.connect(on_operation_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(on_finished)
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_sync_asterisms(self) -> None:
+        """Handle sync asterisms button click."""
+        from celestron_nexstar.gui.workers.download_workers import SyncStarRelationshipsThread
+
+        # Check if already syncing
+        worker_key = "asterisms_sync"
+        if worker_key in self._download_workers:
+            return
+
+        # Show progress bar
+        self.celestial_data_progress.setVisible(True)
+        self.celestial_data_progress.setRange(0, 100)
+        self.celestial_data_progress.setValue(0)
+        self.celestial_data_status_label.setText("Syncing asterisms...")
+
+        # Create and start worker (only asterisms operations)
+        worker = SyncStarRelationshipsThread(operations=["asterisms"])
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            if total > 0:
+                percentage = int((current / total) * 100)
+                self.celestial_data_progress.setValue(percentage)
+            self.celestial_data_status_label.setText(status)
+
+        def on_operation_complete(operation: str, success: bool, message: str) -> None:
+            if success:
+                operation_names = {
+                    "stars_to_asterisms": "Stars to Asterisms",
+                    "brightest_stars_asterisms": "Brightest Stars in Asterisms",
+                }
+                op_name = operation_names.get(operation, operation)
+                self._show_toast(f"{op_name}: {message}", duration_ms=3000, preset="success")
+            else:
+                self._show_toast(f"Sync operation failed: {message}", duration_ms=4000, preset="error")
+
+        def on_error(operation: str, error: str) -> None:
+            logger.error(f"Sync error for {operation}: {error}")
+            self._show_toast(f"Sync error: {error}", duration_ms=4000, preset="error")
+
+        def on_finished() -> None:
+            self._download_workers.pop(worker_key, None)
+            self.celestial_data_progress.setVisible(False)
+            self.celestial_data_status_label.setText("Asterism sync complete")
+
+        worker.progress_updated.connect(on_progress)
+        worker.operation_complete.connect(on_operation_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(on_finished)
+
+        self._download_workers[worker_key] = worker
+        worker.start()
 
     def _on_import_celestial_data(self, source_id: str) -> None:
         """Handle celestial data import button click."""

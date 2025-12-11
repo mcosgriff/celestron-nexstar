@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -80,6 +80,316 @@ class DoubleClickableTextBrowser(QTextBrowser):
             super().mouseDoubleClickEvent(event)
 
 
+class MapGenerationWorkerThread(QThread):
+    """Worker thread to generate constellation map in the background."""
+
+    map_ready = Signal(bytes)  # type: ignore[type-arg,misc]  # Emits map image data
+
+    def __init__(self, boundaries: dict[str, float], is_dark_theme: bool) -> None:
+        """Initialize the map generation worker thread."""
+        super().__init__()
+        self.boundaries = boundaries
+        self.is_dark_theme = is_dark_theme
+
+    def run(self) -> None:
+        """Generate map in background thread."""
+        try:
+            if self.isInterruptionRequested():
+                return
+
+            from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
+            from starplot.styles import PlotStyle, extensions
+
+            # Get ephemeris file path (use downloaded ephemeris if available)
+            from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
+
+            ephemeris_dir = get_ephemeris_directory()
+            # Try to find an available ephemeris file (prefer de421 or de440)
+            ephemeris_file = None
+            for preferred_name in ["de421.bsp", "de440.bsp", "de421_2001.bsp"]:
+                eph_path = ephemeris_dir / preferred_name
+                if eph_path.exists():
+                    ephemeris_file = preferred_name
+                    break
+
+            # If no preferred file found, use default (starplot will handle it)
+            if ephemeris_file is None:
+                ephemeris_file = "de421_2001.bsp"  # Starplot default
+
+            # Determine style based on theme
+            if self.is_dark_theme:
+                plot_style = PlotStyle().extend(extensions.BLUE_DARK, extensions.MAP)
+            else:
+                plot_style = PlotStyle().extend(extensions.BLUE_LIGHT, extensions.MAP)
+
+            # Calculate RA/Dec range from boundaries
+            # Add padding around the constellation boundaries
+            padding_ra = 0.5  # hours
+            padding_dec = 2.0  # degrees
+
+            ra_min_hours = self.boundaries["ra_min_hours"]
+            ra_max_hours = self.boundaries["ra_max_hours"]
+            dec_min = self.boundaries["dec_min_degrees"] - padding_dec
+            dec_max = self.boundaries["dec_max_degrees"] + padding_dec
+
+            # Handle RA wrap-around (e.g., constellation spans 22h to 2h)
+            # If ra_max < ra_min, the constellation wraps around 0/24h
+            wraps_around = ra_max_hours < ra_min_hours
+
+            if wraps_around:
+                # Constellation wraps around - use a range that doesn't cross 0/24
+                # For wrapped constellations, we'll use a centered approach
+                # Calculate the actual span (accounting for wrap)
+                span = (24 - ra_min_hours) + ra_max_hours
+                # Use center point and add padding
+                center_ra = (ra_min_hours + span / 2) % 24
+                # Create a range that fits within 0-24 without wrapping
+                range_size = span + (padding_ra * 2)
+                # Cap range at reasonable size (max 8 hours = 120 degrees)
+                range_size = min(range_size, 8)
+                ra_min = (center_ra - range_size / 2) % 24
+                ra_max = (center_ra + range_size / 2) % 24
+                # If still wraps, use a simpler approach
+                if ra_min > ra_max:
+                    # Use the constellation's min/max with padding, but clamp
+                    ra_min = max(0, ra_min_hours - padding_ra)
+                    ra_max = min(24, ra_max_hours + padding_ra)
+                    # If still invalid, use default centered range
+                    if ra_min >= ra_max:
+                        center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
+                        ra_min = max(0, center_ra - 2)
+                        ra_max = min(24, center_ra + 2)
+            else:
+                # Normal case - constellation doesn't wrap
+                ra_min = ra_min_hours - padding_ra
+                ra_max = ra_max_hours + padding_ra
+                # Clamp to valid range
+                if ra_min < 0:
+                    ra_min = 0
+                if ra_max > 24:
+                    ra_max = 24
+
+            # Final validation: ensure ra_min < ra_max
+            if ra_min >= ra_max:
+                # Fallback: use constellation center with default range
+                if wraps_around:
+                    center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
+                else:
+                    center_ra = (ra_min_hours + ra_max_hours) / 2
+                range_size = 4  # 4 hours = 60 degrees
+                ra_min = max(0, center_ra - range_size / 2)
+                ra_max = min(24, center_ra + range_size / 2)
+                # Final check
+                if ra_min >= ra_max:
+                    ra_min = 0
+                    ra_max = 4  # Default 4-hour range
+
+            # Convert RA from hours to degrees for starplot (RA * 15 = degrees)
+            ra_min_deg = ra_min * 15
+            ra_max_deg = ra_max * 15
+
+            # Create map plot
+            plot = MapPlot(
+                projection=Miller(),
+                ra_min=ra_min_deg,
+                ra_max=ra_max_deg,
+                dec_min=dec_min,
+                dec_max=dec_max,
+                ephemeris=ephemeris_file,  # Use downloaded ephemeris file
+                style=plot_style,
+                resolution=4096,  # Good quality for constellation view
+                autoscale=False,
+                scale=1.5,
+            )
+
+            # Add constellation features
+            plot.gridlines()
+            plot.constellations()
+            plot.constellation_borders()
+
+            # Add stars (magnitude < 8, labels for magnitude < 5)
+            plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
+
+            # Add open clusters
+            plot.open_clusters(
+                where=[_.size < 1, _.magnitude < 9],  # type: ignore[arg-type]
+                where_labels=[False],
+                true_size=False,
+            )
+            plot.open_clusters(
+                where=[_.size > 1, (_.magnitude < 9) | (_.magnitude.isnull())],  # type: ignore[arg-type]
+                where_labels=[False],
+            )
+
+            # Add nebula
+            plot.nebula(where=[(_.magnitude < 9) | (_.magnitude.isnull())])  # type: ignore[arg-type]
+
+            # Add constellation labels
+            try:
+                plot.constellation_labels()
+            except RuntimeError as e:
+                if "reentrant" not in str(e).lower() and "font" not in str(e).lower():
+                    raise
+
+            # Add Milky Way and ecliptic
+            # Milky way may fail for small RA/Dec ranges, so wrap in try/except
+            try:
+                plot.milky_way()
+            except (ValueError, RuntimeError) as e:
+                # Milky way may fail for small RA/Dec ranges or edge cases
+                logger.debug(f"Could not render milky way: {e}")
+            plot.ecliptic()
+
+            # Export to PNG in memory
+            import io
+
+            img_buffer = io.BytesIO()
+            plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
+            img_buffer.seek(0)
+            map_data = img_buffer.read()
+
+            # Emit results
+            self.map_ready.emit(map_data)
+        except Exception as e:
+            logger.error(f"Error generating constellation map: {e}", exc_info=True)
+            # Emit empty bytes on error
+            self.map_ready.emit(b"")
+
+
+class StarVisibilityWorkerThread(QThread):
+    """Worker thread to calculate star visibility for a constellation in the background."""
+
+    stars_ready = Signal(dict, list)  # type: ignore[type-arg,misc]  # Emits (constellation_data, star_data)
+
+    def __init__(
+        self,
+        constellation_name: str,
+        constellation_data: dict[str, Any],
+        boundaries: dict[str, float] | None,
+    ) -> None:
+        """Initialize the star visibility worker thread."""
+        super().__init__()
+        self.constellation_name = constellation_name
+        self.constellation_data = constellation_data
+        self.boundaries = boundaries
+
+    def run(self) -> None:
+        """Calculate star visibility in background thread."""
+        try:
+            # Check if thread should stop
+            if self.isInterruptionRequested():
+                return
+
+            from celestron_nexstar.api.core.enums import SkyBrightness
+            from celestron_nexstar.api.core.exceptions import DatabaseError
+            from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.optics import get_current_configuration
+            from celestron_nexstar.api.observation.visibility import assess_visibility
+
+            # Get conditions
+            location = get_observer_location()
+            config = get_current_configuration()
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
+            db = get_database()
+            with db._get_session() as session:
+                # Get sky brightness from light pollution
+                try:
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                    bortle_to_sky_brightness = {
+                        1: SkyBrightness.EXCELLENT,
+                        2: SkyBrightness.EXCELLENT,
+                        3: SkyBrightness.GOOD,
+                        4: SkyBrightness.FAIR,
+                        5: SkyBrightness.FAIR,
+                        6: SkyBrightness.POOR,
+                        7: SkyBrightness.URBAN,
+                        8: SkyBrightness.URBAN,
+                        9: SkyBrightness.URBAN,
+                    }
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
+                except DatabaseError:
+                    # Light pollution data not available, use default
+                    logger.warning("Light pollution data not available, using default sky brightness")
+                    sky_brightness = SkyBrightness.FAIR
+
+                # Get stars in this constellation
+                stars = db.filter_objects(object_type="star", constellation=self.constellation_name, limit=100)
+
+                # Calculate visibility for each star
+                star_data = []
+                for star in stars:
+                    # Check if thread should stop
+                    if self.isInterruptionRequested():
+                        return
+
+                    # Calculate visibility info
+                    vis_info = assess_visibility(
+                        star,
+                        config=config,
+                        sky_brightness=sky_brightness,
+                        min_altitude_deg=20.0,
+                        observer_lat=location.latitude,
+                        observer_lon=location.longitude,
+                        dt=conditions.timestamp,
+                    )
+
+                    # Calculate altitude/azimuth
+                    try:
+                        alt, az = ra_dec_to_alt_az(  # noqa: RUF059
+                            star.ra_hours,
+                            star.dec_degrees,
+                            location.latitude,
+                            location.longitude,
+                            conditions.timestamp,
+                        )
+                    except Exception:
+                        alt, _az = 0.0, 0.0
+
+                    # Use the same visibility probability calculation as the stars table
+                    visibility_prob_result = planner._calculate_visibility_probability(star, conditions, vis_info)
+
+                    # Handle tuple return (probability, explanations) or just probability
+                    if isinstance(visibility_prob_result, tuple):
+                        visibility_probability = visibility_prob_result[0]
+                    else:
+                        visibility_probability = visibility_prob_result
+
+                    star_data.append(
+                        {
+                            "obj": star,
+                            "apparent_magnitude": star.magnitude,
+                            "altitude": alt,
+                            "visibility_probability": visibility_probability,
+                            "vis_info": vis_info,
+                        }
+                    )
+
+                # Sort by visibility probability descending, then by magnitude (brighter first)
+                def sort_key(x: dict[str, Any]) -> tuple[float, float]:
+                    """Sort key function for star data."""
+                    prob = float(x["visibility_probability"])
+                    mag = x["apparent_magnitude"]
+                    mag_val = float(mag) if mag is not None else 0.0
+                    return (prob, -mag_val)
+
+                star_data.sort(key=sort_key, reverse=True)
+
+                # Emit results
+                self.stars_ready.emit(self.constellation_data, star_data)
+        except Exception as e:
+            logger.error(f"Error calculating star visibility: {e}", exc_info=True)
+            # Emit empty star data on error
+            self.stars_ready.emit(self.constellation_data, [])
+
+
 class ConstellationInfoDialog(QDialog):
     """Dialog to display detailed information about a constellation and its stars."""
 
@@ -93,6 +403,13 @@ class ConstellationInfoDialog(QDialog):
 
         self.constellation_name = constellation_name
         self.svg_path: Path | None = None  # Store SVG path for double-click viewing
+        self._star_visibility_thread: StarVisibilityWorkerThread | None = None
+        self._map_generation_thread: MapGenerationWorkerThread | None = None
+        self._map_image_data: bytes | None = None
+        self._constellation_data: dict[str, Any] | None = None
+        self._boundaries: dict[str, float] | None = None
+        self._map_generation_thread: MapGenerationWorkerThread | None = None
+        self._map_image_data: bytes | None = None
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -175,53 +492,24 @@ class ConstellationInfoDialog(QDialog):
         }
 
     def _load_constellation_info(self) -> None:
-        """Load constellation information and its stars."""
+        """Load constellation information and start background thread for star visibility."""
         colors = self._get_theme_colors()
         try:
-            from celestron_nexstar.api.astronomy.constellations import get_prominent_constellations
-            from celestron_nexstar.api.core.enums import SkyBrightness
-            from celestron_nexstar.api.core.utils import format_dec, format_ra, ra_dec_to_alt_az
-            from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-            from celestron_nexstar.api.location.observer import get_observer_location
-            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
-            from celestron_nexstar.api.observation.optics import get_current_configuration
-            from celestron_nexstar.api.observation.visibility import assess_visibility
+            from sqlalchemy import select
 
-            # Get conditions once (needed for visibility calculations)
-            planner = ObservationPlanner()
-            conditions = planner.get_tonight_conditions()
-            location = get_observer_location()
-            config = get_current_configuration()
+            from celestron_nexstar.api.astronomy.constellations import get_prominent_constellations
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.database.models import ConstellationModel
 
             db = get_database()
             with db._get_session() as session:
-                # Get sky brightness from light pollution
-                light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
-                # Map Bortle class to SkyBrightness (matching observation_planner.py)
-                bortle_to_sky_brightness = {
-                    1: SkyBrightness.EXCELLENT,
-                    2: SkyBrightness.EXCELLENT,
-                    3: SkyBrightness.GOOD,
-                    4: SkyBrightness.FAIR,
-                    5: SkyBrightness.FAIR,
-                    6: SkyBrightness.POOR,
-                    7: SkyBrightness.URBAN,  # Suburban/urban transition
-                    8: SkyBrightness.URBAN,
-                    9: SkyBrightness.URBAN,
-                }
-                sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
                 # Get constellation model with boundaries
-                from sqlalchemy import select
-
-                from celestron_nexstar.api.database.models import ConstellationModel
-
                 stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
                 result = session.execute(stmt)
                 constellation_model = result.scalar_one_or_none()
 
                 if not constellation_model:
-                    constellation_data, star_data, boundaries = {}, [], None
+                    constellation_data, boundaries = {}, None
                 else:
                     # Get constellation info (for display)
                     constellations = get_prominent_constellations(session)
@@ -232,7 +520,7 @@ class ConstellationInfoDialog(QDialog):
                             break
 
                     if not constellation:
-                        constellation_data, star_data, boundaries = {}, [], None
+                        constellation_data, boundaries = {}, None
                     else:
                         # Get constellation boundaries for map generation
                         boundaries = {
@@ -241,67 +529,6 @@ class ConstellationInfoDialog(QDialog):
                             "dec_min_degrees": constellation_model.dec_min_degrees,
                             "dec_max_degrees": constellation_model.dec_max_degrees,
                         }
-
-                        # Get stars in this constellation
-                        stars = db.filter_objects(object_type="star", constellation=self.constellation_name, limit=100)
-
-                        # Calculate visibility for each star directly (much faster than getting all recommended objects)
-                        # Note: stars are already CelestialObject instances from filter_objects
-                        star_data = []
-                        for star in stars:
-                            # Calculate visibility info
-                            vis_info = assess_visibility(
-                                star,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
-
-                            # Calculate altitude/azimuth
-                            try:
-                                alt, az = ra_dec_to_alt_az(  # noqa: RUF059
-                                    star.ra_hours,
-                                    star.dec_degrees,
-                                    location.latitude,
-                                    location.longitude,
-                                    conditions.timestamp,
-                                )
-                            except Exception:
-                                alt, _az = 0.0, 0.0
-
-                            # Use the same visibility probability calculation as the stars table
-                            visibility_prob_result = planner._calculate_visibility_probability(
-                                star, conditions, vis_info
-                            )
-
-                            # Handle tuple return (probability, explanations) or just probability
-                            if isinstance(visibility_prob_result, tuple):
-                                visibility_probability = visibility_prob_result[0]
-                            else:
-                                visibility_probability = visibility_prob_result
-
-                            star_data.append(
-                                {
-                                    "obj": star,
-                                    "apparent_magnitude": star.magnitude,
-                                    "altitude": alt,
-                                    "visibility_probability": visibility_probability,
-                                    "vis_info": vis_info,
-                                }
-                            )
-
-                        # Sort by visibility probability descending, then by magnitude (brighter first)
-                        def sort_key(x: dict[str, Any]) -> tuple[float, float]:
-                            """Sort key function for star data."""
-                            prob = float(x["visibility_probability"])
-                            mag = x["apparent_magnitude"]
-                            mag_val = float(mag) if mag is not None else 0.0
-                            return (prob, -mag_val)
-
-                        star_data.sort(key=sort_key, reverse=True)
 
                         constellation_data = {
                             "name": constellation.name,
@@ -322,191 +549,127 @@ class ConstellationInfoDialog(QDialog):
                 )
                 return
 
-            # Build HTML content
-            html_parts = []
+            # Store data for map generation
+            self._constellation_data = constellation_data
+            self._boundaries = boundaries
 
-            # Constellation name (bold cyan)
-            name_html = f"<p style='font-size: 18px; font-weight: bold; color: {colors['cyan']}; margin-bottom: 10px;'>{constellation_data['name']}"
-            if constellation_data.get("abbreviation"):
-                name_html += f" <span style='color: {colors['cyan']}; font-weight: normal;'>({constellation_data['abbreviation']})</span>"
-            name_html += "</p>"
-            html_parts.append(name_html)
+            # Show initial HTML with loading message for stars and map
+            self._build_html_content(constellation_data, boundaries, None, is_loading=True, map_data=None)
 
-            # Generate constellation map using starplot MapPlot
-            # Based on example: https://starplot.dev/examples/map-orion/
-            try:
-                import base64
-                import io
+            # Clean up any existing map generation thread
+            if self._map_generation_thread is not None:
+                if self._map_generation_thread.isRunning():
+                    self._map_generation_thread.requestInterruption()
+                    self._map_generation_thread.wait(3000)
+                    if self._map_generation_thread.isRunning():
+                        self._map_generation_thread.terminate()
+                        self._map_generation_thread.wait(1000)
+                self._map_generation_thread.deleteLater()
 
-                # Generate map in background thread to avoid blocking UI
-                def _generate_map() -> bytes | None:
-                    try:
-                        from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
-                        from starplot.styles import PlotStyle, extensions
+            # Start background thread to generate map
+            if boundaries:
+                self._map_generation_thread = MapGenerationWorkerThread(boundaries, self._is_dark_theme())
+                self._map_generation_thread.map_ready.connect(self._on_map_ready, Qt.ConnectionType.QueuedConnection)
+                self._map_generation_thread.finished.connect(
+                    lambda: self._map_generation_thread.deleteLater() if self._map_generation_thread else None
+                )
+                self._map_generation_thread.start()
 
-                        # Get ephemeris file path (use downloaded ephemeris if available)
-                        from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
+            # Clean up any existing star visibility thread
+            if self._star_visibility_thread is not None:
+                if self._star_visibility_thread.isRunning():
+                    self._star_visibility_thread.requestInterruption()
+                    self._star_visibility_thread.wait(3000)
+                    if self._star_visibility_thread.isRunning():
+                        self._star_visibility_thread.terminate()
+                        self._star_visibility_thread.wait(1000)
+                self._star_visibility_thread.deleteLater()
 
-                        ephemeris_dir = get_ephemeris_directory()
-                        # Try to find an available ephemeris file (prefer de421 or de440)
-                        ephemeris_file = None
-                        for preferred_name in ["de421.bsp", "de440.bsp", "de421_2001.bsp"]:
-                            eph_path = ephemeris_dir / preferred_name
-                            if eph_path.exists():
-                                ephemeris_file = preferred_name
-                                break
+            # Start background thread to calculate star visibility
+            self._star_visibility_thread = StarVisibilityWorkerThread(
+                self.constellation_name, constellation_data, boundaries
+            )
+            self._star_visibility_thread.stars_ready.connect(self._on_stars_ready, Qt.ConnectionType.QueuedConnection)
+            self._star_visibility_thread.finished.connect(
+                lambda: self._star_visibility_thread.deleteLater() if self._star_visibility_thread else None
+            )
+            self._star_visibility_thread.start()
 
-                        # If no preferred file found, use default (starplot will handle it)
-                        if ephemeris_file is None:
-                            ephemeris_file = "de421_2001.bsp"  # Starplot default
+        except Exception as e:
+            logger.error(f"Error loading constellation info: {e}", exc_info=True)
+            self.info_text.setHtml(
+                f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load constellation information: {e}</p>"
+            )
 
-                        # Determine style based on theme
-                        is_dark = self._is_dark_theme()
-                        if is_dark:
-                            plot_style = PlotStyle().extend(extensions.BLUE_DARK, extensions.MAP)
-                        else:
-                            plot_style = PlotStyle().extend(extensions.BLUE_LIGHT, extensions.MAP)
+    def _on_map_ready(self, map_data: bytes) -> None:
+        """Handle map generation ready from background thread."""
+        try:
+            self._map_image_data = map_data if map_data else None
+            # Update HTML with map if we have constellation data
+            if self._constellation_data and self._boundaries:
+                # Get current star data if available (might be None if stars not ready yet)
+                # We'll rebuild the HTML with the map
+                # Check if we have star data by looking at the current content or storing it
+                # For now, just rebuild with whatever star data we might have
+                # The stars will update separately when they're ready
+                self._build_html_content(
+                    self._constellation_data,
+                    self._boundaries,
+                    None,  # Star data will be updated separately
+                    is_loading=False,
+                    map_data=self._map_image_data,
+                )
+        except Exception as e:
+            logger.error(f"Error handling map data: {e}", exc_info=True)
 
-                        # Calculate RA/Dec range from boundaries
-                        # Add padding around the constellation boundaries
-                        padding_ra = 0.5  # hours
-                        padding_dec = 2.0  # degrees
+    def _on_stars_ready(self, constellation_data: dict[str, Any], star_data: list[dict[str, Any]]) -> None:
+        """Handle star visibility data ready from background thread."""
+        try:
+            # Build and display complete HTML with star data and map (if available)
+            self._build_html_content(
+                constellation_data,
+                self._boundaries,
+                star_data,
+                is_loading=False,
+                map_data=self._map_image_data,
+            )
+        except Exception as e:
+            logger.error(f"Error handling star visibility data: {e}", exc_info=True)
+            colors = self._get_theme_colors()
+            self.info_text.setHtml(
+                f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load star visibility data: {e}</p>"
+            )
 
-                        ra_min_hours = boundaries["ra_min_hours"]
-                        ra_max_hours = boundaries["ra_max_hours"]
-                        dec_min = boundaries["dec_min_degrees"] - padding_dec
-                        dec_max = boundaries["dec_max_degrees"] + padding_dec
+    def _build_html_content(
+        self,
+        constellation_data: dict[str, Any],
+        boundaries: dict[str, float] | None,
+        star_data: list[dict[str, Any]] | None,
+        is_loading: bool = False,
+        map_data: bytes | None = None,
+    ) -> None:
+        """Build HTML content for constellation info dialog."""
+        colors = self._get_theme_colors()
 
-                        # Handle RA wrap-around (e.g., constellation spans 22h to 2h)
-                        # If ra_max < ra_min, the constellation wraps around 0/24h
-                        wraps_around = ra_max_hours < ra_min_hours
+        # Build HTML content
+        html_parts = []
 
-                        if wraps_around:
-                            # Constellation wraps around - use a range that doesn't cross 0/24
-                            # For wrapped constellations, we'll use a centered approach
-                            # Calculate the actual span (accounting for wrap)
-                            span = (24 - ra_min_hours) + ra_max_hours
-                            # Use center point and add padding
-                            center_ra = (ra_min_hours + span / 2) % 24
-                            # Create a range that fits within 0-24 without wrapping
-                            range_size = span + (padding_ra * 2)
-                            # Cap range at reasonable size (max 8 hours = 120 degrees)
-                            range_size = min(range_size, 8)
-                            ra_min = (center_ra - range_size / 2) % 24
-                            ra_max = (center_ra + range_size / 2) % 24
-                            # If still wraps, use a simpler approach
-                            if ra_min > ra_max:
-                                # Use the constellation's min/max with padding, but clamp
-                                ra_min = max(0, ra_min_hours - padding_ra)
-                                ra_max = min(24, ra_max_hours + padding_ra)
-                                # If still invalid, use default centered range
-                                if ra_min >= ra_max:
-                                    center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
-                                    ra_min = max(0, center_ra - 2)
-                                    ra_max = min(24, center_ra + 2)
-                        else:
-                            # Normal case - constellation doesn't wrap
-                            ra_min = ra_min_hours - padding_ra
-                            ra_max = ra_max_hours + padding_ra
-                            # Clamp to valid range
-                            if ra_min < 0:
-                                ra_min = 0
-                            if ra_max > 24:
-                                ra_max = 24
+        # Constellation name (bold cyan)
+        name_html = f"<p style='font-size: 18px; font-weight: bold; color: {colors['cyan']}; margin-bottom: 10px;'>{constellation_data['name']}"
+        if constellation_data.get("abbreviation"):
+            name_html += f" <span style='color: {colors['cyan']}; font-weight: normal;'>({constellation_data['abbreviation']})</span>"
+        name_html += "</p>"
+        html_parts.append(name_html)
 
-                        # Final validation: ensure ra_min < ra_max
-                        if ra_min >= ra_max:
-                            # Fallback: use constellation center with default range
-                            if wraps_around:
-                                center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
-                            else:
-                                center_ra = (ra_min_hours + ra_max_hours) / 2
-                            range_size = 4  # 4 hours = 60 degrees
-                            ra_min = max(0, center_ra - range_size / 2)
-                            ra_max = min(24, center_ra + range_size / 2)
-                            # Final check
-                            if ra_min >= ra_max:
-                                ra_min = 0
-                                ra_max = 4  # Default 4-hour range
-
-                        # Convert RA from hours to degrees for starplot (RA * 15 = degrees)
-                        ra_min_deg = ra_min * 15
-                        ra_max_deg = ra_max * 15
-
-                        # Create map plot
-                        plot = MapPlot(
-                            projection=Miller(),
-                            ra_min=ra_min_deg,
-                            ra_max=ra_max_deg,
-                            dec_min=dec_min,
-                            dec_max=dec_max,
-                            ephemeris=ephemeris_file,  # Use downloaded ephemeris file
-                            style=plot_style,
-                            resolution=4096,  # Good quality for constellation view
-                            autoscale=False,
-                            scale=1.5,
-                        )
-
-                        # Add constellation features
-                        plot.gridlines()
-                        plot.constellations()
-                        plot.constellation_borders()
-
-                        # Add stars (magnitude < 8, labels for magnitude < 5)
-                        plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
-
-                        # Add open clusters
-                        plot.open_clusters(
-                            where=[_.size < 1, _.magnitude < 9],  # type: ignore[arg-type]
-                            where_labels=[False],
-                            true_size=False,
-                        )
-                        plot.open_clusters(
-                            where=[_.size > 1, (_.magnitude < 9) | (_.magnitude.isnull())],  # type: ignore[arg-type]
-                            where_labels=[False],
-                        )
-
-                        # Add nebula
-                        plot.nebula(where=[(_.magnitude < 9) | (_.magnitude.isnull())])  # type: ignore[arg-type]
-
-                        # Add constellation labels
-                        try:
-                            plot.constellation_labels()
-                        except RuntimeError as e:
-                            if "reentrant" not in str(e).lower() and "font" not in str(e).lower():
-                                raise
-
-                        # Add Milky Way and ecliptic
-                        # Milky way may fail for small RA/Dec ranges, so wrap in try/except
-                        try:
-                            plot.milky_way()
-                        except (ValueError, RuntimeError) as e:
-                            # Milky way may fail for small RA/Dec ranges or edge cases
-                            logger.debug(f"Could not render milky way: {e}")
-                        plot.ecliptic()
-
-                        # Export to PNG in memory
-                        img_buffer = io.BytesIO()
-                        plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
-                        img_buffer.seek(0)
-                        return img_buffer.read()
-
-                    except Exception as e:
-                        logger.error(f"Error generating constellation map: {e}", exc_info=True)
-                        return None
-
-                # Generate map in background thread
-                from concurrent.futures import ThreadPoolExecutor
-
-                with ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_generate_map)
-                    map_image_data = future.result(timeout=30)  # 30 second timeout
-
-                if map_image_data:
-                    # Convert to base64 for embedding in HTML
+        # Generate constellation map using starplot MapPlot
+        # Map is generated asynchronously in a background thread
+        if boundaries:
+            if map_data:
+                # Map is ready - display it
+                try:
                     import base64
 
-                    img_base64 = base64.b64encode(map_image_data).decode("utf-8")
+                    img_base64 = base64.b64encode(map_data).decode("utf-8")
                     html_parts.append(
                         f"<div style='margin: 15px 0; text-align: center; padding: 5px; background-color: transparent; display: inline-block;'>"
                         f"<img src='data:image/png;base64,{img_base64}' "
@@ -515,13 +678,19 @@ class ConstellationInfoDialog(QDialog):
                         f"<p style='margin-top: 5px; font-size: 0.9em; color: {colors['text_dim']};'>Constellation map generated with starplot</p>"
                         f"</div>"
                     )
-                else:
-                    logger.warning("Failed to generate constellation map")
-            except Exception as e:
-                logger.debug(f"Could not generate constellation map: {e}")
-                # Silently fail - map is optional
+                except Exception as e:
+                    logger.debug(f"Could not display constellation map: {e}")
+            elif is_loading:
+                # Map is still loading - show placeholder
+                html_parts.append(
+                    f"<div style='margin: 15px 0; text-align: center; padding: 15px; background-color: transparent;'>"
+                    f"<p style='color: {colors['text_dim']};'>⏳ Generating constellation map...</p>"
+                    f"</div>"
+                )
 
             # Coordinates section
+            from celestron_nexstar.api.core.utils import format_dec, format_ra
+
             html_parts.append(
                 f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Coordinates:</p>"
             )
@@ -569,9 +738,19 @@ class ConstellationInfoDialog(QDialog):
                 )
 
             # Stars section
-            html_parts.append(
-                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Stars in {constellation_data['name']} ({len(star_data)} visible):</p>"
-            )
+            if is_loading or star_data is None:
+                # Show loading message
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Stars in {constellation_data['name']}:</p>"
+                )
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>"
+                    f"⏳ Calculating visible stars...</p>"
+                )
+            else:
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Stars in {constellation_data['name']} ({len(star_data)} visible):</p>"
+                )
 
             if star_data:
                 # Create table
@@ -644,12 +823,6 @@ class ConstellationInfoDialog(QDialog):
 
             # Set HTML content
             self.info_text.setHtml("".join(html_parts))
-
-        except Exception as e:
-            logger.error(f"Error loading constellation info: {e}", exc_info=True)
-            self.info_text.setHtml(
-                f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load constellation information: {e}</p>"
-            )
 
     def _on_text_double_click(self, event: Any) -> None:
         """Handle double-click events - open SVG if available."""

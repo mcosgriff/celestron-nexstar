@@ -2,13 +2,8 @@
   {
     "name": "Big Dipper",
     "alt_names": "The Plough,Ursa Major asterism",
-    "ra_hours": 11.5,
-    "dec_degrees": 53.0,
-    "size_degrees": 25.0,
-    "parent_constellation": "Ursa Major",
     "description": "Seven bright stars forming a ladle shape. Use the pointer stars (Dubhe and Merak) to find Polaris",
     "stars": "Dubhe,Merak,Phecda,Megrez,Alioth,Mizar,Alkaid",
-    "season": "Spring",
     "wikipedia_url": "https://en.wikipedia.org/wiki/Big_Dipper",
     "cultural_info": "Known as the Plough in UK/Ireland, Great Wagon (Großer Wagen) in German, Göncöl's Wagon (Göncölszekér) in Hungarian, and Otava in Finnish. In many cultures, it's seen as a bear, plough, wagon, or ladle. Mentioned in Homer's Iliad as 'the Bear, which men also call the Wain'.",
     "guidepost_info": "The front two stars (Merak and Dubhe) point to Polaris, the North Star. This makes it extremely useful for celestial navigation. Extend the line from Merak through Dubhe about five times the distance between them to find Polaris.",
@@ -18,24 +13,17 @@
   {
     "name": "Little Dipper",
     "alt_names": "Ursa Minor asterism",
-    "ra_hours": 15.0,
-    "dec_degrees": 75.0,
-    "size_degrees": 20.0,
-    "parent_constellation": "Ursa Minor",
     "description": "Seven stars forming a smaller ladle. Polaris marks the end of the handle and North Celestial Pole",
     "stars": "Polaris,Kochab,Pherkad",
-    "season": "Year-round"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Ursa_Minor",
+    "cultural_info": "the 2nd-century astronomer Ptolemy, and remains one of the 88 modern constellations. Ursa Minor has traditionally been important for navigation, particularly by mariners, because of Polaris being the north pole star.",
+    "guidepost_info": "y, and remains one of the 88 modern constellations. Ursa Minor has traditionally been important for navigation, particularly by mariners, because of Polaris being the north pole star."
   },
   {
     "name": "Summer Triangle",
     "alt_names": "Great Triangle",
-    "ra_hours": 19.5,
-    "dec_degrees": 35.0,
-    "size_degrees": 50.0,
-    "parent_constellation": null,
     "description": "Large triangle formed by three of the brightest stars in the summer sky",
     "stars": "Vega,Deneb,Altair",
-    "season": "Summer",
     "wikipedia_url": "https://en.wikipedia.org/wiki/Summer_Triangle",
     "cultural_info": "Modern asterism recognized in the 1950s. Spans three constellations: Lyra (Vega), Cygnus (Deneb), and Aquila (Altair). Each star is the brightest in its respective constellation.",
     "guidepost_info": "Visible in summer evenings in the northern hemisphere. Helps locate the Milky Way band, which passes through the triangle. Each vertex is a bright first-magnitude star: Vega (0.03 mag), Deneb (1.25 mag), and Altair (0.76 mag). The triangle is high overhead during summer months.",
@@ -45,90 +33,59 @@
   {
     "name": "Winter Triangle",
     "alt_names": "Great Southern Triangle",
-    "ra_hours": 6.5,
-    "dec_degrees": -5.0,
-    "size_degrees": 60.0,
-    "parent_constellation": null,
     "description": "Large triangle connecting the brightest stars of winter: Sirius, Procyon, and Betelgeuse",
     "stars": "Sirius,Procyon,Betelgeuse",
-    "season": "Winter"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Winter_Triangle"
   },
   {
     "name": "Winter Hexagon",
     "alt_names": "Winter Circle",
-    "ra_hours": 6.0,
-    "dec_degrees": 10.0,
-    "size_degrees": 70.0,
-    "parent_constellation": null,
     "description": "Six bright stars forming a large hexagon dominating winter skies",
     "stars": "Sirius,Rigel,Aldebaran,Capella,Pollux,Procyon",
-    "season": "Winter"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Winter_Hexagon"
   },
   {
     "name": "Spring Triangle",
     "alt_names": "Great Diamond",
-    "ra_hours": 13.0,
-    "dec_degrees": 25.0,
-    "size_degrees": 55.0,
-    "parent_constellation": null,
     "description": "Triangle of three bright stars marking the spring sky",
     "stars": "Arcturus,Spica,Regulus",
-    "season": "Spring"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Spring_Triangle"
   },
   {
     "name": "Great Square of Pegasus",
     "alt_names": "Autumn Square",
-    "ra_hours": 23.0,
-    "dec_degrees": 20.0,
-    "size_degrees": 20.0,
-    "parent_constellation": "Pegasus",
     "description": "Four stars forming a large square. Alpheratz actually belongs to Andromeda",
     "stars": "Markab,Scheat,Algenib,Alpheratz",
-    "season": "Fall"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Pegasus_(constellation)"
   },
   {
     "name": "Northern Cross",
     "alt_names": "Cygnus Cross",
-    "ra_hours": 20.5,
-    "dec_degrees": 42.0,
-    "size_degrees": 25.0,
-    "parent_constellation": "Cygnus",
     "description": "Cross shape formed by the main stars of Cygnus the Swan",
     "stars": "Deneb,Albireo,Sadr",
-    "season": "Summer"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Northern_Cross",
+    "historical_notes": "the M50 motorway (Ireland), from Junctions 1 to 6, built in the late 1990s\nNorthern Cross Railroad, first railroad in Illinois\nNorthern Cross Radio Telescope at the Medicina Radio Observatory"
   },
   {
     "name": "Pleiades",
     "alt_names": "Seven Sisters,M45",
-    "ra_hours": 3.75,
-    "dec_degrees": 24.0,
-    "size_degrees": 2.0,
-    "parent_constellation": "Taurus",
     "description": "Stunning open star cluster visible to naked eye. Six or seven stars easily visible",
     "stars": "Alcyone,Atlas,Electra,Maia,Merope,Taygeta,Pleione",
-    "season": "Winter"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Pleiades",
+    "cultural_info": "The Pleiades, also known as Seven Sisters and Messier 45 (M45), is an asterism of an open star cluster containing young B-type stars in the northwest of the constellation Taurus. At a distance of about 444 light-years, it is among the nearest star clusters to Earth and the nearest Messier object to Earth, being the most obvious star cluster to the naked eye in the night sky. It contains the reflection nebulae NGC 14"
   },
   {
     "name": "Hyades",
     "alt_names": "Face of the Bull",
-    "ra_hours": 4.5,
-    "dec_degrees": 16.0,
-    "size_degrees": 5.5,
-    "parent_constellation": "Taurus",
     "description": "V-shaped cluster forming the bull's face. Aldebaran is foreground star, not cluster member",
     "stars": "Aldebaran,Theta Tauri",
-    "season": "Winter"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Hyades"
   },
   {
     "name": "Orion's Belt",
     "alt_names": "The Belt,Three Kings,Three Sisters,Jacob's Staff",
-    "ra_hours": 5.6,
-    "dec_degrees": -1.2,
-    "size_degrees": 3.0,
-    "parent_constellation": "Orion",
     "description": "Three bright stars in a straight line. Points to Sirius and Aldebaran",
     "stars": "Alnitak,Alnilam,Mintaka",
-    "season": "Winter",
     "wikipedia_url": "https://en.wikipedia.org/wiki/Orion%27s_Belt",
     "cultural_info": "Known as the Three Kings, Three Sisters, or Jacob's Staff. In ancient Egypt, the three stars aligned with the three pyramids of Giza. In Chinese astronomy, they are part of the White Tiger constellation.",
     "guidepost_info": "Points to Sirius (down and left) and Aldebaran (up and right). The belt points down to Sirius, the brightest star in the night sky. Extending the belt upward leads to Aldebaran in Taurus. The belt also helps locate the Orion Nebula (M42) below it.",
@@ -138,34 +95,27 @@
   {
     "name": "Sickle of Leo",
     "alt_names": "Question Mark",
-    "ra_hours": 10.3,
-    "dec_degrees": 18.0,
-    "size_degrees": 20.0,
-    "parent_constellation": "Leo",
     "description": "Backward question mark shape forming the lion's head and mane",
     "stars": "Regulus,Algieba,Adhafera",
-    "season": "Spring"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Leo_(constellation)",
+    "guidepost_info": "ions of the zodiac, between Cancer, the Crab, to the west and Virgo, the Maiden, to the east. It is located in the Northern celestial hemisphere. Its name is Latin for lion, and to the ancient Greeks represented the Nemean Lion killed by the mythical Greek hero Heracles as one of his twelve labors. Its old astronomical symbol is  (♌︎). One of the 48 constellations described by the 2nd-century astronomer Ptolemy, Leo remains one of the 88 modern constellations today, and one of the most easily re",
+    "historical_notes": "he east. It is located in the Northern celestial hemisphere. Its name is Latin for lion, and to the ancient Greeks represented the Nemean Lion killed by the mythical Greek hero Heracles as one of his twelve labors. Its old astronomical symbol is  (♌︎). One of the 48 constellations described by the 2nd-century astronomer Ptolemy, Leo remains one of the 88 modern constellations today, and one of the most easily recognizable due to its many bright stars and a distinctive shape that is reminiscent o",
+    "shape_description": "tions today, and one of the most easily recognizable due to its many bright stars and a distinctive shape that is reminiscent of the crouching lion it depicts."
   },
   {
     "name": "Teapot",
     "alt_names": "Sagittarius Teapot",
-    "ra_hours": 19.0,
-    "dec_degrees": -27.0,
-    "size_degrees": 15.0,
-    "parent_constellation": "Sagittarius",
     "description": "Eight stars forming a teapot shape. The spout points toward Scorpius",
     "stars": "Kaus Australis,Nunki,Ascella",
-    "season": "Summer"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Teapot",
+    "cultural_info": "ping tea leaves or a herbal mix in boiling or near-boiling water and serving the resulting infusion called tea; usually put in a teacup. It is one of the core components of teaware."
   },
   {
     "name": "False Cross",
     "alt_names": "Diamond Cross",
-    "ra_hours": 8.75,
-    "dec_degrees": -58.0,
-    "size_degrees": 10.0,
-    "parent_constellation": null,
     "description": "Cross shape often confused with the Southern Cross, but larger and dimmer",
     "stars": "Aspidiske,Markeb",
-    "season": "Spring"
+    "wikipedia_url": "https://en.wikipedia.org/wiki/Asterism_(astronomy)",
+    "shape_description": "An asterism is an observed pattern or group of stars in the sky. Asterisms can be any identified star pattern, and therefore are a more general concept than the 88 formally defined constellations. Constellations are based upon asterisms, but unlike asterisms, constellations are defined regions with official boundaries which t"
   }
 ]

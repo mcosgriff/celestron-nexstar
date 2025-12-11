@@ -736,6 +736,8 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
         with db._get_session() as session:
             # Check if geometry column exists (required)
             inspector = inspect(session.bind)
+            if inspector is None:
+                raise SpatialFunctionNotAvailableError("Database inspector is not available")
             columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
             has_geometry = "geometry" in columns
 
@@ -870,6 +872,8 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     with db._get_session() as session:
         # Check if geometry column exists (REQUIRED for spatial queries)
         inspector = inspect(session.bind)
+        if inspector is None:
+            raise SpatialFunctionNotAvailableError("Database inspector is not available")
         columns = [col["name"] for col in inspector.get_columns("light_pollution_grid")]
         has_geometry = "geometry" in columns
 

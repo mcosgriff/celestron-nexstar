@@ -309,6 +309,7 @@ class CatalogDatabase:
             cursor.execute("PRAGMA synchronous=NORMAL")  # Faster writes
             cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache
             cursor.execute("PRAGMA temp_store=MEMORY")  # Temp tables in RAM
+            cursor.execute("PRAGMA foreign_keys=ON")  # Enable foreign key constraints
 
             # R-tree extension is built into SQLite and doesn't need to be loaded
             # It's automatically available when creating R-tree virtual tables
@@ -958,7 +959,8 @@ class CatalogDatabase:
                                 result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
                                 geometry_obj = result.scalar()
                                 if geometry_obj:
-                                    model.geometry = geometry_obj
+                                    # Type ignore: result.scalar() returns Any, but we know it's a geometry object
+                                    model.geometry = geometry_obj  # type: ignore[assignment]
                             except Exception:
                                 # If geometry creation fails, continue without geometry
                                 pass
@@ -1137,22 +1139,24 @@ class CatalogDatabase:
                 result = session.execute(bayer_stmt)
                 bayer_mapping = result.scalar_one_or_none()
 
-            if bayer_mapping:
+            if bayer_mapping and isinstance(bayer_mapping, StarNameMappingModel):
                 # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
                 # Try multiple patterns to find the star
-                star_stmt = (
-                    select(StarModel)
-                    .where(
-                        (StarModel.name.ilike(f"HR {bayer_mapping.hr_number}"))
-                        | (StarModel.name.ilike(f"HR{bayer_mapping.hr_number}"))
-                        | (StarModel.name.ilike(f"%HR {bayer_mapping.hr_number}%"))
+                hr_num = bayer_mapping.hr_number
+                if hr_num is not None:
+                    star_stmt = (
+                        select(StarModel)
+                        .where(
+                            (StarModel.name.ilike(f"HR {hr_num}"))
+                            | (StarModel.name.ilike(f"HR{hr_num}"))
+                            | (StarModel.name.ilike(f"%HR {hr_num}%"))
+                        )
+                        .limit(1)
                     )
-                    .limit(1)
-                )
-                result = session.execute(star_stmt)
-                star_model = result.scalar_one_or_none()
-                if star_model:
-                    return self._model_to_object(star_model)
+                    result = session.execute(star_stmt)
+                    star_model = result.scalar_one_or_none()
+                    if star_model:
+                        return self._model_to_object(star_model)
 
             # Check asterisms
             from celestron_nexstar.api.catalogs.catalogs import CelestialObject
@@ -1382,15 +1386,18 @@ class CatalogDatabase:
             seen_star_ids = {m.id for m in all_models}
             for bayer_mapping in bayer_mappings:
                 # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
-                star_stmt = (
-                    select(StarModel)
-                    .where(
-                        (StarModel.name.ilike(f"HR {bayer_mapping.hr_number}"))
-                        | (StarModel.name.ilike(f"HR{bayer_mapping.hr_number}"))
-                        | (StarModel.name.ilike(f"%HR {bayer_mapping.hr_number}%"))
-                    )
-                    .limit(1)
-                )
+                if isinstance(bayer_mapping, StarNameMappingModel):
+                    hr_num = bayer_mapping.hr_number
+                    if hr_num is not None:
+                        star_stmt = (
+                            select(StarModel)
+                            .where(
+                                (StarModel.name.ilike(f"HR {hr_num}"))
+                                | (StarModel.name.ilike(f"HR{hr_num}"))
+                                | (StarModel.name.ilike(f"%HR {hr_num}%"))
+                            )
+                            .limit(1)
+                        )
                 result = session.execute(star_stmt)
                 star_model = result.scalar_one_or_none()
                 if star_model and star_model.id not in seen_star_ids:
@@ -1408,6 +1415,8 @@ class CatalogDatabase:
                         break
 
             # Search variable stars separately (they're not in _TYPE_TO_MODEL)
+            from celestron_nexstar.api.database.models import VariableStarModel
+
             variable_star_stmt = (
                 select(VariableStarModel)
                 .where(
@@ -1416,7 +1425,7 @@ class CatalogDatabase:
                 .limit(limit)
             )
             result = session.execute(variable_star_stmt)
-            variable_star_models = result.scalars().all()
+            variable_star_models: list[VariableStarModel] = list(result.scalars().all())
             seen_names = {obj.name for obj in objects}
             for var_star_model in variable_star_models:
                 # Convert VariableStarModel to CelestialObject

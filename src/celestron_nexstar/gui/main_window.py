@@ -297,6 +297,9 @@ class ObjectsLoaderThread(QThread):
                 objects = [const[0].name for const in constellations]  # const[0] is the Constellation object
             elif obj_type == CelestialObjectType.ASTERISM:
                 # Load visible asterisms
+                # Use lower threshold (0°) to show all asterisms above horizon,
+                # since asterisms are educational/reference items and circumpolar
+                # ones like Big Dipper should always be visible
                 db = get_database()
                 with db._get_session() as session:
                     asterisms = get_visible_asterisms(
@@ -304,7 +307,7 @@ class ObjectsLoaderThread(QThread):
                         conditions.latitude,
                         conditions.longitude,
                         conditions.timestamp,
-                        min_altitude_deg=20.0,
+                        min_altitude_deg=0.0,
                     )
                 # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
                 objects = asterisms  # Keep full objects for asterisms

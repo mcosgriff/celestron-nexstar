@@ -14,8 +14,8 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import sqlalchemy as sa
 from geoalchemy2 import Geometry
-from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 
 
 if TYPE_CHECKING:
@@ -162,6 +162,9 @@ class StarModel(Base, CelestialObjectMixin):
 
     __tablename__ = "stars"
 
+    # Asterism relationship (stars can belong to multiple asterisms, stored as comma-separated)
+    asterism: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
     # Composite indexes
     __table_args__ = (
         Index("idx_star_catalog_number", "catalog", "catalog_number"),
@@ -175,6 +178,28 @@ class StarModel(Base, CelestialObjectMixin):
     def __repr__(self) -> str:
         """String representation of the star."""
         return f"<Star(id={self.id}, name='{self.name}')>"
+
+
+# Junction tables for many-to-many relationships with foreign keys
+star_constellation_table = sa.Table(
+    "star_constellation",
+    Base.metadata,
+    sa.Column("star_id", sa.Integer(), sa.ForeignKey("stars.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column(
+        "constellation_id", sa.Integer(), sa.ForeignKey("constellations.id", ondelete="CASCADE"), primary_key=True
+    ),
+    sa.Index("ix_star_constellation_star_id", "star_id"),
+    sa.Index("ix_star_constellation_constellation_id", "constellation_id"),
+)
+
+star_asterism_table = sa.Table(
+    "star_asterism",
+    Base.metadata,
+    sa.Column("star_id", sa.Integer(), sa.ForeignKey("stars.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("asterism_id", sa.Integer(), sa.ForeignKey("asterisms.id", ondelete="CASCADE"), primary_key=True),
+    sa.Index("ix_star_asterism_star_id", "star_id"),
+    sa.Index("ix_star_asterism_asterism_id", "asterism_id"),
+)
 
 
 class DoubleStarModel(Base, CelestialObjectMixin):
@@ -692,9 +717,21 @@ class ConstellationModel(Base):
 
     # Metadata
     area_sq_deg: Mapped[float | None] = mapped_column(Float, nullable=True)  # Area in square degrees
-    brightest_star: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Name of brightest star
+    brightest_star_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("stars.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # Foreign key to brightest star
+    magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)  # Magnitude of brightest star
+    hemisphere: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # Hemisphere (Northern, Southern, Equatorial)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # Description of the constellation
     mythology: Mapped[str | None] = mapped_column(Text, nullable=True)  # Mythology/story
     season: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Best viewing season (N hemisphere)
+
+    # Relationship to brightest star
+    brightest_star: Mapped[StarModel | None] = relationship(
+        "StarModel", foreign_keys=[brightest_star_id], lazy="select"
+    )
 
     # Composite indexes for position-based queries
     __table_args__ = (
@@ -711,19 +748,26 @@ class ConstellationModel(Base):
         """
         from celestron_nexstar.api.astronomy.constellations import Constellation
 
-        # Calculate hemisphere from declination
-        if self.dec_degrees > 30:
+        # Use stored hemisphere, or calculate from declination if not set
+        if self.hemisphere:
+            hemisphere = self.hemisphere
+        elif self.dec_degrees > 30:
             hemisphere = "Northern"
         elif self.dec_degrees < -30:
             hemisphere = "Southern"
         else:
             hemisphere = "Equatorial"
 
-        # Use mythology as description, or empty string
-        description = self.mythology or ""
+        # Use stored description, or mythology as fallback, or empty string
+        description = self.description or self.mythology or ""
 
-        # Magnitude not stored in model - use 0.0 as placeholder
-        magnitude = 0.0
+        # Use stored magnitude, or 0.0 as placeholder
+        magnitude = self.magnitude if self.magnitude is not None else 0.0
+
+        # Get brightest star name from relationship
+        brightest_star_name = ""
+        if self.brightest_star:
+            brightest_star_name = self.brightest_star.common_name or self.brightest_star.name or ""
 
         return Constellation(
             name=self.name,
@@ -731,7 +775,7 @@ class ConstellationModel(Base):
             ra_hours=self.ra_hours,
             dec_degrees=self.dec_degrees,
             area_sq_deg=self.area_sq_deg or 0.0,
-            brightest_star=self.brightest_star or "",
+            brightest_star=brightest_star_name,
             magnitude=magnitude,
             season=self.season or "",
             hemisphere=hemisphere,

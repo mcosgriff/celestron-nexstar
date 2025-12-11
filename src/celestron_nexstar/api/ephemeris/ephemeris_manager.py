@@ -90,7 +90,7 @@ def _fetch_summaries(url: str) -> str:
         try:
             import certifi
 
-            verify = certifi.where()
+            verify: str | bool = certifi.where()
         except ImportError:
             # Fallback to system certificates
             verify = True

@@ -309,63 +309,63 @@ def get_radio_flux_107() -> float | None:
         if not data:
             return None
 
-            # Look for radio flux in the data
-            # The structure may vary, so we'll try multiple approaches
-            field_names = ("flux_107", "f107", "radio_flux")
-            for entry in data:
-                if isinstance(entry, dict):
-                    # Try common field names
-                    flux_107 = next((entry.get(field) for field in field_names if entry.get(field)), None)
-                    if flux_107:
-                        with contextlib.suppress(ValueError, TypeError):
-                            result = float(flux_107)
-                            _set_cache(cache_key, result)
-                            return result
+        # Look for radio flux in the data
+        # The structure may vary, so we'll try multiple approaches
+        field_names = ("flux_107", "f107", "radio_flux")
+        for entry in data:
+            if isinstance(entry, dict):
+                # Try common field names
+                flux_107 = next((entry.get(field) for field in field_names if entry.get(field)), None)
+                if flux_107:
+                    with contextlib.suppress(ValueError, TypeError):
+                        result = float(flux_107)
+                        _set_cache(cache_key, result)
+                        return result
 
-            # Try alternative endpoint for daily solar flux
-            # NOAA provides daily solar flux data
-            try:
-                flux_url = "https://services.swpc.noaa.gov/json/radio_flux/daily_flux.json"
-                flux_response = requests.get(flux_url, timeout=10)
-                if flux_response.status_code == 200:
-                    flux_data = flux_response.json()
-                    if flux_data and isinstance(flux_data, list):
-                        # Get the most recent entry
-                        def get_flux_entry_time(entry: dict[str, object]) -> datetime | None:
-                            """Extract datetime from flux entry."""
-                            time_str = entry.get("time_tag") or entry.get("date") or entry.get("time")
-                            if not time_str:
-                                return None
-                            with contextlib.suppress(ValueError, AttributeError):
-                                if isinstance(time_str, str):
-                                    return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+        # Try alternative endpoint for daily solar flux
+        # NOAA provides daily solar flux data
+        try:
+            flux_url = "https://services.swpc.noaa.gov/json/radio_flux/daily_flux.json"
+            flux_response = requests.get(flux_url, timeout=10)
+            if flux_response.status_code == 200:
+                flux_data = flux_response.json()
+                if flux_data and isinstance(flux_data, list):
+                    # Get the most recent entry
+                    def get_flux_entry_time(entry: dict[str, object]) -> datetime | None:
+                        """Extract datetime from flux entry."""
+                        time_str = entry.get("time_tag") or entry.get("date") or entry.get("time")
+                        if not time_str:
                             return None
+                        with contextlib.suppress(ValueError, AttributeError):
+                            if isinstance(time_str, str):
+                                return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                        return None
 
-                        # Filter entries with valid timestamps and get the latest
-                        entries_with_times = [
-                            (entry, time)
-                            for entry in flux_data
-                            if isinstance(entry, dict) and (time := get_flux_entry_time(entry)) is not None
-                        ]
-                        latest_entry_pair = max(entries_with_times, key=lambda x: x[1], default=None)
-                        latest_entry = latest_entry_pair[0] if latest_entry_pair else None
-                        if latest_entry:
-                            flux_value = (
-                                latest_entry.get("flux") or latest_entry.get("f107") or latest_entry.get("flux_107")
-                            )
-                            if flux_value:
-                                with contextlib.suppress(ValueError, TypeError):
-                                    result = float(flux_value)
-                                    _set_cache(cache_key, result)
-                                    return result
-            except (KeyError, IndexError, AttributeError):
-                # KeyError: missing keys in response
-                # IndexError: missing array indices
-                # AttributeError: missing attributes
-                pass
+                    # Filter entries with valid timestamps and get the latest
+                    entries_with_times = [
+                        (entry, time)
+                        for entry in flux_data
+                        if isinstance(entry, dict) and (time := get_flux_entry_time(entry)) is not None
+                    ]
+                    latest_entry_pair = max(entries_with_times, key=lambda x: x[1], default=None)
+                    latest_entry = latest_entry_pair[0] if latest_entry_pair else None
+                    if latest_entry:
+                        flux_value = (
+                            latest_entry.get("flux") or latest_entry.get("f107") or latest_entry.get("flux_107")
+                        )
+                        if flux_value:
+                            with contextlib.suppress(ValueError, TypeError):
+                                result = float(flux_value)
+                                _set_cache(cache_key, result)
+                                return result
+        except (KeyError, IndexError, AttributeError):
+            # KeyError: missing keys in response
+            # IndexError: missing array indices
+            # AttributeError: missing attributes
+            pass
 
-            # If not found, return None
-            return None
+        # If not found, return None
+        return None
     except (requests.RequestException, ValueError, TypeError, TimeoutError) as e:
         # requests.RequestException: HTTP/network errors
         # ValueError: invalid JSON or data format
@@ -417,7 +417,7 @@ def get_proton_flux_data() -> dict[str, float | None]:
                     with contextlib.suppress(ValueError, AttributeError):
                         if isinstance(time_str, str):
                             return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                        return None
+                    return None
 
                 # Filter entries with valid timestamps and get the latest
                 entries_with_times = [

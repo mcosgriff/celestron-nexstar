@@ -64,7 +64,7 @@ def sync_ephemeris_files(
     try:
         if list_files:
             console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]\n")
-            files = asyncio.run(list_ephemeris_files_from_naif())
+            files: list[dict[str, Any]] = list_ephemeris_files_from_naif()
 
             if not files:
                 console.print("[yellow]No ephemeris files found[/yellow]")
@@ -94,7 +94,7 @@ def sync_ephemeris_files(
             console.print(f"\n[dim]Total: {len(files)} files[/dim]")
         else:
             console.print("[cyan]Fetching ephemeris file information from NAIF...[/cyan]")
-            count = asyncio.run(sync_ephemeris_files_from_naif(force=force))
+            count: int = sync_ephemeris_files_from_naif(force=force)
             console.print(f"[green]✓[/green] Synced {count} ephemeris files to database")
     except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
         # RuntimeError: async/await errors, event loop errors
@@ -152,7 +152,11 @@ def populate_geometries() -> None:
         results: dict[str, int] = {}
 
         # Tables that need POINT geometry
-        model_classes = [
+        from typing import TypeVar, cast
+
+        ModelT = TypeVar("ModelT", bound=StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel)
+
+        model_classes: list[tuple[type[StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel], str]] = [
             (StarModel, "stars"),
             (DoubleStarModel, "double_stars"),
             (GalaxyModel, "galaxies"),
@@ -184,10 +188,11 @@ def populate_geometries() -> None:
                 # Find objects with RA/Dec but no geometry
                 # Query just the IDs first to avoid GeoAlchemy2 trying to use AsEWKB on geometry column
                 # before SpatiaLite is loaded
-                stmt_ids = select(model_class.id).where(
-                    model_class.ra_hours.isnot(None),
-                    model_class.dec_degrees.isnot(None),
-                    model_class.geometry.is_(None),
+                # Type ignore: model_class is a union type, but select() needs a specific type
+                stmt_ids = select(model_class.id).where(  # type: ignore[arg-type]
+                    model_class.ra_hours.isnot(None),  # type: ignore[attr-defined]
+                    model_class.dec_degrees.isnot(None),  # type: ignore[attr-defined]
+                    model_class.geometry.is_(None),  # type: ignore[attr-defined]
                 )
                 result_ids = session.execute(stmt_ids)
                 ids = [row[0] for row in result_ids.all()]
@@ -200,10 +205,11 @@ def populate_geometries() -> None:
                 # Batch IDs to avoid SQLite's parameter limit (999)
                 # Load objects in batches
                 batch_size = 500
-                objects = []
+                objects: list[StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel] = []
                 for i in range(0, len(ids), batch_size):
                     batch_ids = ids[i : i + batch_size]
-                    stmt = select(model_class).where(model_class.id.in_(batch_ids))
+                    # Type ignore: model_class is a union type, but select() needs a specific type
+                    stmt = select(model_class).where(model_class.id.in_(batch_ids))  # type: ignore[arg-type]
                     result = session.execute(stmt)
                     objects.extend(result.scalars().all())
 
@@ -376,7 +382,10 @@ def update_star_names() -> None:
 
                     # Repopulate FTS table to include the new common names
                     console.print("[dim]Updating search index...[/dim]")
-                    await db.repopulate_fts_table()
+                    # Note: repopulate_fts_table is synchronous, but we're in an async context
+                    # We need to run it in a thread pool to avoid blocking
+                    import asyncio
+                    await asyncio.to_thread(db.repopulate_fts_table)
                     console.print("[green]✓[/green] Search index updated")
                 else:
                     console.print("[yellow]⚠[/yellow] No objects needed updating")
@@ -436,7 +445,7 @@ def rebuild_fts() -> None:
         import asyncio
 
         db = get_database()
-        asyncio.run(db.repopulate_fts_table())
+        db.repopulate_fts_table()
 
         # Get count of indexed objects
         from sqlalchemy import func, select, text
@@ -1043,7 +1052,7 @@ def seed_database(
                 async with get_db_session() as db_session:
                     return await get_seed_status(db_session)
 
-            status_data = asyncio.run(_get_status())
+            status_data: dict[str, int] = asyncio.run(_get_status())
 
             # Create a table to display status
             from rich.table import Table
@@ -1154,7 +1163,7 @@ def seed_database(
             async with get_db_session() as db_session:
                 return await seed_all(db_session, force=force)
 
-        results = asyncio.run(_seed_all())
+        results: dict[str, int] = asyncio.run(_seed_all())
 
         # Display results
         total_added = sum(results.values())
