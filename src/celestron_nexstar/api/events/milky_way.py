@@ -458,9 +458,9 @@ def check_milky_way_visibility(
                         logger.debug(f"Using current cloud cover: {cloud_cover:.1f}%")
 
             if moon_illumination is None or moon_altitude is None:
-                if isinstance(moon_info, Exception):
-                    logger.warning(f"Could not fetch moon info: {moon_info}")
-                elif moon_info is not None:
+                if moon_info is None:
+                    logger.debug("Could not fetch moon info (returned None)")
+                else:
                     if moon_illumination is None:
                         moon_illumination = moon_info.illumination
                     if moon_altitude is None:

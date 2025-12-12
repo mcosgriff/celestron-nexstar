@@ -655,3 +655,10 @@ class AlignmentAssistantDialog(QDialog):
         except Exception as e:
             logger.error(f"Error going to object: {e}", exc_info=True)
             QMessageBox.critical(self, "Goto Error", f"Error slewing telescope: {e}")
+
+    def _on_goto_complete(self, success: bool, object_name: str) -> None:
+        """Handle goto completion."""
+        if success:
+            QMessageBox.information(self, "Goto Complete", f"Arrived at {object_name}.")
+        else:
+            QMessageBox.warning(self, "Goto Failed", f"Failed to go to {object_name}.")

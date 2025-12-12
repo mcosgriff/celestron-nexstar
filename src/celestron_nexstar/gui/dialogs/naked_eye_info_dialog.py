@@ -172,9 +172,9 @@ class NakedEyeInfoDialog(QDialog):
                 f"<p style='color: {colors['text_dim']};'>Sunset: {sunset_str} | Sunrise: {sunrise_str}</p>"
             )
 
-            # Load async content using safe async runner
-            async def _load_async_content() -> list[str]:
-                """Load all async content."""
+            # Load content (synchronous; kept as a nested function for readability)
+            def _load_async_content() -> list[str]:
+                """Load all content."""
                 content_parts = []
 
                 # ISS Passes

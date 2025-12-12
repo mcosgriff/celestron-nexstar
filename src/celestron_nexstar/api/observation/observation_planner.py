@@ -7,7 +7,6 @@ capabilities to recommend what to observe tonight.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -32,6 +31,7 @@ from celestron_nexstar.api.location.weather import (
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
+    fetch_hourly_weather_forecast,
     fetch_weather,
 )
 from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude, get_current_configuration
@@ -201,25 +201,18 @@ class ObservationPlanner:
         target_weather_time: datetime | None = None
         sunset: datetime | None = None
 
-        # Check if it's dark (after sunset, before sunrise)
-        is_dark = False
+        # Check if it's dark.
+        # IMPORTANT: get_sun_info returns the *next* sunrise and *next* sunset; using those directly
+        # to decide darkness can be wrong at night (after sunset but before sunrise).
+        # Instead, use the sun's current altitude (is_daytime) at "now".
+        is_dark = True
         try:
-            from celestron_nexstar.api.astronomy.sun_moon import calculate_sun_times
+            from celestron_nexstar.api.astronomy.solar_system import get_sun_info
 
-            sun_times = calculate_sun_times(lat, lon, start_time)
-            sunset = sun_times.get("sunset")
-            sunrise = sun_times.get("sunrise")
-
-            if sunset and sunrise:
-                sunset_utc = sunset.replace(tzinfo=UTC) if sunset.tzinfo is None else sunset.astimezone(UTC)
-                sunrise_utc = sunrise.replace(tzinfo=UTC) if sunrise.tzinfo is None else sunrise.astimezone(UTC)
-                if sunrise_utc < sunset_utc:
-                    sunrise_utc = sunrise_utc + timedelta(days=1)
-
-                if sunset_utc <= sunrise_utc:
-                    is_dark = sunset_utc <= now_utc <= sunrise_utc
-                else:
-                    is_dark = now_utc >= sunset_utc or now_utc <= sunrise_utc
+            sun_info = get_sun_info(lat, lon, now_utc)
+            if sun_info is not None:
+                is_dark = not sun_info.is_daytime
+                sunset = sun_info.sunset_time
         except Exception:
             is_dark = True  # Assume dark if we can't determine
 
@@ -240,20 +233,21 @@ class ObservationPlanner:
             if time_diff_hours <= 1.0:
                 use_current_weather = True
 
-        # Try to get weather from database first (if after sunset and checking for "now")
-        # Otherwise, use hourly forecast
+        # Try to use current weather (cached / API) when checking for "now".
+        # Otherwise, use hourly forecast.
         weather = None
         if use_current_weather:
-            # Check database for current weather first, then API if needed
             # fetch_weather already checks database and stores if missing
-            with contextlib.suppress(Exception):
+            # Keep behavior consistent with WeatherInfoDialog (which calls fetch_weather directly).
+            try:
                 weather = fetch_weather(observer_location)
+            except Exception as e:
+                logger.debug(f"Could not fetch current weather for conditions: {e}", exc_info=True)
+                weather = None
 
         # If not using current weather, try hourly forecast
         if weather is None and target_weather_time:
             try:
-                from celestron_nexstar.api.location.weather import WeatherData, fetch_hourly_weather_forecast
-
                 hours_ahead = max(24, int((target_weather_time - now_utc).total_seconds() / 3600) + 2)
                 hourly_forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(
                     observer_location, hours=hours_ahead

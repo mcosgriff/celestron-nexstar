@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid  # type: ignore[import-untyped]
 
 
 if TYPE_CHECKING:
@@ -98,7 +99,7 @@ class MapGenerationWorkerThread(QThread):
                 return
 
             from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
-            from starplot.styles import PlotStyle, extensions
+            from starplot.styles import PlotStyle, extensions  # type: ignore[import-untyped]
 
             # Get ephemeris file path (use downloaded ephemeris if available)
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
@@ -393,6 +394,55 @@ class StarVisibilityWorkerThread(QThread):
 class ConstellationInfoDialog(QDialog):
     """Dialog to display detailed information about a constellation and its stars."""
 
+    _star_visibility_thread: StarVisibilityWorkerThread | None
+    _map_generation_thread: MapGenerationWorkerThread | None
+    _map_image_data: bytes | None
+    _constellation_data: dict[str, Any] | None
+    _boundaries: dict[str, float] | None
+
+    def _safe_stop_thread(self, thread: QThread | None) -> None:
+        """Best-effort stop/cleanup for QThreads, resilient to already-deleted C++ objects."""
+        if thread is None:
+            return
+        try:
+            if not isValid(thread):
+                return
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.wait(3000)
+                if thread.isRunning():
+                    thread.terminate()
+                    thread.wait(1000)
+            # Schedule deletion in the Qt event loop (safe when still valid)
+            thread.deleteLater()
+        except RuntimeError:
+            # Underlying C++ object already deleted.
+            return
+
+    def _on_map_thread_finished(self) -> None:
+        """Cleanup handler for map generation thread."""
+        sender_obj = self.sender()
+        if isinstance(sender_obj, QThread):
+            if self._map_generation_thread is sender_obj:
+                self._map_generation_thread = None
+            try:
+                if isValid(sender_obj):
+                    sender_obj.deleteLater()
+            except RuntimeError:
+                pass
+
+    def _on_star_thread_finished(self) -> None:
+        """Cleanup handler for star visibility thread."""
+        sender_obj = self.sender()
+        if isinstance(sender_obj, QThread):
+            if self._star_visibility_thread is sender_obj:
+                self._star_visibility_thread = None
+            try:
+                if isValid(sender_obj):
+                    sender_obj.deleteLater()
+            except RuntimeError:
+                pass
+
     def __init__(self, parent: QWidget | None, constellation_name: str) -> None:
         """Initialize the constellation info dialog."""
         super().__init__(parent)
@@ -403,13 +453,11 @@ class ConstellationInfoDialog(QDialog):
 
         self.constellation_name = constellation_name
         self.svg_path: Path | None = None  # Store SVG path for double-click viewing
-        self._star_visibility_thread: StarVisibilityWorkerThread | None = None
-        self._map_generation_thread: MapGenerationWorkerThread | None = None
-        self._map_image_data: bytes | None = None
-        self._constellation_data: dict[str, Any] | None = None
-        self._boundaries: dict[str, float] | None = None
-        self._map_generation_thread: MapGenerationWorkerThread | None = None
-        self._map_image_data: bytes | None = None
+        self._star_visibility_thread = None
+        self._map_generation_thread = None
+        self._map_image_data = None
+        self._constellation_data = None
+        self._boundaries = None
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -508,6 +556,8 @@ class ConstellationInfoDialog(QDialog):
                 result = session.execute(stmt)
                 constellation_model = result.scalar_one_or_none()
 
+                constellation_data: dict[str, Any] = {}
+                boundaries: dict[str, float] | None = None
                 if not constellation_model:
                     constellation_data, boundaries = {}, None
                 else:
@@ -558,41 +608,28 @@ class ConstellationInfoDialog(QDialog):
 
             # Clean up any existing map generation thread
             if self._map_generation_thread is not None:
-                if self._map_generation_thread.isRunning():
-                    self._map_generation_thread.requestInterruption()
-                    self._map_generation_thread.wait(3000)
-                    if self._map_generation_thread.isRunning():
-                        self._map_generation_thread.terminate()
-                        self._map_generation_thread.wait(1000)
-                self._map_generation_thread.deleteLater()
+                self._safe_stop_thread(self._map_generation_thread)
+                self._map_generation_thread = None
 
             # Start background thread to generate map
             if boundaries:
-                self._map_generation_thread = MapGenerationWorkerThread(boundaries, self._is_dark_theme())
-                self._map_generation_thread.map_ready.connect(self._on_map_ready, Qt.ConnectionType.QueuedConnection)
-                self._map_generation_thread.finished.connect(
-                    lambda: self._map_generation_thread.deleteLater() if self._map_generation_thread else None
-                )
-                self._map_generation_thread.start()
+                map_thread = MapGenerationWorkerThread(boundaries, self._is_dark_theme())
+                self._map_generation_thread = map_thread
+                map_thread.map_ready.connect(self._on_map_ready, Qt.ConnectionType.QueuedConnection)
+                map_thread.finished.connect(self._on_map_thread_finished)
+                map_thread.start()
 
             # Clean up any existing star visibility thread
             if self._star_visibility_thread is not None:
-                if self._star_visibility_thread.isRunning():
-                    self._star_visibility_thread.requestInterruption()
-                    self._star_visibility_thread.wait(3000)
-                    if self._star_visibility_thread.isRunning():
-                        self._star_visibility_thread.terminate()
-                        self._star_visibility_thread.wait(1000)
-                self._star_visibility_thread.deleteLater()
+                self._safe_stop_thread(self._star_visibility_thread)
+                self._star_visibility_thread = None
 
             # Start background thread to calculate star visibility
             self._star_visibility_thread = StarVisibilityWorkerThread(
                 self.constellation_name, constellation_data, boundaries
             )
             self._star_visibility_thread.stars_ready.connect(self._on_stars_ready, Qt.ConnectionType.QueuedConnection)
-            self._star_visibility_thread.finished.connect(
-                lambda: self._star_visibility_thread.deleteLater() if self._star_visibility_thread else None
-            )
+            self._star_visibility_thread.finished.connect(self._on_star_thread_finished)
             self._star_visibility_thread.start()
 
         except Exception as e:

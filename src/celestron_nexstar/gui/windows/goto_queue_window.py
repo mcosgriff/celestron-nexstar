@@ -525,6 +525,12 @@ class GotoQueueWindow(QMainWindow):
         self._update_queue_table()
         self._update_status()
 
+    def _on_goto_error(self, error: str, display_name: str) -> None:
+        """Handle goto error from worker thread."""
+        logger.error(f"Goto error while slewing to {display_name}: {error}")
+        QMessageBox.warning(self, "Slew Failed", f"Failed to slew to {display_name}: {error}")
+        self._advance_to_next()
+
     def _check_slew_completion(self) -> None:
         """Check if current slew is complete."""
         if not self.telescope:

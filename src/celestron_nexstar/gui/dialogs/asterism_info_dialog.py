@@ -167,7 +167,7 @@ class AsterismInfoDialog(QDialog):
                 def _generate_map() -> bytes | None:
                     try:
                         from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
-                        from starplot.styles import PlotStyle, extensions
+                        from starplot.styles import PlotStyle, extensions  # type: ignore[import-untyped]
 
                         # Get ephemeris file path (use downloaded ephemeris if available)
                         from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory

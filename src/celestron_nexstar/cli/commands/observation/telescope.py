@@ -1198,7 +1198,6 @@ def show_timeline(
 
 def _show_timeline_content(output_console: Console | FileConsole, object_name: str, days: int) -> None:
     """Display timeline content."""
-    import asyncio
 
     async def get_obj() -> CelestialObject | None:
         objects = await get_object_by_name(object_name)
@@ -1290,7 +1289,6 @@ def show_difficulty(
     object_name: str = typer.Argument(..., help="Object name (e.g., M31, Jupiter, Vega)"),
 ) -> None:
     """Show object difficulty rating."""
-    import asyncio
 
     async def get_obj() -> CelestialObject | None:
         objects = await get_object_by_name(object_name)
@@ -1362,15 +1360,8 @@ def show_quick_reference(
     from celestron_nexstar.cli.utils.export import create_file_console, export_to_text
 
     # Get popular objects from database
-    async def get_objects() -> list[CelestialObject]:
-        db = get_database()
-        # Use filter_objects to get a variety of objects
-        objects = await db.filter_objects(limit=limit)
-        return objects
-
-    import asyncio
-
-    objects = asyncio.run(get_objects())
+    db = get_database()
+    objects: list[CelestialObject] = db.filter_objects(limit=limit)
 
     reference = generate_quick_reference(objects)
 
@@ -1432,15 +1423,8 @@ def show_transit_times(
         console.print("[red]Error: No observer location set.[/red]")
         return
 
-    async def get_objects() -> list[CelestialObject]:
-        db = get_database()
-        # Use filter_objects to get a variety of objects
-        objects = await db.filter_objects(limit=limit * 2)  # Get more to filter
-        return objects
-
-    import asyncio
-
-    all_objects = asyncio.run(get_objects())
+    db = get_database()
+    all_objects: list[CelestialObject] = db.filter_objects(limit=limit * 2)  # Get more to filter
 
     transit_times = get_transit_times(all_objects[:limit], location.latitude, location.longitude)
 
@@ -1593,8 +1577,8 @@ def show_time_slots(
         # Move to next interval
         current += timedelta(hours=interval)
 
-    recommendations = asyncio.run(
-        get_time_based_recommendations(time_slots, location.latitude, location.longitude, "telescope")
+    recommendations: dict[datetime, list[CelestialObject]] = get_time_based_recommendations(
+        time_slots, location.latitude, location.longitude, "telescope"
     )
 
     console.print("\n[bold cyan]Time-Based Recommendations[/bold cyan]\n")

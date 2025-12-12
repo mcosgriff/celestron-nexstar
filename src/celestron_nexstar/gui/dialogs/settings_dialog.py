@@ -669,7 +669,7 @@ class SettingsDialog(QDialog):
                 # Import button
                 import_btn = QPushButton("Import")
                 import_btn.setFixedWidth(80)
-                import_btn.setEnabled(filename and cache_path.exists())
+                import_btn.setEnabled(bool(filename and cache_path.exists()))
                 import_btn.clicked.connect(lambda checked, sid=source_id: self._on_import_celestial_data(sid))
                 table.setCellWidget(row, 5, import_btn)
 
@@ -1456,19 +1456,6 @@ class SettingsDialog(QDialog):
         """Handle celestial data import status message (show toast notification)."""
         self._show_toast(message, duration_ms=3000)
 
-    def _is_dark_theme(self) -> bool:
-        """Detect if the current theme is dark mode."""
-        from PySide6.QtGui import QGuiApplication, QPalette
-
-        app = QGuiApplication.instance()
-        if app and isinstance(app, QGuiApplication):
-            # Check palette brightness
-            palette = app.palette()
-            window_color = palette.color(QPalette.ColorRole.Window)
-            brightness = window_color.lightness()
-            return bool(brightness < 128)
-        return False
-
     def _show_toast(self, message: str, duration_ms: int = 2000, preset: str | None = None) -> None:
         """Show a temporary toast notification using pyqt-toast-notification.
 
@@ -1479,7 +1466,7 @@ class SettingsDialog(QDialog):
                     If None, auto-detects from message content.
         """
         try:
-            from pyqttoast import Toast, ToastPreset
+            from pyqttoast import Toast, ToastPreset  # type: ignore[import-untyped]
 
             # Auto-detect preset from message if not provided
             if preset is None:
@@ -1567,27 +1554,21 @@ class SettingsDialog(QDialog):
                     # Position toast manually after it's shown at top right of screen
                     def position_toast() -> None:
                         if toast.isVisible():
-                            from PySide6.QtWidgets import QApplication
+                            from PySide6.QtGui import QGuiApplication
 
                             # Ensure toast has valid geometry
                             toast.adjustSize()
                             toast_width = toast.width()
 
                             # Get primary screen geometry
-                            app = QApplication.instance()
-                            if app:
-                                screen = app.primaryScreen()
-                                if screen:
-                                    screen_geometry = screen.availableGeometry()
-                                    # Position at top right of screen
-                                    x = screen_geometry.right() - toast_width - 20  # 20px from right edge
-                                    y = screen_geometry.top() + 20  # 20px from top
-                                else:
-                                    # Fallback if no screen
-                                    x = 800 - toast_width - 20
-                                    y = 20
+                            screen = QGuiApplication.primaryScreen()
+                            if screen:
+                                screen_geometry = screen.availableGeometry()
+                                # Position at top right of screen
+                                x = screen_geometry.right() - toast_width - 20  # 20px from right edge
+                                y = screen_geometry.top() + 20  # 20px from top
                             else:
-                                # Fallback if no app
+                                # Fallback if no screen
                                 x = 800 - toast_width - 20
                                 y = 20
 

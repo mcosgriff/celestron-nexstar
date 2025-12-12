@@ -4,7 +4,7 @@ GPS Information Dialog
 Shows GPS information from telescope or user-set location.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -128,13 +128,13 @@ class GPSInfoDialog(QDialog):
         # No telescope, use user location
         self._update_gps_display(None, None, "User Configuration", "Using configured location", "info", source_label)
 
-    def _on_location_ready(self, location_result, source_label: QLabel) -> None:
+    def _on_location_ready(self, location_result: Any, source_label: QLabel) -> None:
         """Handle location ready from worker thread."""
         if location_result:
-            lat = location_result.latitude
-            lon = location_result.longitude
+            lat = getattr(location_result, "latitude", None)
+            lon = getattr(location_result, "longitude", None)
             # Check if GPS coordinates are valid (not 0,0)
-            if lat != 0.0 and lon != 0.0:
+            if isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and lat != 0.0 and lon != 0.0:
                 self._update_gps_display(lat, lon, "Telescope GPS", "GPS Active", "active", source_label)
             else:
                 self._update_gps_display(None, None, "Telescope GPS", "GPS Searching", "warning", source_label)

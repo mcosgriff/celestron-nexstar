@@ -789,12 +789,9 @@ def check_aurora_visibility(
                         logger.debug(f"Using current cloud cover: {cloud_cover:.1f}%")
 
             if moon_illumination is None:
-                # moon_info can be Exception | MoonInfo | None due to return_exceptions=True
-                # Mypy has trouble with type narrowing here, so we use explicit checks
-                if isinstance(moon_info, Exception):
-                    logger.warning(f"Could not fetch moon info: {moon_info}")
-                elif moon_info is not None:
-                    # moon_info is MoonInfo here
+                if moon_info is None:
+                    logger.debug("Could not fetch moon info (returned None)")
+                else:
                     moon_illumination = moon_info.illumination
                     logger.debug(f"Using current moon phase: {moon_illumination * 100:.1f}%")
 
