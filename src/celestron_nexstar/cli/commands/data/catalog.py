@@ -4,7 +4,6 @@ Catalog Commands
 Commands for searching and managing celestial object catalogs.
 """
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -197,7 +196,7 @@ def _autocomplete_object_name(ctx: typer.Context, incomplete: str) -> list[str]:
     Returns names from the database that match the incomplete string.
     Case-insensitive matching and sorting.
     """
-    return asyncio.run(get_object_names_for_completion(prefix=incomplete, limit=50))
+    return get_object_names_for_completion(prefix=incomplete, limit=50)
 
 
 @app.command(rich_help_panel="Search & Browse")
@@ -221,7 +220,7 @@ def search(
 
         # Search for objects
         catalog_name = None if catalog == "all" else catalog
-        results = asyncio.run(search_objects(query, catalog_name))
+        results: list[tuple[CelestialObject, str]] = search_objects(query, catalog_name)
 
         if not results:
             print_info(f"No objects found matching '{query}'")
@@ -405,7 +404,7 @@ def list_catalog(
         # Validate catalog name if not "all"
         if catalog != "all":
             db = get_database()
-            available_catalogs = asyncio.run(db.get_all_catalogs())
+            available_catalogs: list[str] = db.get_all_catalogs()
             if catalog not in available_catalogs:
                 print_error(
                     f"Invalid catalog: '{catalog}'. Available catalogs: {', '.join(sorted(available_catalogs))}, 'all'"
@@ -418,7 +417,9 @@ def list_catalog(
         else:
             # Try to get from database first, fallback to YAML if not in database
             db = get_database()
-            db_objects = asyncio.run(db.get_by_catalog(catalog, limit=10000))  # Large limit to get all objects
+            db_objects: list[CelestialObject] = db.get_by_catalog(
+                catalog, limit=10000
+            )  # Large limit to get all objects
             objects = db_objects or get_catalog(catalog)
 
         # Filter by type if specified
@@ -572,7 +573,7 @@ def info(
         check_database_setup()
 
         # Get matching objects (fuzzy search)
-        matches = asyncio.run(get_object_by_name(object_name))
+        matches: list[CelestialObject] = get_object_by_name(object_name)
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
@@ -637,7 +638,7 @@ def info(
 
             if obj.object_type == CelestialObjectType.PLANET.value:
                 db = get_database()
-                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
+                moons: list[CelestialObject] = db.get_moons_by_parent_planet(obj.name)
                 if moons:
                     output_data["moons"] = [
                         {
@@ -759,11 +760,11 @@ def info(
 
             if obj.object_type == CelestialObjectType.PLANET.value:
                 db = get_database()
-                moons = asyncio.run(db.get_moons_by_parent_planet(obj.name))
-                if moons:
+                planet_moons: list[CelestialObject] = db.get_moons_by_parent_planet(obj.name)
+                if planet_moons:
                     info_text.append("\n")
                     info_text.append("Moons:\n", style="bold yellow")
-                    for moon in moons:
+                    for moon in planet_moons:
                         mag_str = f" (mag {moon.magnitude:.2f})" if moon.magnitude else ""
                         info_text.append(f"  • {moon.name}{mag_str}\n", style="white")
 
@@ -815,7 +816,7 @@ def goto(
         check_database_setup()
 
         # Look up objects (fuzzy search)
-        matches = asyncio.run(get_object_by_name(object_name))
+        matches: list[CelestialObject] = get_object_by_name(object_name)
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
@@ -857,7 +858,7 @@ def catalogs() -> None:
         check_database_setup()
 
         db = get_database()
-        stats = asyncio.run(db.get_stats())
+        stats = db.get_stats()
 
         table = Table(title="Available Catalogs", show_header=True, header_style="bold magenta")
         table.add_column("Catalog", style="cyan")
@@ -900,8 +901,8 @@ def catalogs() -> None:
 def _select_catalog_interactive() -> str | None:
     """Interactively select a catalog."""
     db = get_database()
-    stats = asyncio.run(db.get_stats())
-    available_catalogs = ["all", *asyncio.run(db.get_all_catalogs())]
+    stats = db.get_stats()
+    available_catalogs = ["all", *db.get_all_catalogs()]
 
     # Catalog descriptions
     descriptions = {

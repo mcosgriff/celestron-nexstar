@@ -101,7 +101,8 @@ class OpticPlotWindow(QDialog):
             self._loading_dialog.close()
             self._loading_dialog = None
 
-        self._loading_dialog = QProgressDialog("Generating optic plot...", None, 0, 0, self)
+        # NOTE: QProgressDialog overload expects a cancel button label string (even if we later hide it).
+        self._loading_dialog = QProgressDialog("Generating optic plot...", "", 0, 0, self)
         self._loading_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self._loading_dialog.setCancelButton(None)
         self._loading_dialog.setMinimumDuration(0)
@@ -256,9 +257,15 @@ class _PlotGenerationThread(QThread):
             logger.info("Starting optic plot generation...")
 
             from starplot import Observer, OpticPlot, _  # type: ignore[import-untyped]
-            from starplot.callables import color_by_bv
-            from starplot.models import DSO, Reflector, Refractor
-            from starplot.styles import MarkerStyle, MarkerSymbolEnum, ObjectStyle, PlotStyle, extensions
+            from starplot.callables import color_by_bv  # type: ignore[import-untyped]
+            from starplot.models import DSO, Reflector, Refractor  # type: ignore[import-untyped]
+            from starplot.styles import (  # type: ignore[import-untyped]
+                MarkerStyle,
+                MarkerSymbolEnum,
+                ObjectStyle,
+                PlotStyle,
+                extensions,
+            )
 
             # Get optical configuration
             from celestron_nexstar.api.observation.optics import get_current_configuration

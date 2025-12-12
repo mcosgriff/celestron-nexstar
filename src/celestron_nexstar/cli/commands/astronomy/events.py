@@ -6,10 +6,8 @@ Show upcoming space events and find best viewing locations.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import typer
 from click import Context
@@ -199,7 +197,7 @@ def show_viewing_recommendations(
     # Get location
     if location:
         try:
-            observer_location = asyncio.run(geocode_location(location))
+            observer_location: ObserverLocation = geocode_location(location)
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
             raise typer.Exit(1) from e
@@ -362,13 +360,10 @@ def _show_viewing_recommendation_content(
         output_console.print(f"  • Notes: {req.notes}")
 
     # Show current location conditions
-    async def _get_light_data() -> Any:
-        from celestron_nexstar.api.database.models import get_db_session
+    from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as db_session:
-            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
-
-    light_data = asyncio.run(_get_light_data())
+    with get_db_session() as db_session:
+        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
     output_console.print("\n[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²")
@@ -429,11 +424,8 @@ def fetch_rss_feeds(
             feed_source_name: str = source_name
             console.print(f"[cyan]Fetching custom RSS feed: {feed_source_name}...[/cyan]\n")
 
-            async def _fetch_custom() -> int:
-                async with get_db_session() as db_session:
-                    return await fetch_and_store_rss_feed(url, feed_source_name, db_session)
-
-            new_count = asyncio.run(_fetch_custom())
+            with get_db_session() as db_session:
+                new_count = fetch_and_store_rss_feed(url, feed_source_name, db_session)
             console.print(f"[green]✓[/green] Successfully fetched RSS feed from {feed_source_name}")
             console.print(f"[green]✓[/green] Added {new_count} new article(s) to database\n")
             return
@@ -448,11 +440,8 @@ def fetch_rss_feeds(
             feed_source = DEFAULT_RSS_FEEDS[source]
             console.print(f"[cyan]Fetching RSS feed: {feed_source.name}...[/cyan]\n")
 
-            async def _fetch_single() -> int:
-                async with get_db_session() as db_session:
-                    return await fetch_and_store_rss_feed(feed_source.url, feed_source.name, db_session)
-
-            new_count = asyncio.run(_fetch_single())
+            with get_db_session() as db_session:
+                new_count = fetch_and_store_rss_feed(feed_source.url, feed_source.name, db_session)
             console.print(f"[green]✓[/green] Successfully fetched RSS feed from {feed_source.name}")
             console.print(f"[green]✓[/green] Added {new_count} new article(s) to database\n")
             return
@@ -460,11 +449,8 @@ def fetch_rss_feeds(
         # Fetch all feeds
         console.print("[cyan]Fetching all RSS feeds...[/cyan]\n")
 
-        async def _fetch_all() -> dict[str, int]:
-            async with get_db_session() as db_session:
-                return await fetch_all_rss_feeds(DEFAULT_RSS_FEEDS, db_session)
-
-        results = asyncio.run(_fetch_all())
+        with get_db_session() as db_session:
+            results = fetch_all_rss_feeds(DEFAULT_RSS_FEEDS, db_session)
 
         # Display results
         console.print("[bold]Fetch Results:[/bold]\n")
@@ -546,8 +532,8 @@ def show_articles(
 
     try:
 
-        async def _get_articles() -> list[SkyAtAGlanceArticle]:
-            async with get_db_session() as db_session:
+        def _get_articles() -> list[SkyAtAGlanceArticle]:
+            with get_db_session() as db_session:
                 if days is not None:
                     # Use custom days
                     now = datetime.now(UTC)
@@ -564,7 +550,7 @@ def show_articles(
                         .order_by(RSSFeedModel.published_date.desc())
                     )
 
-                    result = await db_session.execute(stmt)
+                    result = db_session.execute(stmt)
                     models = result.scalars().all()
 
                     articles = []
@@ -587,11 +573,11 @@ def show_articles(
                 else:
                     match period.lower():
                         case "week":
-                            return await get_articles_this_week(db_session)
+                            return get_articles_this_week(db_session)
                         case _:
-                            return await get_articles_this_month(db_session)
+                            return get_articles_this_month(db_session)
 
-        articles = asyncio.run(_get_articles())
+        articles = _get_articles()
 
         # Filter by source if specified
         if source:
@@ -639,12 +625,8 @@ def show_article_viewing_recommendations(
 
     # Get article
     try:
-
-        async def _get_article() -> SkyAtAGlanceArticle | None:
-            async with get_db_session() as db_session:
-                return await get_article_by_title(article_title, db_session)
-
-        article = asyncio.run(_get_article())
+        with get_db_session() as db_session:
+            article = get_article_by_title(article_title, db_session)
 
         if article is None:
             console.print(f"[red]Error: No article found matching '{article_title}'[/red]")
@@ -660,7 +642,7 @@ def show_article_viewing_recommendations(
     # Get location
     if location:
         try:
-            observer_location = asyncio.run(geocode_location(location))
+            observer_location: ObserverLocation = geocode_location(location)
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
             raise typer.Exit(1) from e
@@ -778,13 +760,10 @@ def _show_article_viewing_recommendation_content(
     output_console.print(f"[bold]Your Location:[/bold] {location_name}\n")
 
     # Get current sky conditions
-    async def _get_light_data() -> Any:
-        from celestron_nexstar.api.database.models import get_db_session
+    from celestron_nexstar.api.database.models import get_db_session
 
-        async with get_db_session() as db_session:
-            return await get_light_pollution_data(db_session, location.latitude, location.longitude)
-
-    light_data = asyncio.run(_get_light_data())
+    with get_db_session() as db_session:
+        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
     output_console.print("[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²\n")

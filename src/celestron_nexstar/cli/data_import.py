@@ -692,6 +692,8 @@ def import_celestial_data_geojson(
                 # For DSO objects, update geometry from GeoJSON after insert
                 if "dso" in catalog.lower():
                     with db._get_session() as db_session:
+                        # Map object types to model classes
+
                         from sqlalchemy import select
 
                         from celestron_nexstar.api.database.models import (
@@ -699,9 +701,6 @@ def import_celestial_data_geojson(
                             GalaxyModel,
                             NebulaModel,
                         )
-
-                        # Map object types to model classes
-                        from typing import cast
 
                         type_to_model: dict[CelestialObjectType, type[GalaxyModel | NebulaModel | ClusterModel]] = {
                             CelestialObjectType.GALAXY: GalaxyModel,
@@ -714,11 +713,17 @@ def import_celestial_data_geojson(
                                 continue
 
                             try:
-                                obj_type: CelestialObjectType | str | None = obj.get("object_type")
-                                if isinstance(obj_type, str):
-                                    obj_type = CelestialObjectType(obj_type)
+                                obj_type_raw = obj.get("object_type")
+                                obj_type: CelestialObjectType | None = None
+                                if isinstance(obj_type_raw, str):
+                                    try:
+                                        obj_type = CelestialObjectType(obj_type_raw)
+                                    except (ValueError, TypeError):
+                                        continue
+                                elif isinstance(obj_type_raw, CelestialObjectType):
+                                    obj_type = obj_type_raw
 
-                                if not isinstance(obj_type, CelestialObjectType):
+                                if obj_type is None:
                                     continue
 
                                 model_class = type_to_model.get(obj_type)
@@ -726,9 +731,8 @@ def import_celestial_data_geojson(
                                     continue
 
                                 # Find the inserted object by name
-                                # Type ignore: model_class is a union of model types, but select() needs a specific type
                                 result = db_session.execute(
-                                    select(model_class).where(model_class.name == obj["name"]).limit(1)  # type: ignore[arg-type]
+                                    select(model_class).where(model_class.name == obj["name"]).limit(1)
                                 )
                                 model_obj = result.scalar_one_or_none()
 
@@ -739,7 +743,7 @@ def import_celestial_data_geojson(
                                     )
                                     if geometry_blob:
                                         # Type ignore: model_obj is a union type, but we know it has geometry attribute
-                                        model_obj.geometry = geometry_blob  # type: ignore[misc]
+                                        model_obj.geometry = geometry_blob  # type: ignore[attr-defined]
                                         db_session.commit()
                             except Exception as e:
                                 if verbose:
@@ -749,9 +753,7 @@ def import_celestial_data_geojson(
                                 db_session.rollback()
 
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                if use_rich_progress and task is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
-                elif progress_callback:
+                if progress_callback:
                     batch_num = (i // batch_size) + 1
                     progress_callback(f"Importing {catalog}...", batch_num, num_batches)
             except Exception as e:
@@ -759,9 +761,7 @@ def import_celestial_data_geojson(
                     console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
                 errors += len(batch)
                 # Still advance progress even on error
-                if use_rich_progress and task is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
-                elif progress_callback:
+                if progress_callback:
                     batch_num = (i // batch_size) + 1
                     progress_callback(f"Importing {catalog}...", batch_num, num_batches)
 
@@ -1078,7 +1078,6 @@ def import_celestial_stars(
     # Use progress callback if provided, otherwise use Rich Progress
     use_rich_progress = progress_callback is None
     progress_obj = None
-    task = None
     if use_rich_progress:
         progress_obj = Progress(
             SpinnerColumn(),
@@ -1089,7 +1088,7 @@ def import_celestial_stars(
             console=console,
         )
         progress_obj.__enter__()
-        task = progress_obj.add_task(f"Processing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
+        progress_obj.add_task(f"Processing celestial_stars (mag ≤ {mag_limit})...", total=total_features)
     else:
         # Emit initial progress via callback
         if progress_callback:
@@ -1105,9 +1104,7 @@ def import_celestial_stars(
                 if not coords or len(coords) < 2:
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
-                    elif progress_callback:
+                    if progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing celestial_stars...", processed, total_features)
                     continue
@@ -1185,9 +1182,7 @@ def import_celestial_stars(
                 if magnitude is not None and magnitude > mag_limit:
                     skipped += 1
                     # Update progress
-                    if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
-                    elif progress_callback:
+                    if progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing celestial_stars...", processed, total_features)
                     continue
@@ -1245,10 +1240,7 @@ def import_celestial_stars(
                     console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
             # Update progress
-            if use_rich_progress and task is not None:
-                if progress_obj is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
-            elif progress_callback:
+            if progress_callback:
                 processed = len(all_objects) + skipped + errors
                 progress_callback("Processing celestial_stars...", processed, total_features)
 
@@ -1292,7 +1284,7 @@ def import_celestial_stars(
             console=console,
         )
         progress_obj.__enter__()
-        task = progress_obj.add_task("Importing celestial_stars...", total=num_batches)
+        progress_obj.add_task("Importing celestial_stars...", total=num_batches)
     else:
         # Emit initial import progress via callback
         if progress_callback:
@@ -1304,9 +1296,7 @@ def import_celestial_stars(
                 batch_imported = db.insert_objects_batch(batch)
                 imported += batch_imported
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                if use_rich_progress and task is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
-                elif progress_callback:
+                if progress_callback:
                     batch_num = (i // batch_size) + 1
                     progress_callback("Importing celestial_stars...", batch_num, num_batches)
             except Exception as e:
@@ -1314,9 +1304,7 @@ def import_celestial_stars(
                     console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
                 errors += len(batch)
                 # Still advance progress even on error
-                if use_rich_progress and task is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
-                elif progress_callback:
+                if progress_callback:
                     batch_num = (i // batch_size) + 1
                     progress_callback("Importing celestial_stars...", batch_num, num_batches)
 
@@ -2371,12 +2359,12 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
             # Convert geometries to SpatiaLite format before batch insert
             console.print("[dim]Converting geometries to SpatiaLite format...[/dim]")
             for asterism in deduplicated_asterisms:
-                if hasattr(asterism, "_temp_geometry") and asterism._temp_geometry:  # type: ignore[attr-defined]
-                    geometry_blob = geojson_to_spatialite_geometry_async(asterism._temp_geometry, db_session)  # type: ignore[attr-defined]
+                if hasattr(asterism, "_temp_geometry") and asterism._temp_geometry:
+                    geometry_blob = geojson_to_spatialite_geometry_async(asterism._temp_geometry, db_session)
                     if geometry_blob:
                         asterism.geometry = geometry_blob
                     # Clean up temp attribute
-                    delattr(asterism, "_temp_geometry")  # type: ignore[attr-defined]
+                    delattr(asterism, "_temp_geometry")
 
             # Batch insert deduplicated asterisms
             batch_size = 100
@@ -2605,7 +2593,7 @@ def import_wds_catalog(
                 if not wds_designation or wds_designation.startswith("#") or "WDS" in wds_designation.upper():
                     # Update progress
                     if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
+                        progress_obj.advance(task)
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing WDS catalog...", processed, total_lines)
@@ -2625,7 +2613,7 @@ def import_wds_catalog(
                     skipped += 1
                     # Update progress
                     if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
+                        progress_obj.advance(task)
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing WDS catalog...", processed, total_lines)
@@ -2674,7 +2662,7 @@ def import_wds_catalog(
                     skipped += 1
                     # Update progress
                     if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
+                        progress_obj.advance(task)
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing WDS catalog...", processed, total_lines)
@@ -2705,7 +2693,7 @@ def import_wds_catalog(
                     skipped += 1
                     # Update progress
                     if use_rich_progress and task is not None and progress_obj is not None:
-                        progress_obj.advance(task)  # type: ignore[union-attr]
+                        progress_obj.advance(task)
                     elif progress_callback:
                         processed = len(all_objects) + skipped + errors
                         progress_callback("Processing WDS catalog...", processed, total_lines)
@@ -2832,7 +2820,7 @@ def import_wds_catalog(
             # Update progress
             if use_rich_progress and task is not None:
                 if progress_obj is not None:
-                    progress_obj.advance(task)  # type: ignore[union-attr]
+                    progress_obj.advance(task)
             elif progress_callback:
                 batch_num = (i // batch_size) + 1
                 progress_callback("Importing WDS catalog...", batch_num, num_batches)

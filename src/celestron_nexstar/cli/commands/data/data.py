@@ -55,7 +55,6 @@ def sync_ephemeris_files(
         nexstar data sync-ephemeris --force
         nexstar data sync-ephemeris --list
     """
-    import asyncio
 
     from rich.table import Table
 
@@ -152,11 +151,13 @@ def populate_geometries() -> None:
         results: dict[str, int] = {}
 
         # Tables that need POINT geometry
-        from typing import TypeVar, cast
+        from typing import TypeVar
 
-        ModelT = TypeVar("ModelT", bound=StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel)
+        TypeVar("ModelT", bound=StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel)
 
-        model_classes: list[tuple[type[StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel], str]] = [
+        model_classes: list[
+            tuple[type[StarModel | DoubleStarModel | GalaxyModel | NebulaModel | ClusterModel], str]
+        ] = [
             (StarModel, "stars"),
             (DoubleStarModel, "double_stars"),
             (GalaxyModel, "galaxies"),
@@ -211,7 +212,7 @@ def populate_geometries() -> None:
                     # Type ignore: model_class is a union type, but select() needs a specific type
                     stmt = select(model_class).where(model_class.id.in_(batch_ids))  # type: ignore[arg-type]
                     result = session.execute(stmt)
-                    objects.extend(result.scalars().all())
+                    objects.extend(result.scalars().all())  # type: ignore[arg-type]
 
                 if not objects:
                     console.print(f"  [dim]No {table_name} need geometry updates[/dim]")
@@ -300,13 +301,13 @@ def update_star_names() -> None:
 
     try:
 
-        async def _update_star_names() -> None:
+        def _update_star_names() -> None:
             from sqlalchemy import select
 
-            async with db._AsyncSession() as session:
+            with db._get_session() as session:
                 # Get all star name mappings for lookup
                 all_mappings_stmt = select(StarNameMappingModel)
-                mappings_result = await session.execute(all_mappings_stmt)
+                mappings_result = session.execute(all_mappings_stmt)
                 all_mappings = mappings_result.scalars().all()
 
                 # Create lookup dictionaries
@@ -326,7 +327,7 @@ def update_star_names() -> None:
                     StarModel.name.like("HR %"),
                     (StarModel.common_name.is_(None)) | (StarModel.common_name == ""),
                 )
-                hr_result = await session.execute(hr_stars_stmt)
+                hr_result = session.execute(hr_stars_stmt)
                 hr_stars = hr_result.scalars().all()
 
                 console.print(f"[dim]Found {len(hr_stars)} stars with HR numbers but no common names[/dim]")
@@ -360,7 +361,7 @@ def update_star_names() -> None:
                         )
                         .limit(10000)
                     )  # Check first 10k to avoid memory issues
-                    sample_result = await session.execute(sample_stmt)
+                    sample_result = session.execute(sample_stmt)
                     sample_stars = sample_result.scalars().all()
 
                     name_matched = 0
@@ -377,15 +378,12 @@ def update_star_names() -> None:
                         console.print(f"[dim]Matched {name_matched} stars by name in sample[/dim]")
 
                 if updated > 0:
-                    await session.commit()
+                    session.commit()
                     console.print(f"[green]✓[/green] Updated {updated} objects with common names")
 
                     # Repopulate FTS table to include the new common names
                     console.print("[dim]Updating search index...[/dim]")
-                    # Note: repopulate_fts_table is synchronous, but we're in an async context
-                    # We need to run it in a thread pool to avoid blocking
-                    import asyncio
-                    await asyncio.to_thread(db.repopulate_fts_table)
+                    db.repopulate_fts_table()
                     console.print("[green]✓[/green] Search index updated")
                 else:
                     console.print("[yellow]⚠[/yellow] No objects needed updating")
@@ -396,7 +394,7 @@ def update_star_names() -> None:
                         "common names that match mappings can be updated.[/dim]"
                     )
 
-        asyncio.run(_update_star_names())
+        _update_star_names()
 
         console.print("\n[bold green]✓ Star names updated![/bold green]\n")
     except (
@@ -442,8 +440,6 @@ def rebuild_fts() -> None:
     console.print("[cyan]Rebuilding FTS5 search index...[/cyan]\n")
 
     try:
-        import asyncio
-
         db = get_database()
         db.repopulate_fts_table()
 
@@ -460,12 +456,12 @@ def rebuild_fts() -> None:
             StarModel,
         )
 
-        async def _get_counts() -> tuple[int, int]:
-            async with db._AsyncSession() as session:
+        def _get_counts() -> tuple[int, int]:
+            with db._get_session() as session:
                 # FTS5 table requires raw SQL (virtual table) - may not exist if using split schema
                 fts_count = 0
                 try:
-                    fts_result = await session.execute(text("SELECT COUNT(*) FROM objects_fts"))
+                    fts_result = session.execute(text("SELECT COUNT(*) FROM objects_fts"))
                     fts_count = fts_result.scalar() or 0
                 except Exception:
                     # FTS table doesn't exist (using split schema) - that's okay
@@ -482,12 +478,12 @@ def rebuild_fts() -> None:
                     PlanetModel,
                     MoonModel,
                 ]:
-                    result = await session.scalar(select(func.count(model_class.id)))
+                    result = session.scalar(select(func.count(model_class.id)))  # type: ignore[attr-defined]
                     total_count += result or 0
 
                 return fts_count, total_count
 
-        fts_count, objects_count = asyncio.run(_get_counts())
+        fts_count, objects_count = _get_counts()
 
         console.print("[green]✓[/green] FTS index rebuilt successfully")
         console.print(f"[dim]  Indexed {fts_count:,} objects out of {objects_count:,} total[/dim]\n")
@@ -614,16 +610,14 @@ def setup(
     # Check if database exists and has data
     if db.db_path.exists():
         try:
-            import asyncio
-
             from sqlalchemy import text
 
-            async def _check_tables() -> set[str]:
-                async with db._engine.begin() as conn:
-                    result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            def _check_tables() -> set[str]:
+                with db._get_session() as session:
+                    result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
                     return {row[0] for row in result.fetchall()}
 
-            existing_tables = asyncio.run(_check_tables())
+            existing_tables = _check_tables()
 
             # Check for new type-specific tables (after refactor)
             required_tables = ["stars", "planets", "moons", "galaxies", "nebulae", "clusters", "double_stars"]
@@ -649,7 +643,7 @@ def setup(
 
                 # Count objects across all type-specific tables
                 total_count = 0
-                with db._get_session_sync() as session:
+                with db._get_session() as session:
                     for model_class in [
                         StarModel,
                         DoubleStarModel,
@@ -791,15 +785,13 @@ def setup(
             # Note: import_data_source prints to console, so output should be visible
             console.print("[dim]Initializing database schema...[/dim]")
 
-            rebuild_result: dict[str, Any] = asyncio.run(
-                rebuild_database(
-                    backup_dir=None,  # Don't backup during setup
-                    sources=default_sources,  # Import only comprehensive sources
-                    mag_limit=mag_limit,
-                    skip_backup=True,  # Skip backup during setup
-                    dry_run=False,
-                    force_download=refresh_cache,  # Force re-download if cache was cleared
-                )
+            rebuild_result: dict[str, Any] = rebuild_database(
+                backup_dir=None,  # Don't backup during setup
+                sources=default_sources,  # Import only comprehensive sources
+                mag_limit=mag_limit,
+                skip_backup=True,  # Skip backup during setup
+                dry_run=False,
+                force_download=refresh_cache,  # Force re-download if cache was cleared
             )
 
             console.print("\n[green]✓[/green] Database rebuilt successfully\n")
@@ -919,28 +911,27 @@ def setup(
             StarNameMappingModel,
         )
 
-        async def _check_and_seed_static_data() -> None:
-            async with db._AsyncSession() as session:
-                meteor_result = await session.scalar(select(func.count(MeteorShowerModel.id)))
+        def _check_and_seed_static_data() -> None:
+            with db._get_session() as session:
+                meteor_result = session.scalar(select(func.count(MeteorShowerModel.id)))  # type: ignore[attr-defined]
                 meteor_count = meteor_result or 0
-                constellation_result = await session.scalar(select(func.count(ConstellationModel.id)))
+                constellation_result = session.scalar(select(func.count(ConstellationModel.id)))  # type: ignore[attr-defined]
                 constellation_count = constellation_result or 0
-                dark_sky_result = await session.scalar(select(func.count(DarkSkySiteModel.id)))
+                dark_sky_result = session.scalar(select(func.count(DarkSkySiteModel.id)))  # type: ignore[attr-defined]
                 dark_sky_count = dark_sky_result or 0
-                star_mapping_result = await session.scalar(select(func.count(StarNameMappingModel.hr_number)))
+                star_mapping_result = session.scalar(select(func.count(StarNameMappingModel.hr_number)))  # type: ignore[attr-defined]
                 star_mapping_count = star_mapping_result or 0
 
                 if meteor_count == 0 or constellation_count == 0 or dark_sky_count == 0 or star_mapping_count == 0:
                     console.print("[dim]Seeding static reference data...[/dim]")
                     from celestron_nexstar.api.database.database_seeder import seed_all
 
-                    await seed_all(session, force=False)
+                    seed_all(session, force=False)
                     console.print("[green]✓[/green] Static reference data seeded")
                 else:
                     console.print("[green]✓[/green] Static reference data already exists")
 
-        # Run async function - asyncio is imported at module level
-        asyncio.run(_check_and_seed_static_data())
+        _check_and_seed_static_data()
     except (
         RuntimeError,
         AttributeError,
@@ -981,8 +972,7 @@ def setup(
         try:
             from celestron_nexstar.api.database.database import sync_ephemeris_files_from_naif
 
-            # asyncio is imported at module level
-            count = asyncio.run(sync_ephemeris_files_from_naif(force=False))
+            count = sync_ephemeris_files_from_naif(force=False)
             console.print(f"[green]✓[/green] Synced {count} ephemeris files")
         except (RuntimeError, AttributeError, ValueError, TypeError, KeyError, IndexError, OSError, TimeoutError) as e:
             # RuntimeError: async/await errors, event loop errors
@@ -1001,7 +991,7 @@ def setup(
 
     # Show stats
     try:
-        stats = asyncio.run(db.get_stats())
+        stats = db.get_stats()
         console.print(f"[dim]Total objects: {stats.total_objects:,}[/dim]")
         console.print(f"[dim]Database size: {db.db_path.stat().st_size / (1024 * 1024):.2f} MB[/dim]\n")
     except (RuntimeError, AttributeError, ValueError, TypeError, OSError, FileNotFoundError):
@@ -1046,13 +1036,13 @@ def seed_database(
         console.print("\n[bold cyan]Seed Data Status[/bold cyan]\n")
         try:
 
-            async def _get_status() -> dict[str, int]:
+            def _get_status() -> dict[str, int]:
                 from celestron_nexstar.api.database.database_seeder import get_seed_status
 
-                async with get_db_session() as db_session:
-                    return await get_seed_status(db_session)
+                with get_db_session() as db_session:
+                    return get_seed_status(db_session)
 
-            status_data: dict[str, int] = asyncio.run(_get_status())
+            status_data: dict[str, int] = _get_status()
 
             # Create a table to display status
             from rich.table import Table
@@ -1157,13 +1147,13 @@ def seed_database(
 
     try:
 
-        async def _seed_all() -> dict[str, int]:
+        def _seed_all() -> dict[str, int]:
             from celestron_nexstar.api.database.database_seeder import seed_all
 
-            async with get_db_session() as db_session:
-                return await seed_all(db_session, force=force)
+            with get_db_session() as db_session:
+                return seed_all(db_session, force=force)
 
-        results: dict[str, int] = asyncio.run(_seed_all())
+        results: dict[str, int] = _seed_all()
 
         # Display results
         total_added = sum(results.values())
@@ -1229,16 +1219,16 @@ def init_static() -> None:
     console.print("\n[bold cyan]Initializing static reference data[/bold cyan]\n")
 
     try:
-        # Use database_seeder directly, which is async
+        # Use database_seeder directly
         from celestron_nexstar.api.database.database_seeder import seed_all
         from celestron_nexstar.api.database.models import get_db_session
 
-        async def _init_static_data() -> None:
-            async with get_db_session() as db_session:
+        def _init_static_data() -> None:
+            with get_db_session() as db_session:
                 # Use seed_all which handles all static data seeding
-                await seed_all(db_session, force=False)
+                seed_all(db_session, force=False)
 
-        asyncio.run(_init_static_data())
+        _init_static_data()
 
         console.print("\n[bold green]✓ All static data initialized![/bold green]")
         console.print("[dim]These datasets are now available offline.[/dim]\n")
@@ -1338,7 +1328,7 @@ def stats() -> None:
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    db_stats = asyncio.run(db.get_stats())
+    db_stats = db.get_stats()
 
     # Overall stats
     console.print("\n[bold cyan]Database Statistics[/bold cyan]")
@@ -1373,7 +1363,7 @@ def stats() -> None:
     try:
         from celestron_nexstar.api.database.statistics import get_light_pollution_stats
 
-        lp_stats = asyncio.run(get_light_pollution_stats())
+        lp_stats = get_light_pollution_stats()
 
         if lp_stats.table_exists and lp_stats.total_count is not None:
             if lp_stats.total_count > 0:
@@ -1418,11 +1408,11 @@ def stats() -> None:
         from celestron_nexstar.api.database.database_seeder import get_seed_data_path, get_seed_status, load_seed_json
         from celestron_nexstar.api.database.models import get_db_session
 
-        async def _get_seed_status() -> dict[str, int]:
-            async with get_db_session() as db_session:
-                return await get_seed_status(db_session)
+        def _get_seed_status() -> dict[str, int]:
+            with get_db_session() as db_session:
+                return get_seed_status(db_session)
 
-        seed_status = asyncio.run(_get_seed_status())
+        seed_status = _get_seed_status()
 
         # Get expected counts from seed files
         seed_dir = get_seed_data_path()
@@ -1506,7 +1496,7 @@ def stats() -> None:
     try:
         from celestron_nexstar.api.database.statistics import get_tle_stats
 
-        tle_stats = asyncio.run(get_tle_stats())
+        tle_stats = get_tle_stats()
 
         if tle_stats.table_exists and tle_stats.total_count is not None:
             if tle_stats.total_count > 0:
@@ -1589,9 +1579,7 @@ def vacuum() -> None:
     console.print(f"[dim]Size before: {size_before / (1024 * 1024):.2f} MB[/dim]\n")
 
     try:
-        import asyncio
-
-        size_before_bytes, size_after_bytes = asyncio.run(vacuum_database(db))
+        size_before_bytes, size_after_bytes = vacuum_database(db)
         size_reclaimed = size_before_bytes - size_after_bytes
 
         console.print("[bold green]✓ VACUUM complete![/bold green]\n")
@@ -1657,7 +1645,7 @@ def clear_light_pollution(
 
     # Check if table exists and get row count
     try:
-        with db._get_session_sync() as session:
+        with db._get_session() as session:
             from sqlalchemy import text
 
             result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
@@ -1706,9 +1694,8 @@ def clear_light_pollution(
             from celestron_nexstar.api.database.database import vacuum_database
 
             console.print("[dim]Running VACUUM to reclaim disk space...[/dim]")
-            import asyncio
 
-            size_before, size_after = asyncio.run(vacuum_database(db))
+            size_before, size_after = vacuum_database(db)
             size_reclaimed = size_before - size_after
 
             console.print("[bold green]✓[/bold green] Database optimized")
@@ -1853,7 +1840,7 @@ def download_light_pollution(
 
             from celestron_nexstar.api.database.light_pollution_db import download_world_atlas_data
 
-            results = asyncio.run(download_world_atlas_data(regions_to_download, grid_resolution, force, state_filter))
+            results = download_world_atlas_data(regions_to_download, grid_resolution, force, state_filter)
 
             progress.update(task, completed=100)
 
@@ -2120,15 +2107,13 @@ def rebuild(
         ) as progress:
             task = progress.add_task("Rebuilding database...", total=None)
 
-            # Run rebuild - rebuild_database is now async
-            result: dict[str, Any] = asyncio.run(
-                rebuild_database(
-                    backup_dir=backup_path,
-                    sources=source_list,
-                    mag_limit=mag_limit,
-                    skip_backup=skip_backup,
-                    dry_run=dry_run,
-                )
+            # Run rebuild
+            result: dict[str, Any] = rebuild_database(
+                backup_dir=backup_path,
+                sources=source_list,
+                mag_limit=mag_limit,
+                skip_backup=skip_backup,
+                dry_run=dry_run,
             )
 
             progress.update(task, completed=True)
@@ -2184,7 +2169,7 @@ def rebuild(
             console.print(static_table)
 
         # Final database stats
-        db_stats = asyncio.run(db.get_stats())
+        db_stats = db.get_stats()
         console.print(f"\n[bold]Database now contains {db_stats.total_objects:,} objects[/bold]")
         console.print("\n[dim]Database rebuild complete![/dim]\n")
 
@@ -2476,8 +2461,6 @@ def database_setup(
         nexstar data database-setup --force  # Skip confirmation prompt
     """
 
-    import asyncio
-
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -2500,7 +2483,7 @@ def database_setup(
 
         console.print("[cyan]Dropping existing database...[/cyan]")
         # Close all connections
-        asyncio.run(db._engine.dispose())
+        db._engine.dispose()
         # Small delay to ensure file handles are released
         import time
 
@@ -2570,6 +2553,8 @@ def database_setup(
     try:
         # Handle trigger errors during migration
         try:
+            if target_rev is None:
+                target_rev = "head"
             command.upgrade(alembic_cfg, target_rev)
             console.print(f"[green]✓[/green] Schema created via Alembic migrations (upgraded to {target_rev})\n")
         except Exception as e:
@@ -2581,21 +2566,23 @@ def database_setup(
                 # Get a connection to drop triggers
                 db_temp = get_database()
                 try:
-                    asyncio.run(db_temp._engine.dispose())
+                    db_temp._engine.dispose()
 
-                    async def _drop_triggers():
-                        async with db_temp._AsyncSession() as session:
+                    def _drop_triggers() -> None:
+                        with db_temp._get_session() as session:
                             from sqlalchemy import text
 
-                            await session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
-                            await session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
-                            await session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
-                            await session.commit()
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                            session.commit()
 
-                    asyncio.run(_drop_triggers())
+                    _drop_triggers()
                     # Dispose again before retrying migration
-                    asyncio.run(db_temp._engine.dispose())
+                    db_temp._engine.dispose()
                     # Retry migration
+                    if target_rev is None:
+                        target_rev = "head"
                     command.upgrade(alembic_cfg, target_rev)
                     console.print(
                         f"[green]✓[/green] Schema created via Alembic migrations (upgraded to {target_rev})\n"
@@ -2612,25 +2599,11 @@ def database_setup(
         # Ensure FTS table exists (migrations should create it, but ensure it's there)
         console.print("[cyan]Ensuring FTS table is initialized...[/cyan]")
 
-        async def _ensure_fts():
-            await db.ensure_fts_table()
-
-        asyncio.run(_ensure_fts())
+        db.ensure_fts_table()
         console.print("[green]✓[/green] Database setup complete!\n")
 
     except Exception as e:
         console.print(f"[red]✗[/red] Failed to setup database: {e}")
-        import traceback
-
-        console.print(f"[dim]{traceback.format_exc()}[/dim]")
-        raise typer.Exit(code=1) from e
-        # AttributeError: missing Alembic attributes
-        # RuntimeError: migration errors
-        # ValueError: invalid configuration
-        # TypeError: wrong argument types
-        # OSError: file I/O errors
-        # FileNotFoundError: missing alembic.ini
-        console.print(f"\n[red]✗[/red] Error checking migrations: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")

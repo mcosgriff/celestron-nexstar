@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from PySide6.QtCore import QThread, Signal
 
@@ -90,7 +90,8 @@ class DownloadEphemerisSetThread(QThread):
             self.progress_updated.emit(f"Downloading {self.set_name} set ({file_count} files)...", 0, file_count)
 
             # Download the set
-            downloaded = download_set(self.set_name, force=self.force)
+            set_name = cast(Literal["recommended", "minimal", "standard", "complete", "full"], self.set_name)
+            downloaded = download_set(set_name, force=self.force)
 
             self.progress_updated.emit(f"Downloaded {self.set_name} set", file_count, file_count)
             total_size = sum(p.stat().st_size for p in downloaded) / (1024 * 1024)
@@ -440,7 +441,7 @@ class ImportCelestialDataThread(QThread):
                     )
                 else:
                     # For other imports, use the standard importer (no progress callback yet)
-                    imported, skipped = source.importer(cache_path, self.mag_limit, verbose=False)
+                    imported, skipped = source.importer(cache_path, self.mag_limit, False)
             except FileNotFoundError as e:
                 # Bounds file or other required file not found
                 error_msg = str(e)
@@ -993,7 +994,7 @@ class SyncStarRelationshipsThread(QThread):
                         existing_pairs = {(row[0], row[1]) for row in existing_relationships}
 
                         total_asterisms = len(asterisms)
-                        junction_inserts: list[dict[str, int]] = []  # Collect all junction table inserts
+                        asterism_junction_inserts: list[dict[str, int]] = []  # Collect all junction table inserts
 
                         # Build a lookup dictionary of all star names to star objects for fast lookup
                         # This avoids N+1 queries - we do one query to get all stars, then use a dict
@@ -1028,7 +1029,7 @@ class SyncStarRelationshipsThread(QThread):
                             # Enrich asterism with decoration data from JSON seed file
                             if asterism.name in json_asterisms_map:
                                 json_data = json_asterisms_map[asterism.name]
-                                update_values: dict[str, Any] = {}
+                                asterism_update_values: dict[str, Any] = {}
                                 for field in decoration_fields:
                                     # Only update if field exists in JSON and model has this attribute
                                     if (
@@ -1040,12 +1041,12 @@ class SyncStarRelationshipsThread(QThread):
                                         current_value = getattr(asterism, field, None)
                                         # Update if field is empty or missing
                                         if current_value is None or current_value == "":
-                                            update_values[field] = json_data[field]
-                                if update_values:
+                                            asterism_update_values[field] = json_data[field]
+                                if asterism_update_values:
                                     session.execute(
                                         update(AsterismModel)
                                         .where(AsterismModel.id == asterism.id)
-                                        .values(**update_values)
+                                        .values(**asterism_update_values)
                                     )
                                     # Refresh asterism object to get updated values
                                     session.refresh(asterism)
@@ -1061,12 +1062,14 @@ class SyncStarRelationshipsThread(QThread):
 
                                 # Look up stars using the pre-built dictionary (fast O(1) lookup)
                                 for star_name in star_names_from_db:
-                                    star = star_name_to_star.get(star_name.lower())
-                                    if star:
-                                        if star not in nearby_stars:  # Avoid duplicates
-                                            nearby_stars.append(star)
+                                    matched_star = star_name_to_star.get(star_name.lower())
+                                    if matched_star:
+                                        if matched_star not in nearby_stars:  # Avoid duplicates
+                                            nearby_stars.append(matched_star)
                                         # Use common name if available, otherwise name
-                                        display_name = star.common_name if star.common_name else star.name
+                                        display_name = (
+                                            matched_star.common_name if matched_star.common_name else matched_star.name
+                                        )
                                         if display_name and display_name not in asterism_stars:
                                             asterism_stars.append(display_name)
                                     else:
@@ -1100,7 +1103,13 @@ class SyncStarRelationshipsThread(QThread):
                                     ).where(AsterismModel.id == asterism.id)
 
                                     result = session.execute(distance_stmt)
-                                    distance = result.scalar_one_or_none()
+                                    distance_raw = result.scalar_one_or_none()
+                                    distance: float | None = None
+                                    if distance_raw is not None:
+                                        try:
+                                            distance = float(distance_raw)
+                                        except (TypeError, ValueError):
+                                            distance = None
 
                                     # Use 2 degrees tolerance for line-based asterisms
                                     if distance is not None and distance <= 2.0:
@@ -1115,7 +1124,7 @@ class SyncStarRelationshipsThread(QThread):
 
                                 # Add to junction table if relationship doesn't already exist
                                 if (star.id, asterism.id) not in existing_pairs:
-                                    junction_inserts.append({"star_id": star.id, "asterism_id": asterism.id})
+                                    asterism_junction_inserts.append({"star_id": star.id, "asterism_id": asterism.id})
 
                             # Update asterism's stars field
                             if asterism_stars:
@@ -1149,8 +1158,8 @@ class SyncStarRelationshipsThread(QThread):
                                 )
 
                         # Batch insert into junction table
-                        if junction_inserts:
-                            total_updates = len(junction_inserts)
+                        if asterism_junction_inserts:
+                            total_updates = len(asterism_junction_inserts)
                             batch_size = 1000
                             num_batches = (total_updates + batch_size - 1) // batch_size
 
@@ -1164,7 +1173,7 @@ class SyncStarRelationshipsThread(QThread):
 
                                 start_idx = batch_idx * batch_size
                                 end_idx = min(start_idx + batch_size, total_updates)
-                                batch = junction_inserts[start_idx:end_idx]
+                                batch = asterism_junction_inserts[start_idx:end_idx]
 
                                 # Emit progress before batch insert
                                 progress_range = asterism_end - asterism_start
@@ -1236,23 +1245,21 @@ class SyncStarRelationshipsThread(QThread):
                                     .order_by(StarModel.magnitude.asc())
                                     .limit(1)
                                 )
+                                brightest_star = session.execute(stars_in_const_stmt).scalars().first()
 
-                            result = session.execute(stars_in_const_stmt)
-                            brightest_star = result.scalar_one_or_none()
-
-                            if brightest_star:
-                                # Set the foreign key to the star's ID
-                                session.execute(
-                                    update(ConstellationModel)
-                                    .where(ConstellationModel.id == constellation.id)
-                                    .values(brightest_star_id=brightest_star.id)
-                                )
-                                logger.debug(
-                                    f"Set brightest_star_id={brightest_star.id} for constellation '{constellation.name}'"
-                                )
+                                if brightest_star is not None:
+                                    # Set the foreign key to the star's ID
+                                    session.execute(
+                                        update(ConstellationModel)
+                                        .where(ConstellationModel.id == constellation.id)
+                                        .values(brightest_star_id=brightest_star.id)
+                                    )
+                                    logger.debug(
+                                        f"Set brightest_star_id={brightest_star.id} for constellation '{constellation.name}'"
+                                    )
                             else:
                                 logger.debug(
-                                    f"Constellation '{constellation.name}' already has brightest_star_id: {constellation.brightest_star_id}"
+                                    f"Constellation '{constellation.name}' already has brightest_star_id={constellation.brightest_star_id}"
                                 )
 
                             # Emit progress for constellations
@@ -1315,23 +1322,23 @@ class SyncStarRelationshipsThread(QThread):
                                     .order_by(StarModel.magnitude.asc())
                                     .limit(1)
                                 )
+                                brightest_star = session.execute(stars_in_asterism_stmt).scalars().first()
 
-                            result = session.execute(stars_in_asterism_stmt)
-                            brightest_star = result.scalar_one_or_none()
-
-                            if brightest_star:
-                                star_name = (
-                                    brightest_star.common_name if brightest_star.common_name else brightest_star.name
-                                )
-                                if star_name:
-                                    session.execute(
-                                        update(AsterismModel)
-                                        .where(AsterismModel.id == asterism.id)
-                                        .values(brightest_star=star_name)
+                                if brightest_star is not None:
+                                    star_name = (
+                                        brightest_star.common_name
+                                        if brightest_star.common_name
+                                        else brightest_star.name
                                     )
+                                    if star_name:
+                                        session.execute(
+                                            update(AsterismModel)
+                                            .where(AsterismModel.id == asterism.id)
+                                            .values(brightest_star=star_name)
+                                        )
                             else:
                                 logger.debug(
-                                    f"Asterism '{asterism.name}' already has brightest_star from JSON: {asterism.brightest_star}"
+                                    f"Asterism '{asterism.name}' already has brightest_star={asterism.brightest_star}"
                                 )
 
                             # Emit progress for asterisms

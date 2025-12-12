@@ -260,13 +260,13 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
 
         from celestron_nexstar.api.events.iss_tracking import ISSPass
 
-        async def _get_passes() -> list[ISSPass]:
+        def _get_passes() -> list[ISSPass]:
             from celestron_nexstar.api.events.iss_tracking import get_iss_passes_cached
 
             # get_iss_passes_cached expects a sync Session, so pass None to let it create its own
-            return await get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=None)
+            return get_iss_passes_cached(lat, lon, start_time=now, days=7, min_altitude_deg=20.0, db_session=None)
 
-        iss_passes = await _get_passes()
+        iss_passes = _get_passes()
 
         if iss_passes:
             table_iss = Table()
@@ -339,9 +339,9 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]Active Meteor Showers[/bold green]")
         output_console.print("[dim]Best observed with naked eye - no equipment needed![/dim]\n")
 
-        async with get_db_session() as db_session:
-            active_showers = await get_active_showers(db_session, now)
-            peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
+        with get_db_session() as db_session:
+            active_showers = get_active_showers(db_session, now)
+            peak_showers = get_peak_showers(db_session, now, tolerance_days=3)
 
         if active_showers:
             table_showers = Table()
@@ -395,10 +395,8 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
             midnight = midnight.replace(day=midnight.day + 1)
 
         # Get visible constellations (using lower threshold to catch more)
-        async with get_db_session() as db_session:
-            visible_constellations = await get_visible_constellations(
-                db_session, lat, lon, midnight, min_altitude_deg=15.0
-            )
+        with get_db_session() as db_session:
+            visible_constellations = get_visible_constellations(db_session, lat, lon, midnight, min_altitude_deg=15.0)
 
         # Track which constellations have low centers (below normal viewing threshold)
         # Normal threshold is 30° for naked-eye
@@ -423,8 +421,8 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 constellations_with_stars.add(star.constellation)
 
         # Add constellations that have visible stars but aren't already in the list
-        async with get_db_session() as db_session:
-            all_prominent = await get_prominent_constellations(db_session)
+        with get_db_session() as db_session:
+            all_prominent = get_prominent_constellations(db_session)
         existing_names = {c.name for c, _, _ in visible_constellations}
 
         for constellation in all_prominent:
@@ -581,8 +579,8 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
         output_console.print("[bold green]Star Patterns to Find (Asterisms)[/bold green]")
         output_console.print("[dim]Famous patterns that are easy to recognize[/dim]\n")
 
-        async with get_db_session() as db_session:
-            visible_asterisms = await get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=30.0)
+        with get_db_session() as db_session:
+            visible_asterisms = get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=30.0)
 
         if visible_asterisms:
             # Group by familiarity/importance

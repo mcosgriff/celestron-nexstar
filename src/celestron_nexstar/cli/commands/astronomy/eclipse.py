@@ -4,7 +4,6 @@ Eclipse Prediction Commands
 Find upcoming lunar and solar eclipses visible from your location.
 """
 
-import asyncio
 from datetime import datetime
 from pathlib import Path
 
@@ -86,11 +85,8 @@ def show_next(
         )
         raise typer.Exit(1)
 
-    async def _get_eclipses() -> list[Eclipse]:
-        async with get_db_session() as db_session:
-            return await get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=eclipse_type)
-
-    eclipses = asyncio.run(_get_eclipses())
+    with get_db_session() as db_session:
+        eclipses = get_upcoming_eclipses(db_session, location, years_ahead=years, eclipse_type=eclipse_type)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("next")
@@ -122,11 +118,8 @@ def show_lunar(
         )
         raise typer.Exit(1)
 
-    async def _get_eclipses() -> list[Eclipse]:
-        async with get_db_session() as db_session:
-            return await get_next_lunar_eclipse(db_session, location, years_ahead=years)
-
-    eclipses = asyncio.run(_get_eclipses())
+    with get_db_session() as db_session:
+        eclipses = get_next_lunar_eclipse(db_session, location, years_ahead=years)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("lunar")
@@ -158,11 +151,8 @@ def show_solar(
         )
         raise typer.Exit(1)
 
-    async def _get_eclipses() -> list[Eclipse]:
-        async with get_db_session() as db_session:
-            return await get_next_solar_eclipse(db_session, location, years_ahead=years)
-
-    eclipses = asyncio.run(_get_eclipses())
+    with get_db_session() as db_session:
+        eclipses = get_next_solar_eclipse(db_session, location, years_ahead=years)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("solar")

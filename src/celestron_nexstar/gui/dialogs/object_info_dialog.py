@@ -3,7 +3,7 @@ Dialog to display detailed information about a celestial object.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -425,7 +425,10 @@ class ObjectInfoDialog(QDialog):
 
                     db = get_database()
                     # Determine search radius: use separation if available (size_arcmin), otherwise default to 2 arcmin
-                    search_radius = obj.size_arcmin if obj.size_arcmin and obj.size_arcmin > 0 else 2.0
+                    size_arcmin = getattr(obj, "size_arcmin", None)
+                    search_radius = (
+                        float(size_arcmin) if isinstance(size_arcmin, (int, float)) and size_arcmin > 0 else 2.0
+                    )
                     # Cap at 5 arcmin to avoid too many results
                     search_radius = min(search_radius, 5.0)
 
@@ -797,42 +800,39 @@ class ObjectInfoDialog(QDialog):
 
         try:
             # Get the main window from parent
-            from PySide6.QtWidgets import QMainWindow, QMessageBox
+            from PySide6.QtCore import QObject
+            from PySide6.QtWidgets import QMessageBox
 
-            main_window = self.parent()
-            # Traverse up the parent chain to find MainWindow
-            while main_window:
-                if isinstance(main_window, QMainWindow) and hasattr(main_window, "_on_goto_queue"):
+            main_window: QObject | None = self.parent()
+            # Traverse up the parent chain to find MainWindow-like object
+            while main_window is not None:
+                if hasattr(main_window, "_on_goto_queue"):
                     break
                 main_window = main_window.parent() if hasattr(main_window, "parent") else None
 
-            if not main_window or not isinstance(main_window, QMainWindow):
+            if main_window is None:
                 QMessageBox.warning(self, "Error", "Could not find main window.")
                 return
+            host = cast(Any, main_window)
 
             # Create or get goto queue window (silently, without showing it)
-            if not hasattr(main_window, "_goto_queue_window") or main_window._goto_queue_window is None:
+            if not hasattr(host, "_goto_queue_window") or host._goto_queue_window is None:
                 from celestron_nexstar.gui.windows.goto_queue_window import GotoQueueWindow
 
-                main_window._goto_queue_window = GotoQueueWindow(
-                    main_window, telescope=main_window.telescope if hasattr(main_window, "telescope") else None
+                host._goto_queue_window = GotoQueueWindow(
+                    host, telescope=host.telescope if hasattr(host, "telescope") else None
                 )
-                main_window._goto_queue_window.destroyed.connect(
-                    lambda: setattr(main_window, "_goto_queue_window", None)
-                )
+                host._goto_queue_window.destroyed.connect(lambda: setattr(host, "_goto_queue_window", None))
 
             # Add object to queue
-            if main_window._goto_queue_window is not None:
+            if host._goto_queue_window is not None:
                 # Update telescope reference if needed
-                if (
-                    hasattr(main_window, "telescope")
-                    and main_window._goto_queue_window.telescope != main_window.telescope
-                ):
-                    main_window._goto_queue_window.telescope = main_window.telescope
+                if hasattr(host, "telescope") and host._goto_queue_window.telescope != host.telescope:
+                    host._goto_queue_window.telescope = host.telescope
 
                 # Update object position for dynamic objects
                 updated_obj = self.object.with_current_position()
-                main_window._goto_queue_window.add_object(updated_obj)
+                host._goto_queue_window.add_object(updated_obj)
 
                 # Just show a confirmation message - don't open the window
                 display_name = updated_obj.common_name or updated_obj.name

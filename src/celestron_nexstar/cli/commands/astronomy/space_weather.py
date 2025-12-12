@@ -19,8 +19,7 @@ from typer.core import TyperGroup
 from celestron_nexstar.api.events.space_weather import (
     NOAAScale,
     OvationAuroraForecast,
-    get_ovation_aurora_forecast,
-    get_space_weather_conditions,
+    SpaceWeatherConditions,
 )
 
 

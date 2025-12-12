@@ -280,6 +280,9 @@ class ObjectsLoaderThread(QThread):
             obj_type = CelestialObjectType(self.obj_type_str)
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
+            # Different object types produce different payload shapes (names vs tuples vs planner objects).
+            # The downstream Qt signal accepts `object`, so keep this untyped here.
+            objects: object
 
             # Special handling for constellation type: show constellations
             if obj_type == CelestialObjectType.CONSTELLATION:
@@ -457,8 +460,8 @@ class ObjectsLoaderThread(QThread):
                     all_objects = []
                     seen_names = set()
                     for const in zodiac_constellations:
-                        objects = db.filter_objects(constellation=const, limit=50)
-                        for obj in objects:
+                        catalog_objects = db.filter_objects(constellation=const, limit=50)
+                        for obj in catalog_objects:
                             if obj.name not in seen_names:
                                 all_objects.append(obj)
                                 seen_names.add(obj.name)
@@ -1022,14 +1025,14 @@ class MainWindow(QMainWindow):
             del self._loading_threads[obj_type_str]
 
         # Stop and clean up all visibility counting threads
-        for table, thread in list(self._visibility_threads.items()):
-            if thread.isRunning():
-                thread.requestInterruption()
-                thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
-                if thread.isRunning():
-                    thread.terminate()
-                    thread.wait(1000)
-            thread.deleteLater()
+        for table, vis_thread in list(self._visibility_threads.items()):
+            if vis_thread.isRunning():
+                vis_thread.requestInterruption()
+                vis_thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
+                if vis_thread.isRunning():
+                    vis_thread.terminate()
+                    vis_thread.wait(1000)
+            vis_thread.deleteLater()
             del self._visibility_threads[table]
 
         # Process events to allow thread cleanup
@@ -2432,10 +2435,6 @@ class MainWindow(QMainWindow):
 
             result = _count_all_stars()
             print(f"DEBUG: _count_all_stars returned: {result}")
-            if not isinstance(result, dict):
-                print(f"DEBUG: Expected dict from _count_all_stars, got {type(result)}: {result}")
-                logger.warning(f"Expected dict from _count_all_stars, got {type(result)}: {result}")
-                return dict.fromkeys(constellation_names, 0)
             logger.info(f"Visibility count results: {result}")
             return result
         except Exception as e:

@@ -933,7 +933,8 @@ class CatalogDatabase:
 
                     model = model_class(**model_kwargs)
                     # Store WKT for batch geometry creation
-                    model._temp_geometry_wkt = geometry_wkt  # type: ignore[attr-defined]
+                    if geometry_wkt is not None:
+                        model._temp_geometry_wkt = geometry_wkt  # type: ignore[attr-defined]
                     if model_class not in models_by_type:
                         models_by_type[model_class] = []
                     models_by_type[model_class].append(model)
@@ -944,7 +945,11 @@ class CatalogDatabase:
             for _model_class, models in models_by_type.items():
                 for model in models:
                     if hasattr(model, "_temp_geometry_wkt"):  # type: ignore[attr-defined]
-                        wkt = model._temp_geometry_wkt  # type: ignore[attr-defined]
+                        wkt = getattr(model, "_temp_geometry_wkt", None)  # type: ignore[attr-defined]
+                        if not isinstance(wkt, str) or not wkt:
+                            # Clean up temp attribute and skip geometry creation
+                            delattr(model, "_temp_geometry_wkt")  # type: ignore[attr-defined]
+                            continue
                         try:
                             from geoalchemy2 import WKTElement
 
@@ -957,10 +962,10 @@ class CatalogDatabase:
 
                             try:
                                 result = session.execute(text("SELECT ST_GeomFromText(:wkt, 0)"), {"wkt": wkt})
-                                geometry_obj = result.scalar()
-                                if geometry_obj:
-                                    # Type ignore: result.scalar() returns Any, but we know it's a geometry object
-                                    model.geometry = geometry_obj  # type: ignore[assignment]
+                                geometry_db_obj = result.scalar()
+                                if geometry_db_obj is not None:
+                                    # Type ignore: result.scalar() returns Any; SpatiaLite returns geometry as a DB value.
+                                    model.geometry = geometry_db_obj  # type: ignore[assignment]
                             except Exception:
                                 # If geometry creation fails, continue without geometry
                                 pass
@@ -1109,7 +1114,7 @@ class CatalogDatabase:
                 .limit(1)
             )
             result = session.execute(bayer_stmt)
-            bayer_mapping = result.scalar_one_or_none()
+            bayer_mapping: StarNameMappingModel | None = cast(StarNameMappingModel | None, result.scalars().first())
 
             # If no exact match, try partial match (e.g., "Theta Tauri" should match "Theta¹ Tauri" or "Theta² Tauri")
             if not bayer_mapping:
@@ -1124,7 +1129,7 @@ class CatalogDatabase:
                     .limit(1)
                 )
                 result = session.execute(bayer_stmt)
-                bayer_mapping = result.scalar_one_or_none()
+                bayer_mapping = cast(StarNameMappingModel | None, result.scalars().first())
 
             # Also try matching without the superscript in the database
             if not bayer_mapping:
@@ -1137,12 +1142,12 @@ class CatalogDatabase:
                     .limit(1)
                 )
                 result = session.execute(bayer_stmt)
-                bayer_mapping = result.scalar_one_or_none()
+                bayer_mapping = cast(StarNameMappingModel | None, result.scalars().first())
 
-            if bayer_mapping and isinstance(bayer_mapping, StarNameMappingModel):
+            if bayer_mapping is not None:
                 # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
                 # Try multiple patterns to find the star
-                hr_num = bayer_mapping.hr_number
+                hr_num: int | None = bayer_mapping.hr_number
                 if hr_num is not None:
                     star_stmt = (
                         select(StarModel)
@@ -1382,25 +1387,24 @@ class CatalogDatabase:
                 .limit(limit)
             )
             result = session.execute(bayer_stmt)
-            bayer_mappings = result.scalars().all()
+            bayer_mappings: list[StarNameMappingModel] = list(result.scalars().all())
             seen_star_ids = {m.id for m in all_models}
             for bayer_mapping in bayer_mappings:
                 # Find the star by HR number - stars are stored with name like "HR 1411" or "HIP 20885"
-                if isinstance(bayer_mapping, StarNameMappingModel):
-                    hr_num = bayer_mapping.hr_number
-                    if hr_num is not None:
-                        star_stmt = (
-                            select(StarModel)
-                            .where(
-                                (StarModel.name.ilike(f"HR {hr_num}"))
-                                | (StarModel.name.ilike(f"HR{hr_num}"))
-                                | (StarModel.name.ilike(f"%HR {hr_num}%"))
-                            )
-                            .limit(1)
-                        )
-                result = session.execute(star_stmt)
-                star_model = result.scalar_one_or_none()
-                if star_model and star_model.id not in seen_star_ids:
+                hr_num: int | None = bayer_mapping.hr_number
+                if hr_num is None:
+                    continue
+                star_stmt = (
+                    select(StarModel)
+                    .where(
+                        (StarModel.name.ilike(f"HR {hr_num}"))
+                        | (StarModel.name.ilike(f"HR{hr_num}"))
+                        | (StarModel.name.ilike(f"%HR {hr_num}%"))
+                    )
+                    .limit(1)
+                )
+                star_model = session.execute(star_stmt).scalar_one_or_none()
+                if star_model is not None and star_model.id not in seen_star_ids:
                     seen_star_ids.add(star_model.id)
                     all_models.append(star_model)
 

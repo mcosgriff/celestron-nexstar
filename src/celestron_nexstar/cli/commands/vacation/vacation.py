@@ -6,7 +6,6 @@ Plan telescope viewing for vacation destinations.
 
 from __future__ import annotations
 
-import asyncio
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -91,7 +90,7 @@ def show_viewing_info(
     """Show what's visible from a vacation location."""
     try:
         # Geocode location
-        vacation_location = asyncio.run(geocode_location(location))
+        vacation_location: ObserverLocation = geocode_location(location)
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -128,7 +127,7 @@ def show_dark_sites(
     """Find dark sky viewing sites near a vacation location."""
     try:
         # Geocode location
-        vacation_location = asyncio.run(geocode_location(location))
+        vacation_location: ObserverLocation = geocode_location(location)
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -310,7 +309,7 @@ def show_comprehensive_plan(
 
     try:
         # Geocode location
-        vacation_location = asyncio.run(geocode_location(location))
+        vacation_location: ObserverLocation = geocode_location(location)
     except Exception as e:
         console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
         raise typer.Exit(1) from e
@@ -452,15 +451,9 @@ def _show_comprehensive_plan_content(
         else:
             years_ahead = max(1, days_ahead // 365)
 
-        from celestron_nexstar.api.astronomy.eclipses import Eclipse
-
-        async def _get_eclipses() -> tuple[list[Eclipse], list[Eclipse]]:
-            async with get_db_session() as db_session:
-                lunar = await get_next_lunar_eclipse(db_session, location, years_ahead=years_ahead)
-                solar = await get_next_solar_eclipse(db_session, location, years_ahead=years_ahead)
-                return lunar, solar
-
-        lunar_eclipses, solar_eclipses = asyncio.run(_get_eclipses())
+        with get_db_session() as db_session:
+            lunar_eclipses = get_next_lunar_eclipse(db_session, location, years_ahead=years_ahead)
+            solar_eclipses = get_next_solar_eclipse(db_session, location, years_ahead=years_ahead)
 
         # Filter eclipses within date range
         all_eclipses = []
@@ -524,13 +517,8 @@ def _show_comprehensive_plan_content(
         else:
             months_ahead = max(1, days_ahead // 30)
 
-        from celestron_nexstar.api.astronomy.comets import CometVisibility
-
-        async def _get_comets() -> list[CometVisibility]:
-            async with get_db_session() as db_session:
-                return await get_visible_comets(db_session, location, months_ahead=months_ahead)
-
-        comets = asyncio.run(_get_comets())
+        with get_db_session() as db_session:
+            comets = get_visible_comets(db_session, location, months_ahead=months_ahead)
 
         # Filter comets visible during date range (if we have visibility dates)
         if start_date and end_date and comets:
@@ -565,7 +553,7 @@ def _show_comprehensive_plan_content(
         # Limit to 7 days (168 hours) - API maximum
         hours_needed = min(hours_needed, 168)
 
-        weather_forecast = asyncio.run(fetch_hourly_weather_forecast(location, hours=hours_needed))
+        weather_forecast = fetch_hourly_weather_forecast(location, hours=hours_needed)
 
         if weather_forecast:
             # Group by day and show summary
@@ -707,14 +695,12 @@ def _show_comprehensive_plan_content(
     try:
         vacation_days = (end_dt - start_dt).days + 1 if start_date and end_date else days_ahead
 
-        iss_passes = asyncio.run(
-            get_iss_passes(
-                location.latitude,
-                location.longitude,
-                start_time=start_dt if start_date else datetime.now(UTC),
-                days=min(vacation_days, 14),  # Limit to 14 days
-                min_altitude_deg=10.0,
-            )
+        iss_passes = get_iss_passes(
+            location.latitude,
+            location.longitude,
+            start_time=start_dt if start_date else datetime.now(UTC),
+            days=min(vacation_days, 14),  # Limit to 14 days
+            min_altitude_deg=10.0,
         )
 
         # Filter visible passes and show top 5
@@ -846,7 +832,7 @@ def _show_comprehensive_plan_content(
         days_analyzed = 0
 
         # Get weather forecast once for all days
-        weather_forecast_all = asyncio.run(fetch_hourly_weather_forecast(location, hours=168))  # 7 days max
+        weather_forecast_all = fetch_hourly_weather_forecast(location, hours=168)  # 7 days max
         daily_weather_all = defaultdict(list)
         for forecast in weather_forecast_all:
             if forecast.timestamp:

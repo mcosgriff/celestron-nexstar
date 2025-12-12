@@ -4,7 +4,6 @@ Weather Commands
 Display current weather conditions for the observer location.
 """
 
-import asyncio
 import logging
 from datetime import UTC
 
@@ -16,6 +15,7 @@ from typer.core import TyperGroup
 
 from celestron_nexstar.api.location.observer import ObserverLocation, get_observer_location
 from celestron_nexstar.api.location.weather import (
+    HourlySeeingForecast,
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
@@ -56,7 +56,7 @@ def _get_current_weather_with_cache(location: ObserverLocation) -> WeatherData:
         WeatherData with current conditions
     """
     # fetch_weather() now handles database checking and storage internally
-    return asyncio.run(fetch_weather(location))
+    return fetch_weather(location)
 
 
 @app.command("current", rich_help_panel="Weather Information")
@@ -245,7 +245,7 @@ def show_today_weather(
         from timezonefinder import TimezoneFinder
 
         location = get_observer_location()
-        forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=24))
+        forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(location, hours=24)
 
         if not forecasts:
             print_error("Weather forecast not available")
@@ -384,7 +384,7 @@ def show_next_3_days_weather(
         from timezonefinder import TimezoneFinder
 
         location = get_observer_location()
-        forecasts = asyncio.run(fetch_hourly_weather_forecast(location, hours=72))  # 3 days = 72 hours
+        forecasts: list[HourlySeeingForecast] = fetch_hourly_weather_forecast(location, hours=72)  # 3 days = 72 hours
 
         if not forecasts:
             print_error("Weather forecast not available")
@@ -552,7 +552,9 @@ def show_historical_weather(
 
         # Fetch historical data (will use cache if available, only fetch missing months)
         console.print("[dim]Checking database for historical weather data...[/dim]")
-        monthly_stats = asyncio.run(fetch_historical_weather_climatology(location, required_months=required_months))
+        monthly_stats: dict[int, dict[str, float | None]] | None = fetch_historical_weather_climatology(
+            location, required_months=required_months
+        )
 
         if not monthly_stats:
             print_error("Historical weather data not available")

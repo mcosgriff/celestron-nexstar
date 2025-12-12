@@ -344,9 +344,9 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[bold green]Active Meteor Showers[/bold green]")
         output_console.print("[dim]Best viewed with naked eye or binoculars for wide-field sweeping[/dim]\n")
 
-        async with get_db_session() as db_session:
-            active_showers = await get_active_showers(db_session, now)
-            peak_showers = await get_peak_showers(db_session, now, tolerance_days=3)
+        with get_db_session() as db_session:
+            active_showers = get_active_showers(db_session, now)
+            peak_showers = get_peak_showers(db_session, now, tolerance_days=3)
 
         if active_showers:
             table_showers = Table()
@@ -400,10 +400,8 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
             midnight = midnight.replace(day=midnight.day + 1)
 
         # Get visible constellations (using lower threshold to catch more)
-        async with get_db_session() as db_session:
-            visible_constellations = await get_visible_constellations(
-                db_session, lat, lon, midnight, min_altitude_deg=10.0
-            )
+        with get_db_session() as db_session:
+            visible_constellations = get_visible_constellations(db_session, lat, lon, midnight, min_altitude_deg=10.0)
 
         # Track which constellations have low centers (below normal viewing threshold)
         # Normal threshold is 20° for binoculars
@@ -429,8 +427,8 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
                 constellations_with_stars.add(star.constellation)
 
         # Add constellations that have visible stars but aren't already in the list
-        async with get_db_session() as db_session:
-            all_prominent = await get_prominent_constellations(db_session)
+        with get_db_session() as db_session:
+            all_prominent = get_prominent_constellations(db_session)
         existing_names = {c.name for c, _, _ in visible_constellations}
 
         for constellation in all_prominent:
@@ -594,8 +592,8 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[bold green]Famous Star Patterns (Asterisms)[/bold green]")
         output_console.print("[dim]Easily recognizable patterns visible through binoculars[/dim]\n")
 
-        async with get_db_session() as db_session:
-            visible_asterisms = await get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=20.0)
+        with get_db_session() as db_session:
+            visible_asterisms = get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=20.0)
 
         if visible_asterisms:
             table_ast = Table()

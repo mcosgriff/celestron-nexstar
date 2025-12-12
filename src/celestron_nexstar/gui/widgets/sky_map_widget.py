@@ -133,7 +133,8 @@ class SkyMapWidget(QWidget):
             self._loading_dialog = None
 
         # Show loading dialog
-        self._loading_dialog = QProgressDialog("Generating sky map...", None, 0, 0, self)
+        # NOTE: QProgressDialog overload expects a cancel button label string (even if we later hide it).
+        self._loading_dialog = QProgressDialog("Generating sky map...", "", 0, 0, self)
         self._loading_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self._loading_dialog.setCancelButton(None)  # Disable cancel button
         self._loading_dialog.setMinimumDuration(0)  # Show immediately
@@ -305,7 +306,7 @@ class _MapGenerationThread(QThread):
 
             logger.debug("Importing starplot...")
             # Import starplot - deal.activate() is no longer called, so imports work normally
-            import starplot
+            import starplot  # type: ignore[import-untyped]
 
             horizon_plot = starplot.HorizonPlot
             observer = starplot.Observer
