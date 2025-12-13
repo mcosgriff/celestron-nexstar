@@ -102,7 +102,8 @@ class AuroraInfoDialog(QDialog):
             "error": "#f44336" if is_dark else "#c62828",
         }
 
-    def _format_kp_index(self, kp: float, colors: dict[str, str]) -> tuple[str, str]:
+    @staticmethod
+    def _format_kp_index(kp: float, colors: dict[str, str]) -> tuple[str, str]:
         """Format Kp index with color based on activity level."""
         if kp >= 8.0:
             return f"{kp:.1f}", f"color: {colors['bright_red']}; font-weight: bold;"
@@ -119,7 +120,8 @@ class AuroraInfoDialog(QDialog):
         else:
             return f"{kp:.1f}", f"color: {colors['text_dim']};"
 
-    def _format_visibility_level(self, level: str, colors: dict[str, str]) -> tuple[str, str]:
+    @staticmethod
+    def _format_visibility_level(level: str, colors: dict[str, str]) -> tuple[str, str]:
         """Format visibility level with color."""
         level_map = {
             "very_high": ("Very High", f"color: {colors['bright_green']}; font-weight: bold;"),

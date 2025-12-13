@@ -38,11 +38,13 @@ from PySide6.QtWidgets import (
 from celestron_nexstar.api.core import format_local_time, get_local_timezone
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
+from celestron_nexstar.gui.config import GUIConfig, WindowDecorationType, get_gui_config
 from celestron_nexstar.gui.dialogs.gps_info_dialog import GPSInfoDialog
 from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
 from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPanel
+from celestron_nexstar.gui.widgets.custom_title_bar import CustomTitleBar
 
 
 if TYPE_CHECKING:
@@ -403,9 +405,28 @@ class MainWindow(QMainWindow):
     def __init__(self, theme: FusionTheme | None = None) -> None:
         """Initialize the main window."""
         super().__init__()
+
+        # Load GUI configuration
+        self.gui_config = get_gui_config()
+
+        # DEBUG: Print configuration
+        logger.info(f"Window decoration type: {self.gui_config.window_decoration}")
+        logger.info(f"Is CLIENT_SIDE: {self.gui_config.window_decoration == WindowDecorationType.CLIENT_SIDE}")
+
+        # Apply window decoration style based on configuration
+        if self.gui_config.window_decoration == WindowDecorationType.CLIENT_SIDE:
+            logger.info("Applying CLIENT_SIDE decorations - setting FramelessWindowHint")
+            # Enable client-side decorations (frameless window)
+            self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        else:
+            logger.info("Applying SERVER_SIDE decorations - setting WA_NativeWindow")
+            # Use server-side decorations (native window)
+            self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+
         self._catalog_window = None  # Store reference to catalog window
         self._goto_queue_window = None  # Store reference to goto queue window
-        self.setWindowTitle("Celestron NexStar Telescope Control")
+        self._window_title = "Celestron NexStar Telescope Control"
+        self.setWindowTitle(self._window_title)
         self.setMinimumSize(800, 600)
 
         # Telescope connection state
@@ -432,8 +453,66 @@ class MainWindow(QMainWindow):
             self.theme = theme
         self.theme_mode_preference = self.theme.mode  # Track user preference
 
-        # Create menu bar with theme toggle
+        # For client-side decorations, we need to restructure the layout
+        if self.gui_config.window_decoration == WindowDecorationType.CLIENT_SIDE:
+            logger.info("Creating CLIENT_SIDE layout with custom title bar")
+
+            # Create a container for everything including custom title bar
+            container = QWidget()
+            self.setCentralWidget(container)
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.setSpacing(0)
+
+            # Add custom title bar at the very top
+            logger.info("Creating CustomTitleBar widget")
+            self.custom_title_bar = CustomTitleBar(self, self._window_title)
+            logger.info(f"CustomTitleBar created: {self.custom_title_bar}")
+            logger.info(f"CustomTitleBar size: {self.custom_title_bar.size()}")
+            container_layout.addWidget(self.custom_title_bar)
+            logger.info("CustomTitleBar added to layout")
+
+            # Create a sub-widget for the main window content
+            content_widget = QWidget()
+            container_layout.addWidget(content_widget)
+            main_layout = QVBoxLayout(content_widget)
+            main_layout.setContentsMargins(0, 0, 0, 0)
+            main_layout.setSpacing(0)
+
+            # Store content widget and layout for later use by toolbars
+            self._content_widget = content_widget
+            self._content_layout = main_layout
+
+            # Create menu bar and add to content area (not QMainWindow menuBar)
+            from PySide6.QtWidgets import QMenuBar
+
+            menu_bar = QMenuBar(content_widget)
+            main_layout.addWidget(menu_bar)
+            # Store reference so _create_menus can use it
+            self._custom_menu_bar = menu_bar
+
+            # Flag to handle toolbars differently
+            self._use_custom_layout = True
+
+            # IMPORTANT: Hide QMainWindow's native menu bar area AFTER creating our own
+            native_menubar = self.menuBar()
+            native_menubar.hide()
+            native_menubar.setMaximumHeight(0)
+            native_menubar.setFixedHeight(0)
+        else:
+            # Server-side decorations - use normal QMainWindow structure
+            self.custom_title_bar = None
+            self._custom_menu_bar = None
+            self._use_custom_layout = False
+            central_widget = QWidget()
+            self.setCentralWidget(central_widget)
+            main_layout = QVBoxLayout(central_widget)
+
+        # Create menus (will use custom menu bar if in client-side mode)
         self._create_menus()
+
+        # Store references to toolbars before creating them
+        self._toolbars_list = []
 
         # Create toolbar with telescope control buttons
         self._create_toolbar()
@@ -441,10 +520,66 @@ class MainWindow(QMainWindow):
         # Create top toolbar for table controls
         self._create_table_toolbar()
 
-        # Create central widget and layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        # If using client-side decorations, remove toolbars from QMainWindow areas
+        # and add them to our custom layout
+        if self.gui_config.window_decoration == WindowDecorationType.CLIENT_SIDE:
+            print("Moving QMainWindow toolbars into custom layout")
+
+            # Find all toolbars first
+            toolbars = self.findChildren(QToolBar)
+            print(f"Found {len(toolbars)} toolbars")
+            for tb in toolbars:
+                print(f"  - Toolbar: {tb.windowTitle()} (visible: {tb.isVisible()})")
+
+            # Create a horizontal layout for toolbars
+            toolbar_container = QWidget()
+            toolbar_container.setStyleSheet("background-color: #0000ff;")  # DEBUG: Blue background
+            toolbar_container.setVisible(True)
+            toolbar_container.show()
+            toolbar_layout = QHBoxLayout(toolbar_container)
+            toolbar_layout.setContentsMargins(5, 5, 5, 5)
+            toolbar_layout.setSpacing(5)
+
+            # Find all toolbars and remove them from QMainWindow, add to our layout
+            for i, toolbar in enumerate(toolbars):
+                print(f"Moving toolbar {i}: {toolbar.windowTitle()}")
+                print(f"  - Toolbar size before: {toolbar.size()}")
+                print(f"  - Toolbar actions count: {len(toolbar.actions())}")
+
+                # Check what's in the toolbar
+                for j, action in enumerate(toolbar.actions()):
+                    widget = toolbar.widgetForAction(action)
+                    print(f"    - Action {j}: text='{action.text()}', hasWidget={widget is not None}")
+                    if widget:
+                        print(f"      Widget type: {type(widget).__name__}, visible: {widget.isVisible()}")
+
+                # Remove from QMainWindow
+                self.removeToolBar(toolbar)
+                # Set as a regular widget (not a toolbar area widget)
+                toolbar.setParent(toolbar_container)
+                # Reset flags to make it a normal widget
+                toolbar.setWindowFlags(Qt.WindowType.Widget)
+
+                # Show all widgets inside the toolbar first
+                for action in toolbar.actions():
+                    widget = toolbar.widgetForAction(action)
+                    if widget:
+                        widget.setVisible(True)
+                        widget.show()
+                        print(f"      Showing widget: {type(widget).__name__}, now visible: {widget.isVisible()}")
+
+                # Make sure toolbar itself is visible and has proper size
+                toolbar.setVisible(True)
+                toolbar.setMinimumHeight(40)
+                toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                toolbar.show()
+                # Add to our horizontal layout
+                toolbar_layout.addWidget(toolbar, stretch=1)
+                print(f"  - Added to layout, visible: {toolbar.isVisible()}, size: {toolbar.size()}")
+
+            # Add toolbar container to our content layout (below menu bar)
+            main_layout.addWidget(toolbar_container)
+            print(f"Toolbar container added to layout, visible: {toolbar_container.isVisible()}")
 
         # Create telescope control panel
         self.control_panel = self._create_control_panel()
@@ -569,8 +704,11 @@ class MainWindow(QMainWindow):
 
     def _create_menus(self) -> None:
         """Create the application menu bar with menus."""
+        # Use custom menu bar if in client-side decoration mode, otherwise use QMainWindow menuBar
+        menu_bar = self._custom_menu_bar if hasattr(self, "_custom_menu_bar") and self._custom_menu_bar else self.menuBar()
+
         # Create View menu
-        view_menu = self.menuBar().addMenu("&View")
+        view_menu = menu_bar.addMenu("&View")
 
         # Create Theme submenu
         theme_menu = view_menu.addMenu("&Theme")
@@ -607,6 +745,36 @@ class MainWindow(QMainWindow):
         app = QGuiApplication.instance()
         if app and isinstance(app, QGuiApplication):
             app.paletteChanged.connect(self._on_system_theme_changed)  # type: ignore[attr-defined]
+
+        # Add separator
+        view_menu.addSeparator()
+
+        # Create Window Decorations submenu
+        decorations_menu = view_menu.addMenu("Window &Decorations")
+
+        # Create action group for decoration selection (exclusive)
+        self.decoration_action_group = QActionGroup(self)
+        self.decoration_action_group.setExclusive(True)
+
+        # Server-side decorations action
+        self.server_side_action = decorations_menu.addAction("Server-Side (Native)")
+        self.server_side_action.setCheckable(True)
+        self.server_side_action.setStatusTip("Use native system window decorations")
+        self.server_side_action.triggered.connect(lambda: self._set_window_decoration(WindowDecorationType.SERVER_SIDE))
+        self.decoration_action_group.addAction(self.server_side_action)
+
+        # Client-side decorations action
+        self.client_side_action = decorations_menu.addAction("Client-Side (Custom)")
+        self.client_side_action.setCheckable(True)
+        self.client_side_action.setStatusTip("Use custom window decorations")
+        self.client_side_action.triggered.connect(lambda: self._set_window_decoration(WindowDecorationType.CLIENT_SIDE))
+        self.decoration_action_group.addAction(self.client_side_action)
+
+        # Set initial checked state based on current configuration
+        if self.gui_config.window_decoration == WindowDecorationType.SERVER_SIDE:
+            self.server_side_action.setChecked(True)
+        else:
+            self.client_side_action.setChecked(True)
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         """Handle window show event - refresh icons after window is shown."""
@@ -1021,6 +1189,30 @@ class MainWindow(QMainWindow):
         # Update textbox placeholder text colors
         if hasattr(self, "filter_textbox"):
             self._update_textbox_placeholder_style(self.filter_textbox)
+
+    def _set_window_decoration(self, decoration_type: WindowDecorationType) -> None:
+        """
+        Set the window decoration type and save to configuration.
+
+        Note: Changing window decorations requires restarting the application.
+
+        Args:
+            decoration_type: The window decoration type to use
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        # Save the new configuration
+        self.gui_config.window_decoration = decoration_type
+        self.gui_config.save()
+
+        # Inform the user that a restart is required
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Restart Required")
+        msg_box.setText("Window decoration changes require restarting the application.")
+        msg_box.setInformativeText("Please restart the application for the changes to take effect.")
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
 
     def _update_textbox_placeholder_style(self, textbox: QLineEdit) -> None:
         """Update placeholder text color to be theme-aware."""

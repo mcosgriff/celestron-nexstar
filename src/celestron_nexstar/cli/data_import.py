@@ -196,7 +196,7 @@ def import_custom_yaml(yaml_path: Path, mag_limit: float = 99.0, verbose: bool =
                     continue
 
                 # Filter by magnitude
-                if magnitude is not None and magnitude > mag_limit:
+                if magnitude and magnitude > mag_limit:
                     skipped += 1
                     console.print(f"[dim]Skipping {name}: magnitude {magnitude} > limit {mag_limit}[/dim]")
                     progress.advance(task)
