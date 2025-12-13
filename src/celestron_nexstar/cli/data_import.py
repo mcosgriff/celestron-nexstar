@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import ssl
 import urllib.error
 import urllib.request
@@ -713,20 +714,11 @@ def import_celestial_data_geojson(
                                 continue
 
                             try:
-                                obj_type_raw = obj.get("object_type")
-                                obj_type: CelestialObjectType | None = None
-                                if isinstance(obj_type_raw, str):
-                                    try:
-                                        obj_type = CelestialObjectType(obj_type_raw)
-                                    except (ValueError, TypeError):
-                                        continue
-                                elif isinstance(obj_type_raw, CelestialObjectType):
-                                    obj_type = obj_type_raw
-
-                                if obj_type is None:
+                                obj_type_val = obj.get("object_type")
+                                if not isinstance(obj_type_val, CelestialObjectType):
                                     continue
 
-                                model_class = type_to_model.get(obj_type)
+                                model_class = type_to_model.get(obj_type_val)
                                 if not model_class:
                                     continue
 
@@ -742,8 +734,8 @@ def import_celestial_data_geojson(
                                         obj["_temp_geometry"], db_session
                                     )
                                     if geometry_blob:
-                                        # Type ignore: model_obj is a union type, but we know it has geometry attribute
-                                        model_obj.geometry = geometry_blob  # type: ignore[attr-defined]
+                                        # model_obj is a SQLAlchemy model instance, but mypy can't narrow it well here.
+                                        model_obj.geometry = geometry_blob
 
                                         # Find spatial relationships (constellation and asterism) via spatial queries
                                         if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):
@@ -751,9 +743,9 @@ def import_celestial_data_geojson(
                                                 model_obj, db_session
                                             )
                                             if constellation_id is not None:
-                                                model_obj.constellation_id = constellation_id  # type: ignore[attr-defined]
+                                                model_obj.constellation_id = constellation_id
                                             if asterism_id is not None:
-                                                model_obj.asterism_id = asterism_id  # type: ignore[attr-defined]
+                                                model_obj.asterism_id = asterism_id
 
                                         db_session.commit()
                             except Exception as e:
@@ -1091,7 +1083,7 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
             select(ConstellationModel.id)
             .where(
                 ConstellationModel.geometry.isnot(None),
-                functions.ST_Contains(ConstellationModel.geometry, model_obj.geometry),  # type: ignore[arg-type]
+                functions.ST_Contains(ConstellationModel.geometry, model_obj.geometry),
             )
             .limit(1)
         )
@@ -1105,7 +1097,7 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
         stmt_asterism = (
             select(
                 AsterismModel.id,
-                functions.ST_Distance(AsterismModel.geometry, model_obj.geometry).label("distance"),  # type: ignore[arg-type]
+                functions.ST_Distance(AsterismModel.geometry, model_obj.geometry).label("distance"),
             )
             .where(AsterismModel.geometry.isnot(None))
             .order_by("distance")
@@ -1121,7 +1113,7 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
                     distance = float(distance_raw)
                 except (TypeError, ValueError):
                     distance = None
-            # Use 2 degrees tolerance for line-based asterisms (same as SyncStarRelationshipsThread)
+            # Use 2 degrees tolerance for line-based asterisms
             if distance is not None and distance <= 2.0:
                 asterism_id = asterism_id_candidate
 
@@ -2235,6 +2227,54 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         properties = feature.get("properties", {})
                         geometry = feature.get("geometry", {})
 
+                        def _representative_center_from_geometry(
+                            geom: dict[str, Any],
+                        ) -> tuple[float | None, float | None]:
+                            """Compute a representative (lon_deg, lat_deg) center from GeoJSON geometry.
+
+                            For MultiLineString/LineString, we take a mean of all points. For RA-like longitudes
+                            (0-360 wrap), we use a circular mean to avoid 359/1 averaging to ~180.
+                            """
+                            import math
+
+                            geom_type = str(geom.get("type", ""))
+                            coords_any = geom.get("coordinates", [])
+
+                            points: list[tuple[float, float]] = []
+                            try:
+                                if geom_type == "Point" and isinstance(coords_any, list) and len(coords_any) >= 2:
+                                    points = [(float(coords_any[0]), float(coords_any[1]))]
+                                elif geom_type == "LineString" and isinstance(coords_any, list):
+                                    for p in coords_any:
+                                        if isinstance(p, list) and len(p) >= 2:
+                                            points.append((float(p[0]), float(p[1])))
+                                elif geom_type == "MultiLineString" and isinstance(coords_any, list):
+                                    for line in coords_any:
+                                        if isinstance(line, list):
+                                            for p in line:
+                                                if isinstance(p, list) and len(p) >= 2:
+                                                    points.append((float(p[0]), float(p[1])))
+                            except (TypeError, ValueError):
+                                points = []
+
+                            if not points:
+                                return None, None
+
+                            # Circular mean for longitude (RA degrees)
+                            sin_sum = 0.0
+                            cos_sum = 0.0
+                            dec_sum = 0.0
+                            for lon_deg, lat_deg in points:
+                                lon_rad = math.radians(lon_deg % 360.0)
+                                sin_sum += math.sin(lon_rad)
+                                cos_sum += math.cos(lon_rad)
+                                dec_sum += lat_deg
+
+                            mean_lon_rad = math.atan2(sin_sum, cos_sum)
+                            mean_lon_deg = (math.degrees(mean_lon_rad) + 360.0) % 360.0
+                            mean_lat_deg = dec_sum / float(len(points))
+                            return mean_lon_deg, mean_lat_deg
+
                         # Extract coordinates
                         # Asterisms use loc_lon/loc_lat properties for location, not geometry coordinates
                         # (geometry is MultiLineString for drawing the pattern)
@@ -2243,6 +2283,14 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         if "loc_lon" in properties and "loc_lat" in properties:
                             ra_degrees = float(properties["loc_lon"])
                             dec_degrees = float(properties["loc_lat"])
+
+                            # Some sources contain placeholder 0/0 centers even though geometry is correct.
+                            # If that happens, compute a representative center from the geometry.
+                            if abs(ra_degrees) < 1e-9 and abs(dec_degrees) < 1e-9:
+                                geom_lon, geom_lat = _representative_center_from_geometry(geometry)
+                                if geom_lon is not None and geom_lat is not None:
+                                    ra_degrees = geom_lon
+                                    dec_degrees = geom_lat
                         else:
                             # Fallback: try to get from geometry if it's a Point
                             coords = geometry.get("coordinates", [])
@@ -2251,13 +2299,19 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                     ra_degrees = float(coords[0])
                                     dec_degrees = float(coords[1])
                                 elif geometry.get("type") == "MultiLineString" and coords:
-                                    # Use first point of first line as approximate location
-                                    first_line = coords[0] if isinstance(coords, list) and coords else []
-                                    if first_line and len(first_line) > 0:
-                                        first_point = first_line[0] if isinstance(first_line, list) else []
-                                        if first_point and len(first_point) >= 2:
-                                            ra_degrees = float(first_point[0])
-                                            dec_degrees = float(first_point[1])
+                                    # Prefer a representative center (mean) rather than the first point
+                                    geom_lon, geom_lat = _representative_center_from_geometry(geometry)
+                                    if geom_lon is not None and geom_lat is not None:
+                                        ra_degrees = geom_lon
+                                        dec_degrees = geom_lat
+                                    else:
+                                        # Fallback to first point of first line as approximate location
+                                        first_line = coords[0] if isinstance(coords, list) and coords else []
+                                        if first_line and len(first_line) > 0:
+                                            first_point = first_line[0] if isinstance(first_line, list) else []
+                                            if first_point and len(first_point) >= 2:
+                                                ra_degrees = float(first_point[0])
+                                                dec_degrees = float(first_point[1])
 
                         if ra_degrees is None or dec_degrees is None:
                             skipped += 1
@@ -2343,8 +2397,8 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                         # The MULTILINESTRING geometry represents the pattern connecting stars
                         # We'll find stars near the geometry points
                         geometry_points_for_star_search: list[tuple[float, float]] | None = None
-                        geometry_type = geometry.get("type", "")
-                        if geometry_type == "MULTILINESTRING":
+                        geometry_type = str(geometry.get("type", ""))
+                        if geometry_type.upper() == "MULTILINESTRING":
                             # Extract all points from MULTILINESTRING coordinates
                             # MULTILINESTRING: [[[lon, lat], ...], ...] - each line is a list of points
                             all_points: list[tuple[float, float]] = []
@@ -2815,17 +2869,20 @@ def import_wds_catalog(
                         progress_callback("Processing WDS catalog...", processed, total_lines)
                     continue
 
-                # Parse RA (hours, minutes, seconds)
-                ra_h_str = line[18:21].strip()
-                ra_m_str = line[21:24].strip()
-                ra_s_str = line[24:28].strip()
+                # Only accept real WDS identifiers like "00000+7530"
+                if not re.fullmatch(r"\d{5}[+-]\d{4}", wds_designation):
+                    # Update progress
+                    if use_rich_progress and task is not None and progress_obj is not None:
+                        progress_obj.advance(task)
+                    elif progress_callback:
+                        processed = len(all_objects) + skipped + errors
+                        progress_callback("Processing WDS catalog...", processed, total_lines)
+                    continue
 
-                try:
-                    ra_h = float(ra_h_str) if ra_h_str else 0.0
-                    ra_m = float(ra_m_str) if ra_m_str else 0.0
-                    ra_s = float(ra_s_str) if ra_s_str else 0.0
-                    ra_hours = ra_h + (ra_m / 60.0) + (ra_s / 3600.0)
-                except (ValueError, TypeError):
+                # Parse J2000 coordinates from the trailing coordinate field in wdsweb_summ2.txt:
+                # e.g. "000006.64+752859.8" => RA=00:00:06.64, Dec=+75:28:59.8
+                coord_match = re.search(r"(\d{6}\.\d{2})([+-])(\d{6}\.\d)\s*$", line.rstrip())
+                if not coord_match:
                     skipped += 1
                     # Update progress
                     if use_rich_progress and task is not None and progress_obj is not None:
@@ -2835,45 +2892,19 @@ def import_wds_catalog(
                         progress_callback("Processing WDS catalog...", processed, total_lines)
                     continue
 
-                # Parse Dec (degrees, arcminutes, arcseconds)
-                dec_sign = line[28:29].strip()
-                dec_d_str = line[29:32].strip()
-                dec_m_str = line[32:35].strip()
-                dec_s_str = line[35:38].strip()
-
+                ra_compact, dec_sign, dec_compact = coord_match.groups()
                 try:
-                    dec_d = float(dec_d_str) if dec_d_str else 0.0
-                    dec_m = float(dec_m_str) if dec_m_str else 0.0
-                    dec_s = float(dec_s_str) if dec_s_str else 0.0
-                    dec_degrees = dec_d + (dec_m / 60.0) + (dec_s / 3600.0)
+                    ra_h = int(ra_compact[0:2])
+                    ra_m = int(ra_compact[2:4])
+                    ra_s = float(ra_compact[4:])
+                    ra_hours = float(ra_h) + (float(ra_m) / 60.0) + (ra_s / 3600.0)
+
+                    dec_d = int(dec_compact[0:2])
+                    dec_m = int(dec_compact[2:4])
+                    dec_s = float(dec_compact[4:])
+                    dec_degrees = float(dec_d) + (float(dec_m) / 60.0) + (dec_s / 3600.0)
                     if dec_sign == "-":
                         dec_degrees = -dec_degrees
-
-                    # Validate declination is within valid range (-90 to 90 degrees)
-                    if not (-90.0 <= dec_degrees <= 90.0):
-                        # Check if this might be a parsing error (e.g., arcminutes treated as degrees)
-                        # If dec_d is > 90, it might be arcminutes instead
-                        if abs(dec_d) > 90 and abs(dec_d) < 5400:  # 5400 arcmin = 90 degrees
-                            # Try treating dec_d as arcminutes
-                            dec_degrees = (dec_d / 60.0) + (dec_m / 3600.0) + (dec_s / 216000.0)
-                            if dec_sign == "-":
-                                dec_degrees = -dec_degrees
-
-                        # If still invalid, skip this entry
-                        if not (-90.0 <= dec_degrees <= 90.0):
-                            if verbose:
-                                console.print(
-                                    f"[yellow]Warning: Skipping {wds_designation} - invalid declination {dec_degrees:.2f}° "
-                                    f"(parsed as d={dec_d}, m={dec_m}, s={dec_s})[/yellow]"
-                                )
-                            skipped += 1
-                            # Update progress
-                            if use_rich_progress and task is not None:
-                                progress_obj.advance(task)  # type: ignore[union-attr]
-                            elif progress_callback:
-                                processed = len(all_objects) + skipped + errors
-                                progress_callback("Processing WDS catalog...", processed, total_lines)
-                            continue
                 except (ValueError, TypeError):
                     skipped += 1
                     # Update progress
@@ -3072,24 +3103,6 @@ DATA_SOURCES: dict[str, DataSource] = {
         attribution="User-defined",
         importer=import_custom_yaml,
     ),
-    "celestial_stars_6": DataSource(
-        name="Celestial Data - Stars (mag ≤ 6)",
-        description="Stars from celestial_data repository (magnitude ≤ 6)",
-        url="https://github.com/dieghernan/celestial_data",
-        objects_available=5000,  # Approximate
-        license="BSD-3-Clause",
-        attribution="Olaf Frohn and Diego Hernangómez",
-        importer=lambda path, mag, verbose: import_celestial_stars(path, mag, verbose),
-    ),
-    "celestial_stars_8": DataSource(
-        name="Celestial Data - Stars (mag ≤ 8)",
-        description="Stars from celestial_data repository (magnitude ≤ 8)",
-        url="https://github.com/dieghernan/celestial_data",
-        objects_available=20000,  # Approximate
-        license="BSD-3-Clause",
-        attribution="Olaf Frohn and Diego Hernangómez",
-        importer=lambda path, mag, verbose: import_celestial_stars(path, mag, verbose),
-    ),
     "celestial_stars_14": DataSource(
         name="Celestial Data - Stars (mag ≤ 14)",
         description="Stars from celestial_data repository (magnitude ≤ 14)",
@@ -3098,24 +3111,6 @@ DATA_SOURCES: dict[str, DataSource] = {
         license="BSD-3-Clause",
         attribution="Olaf Frohn and Diego Hernangómez",
         importer=lambda path, mag, verbose: import_celestial_stars(path, mag, verbose),
-    ),
-    "celestial_dsos_6": DataSource(
-        name="Celestial Data - DSOs (mag ≤ 6)",
-        description="Deep sky objects from celestial_data (magnitude ≤ 6)",
-        url="https://github.com/dieghernan/celestial_data",
-        objects_available=200,  # Approximate
-        license="BSD-3-Clause",
-        attribution="Olaf Frohn and Diego Hernangómez",
-        importer=lambda path, mag, verbose: import_celestial_dsos(path, mag, verbose),
-    ),
-    "celestial_dsos_14": DataSource(
-        name="Celestial Data - DSOs (mag ≤ 14)",
-        description="Deep sky objects from celestial_data (magnitude ≤ 14)",
-        url="https://github.com/dieghernan/celestial_data",
-        objects_available=5000,  # Approximate
-        license="BSD-3-Clause",
-        attribution="Olaf Frohn and Diego Hernangómez",
-        importer=lambda path, mag, verbose: import_celestial_dsos(path, mag, verbose),
     ),
     "celestial_dsos_20": DataSource(
         name="Celestial Data - DSOs (mag ≤ 20)",

@@ -580,6 +580,116 @@ class AsterismInfoDialog(QDialog):
 
                 html_parts.append("</table>")
 
+            # Visible stars in this asterism (from DB relationships, filtered by current telescope configuration)
+            try:
+                from sqlalchemy import select
+
+                from celestron_nexstar.api.core.enums import SkyBrightness
+                from celestron_nexstar.api.database.database import get_database
+                from celestron_nexstar.api.database.models import AsterismModel, StarModel
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+                from celestron_nexstar.api.observation.visibility import assess_visibility
+
+                # Get asterism model row for relationship lookup
+                db = get_database()
+                with db._get_session() as session:
+                    asterism_model = session.scalar(
+                        select(AsterismModel).where(AsterismModel.name == asterism.name).limit(1)
+                    )
+
+                    visible_star_names: list[str] = []
+                    if asterism_model is not None:
+                        # Pull all stars linked to this asterism (prefer FK field)
+                        star_models = (
+                            session.execute(select(StarModel).where(StarModel.asterism_id == asterism_model.id))
+                            .scalars()
+                            .all()
+                        )
+
+                        # Determine sky brightness from light pollution if available (used for telescope limiting magnitude)
+                        location = get_observer_location()
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        try:
+                            lp = get_light_pollution_data(session, location.latitude, location.longitude)
+                            sky_brightness = bortle_to_sky_brightness.get(lp.bortle_class.value, SkyBrightness.FAIR)
+                        except Exception:
+                            sky_brightness = SkyBrightness.FAIR
+
+                        planner = ObservationPlanner()
+                        conditions = planner.get_tonight_conditions()
+
+                        # Filter by actual visibility with configured telescope/conditions
+                        for sm in star_models:
+                            # Build a minimal CelestialObject for visibility check
+                            from celestron_nexstar.api.catalogs.catalogs import CelestialObject
+                            from celestron_nexstar.api.core.enums import CelestialObjectType
+
+                            obj = CelestialObject(
+                                name=sm.common_name or sm.name or "",
+                                common_name=sm.common_name,
+                                ra_hours=sm.ra_hours,
+                                dec_degrees=sm.dec_degrees,
+                                magnitude=sm.magnitude,
+                                object_type=CelestialObjectType.STAR,
+                                catalog=sm.catalog,
+                                description=sm.description,
+                                parent_planet=None,
+                                constellation=sm.constellation_name,
+                                asterism=asterism.name,
+                            )
+
+                            vis_info = assess_visibility(
+                                obj,
+                                sky_brightness=sky_brightness,
+                                min_altitude_deg=20.0,
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=conditions.timestamp,
+                            )
+                            if vis_info.is_visible:
+                                visible_star_names.append(obj.common_name or obj.name)
+
+                    if visible_star_names:
+                        html_parts.append(
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                            f"Visible Stars in this Asterism ({len(visible_star_names)}):</p>"
+                        )
+                        html_parts.append(
+                            "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
+                        )
+                        header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
+                        border_color = colors["text_dim"]
+                        html_parts.append(
+                            f"<tr style='background-color: {header_bg};'>"
+                            "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
+                            "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
+                            "</tr>"
+                        )
+                        for star_name in sorted(set(visible_star_names)):
+                            star_name_encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
+                            info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
+                            html_parts.append(
+                                f"<tr>"
+                                f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{star_name}</td>"
+                                f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                                f"</tr>"
+                            )
+                        html_parts.append("</table>")
+            except Exception as e:
+                logger.debug(f"Could not compute visible asterism stars: {e}")
+
             # Wikipedia link
             if hasattr(asterism, "wikipedia_url") and asterism.wikipedia_url:
                 html_parts.append(

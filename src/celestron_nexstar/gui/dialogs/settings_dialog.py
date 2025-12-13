@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -119,20 +121,41 @@ class SettingsDialog(QDialog):
 
     def _create_config_tab(self) -> None:
         """Create the config tab."""
-        config_text = QTextEdit()
-        config_text.setReadOnly(True)
-        config_text.setAcceptRichText(True)
-        config_text.setStyleSheet(
-            f"""
-            QTextEdit {{
-                font-family: {self._font_family};
-                background-color: transparent;
-                border: none;
-            }}
-        """
-        )
-        self.config_text = config_text
-        self.tab_widget.addTab(config_text, "Config")
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        header = QLabel("User Config")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        info = QLabel("Settings here are written to disk and take effect after restarting the app.")
+        info.setWordWrap(True)
+        self.user_config_info_label = info
+        layout.addWidget(info)
+
+        form = QFormLayout()
+
+        use_memory = QCheckBox("Use in-memory database (faster reads, uses more RAM)")
+        self.user_config_use_memory_db = use_memory
+        form.addRow("Database:", use_memory)
+
+        layout.addLayout(form)
+
+        btn_row = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self._on_save_user_config)
+        self.user_config_save_btn = save_btn
+        btn_row.addWidget(save_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        status = QLabel()
+        status.setWordWrap(True)
+        self.user_config_status_label = status
+        layout.addWidget(status)
+
+        layout.addStretch()
+        self.tab_widget.addTab(widget, "Config")
 
     def _create_ephemeris_tab(self) -> None:
         """Create the ephemeris tab with download functionality."""
@@ -226,28 +249,12 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # Header with sync buttons
+        # Header
         header_layout = QHBoxLayout()
         header = QLabel("Celestial Data Sources")
         header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
         header_layout.addWidget(header)
         header_layout.addStretch()
-
-        sync_constellations_button = QPushButton("Sync Constellations")
-        sync_constellations_button.setToolTip(
-            "Sync constellation relationships: map stars to constellations, find brightest stars, update decoration data"
-        )
-        sync_constellations_button.clicked.connect(self._on_sync_constellations)
-        self.celestial_data_sync_constellations_button = sync_constellations_button
-        header_layout.addWidget(sync_constellations_button)
-
-        sync_asterisms_button = QPushButton("Sync Asterisms")
-        sync_asterisms_button.setToolTip(
-            "Sync asterism relationships: map stars to asterisms, find brightest stars, update decoration data"
-        )
-        sync_asterisms_button.clicked.connect(self._on_sync_asterisms)
-        self.celestial_data_sync_asterisms_button = sync_asterisms_button
-        header_layout.addWidget(sync_asterisms_button)
 
         layout.addLayout(header_layout)
 
@@ -411,131 +418,53 @@ class SettingsDialog(QDialog):
         self.tab_widget.addTab(data_text, "Data")
 
     def _load_config_info(self) -> None:
-        """Load general configuration information."""
+        """Load user-config values into the Config tab."""
         colors = self._get_theme_colors()
         try:
-            from celestron_nexstar.api.location.observer import get_observer_location
-            from celestron_nexstar.api.observation.optics import get_current_configuration
+            import os
 
-            optical_config = get_current_configuration()
-            observer_location = get_observer_location()
+            from celestron_nexstar.api.config.user_config import get_user_config_path, load_user_config
 
-            # Get config file paths
-            config_dir = Path.home() / ".config" / "celestron-nexstar"
-            optical_config_path = config_dir / "optical_config.json"
-            location_config_path = config_dir / "observer_location.json"
+            cfg = load_user_config()
+            self.user_config_use_memory_db.setChecked(cfg.use_memory_db)
 
-            html_content = []
-            html_content.append(
-                f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Configuration</span></p>"
-            )
-
-            # Optical Configuration
-            html_content.append(
-                f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>Optical Configuration</span></p>"
-            )
-            html_content.append(
-                "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; margin-bottom: 15px;'>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['cyan']};'><b>Setting</b></td><td style='color: {colors['green']};'><b>Value</b></td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Telescope</td><td style='color: {colors['text']};'>{optical_config.telescope.display_name}</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Aperture</td><td style='color: {colors['text']};'>{optical_config.telescope.aperture_mm:.0f}mm ({optical_config.telescope.aperture_inches:.1f}\")</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Focal Length</td><td style='color: {colors['text']};'>{optical_config.telescope.focal_length_mm:.0f}mm</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Focal Ratio</td><td style='color: {colors['text']};'>f/{optical_config.telescope.focal_ratio:.1f}</td></tr>"
-            )
-            eyepiece_name = optical_config.eyepiece.name or f"{optical_config.eyepiece.focal_length_mm:.0f}mm"
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Eyepiece</td><td style='color: {colors['text']};'>{eyepiece_name}</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Eyepiece Focal Length</td><td style='color: {colors['text']};'>{optical_config.eyepiece.focal_length_mm:.0f}mm</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Apparent FOV</td><td style='color: {colors['text']};'>{optical_config.eyepiece.apparent_fov_deg:.0f}°</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Magnification</td><td style='color: {colors['text']};'>{optical_config.magnification:.0f}x</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Exit Pupil</td><td style='color: {colors['text']};'>{optical_config.exit_pupil_mm:.1f}mm</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>True FOV</td><td style='color: {colors['text']};'>{optical_config.true_fov_deg:.2f}° ({optical_config.true_fov_arcmin:.1f}')</td></tr>"
-            )
-            html_content.append("</table>")
-
-            # Observer Location
-            html_content.append(
-                f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>Observer Location</span></p>"
-            )
-            html_content.append(
-                "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; margin-bottom: 15px;'>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['cyan']};'><b>Setting</b></td><td style='color: {colors['green']};'><b>Value</b></td></tr>"
-            )
-            if observer_location.name:
-                html_content.append(
-                    f"<tr><td style='color: {colors['text']};'>Location Name</td><td style='color: {colors['text']};'>{observer_location.name}</td></tr>"
+            # Communicate effective value (env var overrides)
+            env_val = os.getenv("CELESTRON_USE_MEMORY_DB")
+            if env_val is not None:
+                effective = env_val.lower() in ("true", "1", "yes")
+                self.user_config_status_label.setText(
+                    f"<span style='color: {colors['yellow']};'>Note:</span> "
+                    f"`CELESTRON_USE_MEMORY_DB` is set and overrides this setting. "
+                    f"Effective in-memory DB: <b>{'ON' if effective else 'OFF'}</b>"
                 )
-            lat_dir = "N" if observer_location.latitude >= 0 else "S"
-            lon_dir = "E" if observer_location.longitude >= 0 else "W"
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Latitude</td><td style='color: {colors['text']};'>{abs(observer_location.latitude):.4f}°{lat_dir}</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Longitude</td><td style='color: {colors['text']};'>{abs(observer_location.longitude):.4f}°{lon_dir}</td></tr>"
-            )
-            if observer_location.elevation:
-                html_content.append(
-                    f"<tr><td style='color: {colors['text']};'>Elevation</td><td style='color: {colors['text']};'>{observer_location.elevation:.0f} m above sea level</td></tr>"
+            else:
+                self.user_config_status_label.setText(
+                    f"Config file: <span style='color: {colors['text_dim']};'>{get_user_config_path()}</span>"
                 )
-            html_content.append("</table>")
-
-            # Config File Paths
-            html_content.append(
-                f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>Configuration Files</span></p>"
-            )
-            html_content.append("<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse;'>")
-            html_content.append(
-                f"<tr><td style='color: {colors['cyan']};'><b>File</b></td><td style='color: {colors['green']};'><b>Path</b></td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Config Directory</td><td style='color: {colors['text_dim']};'>{config_dir}</td></tr>"
-            )
-            exists_marker = (
-                f"<span style='color: {colors['green']};'>✓</span>"
-                if optical_config_path.exists()
-                else f"<span style='color: {colors['text_dim']};'>(not saved)</span>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Optical Config</td><td style='color: {colors['text_dim']};'>{optical_config_path} {exists_marker}</td></tr>"
-            )
-            exists_marker = (
-                f"<span style='color: {colors['green']};'>✓</span>"
-                if location_config_path.exists()
-                else f"<span style='color: {colors['text_dim']};'>(not saved)</span>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Location Config</td><td style='color: {colors['text_dim']};'>{location_config_path} {exists_marker}</td></tr>"
-            )
-            html_content.append("</table>")
-
-            self.config_text.setHtml("\n".join(html_content))
 
         except Exception as e:
             logger.error(f"Error loading config info: {e}", exc_info=True)
-            self.config_text.setHtml(
-                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load configuration: {e}</span></p>"
+            self.user_config_status_label.setText(
+                f"<span style='color: {colors['error']};'><b>Error:</b> Failed to load configuration: {e}</span>"
+            )
+
+    def _on_save_user_config(self) -> None:
+        """Save user-config values to disk."""
+        colors = self._get_theme_colors()
+        try:
+            from celestron_nexstar.api.config.user_config import UserConfig, get_user_config_path, save_user_config
+
+            cfg = UserConfig(use_memory_db=bool(self.user_config_use_memory_db.isChecked()))
+            save_user_config(cfg)
+            self.user_config_status_label.setText(
+                f"<span style='color: {colors['green']};'>✓ Saved</span> "
+                f"to <span style='color: {colors['text_dim']};'>{get_user_config_path()}</span>. "
+                "Restart the app for changes to take effect."
+            )
+        except Exception as e:
+            logger.error(f"Error saving user config: {e}", exc_info=True)
+            self.user_config_status_label.setText(
+                f"<span style='color: {colors['error']};'><b>Error:</b> Failed to save configuration: {e}</span>"
             )
 
     def _load_ephemeris_info(self) -> None:
@@ -604,6 +533,8 @@ class SettingsDialog(QDialog):
     def _load_celestial_data_info(self) -> None:
         """Load celestial data sources into table with enforced import order."""
         try:
+            import json
+
             from sqlalchemy import select
 
             from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel, get_db_session
@@ -611,6 +542,58 @@ class SettingsDialog(QDialog):
 
             # Filter to only celestial data sources
             celestial_sources = {k: v for k, v in DATA_SOURCES.items() if k.startswith("celestial_")}
+
+            cache_dir = get_cache_dir()
+
+            # Some sources (Messier / Local Group) can overlap with other catalogs, and the DB schema
+            # enforces unique names per table. To keep the UI accurate, we compute an "imported count"
+            # for these sources based on whether objects from the source file exist in the DB.
+            messier_names: set[str] = set()
+            local_group_names: set[str] = set()
+
+            messier_path = cache_dir / "messier.min.geojson"
+            if messier_path.exists():
+                try:
+                    data = json.loads(messier_path.read_text(encoding="utf-8"))
+                    for feat in data.get("features", []):
+                        if not isinstance(feat, dict):
+                            continue
+                        props = feat.get("properties", {})
+                        if not isinstance(props, dict):
+                            continue
+                        name = (
+                            props.get("name")
+                            or props.get("n")
+                            or props.get("Name")
+                            or props.get("id")
+                            or props.get("designation")
+                        )
+                        if isinstance(name, str) and name.strip():
+                            messier_names.add(name.strip())
+                except Exception:
+                    messier_names = set()
+
+            local_group_path = cache_dir / "lg.min.geojson"
+            if local_group_path.exists():
+                try:
+                    data = json.loads(local_group_path.read_text(encoding="utf-8"))
+                    for feat in data.get("features", []):
+                        if not isinstance(feat, dict):
+                            continue
+                        props = feat.get("properties", {})
+                        if not isinstance(props, dict):
+                            continue
+                        name = (
+                            props.get("name")
+                            or props.get("n")
+                            or props.get("Name")
+                            or props.get("id")
+                            or props.get("designation")
+                        )
+                        if isinstance(name, str) and name.strip():
+                            local_group_names.add(name.strip())
+                except Exception:
+                    local_group_names = set()
 
             # Check if constellations and asterisms are imported
             constellations_imported = False
@@ -625,8 +608,8 @@ class SettingsDialog(QDialog):
                 pass  # Tables might not exist yet
 
             # Helper function to check if data is imported for a source
-            def check_data_imported(source_id: str) -> bool:
-                """Check if data for a source has been imported."""
+            def get_imported_count(source_id: str) -> int:
+                """Return how many records are currently imported for a source."""
                 try:
                     with get_db_session() as session:
                         from sqlalchemy import func
@@ -640,15 +623,15 @@ class SettingsDialog(QDialog):
 
                         if source_id == "celestial_constellations":
                             count = session.scalar(select(func.count(ConstellationModel.id)))
-                            return (count or 0) > 0
+                            return int(count or 0)
                         elif source_id == "celestial_asterisms":
                             count = session.scalar(select(func.count(AsterismModel.id)))
-                            return (count or 0) > 0
+                            return int(count or 0)
                         elif source_id.startswith("celestial_stars"):
                             count = session.scalar(
                                 select(func.count(StarModel.id)).where(StarModel.catalog == "celestial_stars")
                             )
-                            return (count or 0) > 0
+                            return int(count or 0)
                         elif source_id.startswith("celestial_dsos"):
                             # Check galaxies, nebulae, and clusters
                             galaxy_count = session.scalar(
@@ -660,9 +643,29 @@ class SettingsDialog(QDialog):
                             cluster_count = session.scalar(
                                 select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "celestial_dsos")
                             )
-                            return (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) > 0
+                            return int((galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0))
                         elif source_id == "celestial_messier":
-                            # Check galaxies, nebulae, and clusters with messier catalog
+                            # Prefer name-membership counting so the UI reflects objects that already exist
+                            # from other imports (e.g. celestial_dsos) even if they can't be duplicated.
+                            if messier_names:
+                                galaxy_count = session.scalar(
+                                    select(func.count(GalaxyModel.id)).where(GalaxyModel.name.in_(messier_names))
+                                )
+                                nebula_count = session.scalar(
+                                    select(func.count(NebulaModel.id)).where(NebulaModel.name.in_(messier_names))
+                                )
+                                cluster_count = session.scalar(
+                                    select(func.count(ClusterModel.id)).where(ClusterModel.name.in_(messier_names))
+                                )
+                                # Include StarModel too (handles any legacy/mis-imported rows)
+                                star_count = session.scalar(
+                                    select(func.count(StarModel.id)).where(StarModel.name.in_(messier_names))
+                                )
+                                return int(
+                                    (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                                )
+
+                            # Fallback: count rows explicitly tagged as messier (or any legacy mis-imports)
                             galaxy_count = session.scalar(
                                 select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "messier")
                             )
@@ -672,19 +675,52 @@ class SettingsDialog(QDialog):
                             cluster_count = session.scalar(
                                 select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "messier")
                             )
-                            return (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) > 0
+                            star_count = session.scalar(
+                                select(func.count(StarModel.id)).where(StarModel.catalog == "messier")
+                            )
+                            return int(
+                                (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                            )
                         elif source_id == "celestial_local_group":
-                            # Check galaxies and clusters with local_group catalog
+                            if local_group_names:
+                                galaxy_count = session.scalar(
+                                    select(func.count(GalaxyModel.id)).where(GalaxyModel.name.in_(local_group_names))
+                                )
+                                nebula_count = session.scalar(
+                                    select(func.count(NebulaModel.id)).where(NebulaModel.name.in_(local_group_names))
+                                )
+                                cluster_count = session.scalar(
+                                    select(func.count(ClusterModel.id)).where(ClusterModel.name.in_(local_group_names))
+                                )
+                                star_count = session.scalar(
+                                    select(func.count(StarModel.id)).where(StarModel.name.in_(local_group_names))
+                                )
+                                return int(
+                                    (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                                )
+
                             galaxy_count = session.scalar(
                                 select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "local_group")
                             )
                             cluster_count = session.scalar(
                                 select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "local_group")
                             )
-                            return (galaxy_count or 0) + (cluster_count or 0) > 0
+                            star_count = session.scalar(
+                                select(func.count(StarModel.id)).where(StarModel.catalog == "local_group")
+                            )
+                            nebula_count = session.scalar(
+                                select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "local_group")
+                            )
+                            return int(
+                                (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                            )
                 except Exception:
-                    return False
-                return False
+                    return 0
+                return 0
+
+            def check_data_imported(source_id: str) -> bool:
+                """Check if data for a source has been imported."""
+                return get_imported_count(source_id) > 0
 
             table = self.celestial_data_table
             table.setRowCount(len(celestial_sources))
@@ -702,8 +738,6 @@ class SettingsDialog(QDialog):
                 "celestial_constellations": "constellations.min.geojson",
                 "celestial_local_group": "lg.min.geojson",
             }
-
-            cache_dir = get_cache_dir()
 
             # Define import order: constellations first, then asterisms, then the rest
 
@@ -746,8 +780,11 @@ class SettingsDialog(QDialog):
                     status_item = QTableWidgetItem(status_text)
                 table.setItem(row, 2, status_item)
 
-                # Size (estimated)
-                size_text = f"~{source.objects_available:,} objects"
+                # Size: show actual imported count if available, otherwise estimate
+                imported_count = get_imported_count(source_id)
+                size_text = (
+                    f"{imported_count:,} imported" if imported_count > 0 else f"~{source.objects_available:,} objects"
+                )
                 table.setItem(row, 3, QTableWidgetItem(size_text))
 
                 # Download button
@@ -761,6 +798,12 @@ class SettingsDialog(QDialog):
                 # Import button - enforce import order
                 import_btn = QPushButton("Import")
                 import_btn.setFixedWidth(80)
+
+                # Determine whether this source already has imported DB data (used for Import/Re-import label)
+                data_imported = check_data_imported(source_id)
+                if data_imported:
+                    import_btn.setText("Re-import")
+                    import_btn.setToolTip("Re-import will truncate existing data and import again")
 
                 # Enable import button based on:
                 # 1. File must be downloaded
@@ -797,7 +840,9 @@ class SettingsDialog(QDialog):
                 if tooltip_parts:
                     import_btn.setToolTip("; ".join(tooltip_parts))
                 else:
-                    import_btn.setToolTip("")
+                    # Keep the existing tooltip (e.g. Re-import message) if one was set above
+                    if not import_btn.toolTip():
+                        import_btn.setToolTip("")
 
                 import_btn.setEnabled(can_import)
                 import_btn.clicked.connect(lambda checked, sid=source_id: self._on_import_celestial_data(sid))
@@ -806,7 +851,6 @@ class SettingsDialog(QDialog):
                 # Delete button - only enabled if data is imported
                 delete_btn = QPushButton("Delete")
                 delete_btn.setFixedWidth(80)
-                data_imported = check_data_imported(source_id)
                 delete_btn.setEnabled(data_imported)
                 if not data_imported:
                     delete_btn.setToolTip("No data imported")
@@ -854,10 +898,24 @@ class SettingsDialog(QDialog):
     def _load_wds_info(self) -> None:
         """Load WDS catalog information."""
         try:
+            from sqlalchemy import func, select
+
+            from celestron_nexstar.api.database.models import DoubleStarModel, get_db_session
             from celestron_nexstar.cli.data_import import get_cache_dir
 
             cache_dir = get_cache_dir()
             wds_path = cache_dir / "wdsweb_summ2.txt"
+
+            # Count imported WDS rows (DB)
+            imported_count = 0
+            try:
+                with get_db_session() as session:
+                    imported_count = int(
+                        session.scalar(select(func.count(DoubleStarModel.id)).where(DoubleStarModel.catalog == "wds"))
+                        or 0
+                    )
+            except Exception:
+                imported_count = 0
 
             info_text = "<b>Washington Double Star Catalog (WDS)</b><br><br>"
             info_text += f"<b>Location:</b> {wds_path}<br><br>"
@@ -865,14 +923,20 @@ class SettingsDialog(QDialog):
             if wds_path.exists():
                 size_mb = wds_path.stat().st_size / (1024 * 1024)
                 info_text += f"<span style='color: green;'>✓ Downloaded ({size_mb:.1f} MB)</span><br><br>"
+                if imported_count > 0:
+                    info_text += f"<b>Imported:</b> {imported_count:,} rows<br><br>"
                 info_text += "The WDS catalog is ready to import into the database."
                 # Enable import button
                 self.wds_import_btn.setEnabled(True)
+                self.wds_download_btn.setText("Re-download WDS Catalog")
+                self.wds_import_btn.setText("Re-import WDS Catalog" if imported_count > 0 else "Import WDS Catalog")
             else:
                 info_text += "<span style='color: orange;'>Not downloaded</span><br><br>"
                 info_text += "Click 'Download WDS Catalog' to download from US Naval Observatory."
                 # Disable import button
                 self.wds_import_btn.setEnabled(False)
+                self.wds_download_btn.setText("Download WDS Catalog")
+                self.wds_import_btn.setText("Import WDS Catalog")
 
             self.wds_info.setText(info_text)
             self.wds_status_label.clear()
@@ -901,13 +965,13 @@ class SettingsDialog(QDialog):
             try:
                 with get_db_session() as session:
                     for region in regions:
-                        # Count grid points for this region (we'll use a simple query)
-                        # Note: The database doesn't store region names, so we'll check if data exists
-                        result = session.scalar(select(func.count(LightPollutionGridModel.id)))
-                        if result and result > 0:
-                            # We have some data, but can't distinguish regions easily
-                            # For now, just show if we have any data
-                            region_counts[region] = result if region == "north_america" else 0
+                        # Count grid points for this specific region
+                        result = session.scalar(
+                            select(func.count(LightPollutionGridModel.id)).where(
+                                LightPollutionGridModel.region == region
+                            )
+                        )
+                        region_counts[region] = int(result or 0)
             except Exception:
                 pass  # Table might not exist yet
 
@@ -954,6 +1018,8 @@ class SettingsDialog(QDialog):
                 # Import button
                 import_btn = QPushButton("Import")
                 import_btn.setFixedWidth(80)
+                if count > 0:
+                    import_btn.setText("Re-import")
                 import_btn.setEnabled(png_exists)  # Only enable if PNG is downloaded
                 import_btn.clicked.connect(lambda checked, r=region: self._on_import_light_pollution(r))
                 table.setCellWidget(row, 4, import_btn)
@@ -1434,110 +1500,6 @@ class SettingsDialog(QDialog):
         source_name = source.name.replace("Celestial Data - ", "") if source else source_id
         self._show_toast(f"{source_name} download error: {error}", duration_ms=4000)
 
-    def _on_sync_constellations(self) -> None:
-        """Handle sync constellations button click."""
-        from celestron_nexstar.gui.workers.download_workers import SyncStarRelationshipsThread
-
-        # Check if already syncing
-        worker_key = "constellations_sync"
-        if worker_key in self._download_workers:
-            return
-
-        # Show progress bar
-        self.celestial_data_progress.setVisible(True)
-        self.celestial_data_progress.setRange(0, 100)
-        self.celestial_data_progress.setValue(0)
-        self.celestial_data_status_label.setText("Syncing constellations...")
-
-        # Create and start worker (only constellations operations)
-        worker = SyncStarRelationshipsThread(operations=["constellations"])
-
-        def on_progress(status: str, current: int, total: int) -> None:
-            if total > 0:
-                percentage = int((current / total) * 100)
-                self.celestial_data_progress.setValue(percentage)
-            self.celestial_data_status_label.setText(status)
-
-        def on_operation_complete(operation: str, success: bool, message: str) -> None:
-            if success:
-                operation_names = {
-                    "stars_to_constellations": "Stars to Constellations",
-                    "brightest_stars_constellations": "Brightest Stars in Constellations",
-                }
-                op_name = operation_names.get(operation, operation)
-                self._show_toast(f"{op_name}: {message}", duration_ms=3000, preset="success")
-            else:
-                self._show_toast(f"Sync operation failed: {message}", duration_ms=4000, preset="error")
-
-        def on_error(operation: str, error: str) -> None:
-            logger.error(f"Sync error for {operation}: {error}")
-            self._show_toast(f"Sync error: {error}", duration_ms=4000, preset="error")
-
-        def on_finished() -> None:
-            self._download_workers.pop(worker_key, None)
-            self.celestial_data_progress.setVisible(False)
-            self.celestial_data_status_label.setText("Constellation sync complete")
-
-        worker.progress_updated.connect(on_progress)
-        worker.operation_complete.connect(on_operation_complete)
-        worker.error_occurred.connect(on_error)
-        worker.finished.connect(on_finished)
-
-        self._download_workers[worker_key] = worker
-        worker.start()
-
-    def _on_sync_asterisms(self) -> None:
-        """Handle sync asterisms button click."""
-        from celestron_nexstar.gui.workers.download_workers import SyncStarRelationshipsThread
-
-        # Check if already syncing
-        worker_key = "asterisms_sync"
-        if worker_key in self._download_workers:
-            return
-
-        # Show progress bar
-        self.celestial_data_progress.setVisible(True)
-        self.celestial_data_progress.setRange(0, 100)
-        self.celestial_data_progress.setValue(0)
-        self.celestial_data_status_label.setText("Syncing asterisms...")
-
-        # Create and start worker (only asterisms operations)
-        worker = SyncStarRelationshipsThread(operations=["asterisms"])
-
-        def on_progress(status: str, current: int, total: int) -> None:
-            if total > 0:
-                percentage = int((current / total) * 100)
-                self.celestial_data_progress.setValue(percentage)
-            self.celestial_data_status_label.setText(status)
-
-        def on_operation_complete(operation: str, success: bool, message: str) -> None:
-            if success:
-                operation_names = {
-                    "stars_to_asterisms": "Stars to Asterisms",
-                    "brightest_stars_asterisms": "Brightest Stars in Asterisms",
-                }
-                op_name = operation_names.get(operation, operation)
-                self._show_toast(f"{op_name}: {message}", duration_ms=3000, preset="success")
-            else:
-                self._show_toast(f"Sync operation failed: {message}", duration_ms=4000, preset="error")
-
-        def on_error(operation: str, error: str) -> None:
-            logger.error(f"Sync error for {operation}: {error}")
-            self._show_toast(f"Sync error: {error}", duration_ms=4000, preset="error")
-
-        def on_finished() -> None:
-            self._download_workers.pop(worker_key, None)
-            self.celestial_data_progress.setVisible(False)
-            self.celestial_data_status_label.setText("Asterism sync complete")
-
-        worker.progress_updated.connect(on_progress)
-        worker.operation_complete.connect(on_operation_complete)
-        worker.error_occurred.connect(on_error)
-        worker.finished.connect(on_finished)
-
-        self._download_workers[worker_key] = worker
-        worker.start()
-
     def _truncate_celestial_data(self, source_id: str) -> int:
         """
         Truncate (delete) existing data for a celestial data source from the database.
@@ -1549,6 +1511,8 @@ class SettingsDialog(QDialog):
             Number of records deleted
         """
         try:
+            import json
+
             from sqlalchemy import delete, func, select
 
             from celestron_nexstar.api.database.models import (
@@ -1560,8 +1524,37 @@ class SettingsDialog(QDialog):
                 StarModel,
                 get_db_session,
             )
+            from celestron_nexstar.cli.data_import import get_cache_dir
 
             deleted_count = 0
+            cache_dir = get_cache_dir()
+
+            def _load_source_names(filename: str) -> set[str]:
+                """Load object names from a cached GeoJSON FeatureCollection."""
+                path = cache_dir / filename
+                if not path.exists():
+                    return set()
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    names: set[str] = set()
+                    for feat in data.get("features", []):
+                        if not isinstance(feat, dict):
+                            continue
+                        props = feat.get("properties", {})
+                        if not isinstance(props, dict):
+                            continue
+                        name = (
+                            props.get("name")
+                            or props.get("n")
+                            or props.get("Name")
+                            or props.get("id")
+                            or props.get("designation")
+                        )
+                        if isinstance(name, str) and name.strip():
+                            names.add(name.strip())
+                    return names
+                except Exception:
+                    return set()
 
             with get_db_session() as session:
                 if source_id == "celestial_constellations":
@@ -1601,32 +1594,93 @@ class SettingsDialog(QDialog):
                     deleted_count = (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0)
 
                 elif source_id == "celestial_messier":
-                    # Delete Messier objects from galaxies, nebulae, and clusters
-                    galaxy_count = session.scalar(
-                        select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "messier")
-                    )
-                    nebula_count = session.scalar(
-                        select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "messier")
-                    )
-                    cluster_count = session.scalar(
-                        select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "messier")
-                    )
-                    session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "messier"))
-                    session.execute(delete(NebulaModel).where(NebulaModel.catalog == "messier"))
-                    session.execute(delete(ClusterModel).where(ClusterModel.catalog == "messier"))
-                    deleted_count = (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0)
+                    # Clean import: delete matching objects across all relevant tables.
+                    messier_names = _load_source_names("messier.min.geojson")
+                    if messier_names:
+                        galaxy_count = session.scalar(
+                            select(func.count(GalaxyModel.id)).where(GalaxyModel.name.in_(messier_names))
+                        )
+                        nebula_count = session.scalar(
+                            select(func.count(NebulaModel.id)).where(NebulaModel.name.in_(messier_names))
+                        )
+                        cluster_count = session.scalar(
+                            select(func.count(ClusterModel.id)).where(ClusterModel.name.in_(messier_names))
+                        )
+                        star_count = session.scalar(
+                            select(func.count(StarModel.id)).where(StarModel.name.in_(messier_names))
+                        )
+                        session.execute(delete(GalaxyModel).where(GalaxyModel.name.in_(messier_names)))
+                        session.execute(delete(NebulaModel).where(NebulaModel.name.in_(messier_names)))
+                        session.execute(delete(ClusterModel).where(ClusterModel.name.in_(messier_names)))
+                        session.execute(delete(StarModel).where(StarModel.name.in_(messier_names)))
+                        deleted_count = (
+                            (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                        )
+                    else:
+                        # Fallback: delete any explicitly tagged rows
+                        galaxy_count = session.scalar(
+                            select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "messier")
+                        )
+                        nebula_count = session.scalar(
+                            select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "messier")
+                        )
+                        cluster_count = session.scalar(
+                            select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "messier")
+                        )
+                        star_count = session.scalar(
+                            select(func.count(StarModel.id)).where(StarModel.catalog == "messier")
+                        )
+                        session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "messier"))
+                        session.execute(delete(NebulaModel).where(NebulaModel.catalog == "messier"))
+                        session.execute(delete(ClusterModel).where(ClusterModel.catalog == "messier"))
+                        session.execute(delete(StarModel).where(StarModel.catalog == "messier"))
+                        deleted_count = (
+                            (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                        )
 
                 elif source_id == "celestial_local_group":
-                    # Delete local group objects from galaxies and clusters
-                    galaxy_count = session.scalar(
-                        select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "local_group")
-                    )
-                    cluster_count = session.scalar(
-                        select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "local_group")
-                    )
-                    session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "local_group"))
-                    session.execute(delete(ClusterModel).where(ClusterModel.catalog == "local_group"))
-                    deleted_count = (galaxy_count or 0) + (cluster_count or 0)
+                    # Clean import: delete matching objects across all relevant tables.
+                    lg_names = _load_source_names("lg.min.geojson")
+                    if lg_names:
+                        galaxy_count = session.scalar(
+                            select(func.count(GalaxyModel.id)).where(GalaxyModel.name.in_(lg_names))
+                        )
+                        nebula_count = session.scalar(
+                            select(func.count(NebulaModel.id)).where(NebulaModel.name.in_(lg_names))
+                        )
+                        cluster_count = session.scalar(
+                            select(func.count(ClusterModel.id)).where(ClusterModel.name.in_(lg_names))
+                        )
+                        star_count = session.scalar(
+                            select(func.count(StarModel.id)).where(StarModel.name.in_(lg_names))
+                        )
+                        session.execute(delete(GalaxyModel).where(GalaxyModel.name.in_(lg_names)))
+                        session.execute(delete(NebulaModel).where(NebulaModel.name.in_(lg_names)))
+                        session.execute(delete(ClusterModel).where(ClusterModel.name.in_(lg_names)))
+                        session.execute(delete(StarModel).where(StarModel.name.in_(lg_names)))
+                        deleted_count = (
+                            (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                        )
+                    else:
+                        galaxy_count = session.scalar(
+                            select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "local_group")
+                        )
+                        nebula_count = session.scalar(
+                            select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "local_group")
+                        )
+                        cluster_count = session.scalar(
+                            select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "local_group")
+                        )
+                        star_count = session.scalar(
+                            select(func.count(StarModel.id)).where(StarModel.catalog == "local_group")
+                        )
+                        session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "local_group"))
+                        session.execute(delete(NebulaModel).where(NebulaModel.catalog == "local_group"))
+                        session.execute(delete(ClusterModel).where(ClusterModel.catalog == "local_group"))
+                        session.execute(delete(StarModel).where(StarModel.catalog == "local_group"))
+                        deleted_count = (
+                            (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) + (star_count or 0)
+                        )
 
                 session.commit()
 
@@ -2030,6 +2084,14 @@ class SettingsDialog(QDialog):
         if worker_key in self._download_workers:
             return
 
+        # Determine whether this is a re-download
+        try:
+            from celestron_nexstar.cli.data_import import get_cache_dir
+
+            wds_exists = (get_cache_dir() / "wdsweb_summ2.txt").exists()
+        except Exception:
+            wds_exists = False
+
         # Show progress bar
         self.wds_progress.setVisible(True)
         self.wds_progress.setRange(0, 100)
@@ -2038,7 +2100,7 @@ class SettingsDialog(QDialog):
         self.wds_status_label.setText("Downloading...")
 
         # Create and start worker
-        worker = DownloadWDSCatalogThread(force=False)
+        worker = DownloadWDSCatalogThread(force=wds_exists)
 
         def on_progress(status: str, current: int, total: int) -> None:
             self._on_wds_download_progress(status, current, total)
@@ -2094,6 +2156,22 @@ class SettingsDialog(QDialog):
         if worker_key in self._download_workers:
             return
 
+        # Truncate existing WDS rows for clean import
+        try:
+            from sqlalchemy import delete
+
+            from celestron_nexstar.api.database.models import DoubleStarModel, get_db_session
+
+            self.wds_status_label.setText("Truncating existing WDS data...")
+            with get_db_session() as session:
+                session.execute(delete(DoubleStarModel).where(DoubleStarModel.catalog == "wds"))
+                session.commit()
+        except Exception as e:
+            logger.error(f"Error truncating WDS data: {e}", exc_info=True)
+            self.wds_status_label.setText(f"✗ Error truncating WDS data: {e}")
+            self._show_toast(f"WDS truncate failed: {e}", duration_ms=4000)
+            return
+
         # Show progress bar
         self.wds_progress.setVisible(True)
         self.wds_progress.setRange(0, 100)
@@ -2115,6 +2193,7 @@ class SettingsDialog(QDialog):
             self._download_workers.pop(worker_key, None)
             self.wds_progress.setVisible(False)
             self.wds_import_btn.setEnabled(True)
+            self._load_wds_info()
 
         def on_error(error: str) -> None:
             self._on_wds_import_error(error)

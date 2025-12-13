@@ -234,9 +234,42 @@ class DoubleStarModel(Base, CelestialObjectMixin):
 
     __tablename__ = "double_stars"
 
+    # We are migrating away from the legacy string constellation column on this table.
+    # CelestialObjectMixin still defines `constellation`, but we exclude it here so the
+    # ORM doesn't require the column to exist in the double_stars table.
+    __mapper_args__: ClassVar[dict[str, Any]] = {
+        "exclude_properties": ["constellation"],
+    }
+
     # Double star specific fields
     primary_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)  # Magnitude of primary star
     secondary_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)  # Magnitude of secondary star
+
+    # Foreign keys for spatial relationships (populated via spatial queries during import)
+    constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asterism_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # Relationships (using string references since models are defined later)
+    constellation_rel: Mapped[ConstellationModel | None] = relationship(
+        "ConstellationModel", foreign_keys=[constellation_id], lazy="select"
+    )
+    asterism_rel: Mapped[AsterismModel | None] = relationship(
+        "AsterismModel", foreign_keys=[asterism_id], lazy="select"
+    )
+
+    @property
+    def constellation_name(self) -> str | None:
+        """Get constellation name from relationship."""
+        return self.constellation_rel.name if self.constellation_rel else None
+
+    @property
+    def asterism_name(self) -> str | None:
+        """Get asterism name from relationship."""
+        return self.asterism_rel.name if self.asterism_rel else None
 
     # Composite indexes
     __table_args__ = (
@@ -244,7 +277,7 @@ class DoubleStarModel(Base, CelestialObjectMixin):
         Index("idx_double_star_magnitude", "magnitude"),
         Index("idx_double_star_position", "ra_hours", "dec_degrees"),
         Index(
-            "idx_double_star_constellation_magnitude", "constellation", "magnitude"
+            "idx_double_star_constellation_id_magnitude", "constellation_id", "magnitude"
         ),  # For filtering by constellation and sorting by magnitude
     )
 

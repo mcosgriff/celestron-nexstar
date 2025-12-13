@@ -282,6 +282,68 @@ def seed_constellations(db_session: Session, force: bool = False) -> int:
     return added
 
 
+def decorate_constellations(db_session: Session, force: bool = False) -> int:
+    """
+    Decorate existing constellations with metadata from JSON seed file.
+
+    Note: This function does NOT create new constellations. Constellations should be imported
+    from GeoJSON files in ~/.cache/celestron-nexstar/celestial-data/ (constellations.min.geojson)
+    which is the source of truth. This function only enriches existing constellations with
+    decoration fields like description, mythology, season, etc.
+
+    Args:
+        db_session: Database session
+        force: If True, overwrite existing decoration fields with seed data
+
+    Returns:
+        Number of constellation records updated
+    """
+    logger.info("Decorating constellations with seed data...")
+
+    data = load_seed_json("constellations.json")
+    json_constellations_map: dict[str, dict[str, Any]] = {
+        item["name"]: item for item in data if isinstance(item, dict) and "name" in item
+    }
+
+    # Decoration fields from JSON (not position/geometry - those come from GeoJSON)
+    decoration_fields = {
+        "common_name",
+        "description",
+        "magnitude",
+        "hemisphere",
+        "mythology",
+        "season",
+    }
+
+    updated = 0
+    constellations = db_session.execute(select(ConstellationModel)).scalars().all()
+    for constellation in constellations:
+        json_data = json_constellations_map.get(constellation.name)
+        if not json_data:
+            continue
+
+        for field in decoration_fields:
+            # Only update if the model actually has this column
+            if (
+                field in json_data
+                and json_data.get(field) is not None
+                and hasattr(ConstellationModel, field)
+                and field in ConstellationModel.__table__.columns
+            ):
+                current_value = getattr(constellation, field, None)
+                if current_value is None or current_value == "" or force:
+                    setattr(constellation, field, json_data[field])
+                    updated += 1
+
+    if updated > 0:
+        db_session.commit()
+        logger.info(f"Updated {updated} constellation decoration fields from seed data")
+    else:
+        logger.info("Constellations already decorated (no updates needed)")
+
+    return updated
+
+
 def seed_asterisms(db_session: Session, force: bool = False) -> int:
     """
     Decorate existing asterisms with metadata from JSON seed file.

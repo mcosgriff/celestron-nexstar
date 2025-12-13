@@ -377,6 +377,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
         """Check database for cached forecasts. Returns (forecasts, now)."""
         from sqlalchemy import and_, select, text
+        from sqlalchemy.exc import SQLAlchemyError
 
         from celestron_nexstar.api.database.database import get_database
         from celestron_nexstar.api.database.models import Base, WeatherForecastModel, get_db_session
@@ -390,23 +391,26 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 # If it doesn't exist, create it
                 try:
                     session.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                except (AttributeError, RuntimeError, ValueError, TypeError, SQLAlchemyError) as e:
                     # AttributeError: missing connection attributes
                     # RuntimeError: database errors, table doesn't exist
                     # ValueError: invalid SQL
                     # TypeError: wrong argument types
+                    # SQLAlchemyError: table missing or other DB errors
                     # Table doesn't exist, create it
                     logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
                     Base.metadata.create_all(
                         db._engine,
                         tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                        checkfirst=True,
                     )
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, SQLAlchemyError) as e:
             # AttributeError: missing database attributes
             # RuntimeError: database connection/creation errors
             # ValueError: invalid table schema
             # TypeError: wrong argument types
             # OSError: file I/O errors
+            # SQLAlchemyError: DB errors while checking/creating table
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         now = datetime.now(UTC)
@@ -433,13 +437,14 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
                 # Filter out stale forecasts using intelligent staleness check
                 existing_forecasts = [f for f in all_forecasts if not _is_forecast_stale(f, now)]
-        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError, SQLAlchemyError) as e:
             # AttributeError: missing database/model attributes
             # RuntimeError: database connection errors
             # ValueError: invalid data format
             # TypeError: wrong argument types
             # KeyError: missing keys in data
             # IndexError: missing array indices
+            # SQLAlchemyError: table missing or other DB errors
             logger.warning(f"Error checking database for weather forecasts: {e}")
 
         return existing_forecasts, now
@@ -742,6 +747,7 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
     def _check_database_cache() -> WeatherForecastModel | None:
         """Check database for cached weather. Returns cached forecast or None."""
         from sqlalchemy import and_, select, text
+        from sqlalchemy.exc import SQLAlchemyError
 
         from celestron_nexstar.api.database.database import get_database
         from celestron_nexstar.api.database.models import Base, WeatherForecastModel, get_db_session
@@ -755,23 +761,25 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                 # If it doesn't exist, create it
                 try:
                     session.execute(text("SELECT 1 FROM weather_forecast LIMIT 1"))
-                except (AttributeError, RuntimeError, ValueError, TypeError) as e:
+                except (AttributeError, RuntimeError, ValueError, TypeError, SQLAlchemyError) as e:
                     # AttributeError: missing connection attributes
                     # RuntimeError: database errors, table doesn't exist
                     # ValueError: invalid SQL
                     # TypeError: wrong argument types
+                    # SQLAlchemyError: table missing or other DB errors
                     # Table doesn't exist, create it
                     logger.debug(f"weather_forecast table not found, creating it... (error: {e})")
                     Base.metadata.create_all(
                         db._engine,
                         tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
                     )
-        except (AttributeError, RuntimeError, ValueError, TypeError, OSError) as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, SQLAlchemyError) as e:
             # AttributeError: missing database attributes
             # RuntimeError: database connection/creation errors
             # ValueError: invalid table schema
             # TypeError: wrong argument types
             # OSError: file I/O errors
+            # SQLAlchemyError: DB errors while checking/creating table
             logger.debug(f"Could not check/create weather_forecast table: {e}")
 
         try:
@@ -796,13 +804,14 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                 for candidate in candidates:
                     if not _is_forecast_stale(candidate, now):
                         return candidate
-        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
+        except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError, SQLAlchemyError) as e:
             # AttributeError: missing database/model attributes
             # RuntimeError: database connection errors
             # ValueError: invalid data format
             # TypeError: wrong argument types
             # KeyError: missing keys in data
             # IndexError: missing array indices
+            # SQLAlchemyError: table missing or other DB errors
             logger.debug(f"Error checking database for current weather: {e}")
 
         return None
@@ -940,13 +949,21 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
             def _store_weather_in_db(weather_to_store: WeatherData) -> None:
                 """Store weather in database."""
                 from sqlalchemy import and_, select
+                from sqlalchemy.exc import SQLAlchemyError
 
                 from celestron_nexstar.api.database.database import get_database
-                from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
+                from celestron_nexstar.api.database.models import Base, WeatherForecastModel, get_db_session
                 from celestron_nexstar.api.location.geohash_utils import encode
 
-                get_database()
+                db = get_database()
                 try:
+                    # Ensure weather_forecast table exists (especially important for in-memory DB mode)
+                    Base.metadata.create_all(
+                        db._engine,
+                        tables=[WeatherForecastModel.__table__],  # type: ignore[list-item]
+                        checkfirst=True,
+                    )
+
                     location_geohash = encode(location.latitude, location.longitude, precision=9)
                     now_db = datetime.now(UTC)
                     current_hour_start_db = now_db.replace(minute=0, second=0, microsecond=0)
@@ -1001,12 +1018,13 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
 
                         session.commit()
                         logger.debug("Stored current weather in database")
-                except (AttributeError, RuntimeError, ValueError, TypeError, KeyError) as e:
+                except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, SQLAlchemyError) as e:
                     # AttributeError: missing database/model attributes
                     # RuntimeError: database connection/commit errors
                     # ValueError: invalid data format
                     # TypeError: wrong argument types
                     # KeyError: missing keys in data
+                    # SQLAlchemyError: table missing or other DB errors
                     logger.warning(f"Error storing current weather in database: {e}")
 
             _store_weather_in_db(weather_data)

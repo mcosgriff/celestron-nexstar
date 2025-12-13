@@ -341,6 +341,9 @@ class StarVisibilityWorkerThread(QThread):
                         observer_lon=location.longitude,
                         dt=conditions.timestamp,
                     )
+                    # Only include stars that are actually visible with the configured telescope/conditions
+                    if not vis_info.is_visible:
+                        continue
 
                     # Calculate altitude/azimuth
                     try:

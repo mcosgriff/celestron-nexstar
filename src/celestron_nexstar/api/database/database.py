@@ -22,9 +22,10 @@ from typing import Any, ClassVar, TypeVar, cast
 import deal
 from rich.console import Console
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Row
+from sqlalchemy.engine import Engine, Row
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType
@@ -233,16 +234,15 @@ class CatalogDatabase:
         self.db_path = Path(db_path)
         self.use_memory = use_memory
         self._source_db_path = self.db_path if use_memory else None
+        # Track in-memory database state. These must be initialized before any
+        # memory-load logic runs.
+        self._memory_loaded = False
+        self._memory_dirty = False
 
         # Use synchronous SQLite for better SpatiaLite support
         # SQLite URL format: sqlite:///
         # For in-memory databases, use :memory:
-        if use_memory:
-            # Use shared cache for in-memory database so multiple connections can access it
-            # See: https://sqlite.org/inmemorydb.html#sharedmemdb
-            db_url = "sqlite:///file:memdb1?mode=memory&cache=shared&uri=true"
-        else:
-            db_url = f"sqlite:///{self.db_path}"
+        db_url = "sqlite:///:memory:" if use_memory else f"sqlite:///{self.db_path}"
 
         # Optimize connection pooling for SQLite:
         # - pool_size: SQLite doesn't use traditional pooling, but this sets max connections
@@ -250,21 +250,37 @@ class CatalogDatabase:
         # - pool_pre_ping: Verify connections before using (prevents stale connections)
         # - pool_recycle: Recycle connections after this many seconds (not critical for SQLite)
         # - connect_args: Enable SQLite extensions (R-tree and SpatiaLite for spatial indexing)
-        self._engine = create_engine(
-            db_url,
-            echo=False,  # Set to True for SQL debugging
-            future=True,
-            pool_size=10,  # Maximum number of connections to maintain
-            max_overflow=5,  # Additional connections beyond pool_size
-            pool_pre_ping=True,  # Verify connections before using (prevents stale connections)
-            pool_recycle=3600,  # Recycle connections after 1 hour (not critical for SQLite)
-            connect_args={
-                # Enable SQLite R-tree extension for spatial indexing
-                # This allows efficient spatial queries for star positions and constellation boundaries
-                "check_same_thread": False,  # Allow connections from different threads
-            },
-            plugins=["geoalchemy2"],  # Enable GeoAlchemy2 plugin for SpatiaLite support
-        )
+        self._engine: Engine
+        if use_memory:
+            # For in-memory SQLite, SQLAlchemy defaults to SingletonThreadPool which does not
+            # accept QueuePool arguments like pool_size/max_overflow. Use StaticPool so all
+            # connections share the same underlying DB connection (required for shared memory DB).
+            self._engine = create_engine(
+                db_url,
+                echo=False,  # Set to True for SQL debugging
+                future=True,
+                poolclass=StaticPool,
+                connect_args={
+                    "check_same_thread": False,  # Allow connections from different threads
+                },
+                plugins=["geoalchemy2"],  # Enable GeoAlchemy2 plugin for SpatiaLite support
+            )
+        else:
+            self._engine = create_engine(
+                db_url,
+                echo=False,  # Set to True for SQL debugging
+                future=True,
+                pool_size=10,  # Maximum number of connections to maintain
+                max_overflow=5,  # Additional connections beyond pool_size
+                pool_pre_ping=True,  # Verify connections before using (prevents stale connections)
+                pool_recycle=3600,  # Recycle connections after 1 hour (not critical for SQLite)
+                connect_args={
+                    # Enable SQLite R-tree extension for spatial indexing
+                    # This allows efficient spatial queries for star positions and constellation boundaries
+                    "check_same_thread": False,  # Allow connections from different threads
+                },
+                plugins=["geoalchemy2"],  # Enable GeoAlchemy2 plugin for SpatiaLite support
+            )
 
         # Enable R-tree extension after engine creation
         # R-tree is built into SQLite and doesn't need to be loaded
@@ -409,18 +425,17 @@ class CatalogDatabase:
 
             # Connect to source database (file-based)
             source_conn = sqlite3.connect(str(self._source_db_path))
-            # Connect to destination database (in-memory with shared cache)
-            # Use the same shared memory name that SQLAlchemy uses
-            dest_conn = sqlite3.connect("file:memdb1?mode=memory&cache=shared&uri=true")
+            dest_raw = self._engine.raw_connection()
 
             try:
-                # Use SQLite backup API to copy database
-                # This is much faster than copying row by row
+                # Use SQLite backup API to copy database into the *same* DBAPI connection that
+                # SQLAlchemy will use (StaticPool keeps this connection for the in-memory DB).
+                dest_conn = cast(sqlite3.Connection, dest_raw.connection)
                 source_conn.backup(dest_conn)
                 dest_conn.commit()
             finally:
                 source_conn.close()
-                dest_conn.close()
+                dest_raw.close()
 
             logger.info(f"Loaded database into memory from {self._source_db_path}")
             self._memory_loaded = True
@@ -449,19 +464,19 @@ class CatalogDatabase:
         try:
             import sqlite3
 
-            # Connect to source database (in-memory)
-            source_conn = sqlite3.connect("file:memdb1?mode=memory&cache=shared&uri=true")
             # Connect to destination database (file-based)
             dest_conn = sqlite3.connect(str(self._source_db_path))
+            source_raw = self._engine.raw_connection()
 
             try:
                 # Use SQLite backup API to copy from memory to file
                 # This efficiently copies the entire database
+                source_conn = cast(sqlite3.Connection, source_raw.connection)
                 source_conn.backup(dest_conn)
                 dest_conn.commit()
             finally:
-                source_conn.close()
                 dest_conn.close()
+                source_raw.close()
 
             logger.debug(f"Synced in-memory database to file: {self._source_db_path}")
             self._memory_dirty = False
@@ -888,7 +903,10 @@ class CatalogDatabase:
 
                     # Create POINT geometry from RA/Dec coordinates
                     # Convert RA from hours to degrees for geometry (treating as longitude)
-                    ra_degrees = obj["ra_hours"] * 15.0
+                    # Important: Constellation boundaries and our R-tree indexes use RA degrees
+                    # in the -180..180 range (0-12h => 0..180°, 12-24h => -180..0°).
+                    ra_degrees_raw = obj["ra_hours"] * 15.0
+                    ra_degrees = ra_degrees_raw if ra_degrees_raw <= 180 else ra_degrees_raw - 360
                     dec_degrees = obj["dec_degrees"]
                     point_wkt = f"POINT({ra_degrees} {dec_degrees})"
 
@@ -2153,7 +2171,17 @@ def get_database(use_memory: bool | None = None) -> CatalogDatabase:
         if use_memory is None:
             import os
 
-            use_memory = os.getenv("CELESTRON_USE_MEMORY_DB", "false").lower() in ("true", "1", "yes")
+            env_val = os.getenv("CELESTRON_USE_MEMORY_DB")
+            if env_val is not None:
+                use_memory = env_val.lower() in ("true", "1", "yes")
+            else:
+                # Fall back to persisted user config
+                try:
+                    from celestron_nexstar.api.config.user_config import load_user_config
+
+                    use_memory = load_user_config().use_memory_db
+                except Exception:
+                    use_memory = False
 
         _database_instance = CatalogDatabase(use_memory=use_memory)
     return _database_instance
