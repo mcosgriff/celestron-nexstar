@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 
 import sqlalchemy as sa
 from geoalchemy2 import Geometry
@@ -162,8 +162,35 @@ class StarModel(Base, CelestialObjectMixin):
 
     __tablename__ = "stars"
 
-    # Asterism relationship (stars can belong to multiple asterisms, stored as comma-separated)
-    asterism: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Foreign keys for spatial relationships (populated via spatial queries during import)
+    constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asterism_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # Primary asterism (stars can belong to multiple asterisms via junction table)
+
+    # Relationships (using string references since models are defined later)
+    constellation_rel: Mapped[ConstellationModel | None] = relationship(
+        "ConstellationModel", foreign_keys=[constellation_id], lazy="select"
+    )
+    asterism_rel: Mapped[AsterismModel | None] = relationship(
+        "AsterismModel", foreign_keys=[asterism_id], lazy="select"
+    )
+
+    @property
+    def constellation_name(self) -> str | None:
+        """Get constellation name from relationship."""
+        return self.constellation_rel.name if self.constellation_rel else None
+
+    @property
+    def asterism_name(self) -> str | None:
+        """Get asterism name from relationship."""
+        return self.asterism_rel.name if self.asterism_rel else None
+
+    __mapper_args__: ClassVar[dict[str, Any]] = {
+        "exclude_properties": ["constellation"],
+    }
 
     # Composite indexes
     __table_args__ = (
@@ -171,7 +198,7 @@ class StarModel(Base, CelestialObjectMixin):
         Index("idx_star_magnitude", "magnitude"),
         Index("idx_star_position", "ra_hours", "dec_degrees"),
         Index(
-            "idx_star_constellation_magnitude", "constellation", "magnitude"
+            "idx_star_constellation_id_magnitude", "constellation_id", "magnitude"
         ),  # For filtering by constellation and sorting by magnitude
     )
 
@@ -231,6 +258,14 @@ class GalaxyModel(Base, CelestialObjectMixin):
 
     __tablename__ = "galaxies"
 
+    # Foreign keys for spatial relationships (populated via spatial queries during import)
+    constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asterism_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Composite indexes
     __table_args__ = (
         Index("idx_galaxy_catalog_number", "catalog", "catalog_number"),
@@ -251,6 +286,14 @@ class NebulaModel(Base, CelestialObjectMixin):
 
     __tablename__ = "nebulae"
 
+    # Foreign keys for spatial relationships (populated via spatial queries during import)
+    constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asterism_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
     # Composite indexes
     __table_args__ = (
         Index("idx_nebula_catalog_number", "catalog", "catalog_number"),
@@ -270,6 +313,14 @@ class ClusterModel(Base, CelestialObjectMixin):
     """SQLAlchemy model for star clusters."""
 
     __tablename__ = "clusters"
+
+    # Foreign keys for spatial relationships (populated via spatial queries during import)
+    constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    asterism_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Composite indexes
     __table_args__ = (
@@ -818,7 +869,12 @@ class AsterismModel(Base):
     )
 
     # Metadata
-    parent_constellation: Mapped[str | None] = mapped_column(String(50), nullable=True)  # Part of which constellation
+    parent_constellation: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )  # Part of which constellation (kept for backward compatibility)
+    parent_constellation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("constellations.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # Foreign key to parent constellation (populated via spatial query)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     stars: Mapped[str | None] = mapped_column(Text, nullable=True)  # Component stars (comma-separated)
     brightest_star: Mapped[str | None] = mapped_column(String(100), nullable=True)  # Name of brightest star in asterism

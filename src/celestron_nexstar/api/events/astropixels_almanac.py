@@ -290,9 +290,17 @@ def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[AstroPixel
     events: list[AstroPixelsEvent] = []
 
     try:
-        response = requests.get(url, timeout=30)
+        # Set headers to avoid HTTP 406 errors
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+        }
+        response = requests.get(url, headers=headers, timeout=30)
         if response.status_code != 200:
-            logger.error(f"Failed to fetch almanac: HTTP {response.status_code}")
+            logger.error(f"Failed to fetch almanac: HTTP {response.status_code} for {url}")
             return events
 
         html = response.text

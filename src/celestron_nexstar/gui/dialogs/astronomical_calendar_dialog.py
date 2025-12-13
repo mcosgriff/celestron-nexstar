@@ -23,10 +23,12 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QProgressDialog,
     QPushButton,
     QScrollArea,
@@ -282,6 +284,13 @@ class AstronomicalCalendarDialog(QDialog):
         table_header.addStretch()
         self.event_count_label = QLabel("0 events")
         table_header.addWidget(self.event_count_label)
+
+        # Export button
+        export_button = QPushButton("Export to ICS")
+        export_button.setToolTip("Export all events to an ICS calendar file")
+        export_button.clicked.connect(self._on_export_ics)
+        table_header.addWidget(export_button)
+
         right_layout.addLayout(table_header)
 
         # Create table
@@ -295,7 +304,7 @@ class AstronomicalCalendarDialog(QDialog):
         header.setStretchLastSection(True)  # Description column stretches
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Date
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Time
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Event Name
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Event Name - auto width
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Type
 
         self.events_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -437,17 +446,46 @@ class AstronomicalCalendarDialog(QDialog):
             tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)  # Default to MST
 
             with get_db_session() as session:
+                # Check if we have cached events first
                 cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
 
-                # Always fetch and cache to ensure we have all events (force_refresh=True to update event types)
-                logger.info(f"Fetching AstroPixels almanac for {year} ({tz_str})")
-                cache_astropixels_events(session, year, tz_str, force_refresh=True)
-                # Also cache next year if we're near the end of the year
-                if start_date.month >= 11:
-                    cache_astropixels_events(session, year + 1, tz_str, force_refresh=True)
+                # Only fetch if we don't have enough events (less than 50 events suggests incomplete data)
+                if len(cached_events) < 50:
+                    current_date = datetime.now(UTC)
+                    current_year = current_date.year
+                    current_month = current_date.month
 
-                # Get cached events with timezone offset
-                cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+                    # AstroPixels has almanacs for years 2021-2030
+                    # Fetch years that are in a reasonable range (current year and up to 2 years ahead)
+                    years_to_fetch = []
+
+                    # Fetch the requested year if it's in a reasonable range (current year to current year + 2)
+                    max_future_year = current_year + 2
+                    if year <= max_future_year:
+                        years_to_fetch.append(year)
+                    else:
+                        logger.info(
+                            f"Skipping fetch for {year} - beyond reasonable range (current year: {current_year}, max: {max_future_year})"
+                        )
+
+                    # Also fetch next year if we're late in the current year and the requested year is current year
+                    if year == current_year and current_month >= 11:
+                        next_year = year + 1
+                        if next_year <= max_future_year and next_year not in years_to_fetch:
+                            years_to_fetch.append(next_year)
+
+                    # Fetch each year that's available
+                    for fetch_year in years_to_fetch:
+                        logger.info(f"Fetching AstroPixels almanac for {fetch_year} ({tz_str})")
+                        events_cached = cache_astropixels_events(session, fetch_year, tz_str, force_refresh=False)
+                        if events_cached == 0:
+                            logger.warning(f"No events found for {fetch_year} - almanac may not be available yet")
+
+                    # Get cached events again after fetching
+                    cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+                    logger.info(f"Fetched and cached AstroPixels events, now have {len(cached_events)} events")
+                else:
+                    logger.info(f"Using cached AstroPixels events ({len(cached_events)} events found)")
 
             # Add events to calendar
             logger.info(f"Adding {len(cached_events)} AstroPixels events to calendar")
@@ -1103,3 +1141,112 @@ class AstronomicalCalendarDialog(QDialog):
             brightness = window_color.lightness()
             return bool(brightness < 128)
         return False
+
+    def _on_export_ics(self) -> None:
+        """Export all events to an ICS calendar file."""
+        # Get filtered events (what the user is currently viewing)
+        events_to_export = self._filter_events()
+
+        if not events_to_export:
+            QMessageBox.information(
+                self,
+                "No Events to Export",
+                "There are no events to export. Please adjust your filters or wait for events to load.",
+            )
+            return
+
+        # Open file dialog to choose save location
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Export Events to ICS File", "astronomical_events.ics", "ICS Files (*.ics);;All Files (*)"
+        )
+
+        if not file_path:
+            return  # User cancelled
+
+        try:
+            # Get local timezone for date formatting
+            try:
+                from celestron_nexstar.api.core.utils import get_local_timezone
+                from celestron_nexstar.api.location.observer import get_observer_location
+
+                location = get_observer_location()
+                tz = get_local_timezone(location.latitude, location.longitude)
+            except Exception:
+                tz = None
+
+            # Generate ICS content
+            ics_lines = []
+            ics_lines.append("BEGIN:VCALENDAR")
+            ics_lines.append("VERSION:2.0")
+            ics_lines.append("PRODID:-//Celestron NexStar//Astronomical Calendar//EN")
+            ics_lines.append("CALSCALE:GREGORIAN")
+            ics_lines.append("METHOD:PUBLISH")
+
+            # Add each event
+            for idx, event in enumerate(events_to_export):
+                ics_lines.append("BEGIN:VEVENT")
+
+                # Generate unique ID
+                uid = f"astronomical-event-{event.date.timestamp()}-{idx}@celestron-nexstar"
+                ics_lines.append(f"UID:{uid}")
+
+                # Format dates in ICS format
+                # Check if this is an all-day event (midnight or no specific time)
+                is_all_day = event.date.hour == 0 and event.date.minute == 0
+
+                if is_all_day and tz and event.date.tzinfo:
+                    # All-day event - use DATE format (no time)
+                    local_date = event.date.astimezone(tz)
+                    dtstart_date = local_date.strftime("%Y%m%d")
+                    ics_lines.append(f"DTSTART;VALUE=DATE:{dtstart_date}")
+                    # End date is day after (ICS requires end date to be exclusive for all-day events)
+                    end_date = local_date.date() + timedelta(days=1)
+                    dtend_date = end_date.strftime("%Y%m%d")
+                    ics_lines.append(f"DTEND;VALUE=DATE:{dtend_date}")
+                else:
+                    # Timed event - use UTC format
+                    dtstart_utc = event.date.strftime("%Y%m%dT%H%M%S")
+                    ics_lines.append(f"DTSTART:{dtstart_utc}Z")
+                    # Set end time to 1 hour later (or next day if it would overflow)
+                    dtend = event.date + timedelta(hours=1)
+                    dtend_utc = dtend.strftime("%Y%m%dT%H%M%S")
+                    ics_lines.append(f"DTEND:{dtend_utc}Z")
+
+                # Summary (title)
+                summary = event.title.replace("\n", " ").replace("\r", "")
+                # Escape special characters for ICS
+                summary = summary.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+                ics_lines.append(f"SUMMARY:{summary}")
+
+                # Description
+                description = event.description.replace("\n", "\\n").replace("\r", "")
+                description = description.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;")
+                event_type = event.event_type.replace("_", " ").title()
+                full_description = f"Type: {event_type}\\n\\n{description}"
+                ics_lines.append(f"DESCRIPTION:{full_description}")
+
+                # Categories
+                ics_lines.append(f"CATEGORIES:Astronomy,{event_type}")
+
+                # Created timestamp
+                created = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+                ics_lines.append(f"CREATED:{created}Z")
+
+                # Last modified
+                ics_lines.append(f"LAST-MODIFIED:{created}Z")
+
+                ics_lines.append("END:VEVENT")
+
+            ics_lines.append("END:VCALENDAR")
+
+            # Write to file
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("\r\n".join(ics_lines))
+
+            QMessageBox.information(
+                self, "Export Successful", f"Successfully exported {len(events_to_export)} event(s) to:\n{file_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error exporting ICS file: {e}", exc_info=True)
+            QMessageBox.critical(self, "Export Failed", f"Failed to export events:\n{e!s}")

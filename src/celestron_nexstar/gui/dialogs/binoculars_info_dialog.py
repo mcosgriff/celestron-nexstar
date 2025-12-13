@@ -393,8 +393,8 @@ class BinocularsInfoDialog(QDialog):
                         lon,
                         midnight,
                     )
-                    if alt >= 20.0 and star.constellation:
-                        constellations_with_stars.add(star.constellation)
+                    if alt >= 20.0 and star.constellation_name:
+                        constellations_with_stars.add(star.constellation_name)
 
                 # Add constellations that have visible stars but aren't already in the list
                 with get_db_session() as db_session:
@@ -575,7 +575,7 @@ class BinocularsInfoDialog(QDialog):
                         direction = azimuth_to_compass_8point(az)
                         star_name = star.common_name or star.name
                         mag_str = f"{star.magnitude:.2f}" if star.magnitude else "—"
-                        constellation_name = star.constellation or "—"
+                        constellation_name = star.constellation_name or "—"
                         notes = star.description or ""
 
                         content_parts.append(

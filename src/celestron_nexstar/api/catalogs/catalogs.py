@@ -53,6 +53,7 @@ class CelestialObject:
     description: str | None = None
     parent_planet: str | None = None
     constellation: str | None = None
+    asterism: str | None = None
 
     def matches_search(self, query: str) -> bool:  # type: ignore[misc]
         """Check if object matches search query."""

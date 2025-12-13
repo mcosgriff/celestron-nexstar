@@ -424,6 +424,264 @@ def update_star_names() -> None:
         raise typer.Exit(code=1) from None
 
 
+@app.command("sync-star-relationships", rich_help_panel="Database Management")
+def sync_star_relationships(
+    constellations: bool = typer.Option(
+        True, "--constellations/--no-constellations", help="Sync constellation relationships"
+    ),
+    asterisms: bool = typer.Option(True, "--asterisms/--no-asterisms", help="Sync asterism relationships"),
+) -> None:
+    """
+    Sync star relationships with constellations and asterisms.
+
+    This command maps stars to constellations and asterisms using spatial queries.
+    Stars must have geometry (POINT) populated first - run 'nexstar data populate-geometries' if needed.
+
+    Examples:
+        nexstar data sync-star-relationships
+        nexstar data sync-star-relationships --no-asterisms  # Only sync constellations
+        nexstar data sync-star-relationships --no-constellations  # Only sync asterisms
+    """
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeRemainingColumn
+    from sqlalchemy import select, update
+
+    from celestron_nexstar.api.database.database import get_database
+    from celestron_nexstar.api.database.models import (
+        AsterismModel,
+        ConstellationModel,
+        StarModel,
+        get_db_session,
+        star_asterism_table,
+        star_constellation_table,
+    )
+
+    console.print("\n[bold cyan]Syncing star relationships[/bold cyan]\n")
+
+    get_database()
+
+    try:
+        with get_db_session() as session:
+            # Check if stars have geometry
+            stars_without_geometry = session.scalar(
+                select(StarModel.id)
+                .where(
+                    StarModel.geometry.is_(None),
+                    StarModel.ra_hours.isnot(None),
+                    StarModel.dec_degrees.isnot(None),
+                )
+                .limit(1)
+            )
+            if stars_without_geometry:
+                console.print(
+                    "[yellow]⚠[/yellow] Some stars don't have geometry populated.\n"
+                    "[dim]Run 'nexstar data populate-geometries' first to create POINT geometries from RA/Dec.[/dim]\n"
+                )
+                if not typer.confirm("Continue anyway? (relationships will only be synced for stars with geometry)"):
+                    raise typer.Abort()
+
+            operations = []
+            if constellations:
+                operations.append("constellations")
+            if asterisms:
+                operations.append("asterisms")
+
+            if not operations:
+                console.print("[yellow]⚠[/yellow] No operations selected. Use --constellations and/or --asterisms.\n")
+                raise typer.Exit(code=1)
+
+            # Operation 1: Map stars to constellations
+            if "constellations" in operations:
+                console.print("[dim]Mapping stars to constellations...[/dim]")
+                try:
+                    # Get all constellations with geometry
+                    constellations = (
+                        session.execute(select(ConstellationModel).where(ConstellationModel.geometry.isnot(None)))
+                        .scalars()
+                        .all()
+                    )
+
+                    if not constellations:
+                        console.print(
+                            "[yellow]⚠[/yellow] No constellations with geometry found. Import constellations first.\n"
+                        )
+                    else:
+                        # Create a mapping of constellation names to IDs
+                        {const.name: const.id for const in constellations}
+
+                        # Get stars that don't have a constellation relationship in the junction table
+                        existing_relationships = (
+                            session.execute(select(star_constellation_table.c.star_id)).scalars().all()
+                        )
+                        existing_star_ids = set(existing_relationships)
+
+                        # Get all stars with geometry, then filter to those not in the junction table
+                        all_stars = (
+                            session.execute(select(StarModel).where(StarModel.geometry.isnot(None))).scalars().all()
+                        )
+                        stars = [star for star in all_stars if star.id not in existing_star_ids]
+                        total_stars = len(stars)
+                        mapped_count = 0
+
+                        if total_stars == 0:
+                            console.print("  [dim]All stars already have constellation relationships[/dim]")
+                        else:
+                            from geoalchemy2 import functions
+
+                            with Progress(
+                                SpinnerColumn(),
+                                TextColumn("[progress.description]{task.description}"),
+                                BarColumn(),
+                                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                                TimeRemainingColumn(),
+                                console=console,
+                            ) as progress:
+                                task = progress.add_task("Mapping stars...", total=total_stars)
+
+                                for star in stars:
+                                    # Use spatial query to find which constellation contains this star
+                                    for constellation in constellations:
+                                        if constellation.geometry:
+                                            # Check if star point is within constellation geometry
+                                            contains_query = select(
+                                                functions.ST_Contains(
+                                                    constellation.geometry,
+                                                    star.geometry,  # type: ignore[arg-type]
+                                                )
+                                            )
+                                            result = session.execute(contains_query).scalar()
+                                            if result:
+                                                # Insert into junction table
+                                                session.execute(
+                                                    star_constellation_table.insert().values(
+                                                        star_id=star.id, constellation_id=constellation.id
+                                                    )
+                                                )
+                                                # Also update the star's constellation field (string)
+                                                session.execute(
+                                                    update(StarModel)
+                                                    .where(StarModel.id == star.id)
+                                                    .values(constellation=constellation.name)
+                                                )
+                                                mapped_count += 1
+                                                break
+
+                                    progress.advance(task)
+
+                            session.commit()
+                            console.print(f"  [green]✓[/green] Mapped {mapped_count:,} stars to constellations")
+
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] Error mapping stars to constellations: {e}")
+                    import traceback
+
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+            # Operation 2: Map stars to asterisms
+            if "asterisms" in operations:
+                console.print("[dim]Mapping stars to asterisms...[/dim]")
+                try:
+                    # Get all asterisms from database
+                    asterisms = (
+                        session.execute(select(AsterismModel).where(AsterismModel.geometry.isnot(None))).scalars().all()
+                    )
+
+                    if not asterisms:
+                        console.print("[yellow]⚠[/yellow] No asterisms with geometry found. Import asterisms first.\n")
+                    else:
+                        # Get existing relationships from junction table to avoid duplicates
+                        existing_relationships = session.execute(
+                            select(star_asterism_table.c.star_id, star_asterism_table.c.asterism_id)
+                        ).all()
+                        existing_pairs = {(row[0], row[1]) for row in existing_relationships}
+
+                        # Get all stars with geometry
+                        all_stars = (
+                            session.execute(select(StarModel).where(StarModel.geometry.isnot(None))).scalars().all()
+                        )
+
+                        total_asterisms = len(asterisms)
+                        asterism_junction_inserts: list[dict[str, int]] = []
+                        asterism_names_map: dict[int, str] = {}  # Map asterism_id to name
+
+                        with Progress(
+                            SpinnerColumn(),
+                            TextColumn("[progress.description]{task.description}"),
+                            BarColumn(),
+                            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                            TimeRemainingColumn(),
+                            console=console,
+                        ) as progress:
+                            task = progress.add_task("Mapping stars to asterisms...", total=total_asterisms)
+
+                            for asterism in asterisms:
+                                asterism_names_map[asterism.id] = asterism.name
+                                if asterism.geometry:
+                                    from geoalchemy2 import functions
+
+                                    # Find stars that are within or on the asterism geometry
+                                    # Use ST_Intersects or ST_Within depending on geometry type
+                                    for star in all_stars:
+                                        if (star.id, asterism.id) not in existing_pairs:
+                                            # Check if star point intersects with asterism geometry
+                                            intersects_query = select(
+                                                functions.ST_Intersects(
+                                                    asterism.geometry,
+                                                    star.geometry,  # type: ignore[arg-type]
+                                                )
+                                            )
+                                            result = session.execute(intersects_query).scalar()
+                                            if result:
+                                                asterism_junction_inserts.append(
+                                                    {"star_id": star.id, "asterism_id": asterism.id}
+                                                )
+                                                existing_pairs.add((star.id, asterism.id))
+
+                                progress.advance(task)
+
+                        # Batch insert asterism relationships
+                        if asterism_junction_inserts:
+                            session.execute(star_asterism_table.insert(), asterism_junction_inserts)
+
+                            # Update star.asterism field (comma-separated string of asterism names)
+                            # Group by star_id to build comma-separated list
+                            from collections import defaultdict
+
+                            star_to_asterisms: dict[int, list[str]] = defaultdict(list)
+                            for insert in asterism_junction_inserts:
+                                star_id = insert["star_id"]
+                                asterism_id = insert["asterism_id"]
+                                asterism_name = asterism_names_map.get(asterism_id)
+                                if asterism_name:
+                                    star_to_asterisms[star_id].append(asterism_name)
+
+                            # Update each star's asterism field
+                            for star_id, asterism_names in star_to_asterisms.items():
+                                asterism_str = ", ".join(sorted(asterism_names))
+                                session.execute(
+                                    update(StarModel).where(StarModel.id == star_id).values(asterism=asterism_str)
+                                )
+
+                            session.commit()
+                            console.print(
+                                f"  [green]✓[/green] Mapped {len(asterism_junction_inserts):,} star-asterism relationships"
+                            )
+
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] Error mapping stars to asterisms: {e}")
+                    import traceback
+
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+
+        console.print("\n[bold green]✓ Star relationships synced![/bold green]\n")
+
+    except Exception as e:
+        console.print(f"\n[red]✗[/red] Error syncing star relationships: {e}\n")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        raise typer.Exit(code=1) from e
+
+
 @app.command("rebuild-fts", rich_help_panel="Database Management")
 def rebuild_fts() -> None:
     """

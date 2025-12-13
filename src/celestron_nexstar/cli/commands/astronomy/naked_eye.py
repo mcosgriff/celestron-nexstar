@@ -417,8 +417,8 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
         # Find unique constellations from visible stars
         constellations_with_stars = set()
         for star, _, _ in visible_stars_for_const:
-            if star.constellation:
-                constellations_with_stars.add(star.constellation)
+            if star.constellation_name:
+                constellations_with_stars.add(star.constellation_name)
 
         # Add constellations that have visible stars but aren't already in the list
         with get_db_session() as db_session:
@@ -552,7 +552,7 @@ async def _show_tonight_content(output_console: Console | FileConsole) -> None:
                 mag_str = f"{star.magnitude:.2f}" if star.magnitude else "—"
 
                 # Constellation
-                constellation_name: str = star.constellation or "—"
+                constellation_name: str = star.constellation_name or "—"
 
                 # Description/notes
                 notes = star.description or ""

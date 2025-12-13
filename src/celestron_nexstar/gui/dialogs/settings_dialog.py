@@ -4,7 +4,7 @@ Dialog to display and manage application settings.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -253,8 +253,8 @@ class SettingsDialog(QDialog):
 
         # Table for celestial data sources
         table = QTableWidget()
-        table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["Source", "Description", "Status", "Size", "Download", "Import"])
+        table.setColumnCount(7)
+        table.setHorizontalHeaderLabels(["Source", "Description", "Status", "Size", "Download", "Import", "Delete"])
         table.horizontalHeader().setStretchLastSection(False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -602,12 +602,89 @@ class SettingsDialog(QDialog):
             logger.error(f"Error loading ephemeris info: {e}", exc_info=True)
 
     def _load_celestial_data_info(self) -> None:
-        """Load celestial data sources into table."""
+        """Load celestial data sources into table with enforced import order."""
         try:
+            from sqlalchemy import select
+
+            from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel, get_db_session
             from celestron_nexstar.cli.data_import import DATA_SOURCES, get_cache_dir
 
             # Filter to only celestial data sources
             celestial_sources = {k: v for k, v in DATA_SOURCES.items() if k.startswith("celestial_")}
+
+            # Check if constellations and asterisms are imported
+            constellations_imported = False
+            asterisms_imported = False
+            try:
+                with get_db_session() as session:
+                    const_count = session.scalar(select(ConstellationModel.id).limit(1))
+                    constellations_imported = const_count is not None
+                    asterism_count = session.scalar(select(AsterismModel.id).limit(1))
+                    asterisms_imported = asterism_count is not None
+            except Exception:
+                pass  # Tables might not exist yet
+
+            # Helper function to check if data is imported for a source
+            def check_data_imported(source_id: str) -> bool:
+                """Check if data for a source has been imported."""
+                try:
+                    with get_db_session() as session:
+                        from sqlalchemy import func
+
+                        from celestron_nexstar.api.database.models import (
+                            ClusterModel,
+                            GalaxyModel,
+                            NebulaModel,
+                            StarModel,
+                        )
+
+                        if source_id == "celestial_constellations":
+                            count = session.scalar(select(func.count(ConstellationModel.id)))
+                            return (count or 0) > 0
+                        elif source_id == "celestial_asterisms":
+                            count = session.scalar(select(func.count(AsterismModel.id)))
+                            return (count or 0) > 0
+                        elif source_id.startswith("celestial_stars"):
+                            count = session.scalar(
+                                select(func.count(StarModel.id)).where(StarModel.catalog == "celestial_stars")
+                            )
+                            return (count or 0) > 0
+                        elif source_id.startswith("celestial_dsos"):
+                            # Check galaxies, nebulae, and clusters
+                            galaxy_count = session.scalar(
+                                select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "celestial_dsos")
+                            )
+                            nebula_count = session.scalar(
+                                select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "celestial_dsos")
+                            )
+                            cluster_count = session.scalar(
+                                select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "celestial_dsos")
+                            )
+                            return (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) > 0
+                        elif source_id == "celestial_messier":
+                            # Check galaxies, nebulae, and clusters with messier catalog
+                            galaxy_count = session.scalar(
+                                select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "messier")
+                            )
+                            nebula_count = session.scalar(
+                                select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "messier")
+                            )
+                            cluster_count = session.scalar(
+                                select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "messier")
+                            )
+                            return (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0) > 0
+                        elif source_id == "celestial_local_group":
+                            # Check galaxies and clusters with local_group catalog
+                            galaxy_count = session.scalar(
+                                select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "local_group")
+                            )
+                            cluster_count = session.scalar(
+                                select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "local_group")
+                            )
+                            return (galaxy_count or 0) + (cluster_count or 0) > 0
+                except Exception:
+                    return False
+                return False
 
             table = self.celestial_data_table
             table.setRowCount(len(celestial_sources))
@@ -628,7 +705,21 @@ class SettingsDialog(QDialog):
 
             cache_dir = get_cache_dir()
 
-            for row, (source_id, source) in enumerate(sorted(celestial_sources.items())):
+            # Define import order: constellations first, then asterisms, then the rest
+
+            # Sort sources: constellations first, asterisms second, then alphabetically
+            def sort_key(item: tuple[str, Any]) -> tuple[int, str]:
+                source_id, _ = item
+                if source_id == "celestial_constellations":
+                    return (0, source_id)
+                elif source_id == "celestial_asterisms":
+                    return (1, source_id)
+                else:
+                    return (2, source_id)
+
+            sorted_sources = sorted(celestial_sources.items(), key=sort_key)
+
+            for row, (source_id, source) in enumerate(sorted_sources):
                 # Source name (remove "Celestial Data - " prefix if present)
                 display_name = source.name.replace("Celestial Data - ", "")
                 table.setItem(row, 0, QTableWidgetItem(display_name))
@@ -639,6 +730,7 @@ class SettingsDialog(QDialog):
 
                 # Status
                 filename = filename_map.get(source_id)
+                cache_path: Path | None = None
                 if filename:
                     cache_path = cache_dir / filename
                     if cache_path.exists():
@@ -661,17 +753,67 @@ class SettingsDialog(QDialog):
                 # Download button
                 download_btn = QPushButton("Download")
                 download_btn.setFixedWidth(100)
-                if filename and cache_path.exists():
+                if filename and cache_path and cache_path.exists():
                     download_btn.setText("Re-download")
                 download_btn.clicked.connect(lambda checked, sid=source_id: self._on_download_celestial_data(sid))
                 table.setCellWidget(row, 4, download_btn)
 
-                # Import button
+                # Import button - enforce import order
                 import_btn = QPushButton("Import")
                 import_btn.setFixedWidth(80)
-                import_btn.setEnabled(bool(filename and cache_path.exists()))
+
+                # Enable import button based on:
+                # 1. File must be downloaded
+                # 2. Import order dependencies must be met
+                file_downloaded = bool(filename and cache_path and cache_path.exists())
+                can_import = file_downloaded
+                tooltip_parts = []
+
+                # First check: file must be downloaded
+                if not file_downloaded:
+                    can_import = False
+                    tooltip_parts.append("File must be downloaded first")
+                else:
+                    # Constellations can always be imported (no dependencies)
+                    if source_id == "celestial_constellations":
+                        pass  # No dependencies
+                    # Asterisms require constellations to be imported first
+                    elif source_id == "celestial_asterisms":
+                        if not constellations_imported:
+                            can_import = False
+                            tooltip_parts.append("Constellations must be imported first")
+                    # All other sources require both constellations and asterisms
+                    else:
+                        if not constellations_imported or not asterisms_imported:
+                            can_import = False
+                            missing = []
+                            if not constellations_imported:
+                                missing.append("constellations")
+                            if not asterisms_imported:
+                                missing.append("asterisms")
+                            tooltip_parts.append(f"Must import {' and '.join(missing)} first")
+
+                # Set tooltip if there are any requirements
+                if tooltip_parts:
+                    import_btn.setToolTip("; ".join(tooltip_parts))
+                else:
+                    import_btn.setToolTip("")
+
+                import_btn.setEnabled(can_import)
                 import_btn.clicked.connect(lambda checked, sid=source_id: self._on_import_celestial_data(sid))
                 table.setCellWidget(row, 5, import_btn)
+
+                # Delete button - only enabled if data is imported
+                delete_btn = QPushButton("Delete")
+                delete_btn.setFixedWidth(80)
+                data_imported = check_data_imported(source_id)
+                delete_btn.setEnabled(data_imported)
+                if not data_imported:
+                    delete_btn.setToolTip("No data imported")
+                else:
+                    delete_btn.setToolTip("Delete imported data and downloaded file")
+                delete_btn.clicked.connect(lambda checked, sid=source_id: self._on_delete_celestial_data(sid))
+                table.setCellWidget(row, 6, delete_btn)
 
             table.resizeColumnsToContents()
 
@@ -1396,6 +1538,104 @@ class SettingsDialog(QDialog):
         self._download_workers[worker_key] = worker
         worker.start()
 
+    def _truncate_celestial_data(self, source_id: str) -> int:
+        """
+        Truncate (delete) existing data for a celestial data source from the database.
+
+        Args:
+            source_id: The source ID to truncate
+
+        Returns:
+            Number of records deleted
+        """
+        try:
+            from sqlalchemy import delete, func, select
+
+            from celestron_nexstar.api.database.models import (
+                AsterismModel,
+                ClusterModel,
+                ConstellationModel,
+                GalaxyModel,
+                NebulaModel,
+                StarModel,
+                get_db_session,
+            )
+
+            deleted_count = 0
+
+            with get_db_session() as session:
+                if source_id == "celestial_constellations":
+                    # Delete all constellations (CASCADE will handle related foreign keys)
+                    count = session.scalar(select(func.count(ConstellationModel.id)))
+                    session.execute(delete(ConstellationModel))
+                    deleted_count = count or 0
+
+                elif source_id == "celestial_asterisms":
+                    # Delete all asterisms (CASCADE will handle related foreign keys)
+                    count = session.scalar(select(func.count(AsterismModel.id)))
+                    session.execute(delete(AsterismModel))
+                    deleted_count = count or 0
+
+                elif source_id.startswith("celestial_stars"):
+                    # Delete stars with celestial_stars catalog
+                    count = session.scalar(
+                        select(func.count(StarModel.id)).where(StarModel.catalog == "celestial_stars")
+                    )
+                    session.execute(delete(StarModel).where(StarModel.catalog == "celestial_stars"))
+                    deleted_count = count or 0
+
+                elif source_id.startswith("celestial_dsos"):
+                    # Delete DSOs from galaxies, nebulae, and clusters
+                    galaxy_count = session.scalar(
+                        select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "celestial_dsos")
+                    )
+                    nebula_count = session.scalar(
+                        select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "celestial_dsos")
+                    )
+                    cluster_count = session.scalar(
+                        select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "celestial_dsos")
+                    )
+                    session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "celestial_dsos"))
+                    session.execute(delete(NebulaModel).where(NebulaModel.catalog == "celestial_dsos"))
+                    session.execute(delete(ClusterModel).where(ClusterModel.catalog == "celestial_dsos"))
+                    deleted_count = (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0)
+
+                elif source_id == "celestial_messier":
+                    # Delete Messier objects from galaxies, nebulae, and clusters
+                    galaxy_count = session.scalar(
+                        select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "messier")
+                    )
+                    nebula_count = session.scalar(
+                        select(func.count(NebulaModel.id)).where(NebulaModel.catalog == "messier")
+                    )
+                    cluster_count = session.scalar(
+                        select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "messier")
+                    )
+                    session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "messier"))
+                    session.execute(delete(NebulaModel).where(NebulaModel.catalog == "messier"))
+                    session.execute(delete(ClusterModel).where(ClusterModel.catalog == "messier"))
+                    deleted_count = (galaxy_count or 0) + (nebula_count or 0) + (cluster_count or 0)
+
+                elif source_id == "celestial_local_group":
+                    # Delete local group objects from galaxies and clusters
+                    galaxy_count = session.scalar(
+                        select(func.count(GalaxyModel.id)).where(GalaxyModel.catalog == "local_group")
+                    )
+                    cluster_count = session.scalar(
+                        select(func.count(ClusterModel.id)).where(ClusterModel.catalog == "local_group")
+                    )
+                    session.execute(delete(GalaxyModel).where(GalaxyModel.catalog == "local_group"))
+                    session.execute(delete(ClusterModel).where(ClusterModel.catalog == "local_group"))
+                    deleted_count = (galaxy_count or 0) + (cluster_count or 0)
+
+                session.commit()
+
+            return deleted_count
+
+        except Exception as e:
+            logger.error(f"Error truncating celestial data for {source_id}: {e}", exc_info=True)
+            raise
+
     def _on_import_celestial_data(self, source_id: str) -> None:
         """Handle celestial data import button click."""
         from celestron_nexstar.gui.workers.download_workers import ImportCelestialDataThread
@@ -1410,6 +1650,21 @@ class SettingsDialog(QDialog):
 
         source = DATA_SOURCES.get(source_id)
         source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+
+        # Truncate existing data before importing (clean import)
+        try:
+            self.celestial_data_status_label.setText(f"Truncating existing {source_name} data...")
+            deleted_count = self._truncate_celestial_data(source_id)
+            if deleted_count > 0:
+                logger.info(f"Truncated {deleted_count:,} existing records for {source_name}")
+        except Exception as e:
+            logger.error(f"Error truncating data for {source_id}: {e}", exc_info=True)
+            self._show_toast(
+                f"Error truncating existing data: {e}",
+                duration_ms=4000,
+                preset="error",
+            )
+            return
 
         # Show progress bar
         self.celestial_data_progress.setVisible(True)
@@ -1442,6 +1697,76 @@ class SettingsDialog(QDialog):
 
         self._download_workers[worker_key] = worker
         worker.start()
+
+    def _on_delete_celestial_data(self, source_id: str) -> None:
+        """Handle celestial data delete button click."""
+        from PySide6.QtWidgets import QMessageBox
+
+        from celestron_nexstar.cli.data_import import DATA_SOURCES, get_cache_dir
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete all imported data for {source_name}?\n\n"
+            "This will:\n"
+            "- Delete all imported data from the database (with CASCADE)\n"
+            "- Delete the downloaded GeoJSON file\n"
+            "- Disable the import button",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            # Use the truncate helper to delete data
+            deleted_count = self._truncate_celestial_data(source_id)
+
+            # Delete the GeoJSON file
+            filename_map = {
+                "celestial_stars_6": "stars.6.min.geojson",
+                "celestial_stars_8": "stars.8.min.geojson",
+                "celestial_stars_14": "stars.14.min.geojson",
+                "celestial_dsos_6": "dsos.6.min.geojson",
+                "celestial_dsos_14": "dsos.14.min.geojson",
+                "celestial_dsos_20": "dsos.20.min.geojson",
+                "celestial_dsos_bright": "dsos.bright.min.geojson",
+                "celestial_messier": "messier.min.geojson",
+                "celestial_asterisms": "asterisms.min.geojson",
+                "celestial_constellations": "constellations.min.geojson",
+                "celestial_local_group": "lg.min.geojson",
+            }
+
+            cache_dir = get_cache_dir()
+            filename = filename_map.get(source_id)
+            if filename:
+                cache_path = cache_dir / filename
+                if cache_path.exists():
+                    cache_path.unlink()
+
+            # Reload the table to update UI
+            self._load_celestial_data_info()
+
+            # Show success message
+            self._show_toast(
+                f"Deleted {deleted_count:,} objects from {source_name}",
+                duration_ms=3000,
+                preset="success",
+            )
+            logger.info(f"Deleted {deleted_count:,} objects from {source_name}")
+
+        except Exception as e:
+            logger.error(f"Error deleting celestial data for {source_id}: {e}", exc_info=True)
+            self._show_toast(
+                f"Error deleting {source_name}: {e}",
+                duration_ms=4000,
+                preset="error",
+            )
 
     def _on_celestial_import_progress(self, source_id: str, status: str, current: int, total: int) -> None:
         """Handle celestial data import progress update."""

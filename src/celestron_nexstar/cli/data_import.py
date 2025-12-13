@@ -744,6 +744,17 @@ def import_celestial_data_geojson(
                                     if geometry_blob:
                                         # Type ignore: model_obj is a union type, but we know it has geometry attribute
                                         model_obj.geometry = geometry_blob  # type: ignore[attr-defined]
+
+                                        # Find spatial relationships (constellation and asterism) via spatial queries
+                                        if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):
+                                            constellation_id, asterism_id = _find_spatial_relationships(
+                                                model_obj, db_session
+                                            )
+                                            if constellation_id is not None:
+                                                model_obj.constellation_id = constellation_id  # type: ignore[attr-defined]
+                                            if asterism_id is not None:
+                                                model_obj.asterism_id = asterism_id  # type: ignore[attr-defined]
+
                                         db_session.commit()
                             except Exception as e:
                                 if verbose:
@@ -751,6 +762,86 @@ def import_celestial_data_geojson(
                                         f"[yellow]Warning: Failed to update geometry for {obj.get('name', 'unknown')}: {e}[/yellow]"
                                     )
                                 db_session.rollback()
+
+                # Update foreign keys for DSOs (galaxies, nebulae, clusters)
+                # Stars use junction tables, not direct foreign keys, so skip them
+                if catalog in ("celestial_dsos", "celestial_dsos_bright", "celestial_messier", "celestial_local_group"):
+                    try:
+                        with db._get_session() as db_session:
+                            from sqlalchemy import select
+
+                            from celestron_nexstar.api.database.models import (
+                                ClusterModel,
+                                GalaxyModel,
+                                NebulaModel,
+                            )
+
+                            batch_names = [obj["name"] for obj in batch]
+
+                            # Update galaxies
+                            galaxies_to_update = (
+                                db_session.execute(
+                                    select(GalaxyModel).where(
+                                        GalaxyModel.name.in_(batch_names),
+                                        GalaxyModel.geometry.isnot(None),
+                                        (GalaxyModel.constellation_id.is_(None)) | (GalaxyModel.asterism_id.is_(None)),
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                            for galaxy in galaxies_to_update:
+                                constellation_id, asterism_id = _find_spatial_relationships(galaxy, db_session)
+                                if constellation_id is not None:
+                                    galaxy.constellation_id = constellation_id
+                                if asterism_id is not None:
+                                    galaxy.asterism_id = asterism_id
+
+                            # Update nebulae
+                            nebulae_to_update = (
+                                db_session.execute(
+                                    select(NebulaModel).where(
+                                        NebulaModel.name.in_(batch_names),
+                                        NebulaModel.geometry.isnot(None),
+                                        (NebulaModel.constellation_id.is_(None)) | (NebulaModel.asterism_id.is_(None)),
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                            for nebula in nebulae_to_update:
+                                constellation_id, asterism_id = _find_spatial_relationships(nebula, db_session)
+                                if constellation_id is not None:
+                                    nebula.constellation_id = constellation_id
+                                if asterism_id is not None:
+                                    nebula.asterism_id = asterism_id
+
+                            # Update clusters
+                            clusters_to_update = (
+                                db_session.execute(
+                                    select(ClusterModel).where(
+                                        ClusterModel.name.in_(batch_names),
+                                        ClusterModel.geometry.isnot(None),
+                                        (ClusterModel.constellation_id.is_(None))
+                                        | (ClusterModel.asterism_id.is_(None)),
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                            for cluster in clusters_to_update:
+                                constellation_id, asterism_id = _find_spatial_relationships(cluster, db_session)
+                                if constellation_id is not None:
+                                    cluster.constellation_id = constellation_id
+                                if asterism_id is not None:
+                                    cluster.asterism_id = asterism_id
+
+                            if galaxies_to_update or nebulae_to_update or clusters_to_update:
+                                db_session.commit()
+
+                    except Exception as e:
+                        if verbose:
+                            console.print(f"[yellow]Warning: Failed to update foreign keys for batch: {e}[/yellow]")
 
                 # Advance by 1 per batch so TimeRemainingColumn can calculate properly
                 if progress_callback:
@@ -969,6 +1060,76 @@ def _find_constellation_by_coordinates_async(
         return nearest_const.name
 
     return None
+
+
+def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | None, int | None]:
+    """
+    Find constellation and asterism IDs for an object using spatial queries.
+
+    Args:
+        model_obj: Model object with geometry (GalaxyModel, NebulaModel, ClusterModel, StarModel, etc.)
+        db_session: Database session for spatial queries
+
+    Returns:
+        Tuple of (constellation_id, asterism_id) or (None, None) if not found
+    """
+    from geoalchemy2 import functions
+    from sqlalchemy import select
+
+    from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel
+
+    constellation_id = None
+    asterism_id = None
+
+    # Need geometry to do spatial queries
+    if not hasattr(model_obj, "geometry") or model_obj.geometry is None:
+        return None, None
+
+    try:
+        # Find constellation using ST_Contains (point within polygon)
+        stmt_const = (
+            select(ConstellationModel.id)
+            .where(
+                ConstellationModel.geometry.isnot(None),
+                functions.ST_Contains(ConstellationModel.geometry, model_obj.geometry),  # type: ignore[arg-type]
+            )
+            .limit(1)
+        )
+        result_const = db_session.execute(stmt_const)
+        constellation_id = result_const.scalar_one_or_none()
+
+        # Find asterism using ST_Distance (point near MultiLineString)
+        # MultiLineString geometries represent asterism patterns, so we check if the point
+        # is within a reasonable distance (2 degrees) of any line segment
+        # We need to calculate distance for all asterisms and find the closest one within tolerance
+        stmt_asterism = (
+            select(
+                AsterismModel.id,
+                functions.ST_Distance(AsterismModel.geometry, model_obj.geometry).label("distance"),  # type: ignore[arg-type]
+            )
+            .where(AsterismModel.geometry.isnot(None))
+            .order_by("distance")
+        )
+        result_asterism = db_session.execute(stmt_asterism)
+        asterism_row = result_asterism.first()
+        if asterism_row:
+            asterism_id_candidate, distance_raw = asterism_row
+            # Convert distance to float if it's not None
+            distance: float | None = None
+            if distance_raw is not None:
+                try:
+                    distance = float(distance_raw)
+                except (TypeError, ValueError):
+                    distance = None
+            # Use 2 degrees tolerance for line-based asterisms (same as SyncStarRelationshipsThread)
+            if distance is not None and distance <= 2.0:
+                asterism_id = asterism_id_candidate
+
+    except Exception:
+        # If spatial query fails, return None
+        pass
+
+    return constellation_id, asterism_id
 
 
 def import_celestial_stars(
@@ -1218,6 +1379,7 @@ def import_celestial_stars(
                 description = "; ".join(description_parts) if description_parts else None
 
                 # Add to collection (will deduplicate once at the end)
+                # Note: constellation string field is not included - we use constellation_id foreign key instead
                 all_objects.append(
                     {
                         "name": name,
@@ -1230,7 +1392,7 @@ def import_celestial_stars(
                         "catalog_number": catalog_number,
                         "size_arcmin": None,
                         "description": description,
-                        "constellation": constellation,
+                        # constellation field removed - using constellation_id foreign key instead
                     }
                 )
 
@@ -1284,29 +1446,74 @@ def import_celestial_stars(
             console=console,
         )
         progress_obj.__enter__()
-        progress_obj.add_task("Importing celestial_stars...", total=num_batches)
+        task = progress_obj.add_task("Importing celestial_stars...", total=num_batches)
     else:
         # Emit initial import progress via callback
         if progress_callback:
             progress_callback("Importing celestial_stars...", 0, num_batches)
+        task = None
 
-        for i in range(0, len(deduplicated_objects), batch_size):
-            batch = deduplicated_objects[i : i + batch_size]
+    # Batch insert loop (shared for both Rich progress and callback)
+    for i in range(0, len(deduplicated_objects), batch_size):
+        batch = deduplicated_objects[i : i + batch_size]
+        try:
+            batch_imported = db.insert_objects_batch(batch)
+            imported += batch_imported
+
+            # Update foreign keys for stars (constellation_id and asterism_id) via spatial queries
             try:
-                batch_imported = db.insert_objects_batch(batch)
-                imported += batch_imported
-                # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                if progress_callback:
-                    batch_num = (i // batch_size) + 1
-                    progress_callback("Importing celestial_stars...", batch_num, num_batches)
+                with db._get_session() as db_session:
+                    from sqlalchemy import select
+
+                    from celestron_nexstar.api.database.models import StarModel
+
+                    batch_names = [obj["name"] for obj in batch]
+
+                    # Get all stars from this batch that have geometry but don't have foreign keys set yet
+                    stars_to_update = (
+                        db_session.execute(
+                            select(StarModel).where(
+                                StarModel.name.in_(batch_names),
+                                StarModel.geometry.isnot(None),
+                                (StarModel.constellation_id.is_(None)) | (StarModel.asterism_id.is_(None)),
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+
+                    for star in stars_to_update:
+                        constellation_id, asterism_id = _find_spatial_relationships(star, db_session)
+                        if constellation_id is not None:
+                            star.constellation_id = constellation_id
+                        if asterism_id is not None:
+                            star.asterism_id = asterism_id
+
+                    if stars_to_update:
+                        db_session.commit()
+
             except Exception as e:
                 if verbose:
-                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
-                errors += len(batch)
-                # Still advance progress even on error
-                if progress_callback:
-                    batch_num = (i // batch_size) + 1
-                    progress_callback("Importing celestial_stars...", batch_num, num_batches)
+                    console.print(f"[yellow]Warning: Failed to update foreign keys for stars batch: {e}[/yellow]")
+
+            # Advance progress
+            if use_rich_progress and task is not None:
+                if progress_obj is not None:
+                    progress_obj.advance(task)
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback("Importing celestial_stars...", batch_num, num_batches)
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+            errors += len(batch)
+            # Still advance progress even on error
+            if use_rich_progress and task is not None:
+                if progress_obj is not None:
+                    progress_obj.advance(task)
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback("Importing celestial_stars...", batch_num, num_batches)
 
     # Close import progress if using Rich
     if use_rich_progress and progress_obj is not None:
@@ -2107,10 +2314,18 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
 
                         # If not in properties, find it using ST_Within spatial query
                         # Check if asterism position is within constellation boundaries
+                        parent_constellation_id = None
                         if not parent_constellation:
                             parent_constellation = _find_constellation_by_coordinates_async(
                                 ra_hours, dec_degrees, constellations, name
                             )
+
+                        # Find constellation ID for foreign key
+                        if parent_constellation:
+                            for const in constellations:
+                                if const.name == parent_constellation:
+                                    parent_constellation_id = const.id
+                                    break
 
                         # Extract description
                         description = (
@@ -2318,7 +2533,8 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             ra_hours=ra_hours,
                             dec_degrees=dec_degrees,
                             size_degrees=size_degrees,
-                            parent_constellation=parent_constellation,
+                            parent_constellation=parent_constellation,  # Keep string field for backward compatibility
+                            parent_constellation_id=parent_constellation_id,  # Foreign key (populated via spatial query)
                             description=description,
                             stars=stars_value,
                             season=season,

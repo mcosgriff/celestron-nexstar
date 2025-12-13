@@ -955,7 +955,7 @@ class CatalogDatabase:
 
                             # Use WKTElement for proper GeoAlchemy2/SpatiaLite integration
                             geometry_obj = WKTElement(wkt, srid=0)
-                            model.geometry = geometry_obj
+                            model.geometry = geometry_obj  # type: ignore[attr-defined]
                         except ImportError:
                             # Fallback to SQL if GeoAlchemy2 not available
                             from sqlalchemy import text
@@ -965,7 +965,7 @@ class CatalogDatabase:
                                 geometry_db_obj = result.scalar()
                                 if geometry_db_obj is not None:
                                     # Type ignore: result.scalar() returns Any; SpatiaLite returns geometry as a DB value.
-                                    model.geometry = geometry_db_obj  # type: ignore[assignment]
+                                    model.geometry = geometry_db_obj  # type: ignore[assignment,attr-defined]
                             except Exception:
                                 # If geometry creation fails, continue without geometry
                                 pass
@@ -1792,18 +1792,30 @@ class CatalogDatabase:
                     stmt = stmt.where(model_class.magnitude >= min_magnitude)
 
                 if constellation:
-                    # Stars store full constellation names, so match by name
-                    # Other objects (planets, moons) might use abbreviations
-                    if constellation_match:
-                        # Match by full name (for stars) or abbreviation (for other objects)
-                        stmt = stmt.where(
-                            (model_class.constellation == constellation_match)
-                            | (model_class.constellation == constellation_abbrev)
-                            | (model_class.constellation.ilike(f"%{constellation_match}%"))
+                    # For StarModel, use constellation_id foreign key
+                    # For other models, use constellation string field
+                    if model_class.__name__ == "StarModel":
+                        # Find constellation by name and use its ID
+                        const_stmt = (
+                            select(ConstellationModel).where(ConstellationModel.name.ilike(constellation)).limit(1)
                         )
+                        constellation_obj = session.scalar(const_stmt)
+                        if constellation_obj:
+                            # Type ignore: we know this is StarModel based on the check
+                            stmt = stmt.where(StarModel.constellation_id == constellation_obj.id)  # type: ignore[attr-defined]
+                        # If constellation not found, skip filter for stars
                     else:
-                        # Fallback: use ILIKE if we couldn't find the constellation
-                        stmt = stmt.where(model_class.constellation.ilike(f"%{constellation}%"))
+                        # Other models use constellation string field
+                        if constellation_match:
+                            # Match by full name or abbreviation
+                            stmt = stmt.where(
+                                (model_class.constellation == constellation_match)
+                                | (model_class.constellation == constellation_abbrev)
+                                | (model_class.constellation.ilike(f"%{constellation_match}%"))
+                            )
+                        else:
+                            # Fallback: use ILIKE if we couldn't find the constellation
+                            stmt = stmt.where(model_class.constellation.ilike(f"%{constellation}%"))
 
                 # is_dynamic filter (only for planets and moons)
                 # Type ignore: Protocol includes is_dynamic but mypy needs help with the check
@@ -2053,6 +2065,14 @@ class CatalogDatabase:
         if isinstance(model, (MoonModel, CelestialObjectModel)):
             parent_planet = model.parent_planet
 
+        # Get constellation - for StarModel use constellation_name property, otherwise use constellation field
+        constellation: str | None = (
+            model.constellation_name if isinstance(model, StarModel) else model.constellation  # type: ignore[attr-defined]
+        )
+
+        # Get asterism - for StarModel use asterism_name property
+        asterism: str | None = model.asterism_name if isinstance(model, StarModel) else None
+
         obj = CelestialObject(
             name=name,
             common_name=common_name,
@@ -2063,7 +2083,8 @@ class CatalogDatabase:
             catalog=model.catalog,
             description=model.description,
             parent_planet=parent_planet,
-            constellation=model.constellation,
+            constellation=constellation,
+            asterism=asterism,
         )
 
         # Handle dynamic objects (planets and moons)

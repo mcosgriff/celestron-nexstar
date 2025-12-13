@@ -122,10 +122,14 @@ class VisibilityCountThread(QThread):
                         # Count visible stars for each asterism
                         print(f"DEBUG: Counting stars for {len(self.constellation_names)} asterisms")
                         print(f"DEBUG: Asterism objects cache has {len(self.asterism_objects)} entries")
-                        for asterism_name in self.constellation_names:
+                        for idx, asterism_name in enumerate(self.constellation_names):
                             # Check if thread should stop
                             if self.isInterruptionRequested():
                                 return
+
+                            # Yield control periodically to keep UI responsive
+                            if idx % 5 == 0:
+                                self.msleep(10)  # Small delay every 5 asterisms
 
                             asterism = self.asterism_objects.get(asterism_name)
                             if not asterism:
@@ -192,12 +196,16 @@ class VisibilityCountThread(QThread):
                             self.count_ready.emit(asterism_name, visible_count)
                     else:
                         # Count visible stars for each constellation
-                        for constellation_name in self.constellation_names:
+                        for idx, constellation_name in enumerate(self.constellation_names):
                             # Check if thread should stop
                             if self.isInterruptionRequested():
                                 return
 
-                            stars = db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
+                            # Yield control periodically to keep UI responsive
+                            if idx % 5 == 0:
+                                self.msleep(10)  # Small delay every 5 constellations
+
+                            stars = db.filter_objects(object_type="star", constellation=constellation_name, limit=50)
 
                             visible_count = 0
                             for star in stars:
@@ -1820,15 +1828,16 @@ class MainWindow(QMainWindow):
         elif obj_type == CelestialObjectType.ASTERISM:
             table.setColumnCount(3)
             table.setHorizontalHeaderLabels(["Asterism", "Visible Stars", "Favorite"])
-        # For star tab, add a Constellation column
+        # For star tab, add a Constellation and Asterism column
         elif obj_type == CelestialObjectType.STAR:
-            table.setColumnCount(12)
+            table.setColumnCount(13)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
                     "Name",
                     "Type",
                     "Constellation",
+                    "Asterism",
                     "Mag",
                     "Alt",
                     "Visibility",
@@ -1889,6 +1898,7 @@ class MainWindow(QMainWindow):
                 "Name",
                 "Type",
                 "Constellation",
+                "Asterism",
                 "Mag",
                 "Alt",
                 "Visibility",
@@ -2103,13 +2113,15 @@ class MainWindow(QMainWindow):
             # Type
             table.setItem(row, 2, QTableWidgetItem(obj.object_type.value))
 
-            # Column offset for star tab (has constellation column)
-            col_offset = 1 if is_star_tab else 0
+            # Column offset for star tab (has constellation and asterism columns)
+            col_offset = 2 if is_star_tab else 0
 
             # Constellation (only for star tab)
             if is_star_tab:
                 constellation_text = obj.constellation or "-"
                 table.setItem(row, 3, QTableWidgetItem(constellation_text))
+                asterism_text = obj.asterism or "-"
+                table.setItem(row, 4, QTableWidgetItem(asterism_text))
 
             # Magnitude
             mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"

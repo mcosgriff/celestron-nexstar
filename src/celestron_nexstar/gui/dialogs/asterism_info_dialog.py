@@ -371,6 +371,21 @@ class AsterismInfoDialog(QDialog):
                             dec_min = max(-90, dec_min)
                             dec_max = min(90, dec_max)
 
+                        # Final validation: ensure ra_min < ra_max before converting to degrees
+                        # This handles edge cases where clamping or wrapping might cause issues
+                        if ra_min >= ra_max:
+                            # Use a safe default range around the center
+                            if ra_values:
+                                ra_center = (min(ra_values) + max(ra_values)) / 2
+                            else:
+                                ra_center = asterism.ra_hours if asterism else 12.0
+                            ra_min = max(0, ra_center - 1)
+                            ra_max = min(24, ra_center + 1)
+                            # If still equal (shouldn't happen, but be safe)
+                            if ra_min >= ra_max:
+                                ra_min = 0
+                                ra_max = 4
+
                         # Convert RA from hours to degrees for starplot (RA * 15 = degrees)
                         ra_min_deg = ra_min * 15
                         ra_max_deg = ra_max * 15
