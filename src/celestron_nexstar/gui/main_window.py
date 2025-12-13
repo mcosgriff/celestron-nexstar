@@ -55,7 +55,8 @@ logger = logging.getLogger(__name__)
 class VisibilityCountThread(QThread):
     """Worker thread to count visible stars for constellations/asterisms in the background."""
 
-    counts_ready = Signal(dict)  # type: ignore[type-arg,misc]  # Emits dict[str, int] of counts
+    count_ready = Signal(str, int)  # type: ignore[type-arg,misc]  # Emits (name, count) for each item
+    counts_complete = Signal()  # type: ignore[type-arg,misc]  # Emits when all counts are done
 
     def __init__(
         self,
@@ -91,7 +92,7 @@ class VisibilityCountThread(QThread):
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
 
-            def _count_all_stars() -> dict[str, int]:
+            def _count_all_stars() -> None:
                 db = get_database()
 
                 with db._get_session() as session:
@@ -117,21 +118,23 @@ class VisibilityCountThread(QThread):
                         logger.warning("Light pollution data not available, using default sky brightness")
                         sky_brightness = SkyBrightness.FAIR
 
-                    counts: dict[str, int] = {}
-
                     if self.is_asterism:
                         # Count visible stars for each asterism
                         print(f"DEBUG: Counting stars for {len(self.constellation_names)} asterisms")
                         print(f"DEBUG: Asterism objects cache has {len(self.asterism_objects)} entries")
                         for asterism_name in self.constellation_names:
+                            # Check if thread should stop
+                            if self.isInterruptionRequested():
+                                return
+
                             asterism = self.asterism_objects.get(asterism_name)
                             if not asterism:
                                 print(f"DEBUG: Asterism '{asterism_name}' not found in cache")
-                                counts[asterism_name] = 0
+                                self.count_ready.emit(asterism_name, 0)
                                 continue
                             if not asterism.member_stars:
                                 print(f"DEBUG: Asterism '{asterism_name}' has no member_stars")
-                                counts[asterism_name] = 0
+                                self.count_ready.emit(asterism_name, 0)
                                 continue
 
                             print(f"DEBUG: Asterism '{asterism_name}' has {len(asterism.member_stars)} member stars")
@@ -184,11 +187,16 @@ class VisibilityCountThread(QThread):
                                         )
                                     continue
 
-                            counts[asterism_name] = visible_count
                             print(f"DEBUG: Asterism '{asterism_name}': {visible_count} visible stars")
+                            # Emit individual update for this asterism
+                            self.count_ready.emit(asterism_name, visible_count)
                     else:
                         # Count visible stars for each constellation
                         for constellation_name in self.constellation_names:
+                            # Check if thread should stop
+                            if self.isInterruptionRequested():
+                                return
+
                             stars = db.filter_objects(object_type="star", constellation=constellation_name, limit=100)
 
                             visible_count = 0
@@ -238,25 +246,24 @@ class VisibilityCountThread(QThread):
                                         )
                                     continue
 
-                            counts[constellation_name] = visible_count
                             print(
                                 f"DEBUG: Constellation '{constellation_name}': {visible_count} visible stars out of {len(stars)} total"
                             )
-
-                    return counts
+                            # Emit individual update for this constellation
+                            self.count_ready.emit(constellation_name, visible_count)
 
             print(f"DEBUG: VisibilityCountThread starting count for {len(self.constellation_names)} items")
-            result = _count_all_stars()
-            print(f"DEBUG: VisibilityCountThread got result: {result}")
-            print(f"DEBUG: VisibilityCountThread emitting counts: {result}")
-            logger.info(f"VisibilityCountThread emitting counts: {result}")
-            self.counts_ready.emit(result)
-            print("DEBUG: VisibilityCountThread signal emitted")
+            _count_all_stars()
+            print("DEBUG: VisibilityCountThread completed all counts")
+            logger.info("VisibilityCountThread completed all counts")
+            # Emit completion signal
+            self.counts_complete.emit()
+            print("DEBUG: VisibilityCountThread completion signal emitted")
         except Exception as e:
             logger.error(f"Error counting visible stars: {e}", exc_info=True)
             print(f"DEBUG: VisibilityCountThread error: {e}")
-            # Emit empty dict on error
-            self.counts_ready.emit({})
+            # On error, just emit completion signal (individual errors are handled in the loop)
+            self.counts_complete.emit()
 
 
 class ObjectsLoaderThread(QThread):
@@ -2630,38 +2637,22 @@ class MainWindow(QMainWindow):
             # Store thread reference to prevent garbage collection
             self._visibility_threads[table] = visibility_thread
 
-            def update_counts(counts: dict[str, int]) -> None:
-                """Update the table with visibility counts."""
-                print(f"DEBUG: update_counts called with {len(counts)} counts")
-                print(f"DEBUG: Counts dict: {counts}")
-                logger.info(f"update_counts called with {len(counts)} counts: {counts}")
-                updated = 0
-                print(f"DEBUG: Table has {table.rowCount()} rows")
+            def update_count(name: str, count: int) -> None:
+                """Update a single row in the table with visibility count."""
+                # Find the row with this name
                 for row in range(table.rowCount()):
                     name_item = table.item(row, 0)
                     if name_item:
                         constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
-                        print(
-                            f"DEBUG: Row {row}: constellation_name='{constellation_name}', in counts: {constellation_name in counts if constellation_name else False}"
-                        )
-                        if constellation_name and constellation_name in counts:
-                            visible_count = counts[constellation_name]
+                        if constellation_name == name:
                             stars_item = table.item(row, 1)
                             if stars_item:
                                 old_value = stars_item.text()
-                                stars_item.setText(str(visible_count))
-                                stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
-                                updated += 1
-                                print(f"DEBUG: Updated {constellation_name} from '{old_value}' to {visible_count}")
-                            else:
-                                print(f"DEBUG: Row {row}: No stars_item found for {constellation_name}")
-                        elif constellation_name:
-                            print(f"DEBUG: Row {row}: {constellation_name} not in counts dict")
-                    else:
-                        print(f"DEBUG: Row {row}: No name_item found")
-
-                print(f"DEBUG: Updated {updated} rows in table")
-                logger.info(f"Updated {updated} rows in table")
+                                stars_item.setText(str(count))
+                                stars_item.setData(Qt.ItemDataRole.UserRole, count)
+                                print(f"DEBUG: Updated {name} from '{old_value}' to {count}")
+                                logger.debug(f"Updated {name} visibility count to {count}")
+                                break
 
             def cleanup_thread() -> None:
                 """Clean up thread reference when finished."""
@@ -2670,7 +2661,8 @@ class MainWindow(QMainWindow):
                     thread.deleteLater()
 
             # Use QueuedConnection to ensure signal is processed on main thread
-            visibility_thread.counts_ready.connect(update_counts, Qt.ConnectionType.QueuedConnection)
+            visibility_thread.count_ready.connect(update_count, Qt.ConnectionType.QueuedConnection)
+            visibility_thread.counts_complete.connect(lambda: logger.info("All visibility counts completed"))
             visibility_thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
             print(f"DEBUG: Starting visibility count thread for {len(sorted_names)} constellations/asterisms")
             visibility_thread.start()
