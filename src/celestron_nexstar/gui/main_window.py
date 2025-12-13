@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QCursor, QFontMetrics, QGuiApplication, QIcon, QMouseEvent
@@ -588,6 +588,7 @@ class MainWindow(QMainWindow):
             "catalog": "mdi.folder-outline",
             "dashboard": "mdi.view-dashboard-outline",
             "list": "mdi.playlist-play",
+            "map": "mdi.map-outline",
             "weather": "mdi.weather-cloudy",  # No outline version available
             "sky_darkness": "mdi.weather-night",
             "checklist": "mdi.check-circle-outline",
@@ -596,7 +597,7 @@ class MainWindow(QMainWindow):
             "transit_times": "mdi.transit-connection",
             "glossary": "mdi.book-open-page-variant",
             "settings": "mdi.cog-outline",
-            "star": "mdi.star",
+            "star": "mdi.star-outline",
             "favorite": "mdi.star",
             "bookmark": "mdi.bookmark",
             # Celestial objects (using alpha-box-outline pattern)
@@ -681,7 +682,7 @@ class MainWindow(QMainWindow):
             for theme_name in fallback_theme_names:
                 icon = QIcon.fromTheme(theme_name)
                 if not icon.isNull():
-                    return icon
+                    return cast(QIcon, icon)  # Explicitly cast to QIcon to satisfy type checker
 
         # Fallback to empty icon (will show as blank button)
         return QIcon()
@@ -775,6 +776,21 @@ class MainWindow(QMainWindow):
         self._sky_map_window = None  # Store reference to sky map window
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
         self.setWindowTitle("Celestron NexStar Telescope Control")
+
+        # Explicitly ensure window has decorations (titlebar, borders, etc.)
+        # This is especially important on Wayland/COSMIC where decorations can be missing
+        # Use Qt.Window which includes all standard decorations by default
+        flags = Qt.WindowType.Window
+        # Remove any frameless hints that might have been set
+        flags &= ~Qt.WindowType.FramelessWindowHint
+        # Ensure standard window decorations are present
+        flags |= Qt.WindowType.WindowTitleHint
+        flags |= Qt.WindowType.WindowMinimizeButtonHint
+        flags |= Qt.WindowType.WindowMaximizeButtonHint
+        flags |= Qt.WindowType.WindowCloseButtonHint
+        flags |= Qt.WindowType.WindowSystemMenuHint
+        self.setWindowFlags(flags)
+
         self.setMinimumSize(900, 600)  # Increased width by 100px to accommodate all tabs without scrolling
         # Set initial size wider than minimum to ensure tabs are visible without scrolling
         self.resize(1000, 700)
@@ -947,8 +963,48 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, find_and_hide_ea_element)
         QTimer.singleShot(1000, find_and_hide_ea_element)
 
+    def _create_progress_dialog(self, label_text: str, parent: QWidget | None = None) -> QProgressDialog:
+        """
+        Create a progress dialog without a title bar.
+
+        Args:
+            label_text: Text to display in the progress dialog
+            parent: Parent widget (defaults to self)
+
+        Returns:
+            QProgressDialog configured without title bar
+        """
+        if parent is None:
+            parent = self
+        progress = QProgressDialog(label_text, "Cancel", 0, 0, parent)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)  # Disable cancel button
+
+        # Remove title bar by setting window flags
+        flags = progress.windowFlags()
+        flags &= ~Qt.WindowType.WindowTitleHint
+        flags &= ~Qt.WindowType.WindowSystemMenuHint
+        flags &= ~Qt.WindowType.WindowMinimizeButtonHint
+        flags &= ~Qt.WindowType.WindowMaximizeButtonHint
+        flags &= ~Qt.WindowType.WindowCloseButtonHint
+        # Keep it as a dialog but without decorations
+        flags |= Qt.WindowType.Dialog
+        flags |= Qt.WindowType.FramelessWindowHint
+        progress.setWindowFlags(flags)
+
+        return progress
+
     def _create_menus(self) -> None:
         """Create the application menu bar with menus."""
+        # Create File menu
+        file_menu = self.menuBar().addMenu("&File")
+
+        # Exit action
+        exit_action = file_menu.addAction("E&xit")
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.setStatusTip("Exit the application")
+        exit_action.triggered.connect(self.close)
+
         # Create View menu
         view_menu = self.menuBar().addMenu("&View")
 
@@ -1008,6 +1064,39 @@ class MainWindow(QMainWindow):
     def showEvent(self, event: object) -> None:  # noqa: N802
         """Handle window show event - refresh icons after window is shown."""
         super().showEvent(event)  # type: ignore[arg-type]
+
+        # Force window decorations on Wayland/COSMIC (sometimes needs to be done after show)
+        # Check if we're on Wayland by checking environment variable
+        import os
+
+        is_wayland = os.environ.get("WAYLAND_DISPLAY") is not None or os.environ.get("XDG_SESSION_TYPE") == "wayland"
+
+        # Use QTimer to ensure this happens after the window is fully shown
+        def _ensure_decorations() -> None:
+            # Always force decorations on Wayland, or if frameless is detected
+            current_flags = self.windowFlags()
+            needs_fix = is_wayland or (current_flags & Qt.WindowType.FramelessWindowHint)
+
+            if needs_fix and not hasattr(self, "_decorations_fixed"):
+                # Set standard window type with all decorations
+                flags = Qt.WindowType.Window
+                flags &= ~Qt.WindowType.FramelessWindowHint  # Explicitly remove frameless
+                flags |= Qt.WindowType.WindowTitleHint
+                flags |= Qt.WindowType.WindowMinimizeButtonHint
+                flags |= Qt.WindowType.WindowMaximizeButtonHint
+                flags |= Qt.WindowType.WindowCloseButtonHint
+                flags |= Qt.WindowType.WindowSystemMenuHint
+                self.setWindowFlags(flags)
+                # Must call show() again after changing flags
+                self.show()
+                self._decorations_fixed = True
+
+        # Try with a small delay to let the compositor finish initializing
+        # Try multiple times with increasing delays for stubborn compositors
+        QTimer.singleShot(50, _ensure_decorations)
+        QTimer.singleShot(200, _ensure_decorations)
+        QTimer.singleShot(500, _ensure_decorations)
+
         # Refresh toolbar icons after window is shown to ensure FontAwesome fonts are loaded
         self._refresh_toolbar_icons()
 
@@ -1471,6 +1560,10 @@ class MainWindow(QMainWindow):
             )
         if hasattr(self, "sky_map_action"):
             self.sky_map_action.setIcon(self._create_icon("map", ["map", "globe", "earth", "map-marker"]))
+        if hasattr(self, "zenith_star_chart_action"):
+            self.zenith_star_chart_action.setIcon(self._create_icon("star", ["star", "star-outline", "star-circle"]))
+        if hasattr(self, "calendar_action"):
+            self.calendar_action.setIcon(self._create_icon("event", ["calendar", "calendar-month", "calendar-outline"]))
         if hasattr(self, "equipment_action"):
             self.equipment_action.setIcon(self._create_icon("settings", ["cog", "tools", "wrench"]))
         self.weather_action.setIcon(
@@ -1883,11 +1976,7 @@ class MainWindow(QMainWindow):
         # Show loading dialog only if requested
         progress: QProgressDialog | None = None
         if show_progress:
-            progress = QProgressDialog(
-                f"Loading {obj_type_str.replace('_', ' ').title()} objects...", "Cancel", 0, 0, self
-            )
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog(f"Loading {obj_type_str.replace('_', ' ').title()} objects...")
             progress.show()
 
         # Create and start worker thread
@@ -2718,11 +2807,8 @@ class MainWindow(QMainWindow):
             return
 
         # Show loading dialog
-        progress = QProgressDialog(
-            f"Loading all tabs ({len(tabs_to_load)} tabs)...", "Cancel", 0, len(tabs_to_load), self
-        )
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)  # Disable cancel button
+        progress = self._create_progress_dialog(f"Loading all tabs ({len(tabs_to_load)} tabs)...")
+        progress.setMaximum(len(tabs_to_load))
         progress.show()
 
         # Process events to show the dialog immediately
@@ -2808,9 +2894,7 @@ class MainWindow(QMainWindow):
                 constellation_name = display_text.removeprefix("★ ").strip()
 
             # Show loading dialog
-            progress = QProgressDialog(f"Loading information for {constellation_name}...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog(f"Loading information for {constellation_name}...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -2855,9 +2939,7 @@ class MainWindow(QMainWindow):
                 object_name = display_text.removeprefix("★ ").strip()
 
             # Show loading dialog
-            progress = QProgressDialog(f"Loading information for {object_name}...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog(f"Loading information for {object_name}...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -3555,9 +3637,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude, get_current_configuration
 
             # Show progress dialog
-            progress = QProgressDialog("Loading sky darkness information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)
+            progress = self._create_progress_dialog("Loading sky darkness information...")
             progress.show()
             QApplication.processEvents()
 
@@ -3849,9 +3929,7 @@ class MainWindow(QMainWindow):
     def _on_time_slots(self) -> None:
         """Handle time slots button click."""
         # Show progress dialog while loading
-        progress = QProgressDialog("Loading time slots and recommendations...", "Cancel", 0, 0, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)  # Disable cancel button
+        progress = self._create_progress_dialog("Loading time slots and recommendations...")
         progress.show()
 
         # Process events to show the dialog immediately
@@ -3874,9 +3952,7 @@ class MainWindow(QMainWindow):
     def _on_transit_times(self) -> None:
         """Handle transit times button click."""
         # Show progress dialog while loading
-        progress = QProgressDialog("Loading transit times...", "Cancel", 0, 0, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)  # Disable cancel button
+        progress = self._create_progress_dialog("Loading transit times...")
         progress.show()
 
         # Process events to show the dialog immediately
@@ -3949,9 +4025,7 @@ class MainWindow(QMainWindow):
         """Handle celestial object button click."""
         if object_name == "aurora":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading aurora visibility information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading aurora visibility information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -3967,9 +4041,7 @@ class MainWindow(QMainWindow):
             dialog.exec()
         elif object_name == "iss":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading ISS pass predictions...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading ISS pass predictions...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -3985,9 +4057,7 @@ class MainWindow(QMainWindow):
             iss_dialog.exec()
         elif object_name == "binoculars":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading binocular viewing information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading binocular viewing information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4003,9 +4073,7 @@ class MainWindow(QMainWindow):
             binoculars_dialog.exec()
         elif object_name == "naked_eye":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading naked-eye viewing information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading naked-eye viewing information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4021,9 +4089,7 @@ class MainWindow(QMainWindow):
             naked_eye_dialog.exec()
         elif object_name == "comets":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading comet visibility information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading comet visibility information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4039,9 +4105,7 @@ class MainWindow(QMainWindow):
             comets_dialog.exec()
         elif object_name == "eclipse":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading eclipse information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading eclipse information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4057,9 +4121,7 @@ class MainWindow(QMainWindow):
             eclipse_dialog.exec()
         elif object_name == "planets":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading planetary events information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading planetary events information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4075,9 +4137,7 @@ class MainWindow(QMainWindow):
             planets_dialog.exec()
         elif object_name == "space_weather":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading space weather information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading space weather information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4093,9 +4153,7 @@ class MainWindow(QMainWindow):
             space_weather_dialog.exec()
         elif object_name == "satellites":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading satellite passes information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading satellite passes information...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4111,9 +4169,7 @@ class MainWindow(QMainWindow):
             satellites_dialog.exec()
         elif object_name == "meteors":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading meteor shower predictions...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading meteor shower predictions...")
             progress.show()
 
             # Process events to show the dialog immediately
@@ -4129,9 +4185,7 @@ class MainWindow(QMainWindow):
             meteors_dialog.exec()
         elif object_name == "milky_way":
             # Show progress dialog while loading
-            progress = QProgressDialog("Loading Milky Way visibility information...", "Cancel", 0, 0, self)
-            progress.setWindowModality(Qt.WindowModality.WindowModal)
-            progress.setCancelButton(None)  # Disable cancel button
+            progress = self._create_progress_dialog("Loading Milky Way visibility information...")
             progress.show()
 
             # Process events to show the dialog immediately

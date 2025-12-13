@@ -37,13 +37,23 @@ class FusionTheme:
 
     def apply(self, app: QApplication) -> None:
         """Apply the theme to the application."""
+        import os
+
         from PySide6.QtGui import QPalette
         from PySide6.QtWidgets import QStyleFactory
 
         self._app = app
 
-        # Set Fusion style
-        app.setStyle(QStyleFactory.create("Fusion"))
+        # Allow style override via environment variable for testing
+        # Options: "Fusion" (default), "Windows", or any available style
+        style_name = os.environ.get("QT_STYLE", "Fusion")
+        available_styles = QStyleFactory.keys()
+
+        if style_name in available_styles:
+            app.setStyle(QStyleFactory.create(style_name))
+        else:
+            # Fallback to Fusion if requested style not available
+            app.setStyle(QStyleFactory.create("Fusion"))
 
         # Determine actual theme mode
         actual_mode = self._detect_system_theme() if self.mode == ThemeMode.SYSTEM else self.mode

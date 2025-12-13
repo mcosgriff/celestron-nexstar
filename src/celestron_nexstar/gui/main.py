@@ -2,6 +2,20 @@
 Main entry point for the GUI application.
 """
 
+# Set environment variables for Wayland window decorations (needed for COSMIC)
+# This MUST be done before any Qt imports
+import os  # noqa: I001  # Must import os first to set env vars before Qt
+
+# Force enable window decorations on Wayland (required for window to be movable)
+# This is critical for COSMIC desktop environment
+os.environ["QT_WAYLAND_DISABLE_WINDOWDECORATION"] = "0"
+
+# Additional Qt Wayland settings that may help
+# Force Qt to use client-side decorations if available
+if "QT_WAYLAND_SHELL_INTEGRATION" not in os.environ:
+    # Try xdg-shell if available (standard Wayland protocol)
+    os.environ.setdefault("QT_WAYLAND_SHELL_INTEGRATION", "xdg-shell")
+
 import logging
 import sys
 from pathlib import Path
@@ -61,11 +75,23 @@ def main() -> int:
     """Main entry point for the GUI application."""
     # Set up logging first
     _setup_logging()
+    logger = logging.getLogger(__name__)
+
+    # Verify Wayland environment variable is set (for debugging)
+    wayland_decoration = os.environ.get("QT_WAYLAND_DISABLE_WINDOWDECORATION")
+    logger.info(f"QT_WAYLAND_DISABLE_WINDOWDECORATION={wayland_decoration}")
 
     # Configure astropy IERS data handling early to avoid warnings
     configure_astropy_iers()
 
     app = QApplication(sys.argv)
+
+    # Log platform information for debugging
+    try:
+        platform_name = app.platformName() if hasattr(app, "platformName") else "unknown"
+        logger.info(f"Qt platform: {platform_name}")
+    except Exception:
+        pass
     app.setApplicationName("Celestron NexStar")
     app.setOrganizationName("Celestron NexStar")
 
