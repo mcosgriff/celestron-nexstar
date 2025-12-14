@@ -3,11 +3,13 @@ Dialog to display current weather information.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -34,6 +36,14 @@ class WeatherInfoDialog(QDialog):
 
         # Create layout
         layout = QVBoxLayout(self)
+
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        layout.addWidget(self.tab_widget)
+
+        # Create "Current" tab with text info
+        current_tab = QWidget()
+        current_layout = QVBoxLayout(current_tab)
 
         # Create scrollable text area with rich HTML formatting
         self.info_text = QTextEdit()
@@ -64,7 +74,18 @@ class WeatherInfoDialog(QDialog):
             }}
         """
         )
-        layout.addWidget(self.info_text)
+        current_layout.addWidget(self.info_text)
+        self.tab_widget.addTab(current_tab, "Current")
+
+        # Create "Charts" tab
+        charts_tab = QWidget()
+        charts_layout = QVBoxLayout(charts_tab)
+        charts_layout.setContentsMargins(0, 0, 0, 0)
+        self.charts_widget = QWidget()
+        charts_widget_layout = QVBoxLayout(self.charts_widget)
+        charts_widget_layout.setContentsMargins(0, 0, 0, 0)
+        charts_layout.addWidget(self.charts_widget)
+        self.tab_widget.addTab(charts_tab, "Charts")
 
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
@@ -73,6 +94,7 @@ class WeatherInfoDialog(QDialog):
 
         # Load weather information (this will also update stylesheet with theme colors)
         self._load_weather_info()
+        self._load_weather_charts()
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -298,3 +320,158 @@ class WeatherInfoDialog(QDialog):
             self.info_text.setHtml(
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load weather information: {e}</span></p>"
             )
+
+    def _load_weather_charts(self) -> None:
+        """Load weather charts showing current day from 12 AM to now."""
+        try:
+            from celestron_nexstar.api.core.utils import get_local_timezone
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.location.weather import fetch_weather_for_charts
+
+            location = get_observer_location()
+            if not location:
+                return
+
+            # Get local timezone
+            local_tz = get_local_timezone(location.latitude, location.longitude)
+            if not local_tz:
+                return
+
+            # Fetch weather data (past 3 days + 24 hours future to ensure we have today's data)
+            all_forecasts = fetch_weather_for_charts(location, future_hours=24)
+
+            # Filter to only current day (12 AM to now in local time)
+            now_utc = datetime.now(UTC)
+            now_local = now_utc.astimezone(local_tz)
+            today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start_utc = today_start_local.astimezone(UTC)
+
+            # Filter forecasts to only include today (from 12 AM to now)
+            forecasts = [f for f in all_forecasts if today_start_utc <= f.timestamp <= now_utc]
+
+            if not forecasts:
+                logger.warning("No weather data available for charts")
+                return
+
+            # Create matplotlib figure with Qt backend
+            import matplotlib
+
+            matplotlib.use("QtAgg")  # Use Qt backend for PySide6 integration
+            from matplotlib.backends.backend_qt5agg import (
+                FigureCanvasQTAgg as FigureCanvas,  # type: ignore[attr-defined]
+            )
+            from matplotlib.figure import Figure
+
+            # Clear existing charts
+            layout = self.charts_widget.layout()
+            if layout:
+                for i in reversed(range(layout.count())):
+                    item = layout.itemAt(i)
+                    if item:
+                        widget = item.widget()
+                        if widget:
+                            widget.setParent(None)
+
+            # Create figure with subplots
+            fig = Figure(figsize=(12, 10))
+            canvas = FigureCanvas(fig)
+
+            # Set theme colors
+            is_dark = self._is_dark_theme()
+            if is_dark:
+                fig.patch.set_facecolor("#1e1e1e")  # type: ignore[attr-defined]
+                text_color = "#ffffff"
+                grid_color = "#444444"
+            else:
+                fig.patch.set_facecolor("#ffffff")  # type: ignore[attr-defined]
+                text_color = "#000000"
+                grid_color = "#cccccc"
+
+            # Prepare data
+            timestamps = [f.timestamp for f in forecasts]
+            temperatures = [f.temperature_f for f in forecasts]
+            cloud_cover = [f.cloud_cover_percent for f in forecasts]
+            humidity = [f.humidity_percent for f in forecasts]
+            wind_speed = [f.wind_speed_mph for f in forecasts]
+
+            # Find current time index
+            current_idx = next((i for i, ts in enumerate(timestamps) if ts >= now_utc), len(timestamps) - 1)
+
+            # Convert datetime to matplotlib date numbers for axvline
+            import matplotlib.dates as mdates
+
+            current_time_mpl = mdates.date2num(
+                timestamps[current_idx] if current_idx < len(timestamps) else timestamps[-1]
+            )
+
+            # Create subplots
+            ax1 = fig.add_subplot(4, 1, 1)  # Temperature
+            ax2 = fig.add_subplot(4, 1, 2)  # Cloud Cover
+            ax3 = fig.add_subplot(4, 1, 3)  # Humidity
+            ax4 = fig.add_subplot(4, 1, 4)  # Wind Speed
+
+            # Plot Temperature
+            ax1.plot(timestamps, temperatures, color="#ff6b6b", linewidth=2, label="Temperature")
+            ax1.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5, label="Now")
+            ax1.set_ylabel("Temperature (°F)", color=text_color)
+            ax1.tick_params(colors=text_color)
+            ax1.grid(True, color=grid_color, alpha=0.3)
+            ax1.set_title("Temperature", color=text_color, fontweight="bold")
+            ax1.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+
+            # Plot Cloud Cover
+            ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
+            ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2)
+            ax2.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
+            ax2.set_ylabel("Cloud Cover (%)", color=text_color)
+            ax2.set_ylim(0, 100)
+            ax2.tick_params(colors=text_color)
+            ax2.grid(True, color=grid_color, alpha=0.3)
+            ax2.set_title("Cloud Cover", color=text_color, fontweight="bold")
+            ax2.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+
+            # Plot Humidity
+            ax3.plot(timestamps, humidity, color="#50c878", linewidth=2, label="Humidity")
+            ax3.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
+            ax3.set_ylabel("Humidity (%)", color=text_color)
+            ax3.set_ylim(0, 100)
+            ax3.tick_params(colors=text_color)
+            ax3.grid(True, color=grid_color, alpha=0.3)
+            ax3.set_title("Humidity", color=text_color, fontweight="bold")
+            ax3.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+
+            # Plot Wind Speed
+            ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="Wind Speed")
+            ax4.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
+            ax4.set_ylabel("Wind Speed (mph)", color=text_color)
+            ax4.set_xlabel("Time", color=text_color)
+            ax4.tick_params(colors=text_color)
+            ax4.grid(True, color=grid_color, alpha=0.3)
+            ax4.set_title("Wind Speed", color=text_color, fontweight="bold")
+            ax4.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+
+            # Format x-axis dates - show time (HH format) on all charts
+            # Use 4-hour interval for better spacing
+            for ax in [ax1, ax2, ax3, ax4]:
+                ax.tick_params(axis="x", rotation=0)  # No rotation needed for time-only
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H"))  # Just hour (01, 06, 12, 23, etc.)
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))  # Every 4 hours
+                # Add padding to top, bottom, and left (y-axis) of each chart
+                ax.margins(y=0.15, x=0.02)  # 15% margin on top/bottom, 2% on left/right for y-axis labels
+
+            # Adjust layout with more spacing between subplots
+            # Add extra left padding to prevent y-axis labels from being cut off
+            fig.tight_layout(pad=2.0)  # Padding around the figure
+            fig.subplots_adjust(hspace=0.4, left=0.12)  # More spacing between charts, left margin for y-axis labels
+
+            # Add canvas to widget
+            layout = self.charts_widget.layout()
+            if layout is None:
+                from PySide6.QtWidgets import QVBoxLayout
+
+                layout = QVBoxLayout(self.charts_widget)
+                layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(canvas)
+
+        except Exception as e:
+            logger.error(f"Error loading weather charts: {e}", exc_info=True)

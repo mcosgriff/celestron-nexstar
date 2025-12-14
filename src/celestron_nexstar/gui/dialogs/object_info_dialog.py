@@ -335,7 +335,7 @@ class ObjectInfoDialog(QDialog):
                 direction = self._get_azimuth_direction(visibility_info.azimuth_deg)
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
-                    f"Direction: Look <b>{direction}</b> (azimuth {visibility_info.azimuth_deg:.1f}°)</p>"
+                    f"Azimuth: {visibility_info.azimuth_deg:.1f}° ({direction})</p>"
                 )
             if visibility_info.limiting_magnitude is not None:
                 # Add explanation for limiting magnitude

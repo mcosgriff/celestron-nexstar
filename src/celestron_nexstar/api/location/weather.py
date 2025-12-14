@@ -525,7 +525,6 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             "wind_speed_unit": "mph",
             "temperature_unit": "fahrenheit",
         }
-
         response = requests.get(url, params=params, timeout=30)
         if response.status_code != 200:
             logger.warning(f"Open-Meteo API returned status {response.status_code}")
@@ -723,6 +722,134 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         return []
 
     return forecasts
+
+
+def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24) -> list[HourlySeeingForecast]:
+    """
+    Fetch weather data for charting: past 3 days + future hours.
+
+    Uses Open-Meteo API with past_days=3 parameter to get historical observations
+    combined with future forecast data.
+
+    Args:
+        location: Observer location with latitude and longitude
+        future_hours: Number of future hours to include (default: 24)
+
+    Returns:
+        List of HourlySeeingForecast objects, sorted by timestamp (past to future)
+    """
+    now = datetime.now(UTC)
+    past_start = now - timedelta(days=3)
+
+    # Fetch from API with past_days parameter
+    try:
+        url = "https://api.open-meteo.com/v1/forecast"
+        forecast_days = min((future_hours + 23) // 24, 7)  # Round up to days, max 7
+        params: dict[str, str | int | float | list[str]] = {
+            "latitude": location.latitude,
+            "longitude": location.longitude,
+            "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
+            "timezone": "auto",
+            "forecast_days": forecast_days,
+            "past_days": 3,  # Get past 3 days of historical data
+            "wind_speed_unit": "mph",
+            "temperature_unit": "fahrenheit",
+        }
+
+        response = requests.get(url, params=params, timeout=30)
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo API returned status {response.status_code} for chart data")
+            return []
+
+        data = response.json()
+
+        # Process hourly data from JSON response
+        hourly = data.get("hourly", {})
+        hourly_time = hourly.get("time", [])
+        hourly_temperature_2m = hourly.get("temperature_2m", [])
+        hourly_dew_point_2m = hourly.get("dew_point_2m", [])
+        hourly_relative_humidity_2m = hourly.get("relative_humidity_2m", [])
+        hourly_cloud_cover = hourly.get("cloud_cover", [])
+        hourly_wind_speed_10m = hourly.get("wind_speed_10m", [])
+
+        def safe_float(value: float | None) -> float | None:
+            """Convert value to float, returning None if NaN or None."""
+            if value is None:
+                return None
+            if np is not None and np.isnan(value):
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+
+        forecasts = []
+        prev_temp: float | None = None
+
+        # Process all hours (past + future)
+        for i in range(len(hourly_time)):
+            # Parse timestamp from ISO format string
+            try:
+                timestamp_str = hourly_time[i]
+                timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=UTC)
+            except (ValueError, IndexError, TypeError):
+                continue
+
+            # Only include data from past 3 days onwards
+            if timestamp < past_start:
+                continue
+
+            # Extract weather data (handle NaN values)
+            temp_f = safe_float(hourly_temperature_2m[i] if i < len(hourly_temperature_2m) else None)
+            dew_point_f = safe_float(hourly_dew_point_2m[i] if i < len(hourly_dew_point_2m) else None)
+            humidity = safe_float(hourly_relative_humidity_2m[i] if i < len(hourly_relative_humidity_2m) else None)
+            cloud_cover = safe_float(hourly_cloud_cover[i] if i < len(hourly_cloud_cover) else None)
+            wind_speed_mph = safe_float(hourly_wind_speed_10m[i] if i < len(hourly_wind_speed_10m) else None)
+
+            # Skip if essential data is missing
+            if temp_f is None:
+                continue
+
+            # Calculate temperature change per hour (for stability)
+            temp_change_per_hour = 0.0
+            if prev_temp is not None and temp_f is not None:
+                temp_change_per_hour = temp_f - prev_temp
+            prev_temp = temp_f
+
+            # Create WeatherData for seeing calculation
+            weather_data = WeatherData(
+                temperature_c=temp_f,
+                dew_point_f=dew_point_f,
+                humidity_percent=humidity,
+                cloud_cover_percent=cloud_cover,
+                wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
+                condition=None,
+            )
+
+            # Calculate seeing score
+            seeing_score = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+
+            forecasts.append(
+                HourlySeeingForecast(
+                    timestamp=timestamp,
+                    seeing_score=seeing_score,
+                    temperature_f=temp_f,
+                    dew_point_f=dew_point_f,
+                    humidity_percent=humidity,
+                    wind_speed_mph=wind_speed_mph,
+                    cloud_cover_percent=cloud_cover,
+                )
+            )
+
+        # Sort by timestamp (past to future)
+        forecasts.sort(key=lambda x: x.timestamp)
+        return forecasts
+
+    except Exception as e:
+        logger.warning(f"Error fetching weather data for charts from Open-Meteo: {e}")
+        return []
 
 
 def fetch_weather(location: ObserverLocation) -> WeatherData:

@@ -35,6 +35,7 @@ from celestron_nexstar.api.core import format_local_time, get_local_timezone
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.gui.dialogs.gps_info_dialog import GPSInfoDialog
+from celestron_nexstar.gui.dialogs.moon_info_dialog import MoonInfoDialog
 from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
 from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
@@ -607,6 +608,7 @@ class MainWindow(QMainWindow):
             "list": "mdi.playlist-play",
             "map": "mdi.map-outline",
             "weather": "mdi.weather-cloudy",  # No outline version available
+            "moon": "mdi.moon-waning-crescent",
             "sky_darkness": "mdi.weather-night",
             "checklist": "mdi.check-circle-outline",
             "time_slots": "mdi.clock-outline",
@@ -700,6 +702,29 @@ class MainWindow(QMainWindow):
                 icon = QIcon.fromTheme(theme_name)
                 if not icon.isNull():
                     return icon
+
+        # Final fallback: use a Qt standard icon so we never end up with a blank menu icon
+        # (macOS often has no useful theme icons; qtawesome may be missing in some envs).
+        try:
+            from PySide6.QtWidgets import QApplication, QStyle
+
+            style = QApplication.style()
+            if style is not None:
+                standard_map: dict[str, QStyle.StandardPixmap] = {
+                    # Common toolbar/menu actions
+                    "weather": QStyle.StandardPixmap.SP_MessageBoxInformation,
+                    "moon": QStyle.StandardPixmap.SP_DialogHelpButton,
+                    "info": QStyle.StandardPixmap.SP_MessageBoxInformation,
+                    "refresh": QStyle.StandardPixmap.SP_BrowserReload,
+                    "download": QStyle.StandardPixmap.SP_DialogSaveButton,
+                    "close": QStyle.StandardPixmap.SP_DialogCloseButton,
+                    "settings": QStyle.StandardPixmap.SP_FileDialogDetailedView,
+                }
+                std = standard_map.get(icon_name)
+                if std is not None:
+                    return style.standardIcon(std)
+        except Exception:
+            pass
 
         # Fallback to empty icon (will show as blank button)
         return QIcon()
@@ -1368,6 +1393,13 @@ class MainWindow(QMainWindow):
         self.weather_action.setStatusTip("View current weather conditions")
         self.weather_action.triggered.connect(self._on_weather)
 
+        moon_icon = self._create_icon("moon", ["moon-waxing-crescent", "moon-full", "moon-new", "weather-night"])
+        self.moon_info_action = planning_menu.addAction(moon_icon, "Moon Info")
+        self.moon_info_action.setIconVisibleInMenu(True)
+        self.moon_info_action.setToolTip("MOON INFO")
+        self.moon_info_action.setStatusTip("View moon information, phase, and position")
+        self.moon_info_action.triggered.connect(self._on_moon_info)
+
         sky_darkness_icon = self._create_icon("sky_darkness", ["weather-night", "moon-waxing-crescent", "star"])
         self.sky_darkness_action = planning_menu.addAction(sky_darkness_icon, "Sky Darkness")
         self.sky_darkness_action.setIconVisibleInMenu(True)
@@ -1619,6 +1651,10 @@ class MainWindow(QMainWindow):
         self.weather_action.setIcon(
             self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
         )
+        if hasattr(self, "moon_info_action"):
+            self.moon_info_action.setIcon(
+                self._create_icon("moon", ["moon-waxing-crescent", "moon-full", "moon-new", "weather-night"])
+            )
         if hasattr(self, "sky_darkness_action"):
             self.sky_darkness_action.setIcon(
                 self._create_icon("sky_darkness", ["weather-night", "moon-waxing-crescent", "star"])
@@ -3664,6 +3700,11 @@ class MainWindow(QMainWindow):
     def _on_weather(self) -> None:
         """Handle weather button click."""
         dialog = WeatherInfoDialog(self)
+        dialog.exec()
+
+    def _on_moon_info(self) -> None:
+        """Handle moon info button click."""
+        dialog = MoonInfoDialog(self)
         dialog.exec()
 
     def _on_sky_darkness(self) -> None:
