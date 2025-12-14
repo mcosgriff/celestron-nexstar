@@ -495,6 +495,15 @@ class MoonInfoDialog(QDialog):
         self.disk_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         disk_widget_layout.addWidget(self.disk_label)
 
+        self.disk_caption_label = QLabel(
+            "Orientation: North is up, East is left. The bright limb points toward the Sun (PA shown in the title)."
+        )
+        self.disk_caption_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.disk_caption_label.setWordWrap(True)
+        # Keep it subtle; we'll set the final color in _load_moon_info() once we know theme colors.
+        self.disk_caption_label.setStyleSheet("opacity: 0.85;")
+        disk_widget_layout.addWidget(self.disk_caption_label)
+
         disk_layout.addWidget(self.disk_widget)
         self.tab_widget.addTab(disk_tab, "Moon Disk")
 
@@ -601,6 +610,10 @@ class MoonInfoDialog(QDialog):
     def _load_moon_info(self) -> None:
         """Load moon information and format it for display."""
         colors = self._get_theme_colors()
+
+        # Theme-aware caption styling (moon disk tab)
+        if hasattr(self, "disk_caption_label"):
+            self.disk_caption_label.setStyleSheet(f"color: {colors['text_dim']};")
 
         # Update stylesheet with theme-aware colors
         self.info_text.setStyleSheet(
