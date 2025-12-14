@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
+
 if TYPE_CHECKING:
     pass
 
@@ -66,6 +67,7 @@ class SettingsDialog(QDialog):
         self._create_config_tab()
         self._create_ephemeris_tab()
         self._create_celestial_data_tab()
+        self._create_seed_data_tab()
         self._create_custom_yaml_tab()
         self._create_wds_tab()
         self._create_light_pollution_tab()
@@ -86,6 +88,7 @@ class SettingsDialog(QDialog):
         self._load_config_info()
         self._load_ephemeris_info()
         self._load_celestial_data_info()
+        self._load_seed_data_info()
         self._load_custom_yaml_info()
         self._load_wds_info()
         self._load_light_pollution_info()
@@ -283,6 +286,45 @@ class SettingsDialog(QDialog):
         layout.addWidget(status_label)
 
         self.tab_widget.addTab(widget, "Celestial Data")
+
+    def _create_seed_data_tab(self) -> None:
+        """Create the seed data tab with re-import functionality."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Header
+        header_layout = QHBoxLayout()
+        header = QLabel("Seed Data")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+
+        layout.addLayout(header_layout)
+
+        # Table for seed data sources
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["Source", "Description", "Count", "Re-import"])
+        autosize_table_columns(table, stretch_last=False)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.seed_data_table = table
+        layout.addWidget(table)
+
+        # Progress bar
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 100)
+        self.seed_data_progress = progress
+        layout.addWidget(progress)
+
+        # Status label
+        status_label = QLabel()
+        status_label.setWordWrap(True)
+        self.seed_data_status_label = status_label
+        layout.addWidget(status_label)
+
+        self.tab_widget.addTab(widget, "Seed Data")
 
     def _create_custom_yaml_tab(self) -> None:
         """Create the custom YAML tab."""
@@ -868,6 +910,104 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logger.error(f"Error loading celestial data info: {e}", exc_info=True)
             self.celestial_data_status_label.setText(f"Error: {e}")
+
+    def _load_seed_data_info(self) -> None:
+        """Load seed data sources into table."""
+        try:
+            from sqlalchemy import func, select
+
+            from celestron_nexstar.api.database.models import (
+                ConstellationModel,
+                DarkSkySiteModel,
+                MeteorShowerModel,
+                SpaceEventModel,
+                StarNameMappingModel,
+                get_db_session,
+            )
+
+            # Define seed data sources
+            seed_sources = [
+                {
+                    "id": "star_name_mappings",
+                    "name": "Star Name Mappings",
+                    "description": "Common names and Bayer designations for stars",
+                },
+                {
+                    "id": "meteor_showers",
+                    "name": "Meteor Showers",
+                    "description": "Annual meteor shower calendar with peak dates and activity periods",
+                },
+                {
+                    "id": "constellations",
+                    "name": "Constellations",
+                    "description": "Constellation reference data (names, abbreviations, mythology)",
+                },
+                {
+                    "id": "dark_sky_sites",
+                    "name": "Dark Sky Sites",
+                    "description": "International Dark Sky Association certified viewing sites",
+                },
+                {
+                    "id": "space_events",
+                    "name": "Space Events",
+                    "description": "Calendar of astronomical events (eclipses, meteor showers, etc.)",
+                },
+            ]
+
+            def get_seed_count(seed_id: str) -> int:
+                """Return how many records are currently in the database for a seed type."""
+                try:
+                    with get_db_session() as session:
+                        if seed_id == "star_name_mappings":
+                            count = session.scalar(select(func.count(StarNameMappingModel.hr_number)))
+                            return int(count or 0)
+                        elif seed_id == "meteor_showers":
+                            count = session.scalar(select(func.count(MeteorShowerModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "constellations":
+                            count = session.scalar(select(func.count(ConstellationModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "dark_sky_sites":
+                            count = session.scalar(select(func.count(DarkSkySiteModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "space_events":
+                            count = session.scalar(select(func.count(SpaceEventModel.id)))
+                            return int(count or 0)
+                except Exception:
+                    return 0
+                return 0
+
+            table = self.seed_data_table
+            table.setRowCount(len(seed_sources))
+
+            for row, source in enumerate(seed_sources):
+                # Source name
+                table.setItem(row, 0, QTableWidgetItem(source["name"]))
+
+                # Description
+                table.setItem(row, 1, QTableWidgetItem(source["description"]))
+
+                # Count
+                count = get_seed_count(source["id"])
+                count_text = str(count) if count > 0 else "0"
+                count_item = QTableWidgetItem(count_text)
+                table.setItem(row, 2, count_item)
+
+                # Re-import button
+                reimport_btn = QPushButton("Re-import")
+                reimport_btn.setFixedWidth(100)
+                reimport_btn.setToolTip("Clear existing data and re-import from seed files")
+                reimport_btn.clicked.connect(lambda checked, sid=source["id"]: self._on_reimport_seed_data(sid))
+                table.setCellWidget(row, 3, reimport_btn)
+
+            table.resizeColumnsToContents()
+
+            # Clear status label
+            self.seed_data_status_label.clear()
+
+        except Exception as e:
+            logger.error(f"Error loading seed data info: {e}", exc_info=True)
+            self.seed_data_status_label.setText(f"Error: {e}")
 
     def _load_custom_yaml_info(self) -> None:
         """Load custom YAML catalog information."""
@@ -1822,6 +1962,66 @@ class SettingsDialog(QDialog):
                 duration_ms=4000,
                 preset="error",
             )
+
+    def _on_reimport_seed_data(self, seed_id: str) -> None:
+        """Handle seed data re-import button click."""
+        from celestron_nexstar.api.database.database_seeder import (
+            seed_constellations,
+            seed_dark_sky_sites,
+            seed_meteor_showers,
+            seed_space_events,
+            seed_star_name_mappings,
+        )
+        from celestron_nexstar.api.database.models import get_db_session
+
+        # Map seed IDs to functions and display names
+        seed_map = {
+            "star_name_mappings": (seed_star_name_mappings, "Star Name Mappings"),
+            "meteor_showers": (seed_meteor_showers, "Meteor Showers"),
+            "constellations": (seed_constellations, "Constellations"),
+            "dark_sky_sites": (seed_dark_sky_sites, "Dark Sky Sites"),
+            "space_events": (seed_space_events, "Space Events"),
+        }
+
+        if seed_id not in seed_map:
+            logger.error(f"Unknown seed ID: {seed_id}")
+            self._show_toast(f"Unknown seed data type: {seed_id}", duration_ms=3000, preset="error")
+            return
+
+        seed_func, display_name = seed_map[seed_id]
+
+        # Show progress
+        self.seed_data_progress.setVisible(True)
+        self.seed_data_progress.setRange(0, 0)  # Indeterminate
+        self.seed_data_status_label.setText(f"Re-importing {display_name}...")
+
+        try:
+            with get_db_session() as session:
+                # Re-import with force=True to clear existing data
+                added = seed_func(session, force=True)
+                session.commit()
+
+            # Reload the table to update counts
+            self._load_seed_data_info()
+
+            # Show success message
+            self._show_toast(
+                f"Re-imported {display_name}: {added:,} records",
+                duration_ms=3000,
+                preset="success",
+            )
+            logger.info(f"Re-imported {display_name}: {added:,} records")
+
+        except Exception as e:
+            logger.error(f"Error re-importing {display_name}: {e}", exc_info=True)
+            self._show_toast(
+                f"Error re-importing {display_name}: {e}",
+                duration_ms=4000,
+                preset="error",
+            )
+        finally:
+            self.seed_data_progress.setVisible(False)
+            self.seed_data_status_label.clear()
 
     def _on_celestial_import_progress(self, source_id: str, status: str, current: int, total: int) -> None:
         """Handle celestial data import progress update."""

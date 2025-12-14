@@ -8,12 +8,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
     QTableWidget,
@@ -22,9 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.favorites import clear_favorites, get_favorites, remove_favorite
 from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
 if TYPE_CHECKING:

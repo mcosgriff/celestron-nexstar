@@ -49,5 +49,3 @@ def autosize_table_columns(widget: Any, *, stretch_last: bool = False) -> None:
                 widget.resizeColumnToContents(col)
         except Exception:
             pass
-
-

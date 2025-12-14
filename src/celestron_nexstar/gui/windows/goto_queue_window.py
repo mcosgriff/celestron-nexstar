@@ -28,10 +28,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.utils import angular_separation, format_dec, format_ra
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.gui.workers.telescope_workers import GotoRADecThread
 
 

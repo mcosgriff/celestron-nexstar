@@ -221,9 +221,16 @@ class MeteorsInfoDialog(QDialog):
         )
 
         for pred in predictions:
-            # Format date
+            # Format date in local timezone
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
             date_obj = pred.date.replace(tzinfo=UTC) if pred.date.tzinfo is None else pred.date.astimezone(UTC)
-            date_str = date_obj.strftime("%Y-%m-%d")
+            local_tz = get_local_timezone(location.latitude, location.longitude)
+            if local_tz:
+                date_local = date_obj.astimezone(local_tz)
+                date_str = date_local.strftime("%Y-%m-%d")
+            else:
+                date_str = date_obj.strftime("%Y-%m-%d")
 
             # Format ZHR
             zhr_str = str(pred.zhr_peak)
@@ -274,9 +281,16 @@ class MeteorsInfoDialog(QDialog):
         html_content.append("<h2>Prediction Details</h2>")
 
         for pred in predictions[:10]:  # Show first 10
-            # Format date
+            # Format date in local timezone
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
             date_obj = pred.date.replace(tzinfo=UTC) if pred.date.tzinfo is None else pred.date.astimezone(UTC)
-            date_display = date_obj.strftime("%B %d, %Y")
+            local_tz = get_local_timezone(location.latitude, location.longitude)
+            if local_tz:
+                date_local = date_obj.astimezone(local_tz)
+                date_display = date_local.strftime("%B %d, %Y")
+            else:
+                date_display = date_obj.strftime("%B %d, %Y")
 
             # Calculate radiant position for details
             radiant_alt, radiant_az = get_radiant_position(

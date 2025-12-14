@@ -4,6 +4,7 @@ Main application window for telescope control.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -30,7 +31,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.core import format_local_time, get_local_timezone
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
@@ -38,6 +38,7 @@ from celestron_nexstar.gui.dialogs.gps_info_dialog import GPSInfoDialog
 from celestron_nexstar.gui.dialogs.time_info_dialog import TimeInfoDialog
 from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPanel
 from celestron_nexstar.gui.workers.telescope_workers import (
     DisconnectThread,
@@ -1925,40 +1926,14 @@ class MainWindow(QMainWindow):
         header = table.horizontalHeader()
 
         # Get header labels for minimum width calculation
-        if obj_type == CelestialObjectType.CONSTELLATION:
-            header_labels = ["Constellation", "Visible Stars", "Favorite"]
-        elif obj_type == CelestialObjectType.ASTERISM:
-            header_labels = ["Asterism", "Visible Stars", "Favorite"]
-        elif obj_type == CelestialObjectType.STAR:
-            header_labels = [
-                "Priority",
-                "Name",
-                "Type",
-                "Constellation",
-                "Asterism",
-                "Mag",
-                "Alt",
-                "Visibility",
-                "Transit",
-                "Moon Sep",
-                "Chance",
-                "Tips",
-                "Favorite",
-            ]
+        if (
+            obj_type == CelestialObjectType.CONSTELLATION
+            or obj_type == CelestialObjectType.ASTERISM
+            or obj_type == CelestialObjectType.STAR
+        ):
+            pass
         else:
-            header_labels = [
-                "Priority",
-                "Name",
-                "Type",
-                "Mag",
-                "Alt",
-                "Visibility",
-                "Transit",
-                "Moon Sep",
-                "Chance",
-                "Tips",
-                "Favorite",
-            ]
+            pass
 
         # Auto-size all columns
         autosize_table_columns(table, stretch_last=False)
@@ -2659,18 +2634,12 @@ class MainWindow(QMainWindow):
                     # Detach the old thread safely: stop it, disconnect signals so it can't update the UI,
                     # and keep a reference until it finishes to avoid "QThread destroyed while running".
                     old_thread.requestInterruption()
-                    try:
+                    with contextlib.suppress(Exception):
                         old_thread.count_ready.disconnect()
-                    except Exception:
-                        pass
-                    try:
+                    with contextlib.suppress(Exception):
                         old_thread.counts_complete.disconnect()
-                    except Exception:
-                        pass
-                    try:
+                    with contextlib.suppress(Exception):
                         old_thread.finished.disconnect()
-                    except Exception:
-                        pass
 
                     if old_thread not in self._stopping_threads:
                         self._stopping_threads.append(old_thread)

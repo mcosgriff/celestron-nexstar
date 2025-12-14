@@ -2,6 +2,7 @@
 Dialog to display detailed information about an asterism.
 """
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -449,8 +450,7 @@ class AsterismInfoDialog(QDialog):
                         if span_deg > max_span_deg:
                             center = (ra_min_deg + ra_max_deg) / 2.0
                             ra_min_deg = center - (max_span_deg / 2.0)
-                            ra_max_deg = center + (max_span_deg / 2.0
-                            )
+                            ra_max_deg = center + (max_span_deg / 2.0)
 
                         # Use LambertAzEqArea (Starplot examples) so ra_min/ra_max cropping works.
                         center_ra_deg = ((ra_min_deg + ra_max_deg) / 2.0) % 360.0
@@ -482,18 +482,20 @@ class AsterismInfoDialog(QDialog):
                         try:
                             dec_start = int(max(-90.0, float(dec_min)) // 5 * 5)
                             dec_end = int(min(90.0, (float(dec_max) // 5 * 5) + 5))
-                            plot_span = float(getattr(plot, "ra_max", ra_max_deg)) - float(getattr(plot, "ra_min", ra_min_deg))
+                            plot_span = float(getattr(plot, "ra_max", ra_max_deg)) - float(
+                                getattr(plot, "ra_min", ra_min_deg)
+                            )
                             hide_labels = plot_span >= 359.9
                             plot.gridlines(
                                 labels=not hide_labels,
-                                dec_locations=[d for d in range(dec_start, dec_end + 1, 5)],
+                                dec_locations=list(range(dec_start, dec_end + 1, 5)),
                             )
                         except Exception:
                             plot.gridlines()
                         plot.constellations()
                         plot.constellation_borders()
 
-                        try:
+                        with contextlib.suppress(Exception):
                             logger.info(
                                 "Asterism map bounds: name=%s requested_ra_min=%.3f requested_ra_max=%.3f requested_span=%.3f "
                                 "requested_dec_min=%.3f requested_dec_max=%.3f plot_ra_min=%.3f plot_ra_max=%.3f plot_span=%.3f "
@@ -510,8 +512,6 @@ class AsterismInfoDialog(QDialog):
                                 float(getattr(plot, "dec_min", dec_min)),
                                 float(getattr(plot, "dec_max", dec_max)),
                             )
-                        except Exception:
-                            pass
 
                         # Add stars (magnitude < 8, labels for magnitude < 5)
                         plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]

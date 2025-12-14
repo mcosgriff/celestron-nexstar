@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMessageBox,
     QProgressDialog,
@@ -40,10 +39,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.core.enums import MoonPhase
 from celestron_nexstar.api.location.observer import get_observer_location
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
 if TYPE_CHECKING:

@@ -83,6 +83,10 @@ def get_enhanced_meteor_predictions(
     """
     Get enhanced meteor shower predictions with moon phase adjustments.
 
+    Includes:
+    - Currently active showers (shown with today's date)
+    - Future peak dates within the forecast period
+
     Args:
         location: Observer location
         months_ahead: How many months ahead to predict (default: 12)
@@ -94,25 +98,113 @@ def get_enhanced_meteor_predictions(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
+    # Get local timezone for the observer
+    from celestron_nexstar.api.core.utils import get_local_timezone
+
+    local_tz = get_local_timezone(location.latitude, location.longitude)
+    if local_tz:
+        now_local = now.astimezone(local_tz)
+        today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Convert back to UTC for consistent datetime handling
+        today = today_local.astimezone(UTC)
+    else:
+        # Fallback to UTC if timezone can't be determined
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
     # Get all meteor showers from database
-    from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
+    from celestron_nexstar.api.astronomy.meteor_showers import (
+        get_active_showers,
+        get_all_meteor_showers,
+    )
     from celestron_nexstar.api.database.models import get_db_session
 
     with get_db_session() as db_session:
         all_showers = get_all_meteor_showers(db_session)
+        # Get currently active showers
+        active_showers = get_active_showers(db_session, now)
 
-    # For each shower, find peak dates in the forecast period
+    # Track which showers we've already added to avoid duplicates
+    added_shower_names: set[str] = set()
+
+    # First, add predictions for currently active showers (use today's date in local timezone)
+    for shower in active_showers:
+        # Calculate peak date in local timezone, then convert to UTC
+        if local_tz:
+            peak_date_local = datetime(now_local.year, shower.peak_month, shower.peak_day, 0, 0, 0, tzinfo=local_tz)
+            peak_date_this_year = peak_date_local.astimezone(UTC)
+        else:
+            peak_date_this_year = datetime(now.year, shower.peak_month, shower.peak_day, 0, 0, 0, tzinfo=UTC)
+
+        # If peak is today or in the past but still active, use today
+        # If peak is in the future, use today (shower is active but not at peak yet)
+        prediction_date = today if peak_date_this_year <= now else peak_date_this_year
+
+        # Get moon info for the prediction date
+        moon_info = get_moon_info(location.latitude, location.longitude, prediction_date)
+
+        if moon_info:
+            # Get radiant position
+            radiant_alt, _radiant_az = get_radiant_position(
+                shower, location.latitude, location.longitude, prediction_date
+            )
+
+            # Calculate adjusted ZHR
+            zhr_adjusted = calculate_moon_adjusted_zhr(shower.zhr_peak, moon_info.illumination, moon_info.altitude_deg)
+
+            # Determine viewing quality
+            if moon_info.illumination < 0.1 and moon_info.altitude_deg < 10:
+                viewing_quality = "excellent"
+                notes = "New moon - ideal viewing conditions"
+            elif moon_info.illumination < 0.3 and moon_info.altitude_deg < 20:
+                viewing_quality = "good"
+                notes = "Minimal moonlight interference"
+            elif moon_info.illumination < 0.6:
+                viewing_quality = "fair"
+                notes = "Moderate moonlight will reduce visible meteors"
+            else:
+                viewing_quality = "poor"
+                notes = "Bright moon will significantly reduce visible meteors"
+
+            # Find best viewing window
+            best_start, best_end = _find_best_viewing_window(shower, location, prediction_date, moon_info)
+
+            predictions.append(
+                MeteorShowerPrediction(
+                    shower=shower,
+                    date=prediction_date,
+                    zhr_peak=shower.zhr_peak,
+                    zhr_adjusted=zhr_adjusted,
+                    moon_illumination=moon_info.illumination,
+                    moon_altitude=moon_info.altitude_deg,
+                    radiant_altitude=radiant_alt,
+                    best_viewing_start=best_start,
+                    best_viewing_end=best_end,
+                    viewing_quality=viewing_quality,
+                    notes=notes,
+                )
+            )
+            added_shower_names.add(shower.name)
+
+    # Then, add future peak dates within the forecast period
     current_date = now
     while current_date <= end_date:
         year = current_date.year
 
         for shower in all_showers:
-            # Calculate peak date for this year
-            peak_date = datetime(year, shower.peak_month, shower.peak_day, 0, 0, 0, tzinfo=UTC)
+            # Skip if we already added this shower (it's currently active)
+            if shower.name in added_shower_names:
+                continue
 
-            # Check if this peak is in our forecast window
-            if now <= peak_date <= end_date:
-                # Get moon info at peak time (use midnight for peak day)
+            # Calculate peak date for this year in local timezone, then convert to UTC
+            if local_tz:
+                peak_date_local = datetime(year, shower.peak_month, shower.peak_day, 0, 0, 0, tzinfo=local_tz)
+                peak_date = peak_date_local.astimezone(UTC)
+            else:
+                peak_date = datetime(year, shower.peak_month, shower.peak_day, 0, 0, 0, tzinfo=UTC)
+
+            # Check if this peak is in our forecast window (future peaks only)
+            if now < peak_date <= end_date:
+                # Get moon info at peak time
                 moon_info = get_moon_info(location.latitude, location.longitude, peak_date)
 
                 if moon_info:
@@ -140,7 +232,7 @@ def get_enhanced_meteor_predictions(
                         viewing_quality = "poor"
                         notes = "Bright moon will significantly reduce visible meteors"
 
-                    # Find best viewing window (when radiant is high and moon is low)
+                    # Find best viewing window
                     best_start, best_end = _find_best_viewing_window(shower, location, peak_date, moon_info)
 
                     predictions.append(

@@ -25,11 +25,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, search_objects
 from celestron_nexstar.api.core.utils import format_dec, format_ra
 from celestron_nexstar.api.observation.planning_utils import DifficultyLevel, get_object_difficulty
 from celestron_nexstar.api.observation.visibility import VisibilityInfo, assess_visibility
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
 if TYPE_CHECKING:

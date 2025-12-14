@@ -2,6 +2,7 @@
 Dialog to display detailed information about a constellation, including its stars.
 """
 
+import itertools
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -166,20 +167,17 @@ class MapGenerationWorkerThread(QThread):
                             select(ConstellationModel).where(ConstellationModel.name == constellation_name).limit(1)
                         )
                         if constellation_model is not None:
-                            star_rows = (
-                                session.execute(
-                                    select(StarModel.ra_hours, StarModel.dec_degrees)
-                                    .where(
-                                        StarModel.constellation_id == constellation_model.id,
-                                        StarModel.ra_hours.isnot(None),
-                                        StarModel.dec_degrees.isnot(None),
-                                        (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= 6.5),
-                                    )
-                                    .order_by(StarModel.magnitude.asc().nullslast())
-                                    .limit(120)
+                            star_rows = session.execute(
+                                select(StarModel.ra_hours, StarModel.dec_degrees)
+                                .where(
+                                    StarModel.constellation_id == constellation_model.id,
+                                    StarModel.ra_hours.isnot(None),
+                                    StarModel.dec_degrees.isnot(None),
+                                    (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= 6.5),
                                 )
-                                .all()
-                            )
+                                .order_by(StarModel.magnitude.asc().nullslast())
+                                .limit(120)
+                            ).all()
                             if len(star_rows) >= 5:
                                 ra_vals = [float(r[0]) % 24.0 for r in star_rows]
                                 dec_vals = [float(r[1]) for r in star_rows]
@@ -191,7 +189,7 @@ class MapGenerationWorkerThread(QThread):
                                 # RA window: minimal circular interval containing the stars (gap method)
                                 ra_sorted = sorted(ra_vals)
                                 gaps: list[tuple[float, float, float]] = []  # (gap, start, end)
-                                for a, b in zip(ra_sorted, ra_sorted[1:], strict=False):
+                                for a, b in itertools.pairwise(ra_sorted):
                                     gaps.append((b - a, a, b))
                                 # wrap gap
                                 gaps.append(((ra_sorted[0] + 24.0) - ra_sorted[-1], ra_sorted[-1], ra_sorted[0] + 24.0))
@@ -297,12 +295,12 @@ class MapGenerationWorkerThread(QThread):
 
             # Add gridlines.
             # For polar/azimuthal projections, Starplot examples typically show declination gridlines only
-            # (otherwise you can end up with a full 0–24h RA ring that *looks* like a 24h-wide plot).
+            # (otherwise you can end up with a full 0-24h RA ring that *looks* like a 24h-wide plot).
             try:
                 if isinstance(projection, LambertAzEqArea):
                     dec_start = int(max(0.0, float(dec_min) // 5 * 5))
                     dec_end = int(min(90.0, (float(dec_max) // 5 * 5) + 5))
-                    plot.gridlines(dec_locations=[d for d in range(dec_start, dec_end + 1, 5)])
+                    plot.gridlines(dec_locations=list(range(dec_start, dec_end + 1, 5)))
                 else:
                     plot.gridlines()
             except Exception:

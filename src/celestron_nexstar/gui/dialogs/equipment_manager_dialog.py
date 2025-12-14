@@ -9,7 +9,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -17,7 +16,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
     QRadioButton,
@@ -29,7 +27,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.equipment import (
     calculate_fov,
     delete_camera,
@@ -45,6 +42,7 @@ from celestron_nexstar.api.observation.optics import (
     get_telescope_specs,
     set_current_configuration,
 )
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
 if TYPE_CHECKING:

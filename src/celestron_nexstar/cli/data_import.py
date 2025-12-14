@@ -7,6 +7,7 @@ Provides CLI commands for importing catalog data from various sources.
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import re
 import ssl
@@ -734,7 +735,7 @@ def import_celestial_data_geojson(
                                 geometry_blob = geojson_to_spatialite_geometry_async(obj["_temp_geometry"], db_session)
                                 if geometry_blob:
                                     # model_obj is a SQLAlchemy model instance, but mypy can't narrow it well here.
-                                    setattr(model_obj, "geometry", geometry_blob)
+                                    model_obj.geometry = geometry_blob
 
                                     # Find spatial relationships (constellation and asterism) via spatial queries
                                     if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):
@@ -742,9 +743,9 @@ def import_celestial_data_geojson(
                                             model_obj, db_session
                                         )
                                         if constellation_id is not None:
-                                            setattr(model_obj, "constellation_id", constellation_id)
+                                            model_obj.constellation_id = constellation_id
                                         if asterism_id is not None:
-                                            setattr(model_obj, "asterism_id", asterism_id)
+                                            model_obj.asterism_id = asterism_id
 
                                     db_session.commit()
                         except Exception as e:
@@ -1760,7 +1761,7 @@ def import_celestial_constellations(
         max_gap = -1.0
         gap_start = norm[0]
         gap_end = norm[0]
-        for a, b in zip(norm, norm[1:], strict=False):
+        for a, b in itertools.pairwise(norm):
             gap = b - a
             if gap > max_gap:
                 max_gap = gap
@@ -2451,11 +2452,14 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                 max_dist = 0.0
                                 for lon_deg, lat_deg in pts:
                                     max_dist = max(
-                                        max_dist, _angular_distance_deg(float(ra_degrees), float(dec_degrees), lon_deg, lat_deg)
+                                        max_dist,
+                                        _angular_distance_deg(float(ra_degrees), float(dec_degrees), lon_deg, lat_deg),
                                     )
                                 computed_size = max_dist * 2.0
                                 if computed_size > 0:
-                                    size_degrees = max(float(size_degrees) if size_degrees is not None else 0.0, computed_size)
+                                    size_degrees = max(
+                                        float(size_degrees) if size_degrees is not None else 0.0, computed_size
+                                    )
                         except Exception:
                             pass
 

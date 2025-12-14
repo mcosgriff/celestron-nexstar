@@ -465,7 +465,7 @@ def seed_space_events(db_session: Session, force: bool = False) -> int:
 
     Args:
         db_session: Database session
-        force: If True, clear existing data before seeding
+        force: If True, clear existing seed data before seeding (preserves AstroPixels events)
 
     Returns:
         Number of records added
@@ -473,9 +473,11 @@ def seed_space_events(db_session: Session, force: bool = False) -> int:
     logger.info("Seeding space events...")
 
     if force:
-        db_session.execute(delete(SpaceEventModel))
+        # Only delete seed data events, not AstroPixels events
+        # AstroPixels events are managed separately via cache_astropixels_events()
+        db_session.execute(delete(SpaceEventModel).where(SpaceEventModel.source != "AstroPixels"))
         db_session.commit()
-        logger.info("Cleared existing space events")
+        logger.info("Cleared existing seed space events (preserved AstroPixels events)")
 
     # Load seed data
     data = load_seed_json("space_events.json")

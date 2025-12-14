@@ -31,11 +31,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_names_for_completion, search_objects
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import format_dec, format_ra
 from celestron_nexstar.api.database.database import get_database
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
 if TYPE_CHECKING:
