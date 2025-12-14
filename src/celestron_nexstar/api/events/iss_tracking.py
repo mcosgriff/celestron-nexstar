@@ -18,7 +18,7 @@ from skyfield.api import wgs84
 from skyfield.sgp4lib import EarthSatellite
 
 from celestron_nexstar.api.core.exceptions import TLEFetchError
-from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
 
@@ -211,8 +211,7 @@ def _get_iss_satellite() -> EarthSatellite:
         line1, line2, _fetch_time = _fetch_tle_from_celestrak()
 
     # Create satellite object
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     satellite = EarthSatellite(line1, line2, "ISS (ZARYA)", ts)
 
     return satellite
@@ -264,8 +263,7 @@ def get_iss_passes(
     observer = wgs84.latlon(latitude, longitude)
 
     # Load timescale
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     t0 = ts.from_datetime(start_time)
     t1 = ts.from_datetime(end_time)
 
@@ -310,8 +308,9 @@ def get_iss_passes(
                         if max_altitude >= min_altitude_deg:
                             # Check if sunlit (visible)
                             # ISS is visible when it's in sunlight and observer is in darkness
-                            loader = get_skyfield_loader()
-                            eph = loader("de421.bsp")
+                            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris
+
+                            eph = get_skyfield_ephemeris("de421.bsp")
                             is_sunlit = satellite.at(max_t).is_sunlit(eph)
 
                             # Calculate magnitude at maximum altitude

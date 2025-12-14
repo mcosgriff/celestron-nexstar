@@ -66,14 +66,18 @@ def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[Non
     """Get Skyfield objects for calculations."""
 
     try:
-        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+        from celestron_nexstar.api.ephemeris.skyfield_utils import (
+            get_skyfield_ephemeris,
+            get_skyfield_loader,
+            get_skyfield_timescale,
+        )
 
-        loader = get_skyfield_loader()
-        ts = loader.timescale()
+        get_skyfield_loader()
+        ts = get_skyfield_timescale()
 
         # Load ephemeris - de421 includes Moon
         try:
-            eph = loader("de421.bsp")
+            eph = get_skyfield_ephemeris("de421.bsp")
         except FileNotFoundError:
             logger.warning("de421.bsp not found, eclipse calculations may fail")
             return None, None, None, None, None

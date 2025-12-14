@@ -127,10 +127,9 @@ def get_bright_satellite_passes(
 
     # Create observer and load timescale once (reused for all satellites)
     observer = wgs84.latlon(location.latitude, location.longitude)
-    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     t0 = ts.from_datetime(start_time)
     t1 = ts.from_datetime(end_time)
 
@@ -507,10 +506,9 @@ def _get_group_satellites(
         _store_group_tle(tle_list, group_name, db_session)
 
     # Create satellite objects
-    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     satellites = []
 
     for norad_id, name, line1, line2 in tle_list:
@@ -625,15 +623,16 @@ def _calculate_passes_for_satellites(
     observer = wgs84.latlon(location.latitude, location.longitude)
 
     # Load timescale and ephemeris
-    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     t0 = ts.from_datetime(start_time)
     t1 = ts.from_datetime(end_time)
 
     # Load ephemeris for sun visibility check
-    eph = loader("de421.bsp")
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris
+
+    eph = get_skyfield_ephemeris("de421.bsp")
 
     # Calculate passes for each satellite
     for satellite in satellites:

@@ -57,18 +57,21 @@ class SunInfo(NamedTuple):
 def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None]:
     """Get Skyfield Earth, Sun, and Moon objects."""
     try:
-        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+        from celestron_nexstar.api.ephemeris.skyfield_utils import (
+            get_skyfield_ephemeris,
+            get_skyfield_timescale,
+        )
 
-        loader = get_skyfield_loader()
-        ts = loader.timescale()
+        # Cache timescale to avoid repeatedly reading bundled IERS data.
+        ts = get_skyfield_timescale()
 
         # Load ephemeris - de421 includes Moon
         try:
-            eph = loader("de421.bsp")
+            eph = get_skyfield_ephemeris("de421.bsp")
         except FileNotFoundError:
             logger.warning("de421.bsp not found, moon calculations may fail")
             # Fallback to de440s (no moon) for sun only
-            eph = loader("de440s.bsp")
+            eph = get_skyfield_ephemeris("de440s.bsp")
 
         earth = eph["earth"]
         sun = eph["sun"]

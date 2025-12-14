@@ -12,7 +12,11 @@ from datetime import UTC, datetime
 from typing import NamedTuple
 
 from celestron_nexstar.api.ephemeris.ephemeris import PLANET_NAMES
-from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+from celestron_nexstar.api.ephemeris.skyfield_utils import (
+    get_skyfield_ephemeris,
+    get_skyfield_loader,
+    get_skyfield_timescale,
+)
 
 
 class PlanetPosition(NamedTuple):
@@ -68,9 +72,9 @@ def get_heliocentric_positions(dt: datetime | None = None) -> list[PlanetPositio
         dt = dt.replace(tzinfo=UTC)
 
     try:
-        loader = get_skyfield_loader()
-        ts = loader.timescale()
-        eph = loader("de440s.bsp")
+        get_skyfield_loader()
+        ts = get_skyfield_timescale()
+        eph = get_skyfield_ephemeris("de440s.bsp")
         t = ts.from_datetime(dt)
 
         sun = eph["sun"]

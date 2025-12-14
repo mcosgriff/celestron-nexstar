@@ -141,10 +141,9 @@ def get_planetary_conjunctions(
     """
 
     try:
-        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-        loader = get_skyfield_loader()
-        ts = loader.timescale()
+        ts = get_skyfield_timescale()
         eph = _get_ephemeris("de440s.bsp")
     except (ImportError, AttributeError, ValueError, TypeError, KeyError, FileNotFoundError) as e:
         # ImportError: missing Skyfield modules
@@ -238,10 +237,9 @@ def get_planetary_oppositions(
     """
 
     try:
-        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+        from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-        loader = get_skyfield_loader()
-        ts = loader.timescale()
+        ts = get_skyfield_timescale()
         eph = _get_ephemeris("de440s.bsp")
         sun = eph["sun"]
         earth = eph["earth"]

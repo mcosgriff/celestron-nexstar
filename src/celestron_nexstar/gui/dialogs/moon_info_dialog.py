@@ -170,10 +170,10 @@ class MoonPlotWorkerThread(QThread):
             logger.info("Exporting plot to PNG...")
             import io
 
-            img_buffer = io.BytesIO()
-            plot.export(img_buffer, format="png", padding=0.5)  # type: ignore[no-untyped-call]
-            img_buffer.seek(0)
-            png_data = img_buffer.read()
+            with io.BytesIO() as img_buffer:
+                plot.export(img_buffer, format="png", padding=0.5)  # type: ignore[no-untyped-call]
+                img_buffer.seek(0)
+                png_data = img_buffer.read()
             logger.info(f"Moon plot generation complete, image size: {len(png_data)} bytes")
             # Validate PNG signature to avoid downstream QPixmap overload/type errors dumping bytes to stdout
             if not png_data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -233,7 +233,7 @@ class MoonDiskWorkerThread(QThread):
             from skyfield.api import Topos  # type: ignore[import-untyped]
 
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
-            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 
             location = get_observer_location()
             now = datetime.now(UTC)
@@ -248,10 +248,9 @@ class MoonDiskWorkerThread(QThread):
                 )
                 return
 
-            loader = get_skyfield_loader()
-            ts = loader.timescale()
+            ts = get_skyfield_timescale()
             t = ts.from_datetime(now)
-            eph = loader("de421.bsp")
+            eph = get_skyfield_ephemeris("de421.bsp")
 
             earth = eph["earth"]
             sun = eph["sun"]
@@ -330,73 +329,77 @@ class MoonDiskWorkerThread(QThread):
 
             fig = Figure(figsize=(4.0, 4.0), dpi=200, facecolor=bg)
             FigureCanvas(fig)
-            ax = fig.add_subplot(111)
-            ax.set_facecolor(bg)
-            ax.set_aspect("equal")
-            ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(-1.15, 1.15)
-            ax.axis("off")
+            try:
+                ax = fig.add_subplot(111)
+                ax.set_facecolor(bg)
+                ax.set_aspect("equal")
+                ax.set_xlim(-1.1, 1.1)
+                ax.set_ylim(-1.15, 1.15)
+                ax.axis("off")
 
-            # Disk outline base (shadow or lit depending on phase)
-            base_color = shadow if illumination <= 0.5 else light
-            ax.add_patch(Circle((0, 0), 1.0, facecolor=base_color, edgecolor=outline, linewidth=2.0))
+                # Disk outline base (shadow or lit depending on phase)
+                base_color = shadow if illumination <= 0.5 else light
+                ax.add_patch(Circle((0, 0), 1.0, facecolor=base_color, edgecolor=outline, linewidth=2.0))
 
-            # Build crescent overlay polygon
-            eps = 1e-4
-            f = float(max(0.0, min(1.0, illumination)))
-            if f <= eps:
-                # New Moon: leave as shadow disk
-                pass
-            elif f >= 1.0 - eps:
-                # Full Moon: overwrite with light disk
-                ax.add_patch(Circle((0, 0), 1.0, facecolor=light, edgecolor=outline, linewidth=2.0))
-            else:
-                # Scale for terminator ellipse in projection: |cos(phase_angle)| = |1 - 2f|
-                scale = abs(1.0 - 2.0 * f)
-                y = np.linspace(-1.0, 1.0, 500)
-                limb = np.sqrt(np.clip(1.0 - y * y, 0.0, 1.0))
-
-                lit_side = 1.0 if is_waxing else -1.0  # waxing lit on the right (west) with N up / E left
-
-                def _poly(side: float, term_scale: float) -> np.ndarray:
-                    x_limb = side * limb
-                    x_term = side * (term_scale * limb)
-                    pts1 = np.column_stack([x_limb, y])
-                    pts2 = np.column_stack([x_term[::-1], y[::-1]])
-                    pts = np.vstack([pts1, pts2])
-                    # Rotate
-                    return (rot @ pts.T).T
-
-                if f <= 0.5:
-                    # Add illuminated crescent on top of shadow base
-                    pts = _poly(lit_side, scale)
-                    ax.add_patch(Polygon(pts, closed=True, facecolor=light, edgecolor="none"))
+                # Build crescent overlay polygon
+                eps = 1e-4
+                f = float(max(0.0, min(1.0, illumination)))
+                if f <= eps:
+                    # New Moon: leave as shadow disk
+                    pass
+                elif f >= 1.0 - eps:
+                    # Full Moon: overwrite with light disk
+                    ax.add_patch(Circle((0, 0), 1.0, facecolor=light, edgecolor=outline, linewidth=2.0))
                 else:
-                    # Add shadow crescent on top of lit base
-                    pts = _poly(-lit_side, scale)
-                    ax.add_patch(Polygon(pts, closed=True, facecolor=shadow, edgecolor="none"))
+                    # Scale for terminator ellipse in projection: |cos(phase_angle)| = |1 - 2f|
+                    scale = abs(1.0 - 2.0 * f)
+                    y = np.linspace(-1.0, 1.0, 500)
+                    limb = np.sqrt(np.clip(1.0 - y * y, 0.0, 1.0))
 
-            # Title / info
-            wax = "Waxing" if is_waxing else "Waning"
-            ax.text(
-                0,
-                1.06,
-                f"{wax} • {f * 100:.1f}% • PA {chi_deg:.0f}°",
-                ha="center",
-                va="bottom",
-                color=text,
-                fontsize=10,
-            )
+                    lit_side = 1.0 if is_waxing else -1.0  # waxing lit on the right (west) with N up / E left
 
-            # Export to PNG bytes
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", facecolor=bg, bbox_inches="tight", pad_inches=0.05)
-            buf.seek(0)
-            png_data = buf.read()
-            if not png_data.startswith(b"\x89PNG\r\n\x1a\n"):
-                self.error_occurred.emit("Moon disk renderer failed to generate valid PNG bytes.")
-                return
-            self.disk_ready.emit(png_data)
+                    def _poly(side: float, term_scale: float) -> np.ndarray:
+                        x_limb = side * limb
+                        x_term = side * (term_scale * limb)
+                        pts1 = np.column_stack([x_limb, y])
+                        pts2 = np.column_stack([x_term[::-1], y[::-1]])
+                        pts = np.vstack([pts1, pts2])
+                        # Rotate
+                        return (rot @ pts.T).T
+
+                    if f <= 0.5:
+                        # Add illuminated crescent on top of shadow base
+                        pts = _poly(lit_side, scale)
+                        ax.add_patch(Polygon(pts, closed=True, facecolor=light, edgecolor="none"))
+                    else:
+                        # Add shadow crescent on top of lit base
+                        pts = _poly(-lit_side, scale)
+                        ax.add_patch(Polygon(pts, closed=True, facecolor=shadow, edgecolor="none"))
+
+                # Title / info
+                wax = "Waxing" if is_waxing else "Waning"
+                ax.text(
+                    0,
+                    1.06,
+                    f"{wax} • {f * 100:.1f}% • PA {chi_deg:.0f}°",
+                    ha="center",
+                    va="bottom",
+                    color=text,
+                    fontsize=10,
+                )
+
+                # Export to PNG bytes
+                with io.BytesIO() as buf:
+                    fig.savefig(buf, format="png", facecolor=bg, bbox_inches="tight", pad_inches=0.05)
+                    buf.seek(0)
+                    png_data = buf.read()
+                if not png_data.startswith(b"\x89PNG\r\n\x1a\n"):
+                    self.error_occurred.emit("Moon disk renderer failed to generate valid PNG bytes.")
+                    return
+                self.disk_ready.emit(png_data)
+            finally:
+                # Help matplotlib release references promptly in long-running sessions.
+                fig.clear()
 
         except Exception as e:
             logger.exception("Error generating moon disk")

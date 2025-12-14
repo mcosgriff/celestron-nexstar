@@ -8,12 +8,14 @@ Provides a shared Loader instance that uses ~/.skyfield by default.
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
     from skyfield.api import Loader
+    from skyfield.timelib import Timescale
 
 
 def get_skyfield_directory() -> Path:
@@ -33,6 +35,7 @@ def get_skyfield_directory() -> Path:
 
 # Module-level loader instance - created lazily on first access
 _loader: Loader | None = None
+_timescale: Timescale | None = None
 
 
 def get_skyfield_loader() -> Loader:
@@ -53,3 +56,30 @@ def get_skyfield_loader() -> Loader:
         skyfield_dir.mkdir(parents=True, exist_ok=True)
         _loader = Loader(str(skyfield_dir.resolve()))
     return _loader
+
+
+def get_skyfield_timescale() -> Timescale:
+    """
+    Get a shared Skyfield Timescale instance.
+
+    Skyfield's Loader.timescale() reads bundled data (e.g., iers.npz). In long-running GUI
+    sessions, repeatedly calling Loader.timescale() can contribute to excessive file handle usage.
+    We create it once and reuse it.
+    """
+    global _timescale
+    if _timescale is None:
+        loader = get_skyfield_loader()
+        _timescale = loader.timescale()
+    return _timescale
+
+
+@lru_cache(maxsize=16)
+def get_skyfield_ephemeris(bsp_file: str):
+    """
+    Load and cache a Skyfield ephemeris kernel (BSP file).
+
+    Note: this delegates to Skyfield's Loader, which may download missing files to the configured
+    Skyfield directory. Callers that must avoid downloads should pre-check file existence.
+    """
+    loader = get_skyfield_loader()
+    return loader(bsp_file)

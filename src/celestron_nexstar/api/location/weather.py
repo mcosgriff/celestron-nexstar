@@ -333,8 +333,9 @@ def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
     elif fetched_at.tzinfo != UTC:
         fetched_at = fetched_at.astimezone(UTC)
 
-    # Forecasts for past times are always stale
-    if forecast_ts < now:
+    # Keep a small amount of recent history for UI charting (today-to-now).
+    # Older historical hours can be dropped to keep the table bounded.
+    if forecast_ts < now - timedelta(hours=36):
         return True
 
     # Calculate how far in the future this forecast is
@@ -449,9 +450,12 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
         return existing_forecasts, now
 
+    cached_fallback: list[WeatherForecastModel] = []
+
     # Check database for cached data
     try:
         existing_forecasts, now = _check_database_cache()
+        cached_fallback = existing_forecasts
 
         # If we have enough non-stale forecasts covering the requested hours, return them
         if existing_forecasts and len(existing_forecasts) >= hours:
@@ -513,8 +517,49 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         # Continue to fetch from API
         now = datetime.now(UTC)
 
-    # Fetch from API using requests
+    # Fetch from API using requests (DB-first; only call API if cache is stale/missing)
     try:
+        # Basic throttle: if *anything* was fetched recently for this location, don't hammer the API
+        # in tight UI refresh loops. We'll just return whatever cache we have (even if incomplete).
+        try:
+            from sqlalchemy import func, select
+
+            from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
+
+            with get_db_session() as session:
+                last_fetch = session.execute(
+                    select(func.max(WeatherForecastModel.fetched_at)).where(
+                        WeatherForecastModel.latitude == location.latitude,
+                        WeatherForecastModel.longitude == location.longitude,
+                    )
+                ).scalar_one_or_none()
+            if last_fetch is not None:
+                if last_fetch.tzinfo is None:
+                    last_fetch = last_fetch.replace(tzinfo=UTC)
+                if (now - last_fetch) < timedelta(minutes=15):
+                    # Return whatever we have right now (may be partial), to avoid repeated API hits.
+                    cached, _now2 = _check_database_cache()
+                    if cached:
+                        needed_end_time = now + timedelta(hours=hours)
+                        filtered = [
+                            f for f in cached if f.forecast_timestamp >= now and f.forecast_timestamp <= needed_end_time
+                        ][:hours]
+                        return [
+                            HourlySeeingForecast(
+                                timestamp=f.forecast_timestamp,
+                                seeing_score=f.seeing_score or 50.0,
+                                temperature_f=f.temperature_f,
+                                dew_point_f=f.dew_point_f,
+                                humidity_percent=f.humidity_percent,
+                                wind_speed_mph=f.wind_speed_mph,
+                                cloud_cover_percent=f.cloud_cover_percent,
+                            )
+                            for f in filtered
+                        ]
+        except Exception:
+            # Throttle is best-effort; ignore any DB issues and proceed to fetch path.
+            pass
+
         url = "https://api.open-meteo.com/v1/forecast"
         params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
@@ -620,6 +665,21 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             get_database()
             try:
                 with get_db_session() as session:
+                    # De-dupe: delete any existing rows for the same timestamps we are about to insert.
+                    if forecasts_to_store:
+                        min_ts = min(f.timestamp for f in forecasts_to_store)
+                        max_ts = max(f.timestamp for f in forecasts_to_store)
+                        session.execute(
+                            delete(WeatherForecastModel).where(
+                                and_(
+                                    WeatherForecastModel.latitude == location.latitude,
+                                    WeatherForecastModel.longitude == location.longitude,
+                                    WeatherForecastModel.forecast_timestamp >= min_ts,
+                                    WeatherForecastModel.forecast_timestamp <= max_ts,
+                                )
+                            )
+                        )
+
                     # Delete stale forecasts for this location using intelligent staleness check
                     now_db = datetime.now(UTC)
                     # Get all forecasts for this location to check staleness
@@ -719,6 +779,25 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         # AttributeError: missing attributes in response
         # RuntimeError: other errors
         logger.warning(f"Error fetching hourly forecast from Open-Meteo: {e}")
+        # Return any cached data we have rather than dropping to empty (helps offline mode and avoids
+        # repeated retries elsewhere in the app).
+        if cached_fallback:
+            needed_end_time = now + timedelta(hours=hours)
+            filtered = [
+                f for f in cached_fallback if f.forecast_timestamp >= now and f.forecast_timestamp <= needed_end_time
+            ][:hours]
+            return [
+                HourlySeeingForecast(
+                    timestamp=f.forecast_timestamp,
+                    seeing_score=f.seeing_score or 50.0,
+                    temperature_f=f.temperature_f,
+                    dew_point_f=f.dew_point_f,
+                    humidity_percent=f.humidity_percent,
+                    wind_speed_mph=f.wind_speed_mph,
+                    cloud_cover_percent=f.cloud_cover_percent,
+                )
+                for f in filtered
+            ]
         return []
 
     return forecasts
@@ -740,8 +819,67 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
     """
     now = datetime.now(UTC)
     past_start = now - timedelta(days=3)
+    end_time = now + timedelta(hours=future_hours)
 
-    # Fetch from API with past_days parameter
+    # Prefer DB (cache) first. Only fetch if coverage is missing or cache is old.
+    db_rows_fallback: list[WeatherForecastModel] = []
+    try:
+        from sqlalchemy import and_, func, select
+
+        from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
+
+        with get_db_session() as session:
+            rows = (
+                session.execute(
+                    select(WeatherForecastModel)
+                    .where(
+                        and_(
+                            WeatherForecastModel.latitude == location.latitude,
+                            WeatherForecastModel.longitude == location.longitude,
+                            WeatherForecastModel.forecast_timestamp >= past_start,
+                            WeatherForecastModel.forecast_timestamp <= end_time,
+                        )
+                    )
+                    .order_by(WeatherForecastModel.forecast_timestamp)
+                )
+                .scalars()
+                .all()
+            )
+            db_rows_fallback = rows
+
+            last_fetch = session.execute(
+                select(func.max(WeatherForecastModel.fetched_at)).where(
+                    WeatherForecastModel.latitude == location.latitude,
+                    WeatherForecastModel.longitude == location.longitude,
+                )
+            ).scalar_one_or_none()
+
+        # If we have reasonable coverage and it was fetched recently, return DB data.
+        if last_fetch is not None:
+            if last_fetch.tzinfo is None:
+                last_fetch = last_fetch.replace(tzinfo=UTC)
+            fetched_recently = (now - last_fetch) < timedelta(minutes=30)
+        else:
+            fetched_recently = False
+
+        if rows and fetched_recently:
+            return [
+                HourlySeeingForecast(
+                    timestamp=r.forecast_timestamp,
+                    seeing_score=r.seeing_score or 50.0,
+                    temperature_f=r.temperature_f,
+                    dew_point_f=r.dew_point_f,
+                    humidity_percent=r.humidity_percent,
+                    wind_speed_mph=r.wind_speed_mph,
+                    cloud_cover_percent=r.cloud_cover_percent,
+                )
+                for r in rows
+            ]
+    except Exception:
+        # DB cache is best-effort; proceed to fetch path
+        pass
+
+    # Fetch from API with past_days parameter, then persist so subsequent views don't re-hit API.
     try:
         url = "https://api.open-meteo.com/v1/forecast"
         forecast_days = min((future_hours + 23) // 24, 7)  # Round up to days, max 7
@@ -751,7 +889,7 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
             "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
             "timezone": "auto",
             "forecast_days": forecast_days,
-            "past_days": 3,  # Get past 3 days of historical data
+            "past_days": 3,
             "wind_speed_unit": "mph",
             "temperature_unit": "fahrenheit",
         }
@@ -783,7 +921,7 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
             except (ValueError, TypeError):
                 return None
 
-        forecasts = []
+        forecasts: list[HourlySeeingForecast] = []
         prev_temp: float | None = None
 
         # Process all hours (past + future)
@@ -845,10 +983,72 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
 
         # Sort by timestamp (past to future)
         forecasts.sort(key=lambda x: x.timestamp)
+
+        # Persist to DB so repeated chart views don't re-hit the API.
+        if forecasts:
+            try:
+                from sqlalchemy import and_, delete
+
+                from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
+                from celestron_nexstar.api.location.geohash_utils import encode
+
+                location_geohash = encode(location.latitude, location.longitude, precision=9)
+                now_db = datetime.now(UTC)
+                min_ts = forecasts[0].timestamp
+                max_ts = forecasts[-1].timestamp
+
+                with get_db_session() as session:
+                    # De-dupe the range we're about to insert.
+                    session.execute(
+                        delete(WeatherForecastModel).where(
+                            and_(
+                                WeatherForecastModel.latitude == location.latitude,
+                                WeatherForecastModel.longitude == location.longitude,
+                                WeatherForecastModel.forecast_timestamp >= min_ts,
+                                WeatherForecastModel.forecast_timestamp <= max_ts,
+                            )
+                        )
+                    )
+
+                    for f in forecasts:
+                        session.add(
+                            WeatherForecastModel(
+                                latitude=location.latitude,
+                                longitude=location.longitude,
+                                geohash=location_geohash,
+                                forecast_timestamp=f.timestamp,
+                                temperature_f=f.temperature_f,
+                                dew_point_f=f.dew_point_f,
+                                humidity_percent=f.humidity_percent,
+                                cloud_cover_percent=f.cloud_cover_percent,
+                                wind_speed_mph=f.wind_speed_mph,
+                                seeing_score=f.seeing_score,
+                                fetched_at=now_db,
+                            )
+                        )
+                    session.commit()
+            except Exception:
+                # Persistence is best-effort; charts still work with in-memory list.
+                pass
+
         return forecasts
 
     except Exception as e:
         logger.warning(f"Error fetching weather data for charts from Open-Meteo: {e}")
+        # Fall back to DB if available (offline / DNS issues).
+        if db_rows_fallback:
+            return [
+                HourlySeeingForecast(
+                    timestamp=r.forecast_timestamp,
+                    seeing_score=r.seeing_score or 50.0,
+                    temperature_f=r.temperature_f,
+                    dew_point_f=r.dew_point_f,
+                    humidity_percent=r.humidity_percent,
+                    wind_speed_mph=r.wind_speed_mph,
+                    cloud_cover_percent=r.cloud_cover_percent,
+                )
+                for r in db_rows_fallback
+            ]
         return []
 
 

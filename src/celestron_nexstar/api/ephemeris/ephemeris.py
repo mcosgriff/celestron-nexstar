@@ -14,7 +14,7 @@ import deal
 from skyfield.jpllib import SpiceKernel
 
 from celestron_nexstar.api.core.exceptions import EphemerisFileNotFoundError, UnknownEphemerisObjectError
-from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader, get_skyfield_timescale
 
 
 logger = logging.getLogger(__name__)
@@ -169,8 +169,7 @@ def get_planetary_position(
         ) from None
 
     # Get timescale and current time
-    loader = get_skyfield_loader()
-    ts = loader.timescale()
+    ts = get_skyfield_timescale()
     if dt is None:
         dt = datetime.now(UTC)
     elif dt.tzinfo is None:
