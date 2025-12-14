@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.equipment import (
     calculate_fov,
     delete_camera,
@@ -439,17 +440,7 @@ class EquipmentManagerDialog(QDialog):
 
     def _setup_table(self, table: QTableWidget, header_labels: list[str]) -> None:
         """Set up table with proper column sizing."""
-        header = table.horizontalHeader()
-        header.setStretchLastSection(False)
-
-        # Calculate minimum widths based on header text
-        font_metrics = QFontMetrics(header.font())
-        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]
-
-        # Set all columns to Interactive mode (resizable) and set minimum widths
-        for col in range(table.columnCount()):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.setMinimumSectionSize(min_widths[col])
+        autosize_table_columns(table, stretch_last=False)
 
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -519,11 +510,7 @@ class EquipmentManagerDialog(QDialog):
                 self.filters_table.setCellWidget(row, 5, actions_widget)
 
             # Resize columns to contents
-            self.filters_table.resizeColumnsToContents()
-            # Switch back to Interactive mode
-            header = self.filters_table.horizontalHeader()
-            for col in range(self.filters_table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            autosize_table_columns(self.filters_table, stretch_last=False)
         except Exception as e:
             logger.error(f"Error loading filters: {e}", exc_info=True)
 
@@ -565,11 +552,7 @@ class EquipmentManagerDialog(QDialog):
                 self.cameras_table.setCellWidget(row, 5, actions_widget)
 
             # Resize columns to contents
-            self.cameras_table.resizeColumnsToContents()
-            # Switch back to Interactive mode
-            header = self.cameras_table.horizontalHeader()
-            for col in range(self.cameras_table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            autosize_table_columns(self.cameras_table, stretch_last=False)
         except Exception as e:
             logger.error(f"Error loading cameras: {e}", exc_info=True)
 

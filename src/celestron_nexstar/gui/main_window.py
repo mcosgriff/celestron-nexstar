@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QActionGroup, QCursor, QFontMetrics, QGuiApplication, QIcon, QMouseEvent
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.core import format_local_time, get_local_timezone
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.location.observer import get_observer_location
@@ -697,7 +698,7 @@ class MainWindow(QMainWindow):
             for theme_name in fallback_theme_names:
                 icon = QIcon.fromTheme(theme_name)
                 if not icon.isNull():
-                    return cast(QIcon, icon)  # Explicitly cast to QIcon to satisfy type checker
+                    return icon
 
         # Fallback to empty icon (will show as blank button)
         return QIcon()
@@ -822,6 +823,8 @@ class MainWindow(QMainWindow):
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
         # Track visibility counting threads to prevent premature destruction
         self._visibility_threads: dict[QTableWidget, VisibilityCountThread] = {}
+        # Keep references to threads that are shutting down so Python/Qt doesn't destroy them mid-run.
+        self._stopping_threads: list[QThread] = []
         # Track telescope worker threads
         self._position_thread: GetPositionRADecThread | None = None
         self._location_thread: GetLocationThread | None = None
@@ -1117,14 +1120,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: Any) -> None:  # noqa: N802
         """Handle window close event - clean up all threads."""
+        still_running = False
         # Stop and clean up all loading threads
         for obj_type_str, thread in list(self._loading_threads.items()):
             if thread.isRunning():
                 thread.requestInterruption()
-                thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
+                thread.wait(5000)  # Wait up to 5 seconds for graceful shutdown
                 if thread.isRunning():
                     thread.terminate()
-                    thread.wait(1000)
+                    thread.wait(5000)
+            if thread.isRunning():
+                still_running = True
+                continue
             thread.deleteLater()
             del self._loading_threads[obj_type_str]
 
@@ -1132,12 +1139,39 @@ class MainWindow(QMainWindow):
         for table, vis_thread in list(self._visibility_threads.items()):
             if vis_thread.isRunning():
                 vis_thread.requestInterruption()
-                vis_thread.wait(2000)  # Wait up to 2 seconds for graceful shutdown
+                vis_thread.wait(5000)  # Wait up to 5 seconds for graceful shutdown
                 if vis_thread.isRunning():
                     vis_thread.terminate()
-                    vis_thread.wait(1000)
+                    vis_thread.wait(5000)
+            if vis_thread.isRunning():
+                still_running = True
+                continue
             vis_thread.deleteLater()
             del self._visibility_threads[table]
+
+        # Stop any threads we've previously detached (best-effort).
+        for stopping_thread in list(self._stopping_threads):
+            try:
+                if stopping_thread.isRunning():
+                    stopping_thread.requestInterruption()
+                    stopping_thread.wait(2000)
+                    if stopping_thread.isRunning():
+                        stopping_thread.terminate()
+                        stopping_thread.wait(2000)
+                if not stopping_thread.isRunning():
+                    stopping_thread.deleteLater()
+                    self._stopping_threads.remove(stopping_thread)
+                else:
+                    still_running = True
+            except Exception:
+                # If anything goes wrong here, keep the reference to avoid a crash.
+                still_running = True
+
+        # If any thread refuses to stop, don't let Qt destroy QThread wrappers while running.
+        if still_running:
+            logger.warning("Close requested while background threads are still running; delaying close to avoid crash.")
+            event.ignore()
+            return
 
         # Process events to allow thread cleanup
         from PySide6.QtWidgets import QApplication
@@ -1601,6 +1635,9 @@ class MainWindow(QMainWindow):
         # Refresh tools button icon
         if hasattr(self, "tools_button"):
             self.tools_button.setIcon(self._create_icon("settings", ["cog", "settings"]))
+        # Refresh filter clear button icon (theme-aware)
+        if hasattr(self, "filter_clear_button"):
+            self.filter_clear_button.setIcon(self._create_icon("close-circle", ["edit-clear", "window-close", "close"]))
         # Celestial objects (using alpha-box-outline pattern)
         for obj_name in [
             "aurora",
@@ -1923,14 +1960,8 @@ class MainWindow(QMainWindow):
                 "Favorite",
             ]
 
-        # Calculate minimum widths based on header text
-        font_metrics = QFontMetrics(header.font())
-        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]  # Add 20px padding
-
-        # Set all columns to Interactive mode (resizable) and set minimum widths
-        for col in range(table.columnCount()):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.setMinimumSectionSize(min_widths[col])
+        # Auto-size all columns
+        autosize_table_columns(table, stretch_last=False)
 
         # Store property to track if initial resize has been done
         table.setProperty("initial_resize_done", False)
@@ -2625,12 +2656,36 @@ class MainWindow(QMainWindow):
             if table in self._visibility_threads:
                 old_thread = self._visibility_threads[table]
                 if old_thread.isRunning():
+                    # Detach the old thread safely: stop it, disconnect signals so it can't update the UI,
+                    # and keep a reference until it finishes to avoid "QThread destroyed while running".
                     old_thread.requestInterruption()
-                    old_thread.wait(3000)  # Wait up to 3 seconds for graceful shutdown
-                    if old_thread.isRunning():
-                        old_thread.terminate()
-                        old_thread.wait(1000)
-                old_thread.deleteLater()
+                    try:
+                        old_thread.count_ready.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        old_thread.counts_complete.disconnect()
+                    except Exception:
+                        pass
+                    try:
+                        old_thread.finished.disconnect()
+                    except Exception:
+                        pass
+
+                    if old_thread not in self._stopping_threads:
+                        self._stopping_threads.append(old_thread)
+
+                    def _finalize_old_thread(t: QThread = old_thread) -> None:
+                        try:
+                            if t in self._stopping_threads:
+                                self._stopping_threads.remove(t)
+                            t.deleteLater()
+                        except Exception:
+                            pass
+
+                    old_thread.finished.connect(_finalize_old_thread, Qt.ConnectionType.QueuedConnection)
+                else:
+                    old_thread.deleteLater()
                 del self._visibility_threads[table]
 
             asterism_objects = None
@@ -2718,6 +2773,16 @@ class MainWindow(QMainWindow):
         self.filter_textbox.textChanged.connect(self._on_filter_changed)
         self._update_textbox_placeholder_style(self.filter_textbox)
         toolbar.addWidget(self.filter_textbox)
+
+        # Clear filter button (theme-aware icon)
+        self.filter_clear_button = QToolButton()
+        self.filter_clear_button.setAutoRaise(True)
+        self.filter_clear_button.setToolTip("Clear filter")
+        self.filter_clear_button.setStatusTip("Clear filter text")
+        self.filter_clear_button.setEnabled(False)
+        self.filter_clear_button.setIcon(self._create_icon("close-circle", ["edit-clear", "window-close", "close"]))
+        self.filter_clear_button.clicked.connect(lambda: self.filter_textbox.clear())  # type: ignore[arg-type]
+        toolbar.addWidget(self.filter_clear_button)
 
         # Spacer
         spacer = QWidget()
@@ -2848,6 +2913,10 @@ class MainWindow(QMainWindow):
 
     def _on_filter_changed(self, text: str) -> None:
         """Handle filter text change - filter table rows."""
+        # Enable/disable clear button based on whether there's a filter value
+        if hasattr(self, "filter_clear_button"):
+            self.filter_clear_button.setEnabled(bool(text.strip()))
+
         current_table = self._get_current_table()
         if not current_table:
             return

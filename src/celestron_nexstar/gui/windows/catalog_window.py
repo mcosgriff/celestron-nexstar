@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_names_for_completion, search_objects
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import format_dec, format_ra
@@ -247,7 +248,7 @@ class CatalogSearchWindow(QMainWindow):
         self.results_table = QTreeWidget()
         self.results_table.setColumnCount(7)
         self.results_table.setHeaderLabels(["Name", "Catalog", "Type", "RA", "Dec", "Mag", "Description"])
-        self.results_table.header().setStretchLastSection(True)
+        autosize_table_columns(self.results_table, stretch_last=False)
         self.results_table.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.results_table.setSortingEnabled(True)  # Enable sorting
         self.results_table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -734,8 +735,7 @@ class CatalogSearchWindow(QMainWindow):
                         continue
 
             # Resize columns to content
-            for col in range(7):
-                self.results_table.resizeColumnToContents(col)
+            autosize_table_columns(self.results_table, stretch_last=False)
             self.results_table.setEnabled(True)
 
             # Re-enable sorting

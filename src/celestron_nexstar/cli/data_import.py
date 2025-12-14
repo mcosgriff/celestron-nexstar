@@ -684,17 +684,81 @@ def import_celestial_data_geojson(
         if progress_callback:
             progress_callback(f"Importing {catalog}...", 0, num_batches)
 
-        for i in range(0, len(deduplicated_objects), batch_size):
-            batch = deduplicated_objects[i : i + batch_size]
-            try:
-                batch_imported = db.insert_objects_batch(batch)
-                imported += batch_imported
+    # Perform the actual inserts (always run, regardless of progress mode)
+    for i in range(0, len(deduplicated_objects), batch_size):
+        batch = deduplicated_objects[i : i + batch_size]
+        try:
+            batch_imported = db.insert_objects_batch(batch)
+            imported += batch_imported
 
-                # For DSO objects, update geometry from GeoJSON after insert
-                if "dso" in catalog.lower():
+            # For DSO objects, update geometry from GeoJSON after insert
+            if "dso" in catalog.lower():
+                with db._get_session() as db_session:
+                    # Map object types to model classes
+
+                    from sqlalchemy import select
+
+                    from celestron_nexstar.api.database.models import (
+                        ClusterModel,
+                        GalaxyModel,
+                        NebulaModel,
+                    )
+
+                    type_to_model: dict[CelestialObjectType, type[GalaxyModel | NebulaModel | ClusterModel]] = {
+                        CelestialObjectType.GALAXY: GalaxyModel,
+                        CelestialObjectType.NEBULA: NebulaModel,
+                        CelestialObjectType.CLUSTER: ClusterModel,
+                    }
+
+                    for obj in batch:
+                        if "_temp_geometry" not in obj or not obj["_temp_geometry"]:
+                            continue
+
+                        try:
+                            obj_type_val = obj.get("object_type")
+                            if not isinstance(obj_type_val, CelestialObjectType):
+                                continue
+
+                            model_class = type_to_model.get(obj_type_val)
+                            if not model_class:
+                                continue
+
+                            # Find the inserted object by name
+                            result = db_session.execute(
+                                select(model_class).where(model_class.name == obj["name"]).limit(1)
+                            )
+                            model_obj = result.scalar_one_or_none()
+
+                            if model_obj:
+                                # Convert GeoJSON geometry to SpatiaLite geometry
+                                geometry_blob = geojson_to_spatialite_geometry_async(obj["_temp_geometry"], db_session)
+                                if geometry_blob:
+                                    # model_obj is a SQLAlchemy model instance, but mypy can't narrow it well here.
+                                    setattr(model_obj, "geometry", geometry_blob)
+
+                                    # Find spatial relationships (constellation and asterism) via spatial queries
+                                    if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):
+                                        constellation_id, asterism_id = _find_spatial_relationships(
+                                            model_obj, db_session
+                                        )
+                                        if constellation_id is not None:
+                                            setattr(model_obj, "constellation_id", constellation_id)
+                                        if asterism_id is not None:
+                                            setattr(model_obj, "asterism_id", asterism_id)
+
+                                    db_session.commit()
+                        except Exception as e:
+                            if verbose:
+                                console.print(
+                                    f"[yellow]Warning: Failed to update geometry for {obj.get('name', 'unknown')}: {e}[/yellow]"
+                                )
+                            db_session.rollback()
+
+            # Update foreign keys for DSOs (galaxies, nebulae, clusters)
+            # Stars use junction tables, not direct foreign keys, so skip them
+            if catalog in ("celestial_dsos", "celestial_dsos_bright", "messier", "local_group"):
+                try:
                     with db._get_session() as db_session:
-                        # Map object types to model classes
-
                         from sqlalchemy import select
 
                         from celestron_nexstar.api.database.models import (
@@ -703,150 +767,88 @@ def import_celestial_data_geojson(
                             NebulaModel,
                         )
 
-                        type_to_model: dict[CelestialObjectType, type[GalaxyModel | NebulaModel | ClusterModel]] = {
-                            CelestialObjectType.GALAXY: GalaxyModel,
-                            CelestialObjectType.NEBULA: NebulaModel,
-                            CelestialObjectType.CLUSTER: ClusterModel,
-                        }
+                        batch_names = [obj["name"] for obj in batch]
 
-                        for obj in batch:
-                            if "_temp_geometry" not in obj or not obj["_temp_geometry"]:
-                                continue
-
-                            try:
-                                obj_type_val = obj.get("object_type")
-                                if not isinstance(obj_type_val, CelestialObjectType):
-                                    continue
-
-                                model_class = type_to_model.get(obj_type_val)
-                                if not model_class:
-                                    continue
-
-                                # Find the inserted object by name
-                                result = db_session.execute(
-                                    select(model_class).where(model_class.name == obj["name"]).limit(1)
+                        # Update galaxies
+                        galaxies_to_update = (
+                            db_session.execute(
+                                select(GalaxyModel).where(
+                                    GalaxyModel.name.in_(batch_names),
+                                    GalaxyModel.geometry.isnot(None),
+                                    (GalaxyModel.constellation_id.is_(None)) | (GalaxyModel.asterism_id.is_(None)),
                                 )
-                                model_obj = result.scalar_one_or_none()
-
-                                if model_obj:
-                                    # Convert GeoJSON geometry to SpatiaLite geometry
-                                    geometry_blob = geojson_to_spatialite_geometry_async(
-                                        obj["_temp_geometry"], db_session
-                                    )
-                                    if geometry_blob:
-                                        # model_obj is a SQLAlchemy model instance, but mypy can't narrow it well here.
-                                        model_obj.geometry = geometry_blob
-
-                                        # Find spatial relationships (constellation and asterism) via spatial queries
-                                        if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):
-                                            constellation_id, asterism_id = _find_spatial_relationships(
-                                                model_obj, db_session
-                                            )
-                                            if constellation_id is not None:
-                                                model_obj.constellation_id = constellation_id
-                                            if asterism_id is not None:
-                                                model_obj.asterism_id = asterism_id
-
-                                        db_session.commit()
-                            except Exception as e:
-                                if verbose:
-                                    console.print(
-                                        f"[yellow]Warning: Failed to update geometry for {obj.get('name', 'unknown')}: {e}[/yellow]"
-                                    )
-                                db_session.rollback()
-
-                # Update foreign keys for DSOs (galaxies, nebulae, clusters)
-                # Stars use junction tables, not direct foreign keys, so skip them
-                if catalog in ("celestial_dsos", "celestial_dsos_bright", "celestial_messier", "celestial_local_group"):
-                    try:
-                        with db._get_session() as db_session:
-                            from sqlalchemy import select
-
-                            from celestron_nexstar.api.database.models import (
-                                ClusterModel,
-                                GalaxyModel,
-                                NebulaModel,
                             )
+                            .scalars()
+                            .all()
+                        )
+                        for galaxy in galaxies_to_update:
+                            constellation_id, asterism_id = _find_spatial_relationships(galaxy, db_session)
+                            if constellation_id is not None:
+                                galaxy.constellation_id = constellation_id
+                            if asterism_id is not None:
+                                galaxy.asterism_id = asterism_id
 
-                            batch_names = [obj["name"] for obj in batch]
-
-                            # Update galaxies
-                            galaxies_to_update = (
-                                db_session.execute(
-                                    select(GalaxyModel).where(
-                                        GalaxyModel.name.in_(batch_names),
-                                        GalaxyModel.geometry.isnot(None),
-                                        (GalaxyModel.constellation_id.is_(None)) | (GalaxyModel.asterism_id.is_(None)),
-                                    )
+                        # Update nebulae
+                        nebulae_to_update = (
+                            db_session.execute(
+                                select(NebulaModel).where(
+                                    NebulaModel.name.in_(batch_names),
+                                    NebulaModel.geometry.isnot(None),
+                                    (NebulaModel.constellation_id.is_(None)) | (NebulaModel.asterism_id.is_(None)),
                                 )
-                                .scalars()
-                                .all()
                             )
-                            for galaxy in galaxies_to_update:
-                                constellation_id, asterism_id = _find_spatial_relationships(galaxy, db_session)
-                                if constellation_id is not None:
-                                    galaxy.constellation_id = constellation_id
-                                if asterism_id is not None:
-                                    galaxy.asterism_id = asterism_id
+                            .scalars()
+                            .all()
+                        )
+                        for nebula in nebulae_to_update:
+                            constellation_id, asterism_id = _find_spatial_relationships(nebula, db_session)
+                            if constellation_id is not None:
+                                nebula.constellation_id = constellation_id
+                            if asterism_id is not None:
+                                nebula.asterism_id = asterism_id
 
-                            # Update nebulae
-                            nebulae_to_update = (
-                                db_session.execute(
-                                    select(NebulaModel).where(
-                                        NebulaModel.name.in_(batch_names),
-                                        NebulaModel.geometry.isnot(None),
-                                        (NebulaModel.constellation_id.is_(None)) | (NebulaModel.asterism_id.is_(None)),
-                                    )
+                        # Update clusters
+                        clusters_to_update = (
+                            db_session.execute(
+                                select(ClusterModel).where(
+                                    ClusterModel.name.in_(batch_names),
+                                    ClusterModel.geometry.isnot(None),
+                                    (ClusterModel.constellation_id.is_(None)) | (ClusterModel.asterism_id.is_(None)),
                                 )
-                                .scalars()
-                                .all()
                             )
-                            for nebula in nebulae_to_update:
-                                constellation_id, asterism_id = _find_spatial_relationships(nebula, db_session)
-                                if constellation_id is not None:
-                                    nebula.constellation_id = constellation_id
-                                if asterism_id is not None:
-                                    nebula.asterism_id = asterism_id
+                            .scalars()
+                            .all()
+                        )
+                        for cluster in clusters_to_update:
+                            constellation_id, asterism_id = _find_spatial_relationships(cluster, db_session)
+                            if constellation_id is not None:
+                                cluster.constellation_id = constellation_id
+                            if asterism_id is not None:
+                                cluster.asterism_id = asterism_id
 
-                            # Update clusters
-                            clusters_to_update = (
-                                db_session.execute(
-                                    select(ClusterModel).where(
-                                        ClusterModel.name.in_(batch_names),
-                                        ClusterModel.geometry.isnot(None),
-                                        (ClusterModel.constellation_id.is_(None))
-                                        | (ClusterModel.asterism_id.is_(None)),
-                                    )
-                                )
-                                .scalars()
-                                .all()
-                            )
-                            for cluster in clusters_to_update:
-                                constellation_id, asterism_id = _find_spatial_relationships(cluster, db_session)
-                                if constellation_id is not None:
-                                    cluster.constellation_id = constellation_id
-                                if asterism_id is not None:
-                                    cluster.asterism_id = asterism_id
+                        if galaxies_to_update or nebulae_to_update or clusters_to_update:
+                            db_session.commit()
 
-                            if galaxies_to_update or nebulae_to_update or clusters_to_update:
-                                db_session.commit()
+                except Exception as e:
+                    if verbose:
+                        console.print(f"[yellow]Warning: Failed to update foreign keys for batch: {e}[/yellow]")
 
-                    except Exception as e:
-                        if verbose:
-                            console.print(f"[yellow]Warning: Failed to update foreign keys for batch: {e}[/yellow]")
-
-                # Advance by 1 per batch so TimeRemainingColumn can calculate properly
-                if progress_callback:
-                    batch_num = (i // batch_size) + 1
-                    progress_callback(f"Importing {catalog}...", batch_num, num_batches)
-            except Exception as e:
-                if verbose:
-                    console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
-                errors += len(batch)
-                # Still advance progress even on error
-                if progress_callback:
-                    batch_num = (i // batch_size) + 1
-                    progress_callback(f"Importing {catalog}...", batch_num, num_batches)
+            # Advance by 1 per batch so TimeRemainingColumn can calculate properly
+            if use_rich_progress and progress_obj is not None and task is not None:
+                progress_obj.advance(task)
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback(f"Importing {catalog}...", batch_num, num_batches)
+        except Exception as e:
+            if verbose:
+                console.print(f"[yellow]Warning: Error importing batch: {e}[/yellow]")
+            errors += len(batch)
+            # Still advance progress even on error
+            if use_rich_progress and progress_obj is not None and task is not None:
+                progress_obj.advance(task)
+            elif progress_callback:
+                batch_num = (i // batch_size) + 1
+                progress_callback(f"Importing {catalog}...", batch_num, num_batches)
 
     # Close import progress if using Rich
     if use_rich_progress and progress_obj is not None:
@@ -1738,6 +1740,44 @@ def import_celestial_constellations(
 
     from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
 
+    def _compute_ra_bounds_hours(ra_deg_values: list[float]) -> tuple[float, float]:
+        """Compute wrap-aware RA bounds in hours from longitude degrees.
+
+        GeoJSON longitudes can be in [-180, 180] or [0, 360). RA bounds must be computed on a circle
+        (wrap at 0/360) to avoid "whole-sky" spans. We return (ra_min_hours, ra_max_hours) in [0, 24),
+        where wrap-around is represented by ra_max_hours < ra_min_hours.
+        """
+        if not ra_deg_values:
+            return (0.0, 0.0)
+
+        # Normalize to [0, 360)
+        norm = sorted(((float(d) % 360.0) + 360.0) % 360.0 for d in ra_deg_values)
+        if len(norm) == 1:
+            h = norm[0] / 15.0
+            return (h, h)
+
+        # Find the largest gap between consecutive points on the circle.
+        max_gap = -1.0
+        gap_start = norm[0]
+        gap_end = norm[0]
+        for a, b in zip(norm, norm[1:], strict=False):
+            gap = b - a
+            if gap > max_gap:
+                max_gap = gap
+                gap_start = a
+                gap_end = b
+        # Wrap gap (last -> first+360)
+        wrap_gap = (norm[0] + 360.0) - norm[-1]
+        if wrap_gap > max_gap:
+            max_gap = wrap_gap
+            gap_start = norm[-1]
+            gap_end = norm[0] + 360.0
+
+        # Minimal containing interval is the complement of the largest gap.
+        interval_start_deg = gap_end % 360.0
+        interval_end_deg = gap_start % 360.0
+        return (interval_start_deg / 15.0, interval_end_deg / 15.0)
+
     imported = 0
     skipped = 0
     errors = 0
@@ -1861,13 +1901,18 @@ def import_celestial_constellations(
                         continue
 
                     # Extract abbreviation (3-letter IAU code)
-                    abbreviation = (
+                    # In celestial_data constellations.min.geojson, `id` is the 3-letter IAU code (e.g., "UMi").
+                    abbr_candidate = (
                         properties.get("abbr")
                         or properties.get("Abbr")
                         or properties.get("abbreviation")
                         or properties.get("designation")
+                        or properties.get("id")
                         or name[:3].upper()
                     )
+                    abbreviation = str(abbr_candidate).strip()
+                    if len(abbreviation) != 3:
+                        abbreviation = name[:3].upper()
 
                     # Extract common name (English name)
                     common_name = (
@@ -1974,12 +2019,10 @@ def import_celestial_constellations(
                             ra_values = [float(c[0]) for c in coords_list if len(c) >= 2]
                             dec_values = [float(c[1]) for c in coords_list if len(c) >= 2]
                             if ra_values and dec_values:
-                                ra_min_deg = min(ra_values)
-                                ra_max_deg = max(ra_values)
+                                # Wrap-aware RA bounds (avoid 0h crossing blowing up to ~24h)
+                                ra_min_hours, ra_max_hours = _compute_ra_bounds_hours(ra_values)
                                 dec_min_degrees = min(dec_values)
                                 dec_max_degrees = max(dec_values)
-                                ra_min_hours = CoordinateConverter.ra_degrees_to_hours(ra_min_deg)
-                                ra_max_hours = CoordinateConverter.ra_degrees_to_hours(ra_max_deg)
                             else:
                                 # Fallback to approximate
                                 ra_min_hours = ra_hours - 1.0
@@ -2275,6 +2318,45 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             mean_lat_deg = dec_sum / float(len(points))
                             return mean_lon_deg, mean_lat_deg
 
+                        def _points_from_geometry(geom: dict[str, Any]) -> list[tuple[float, float]]:
+                            """Extract (lon_deg, lat_deg) points from GeoJSON Point/LineString/MultiLineString."""
+                            geom_type = str(geom.get("type", ""))
+                            coords_any = geom.get("coordinates", [])
+                            pts: list[tuple[float, float]] = []
+                            try:
+                                if geom_type == "Point" and isinstance(coords_any, list) and len(coords_any) >= 2:
+                                    pts.append((float(coords_any[0]), float(coords_any[1])))
+                                elif geom_type == "LineString" and isinstance(coords_any, list):
+                                    for p in coords_any:
+                                        if isinstance(p, list) and len(p) >= 2:
+                                            pts.append((float(p[0]), float(p[1])))
+                                elif geom_type == "MultiLineString" and isinstance(coords_any, list):
+                                    for line in coords_any:
+                                        if isinstance(line, list):
+                                            for p in line:
+                                                if isinstance(p, list) and len(p) >= 2:
+                                                    pts.append((float(p[0]), float(p[1])))
+                            except (TypeError, ValueError):
+                                return []
+                            return pts
+
+                        def _angular_distance_deg(
+                            ra1_deg: float, dec1_deg: float, ra2_deg: float, dec2_deg: float
+                        ) -> float:
+                            """Great-circle angular distance in degrees, with RA wrap handled."""
+                            import math
+
+                            ra1 = math.radians(ra1_deg % 360.0)
+                            ra2 = math.radians(ra2_deg % 360.0)
+                            dec1 = math.radians(dec1_deg)
+                            dec2 = math.radians(dec2_deg)
+                            # Smallest delta RA on the circle
+                            d_ra = (ra2 - ra1 + math.pi) % (2 * math.pi) - math.pi
+                            cos_c = math.sin(dec1) * math.sin(dec2) + math.cos(dec1) * math.cos(dec2) * math.cos(d_ra)
+                            # Clamp for numerical stability
+                            cos_c = max(-1.0, min(1.0, cos_c))
+                            return math.degrees(math.acos(cos_c))
+
                         # Extract coordinates
                         # Asterisms use loc_lon/loc_lat properties for location, not geometry coordinates
                         # (geometry is MultiLineString for drawing the pattern)
@@ -2333,6 +2415,8 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                             skipped += 1
                             progress.advance(task)
                             continue
+                        # Normalize/strip name for dedup and storage
+                        name = str(name).strip()
 
                         # Check if already exists using pre-fetched set
                         if name in existing_names:
@@ -2358,6 +2442,22 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                     break
                                 except (ValueError, TypeError):
                                     pass
+
+                        # If geometry exists, compute a more reliable angular size from the line geometry.
+                        # Use the maximum angular distance from the center to any vertex as radius; size is diameter.
+                        try:
+                            pts = _points_from_geometry(geometry)
+                            if pts:
+                                max_dist = 0.0
+                                for lon_deg, lat_deg in pts:
+                                    max_dist = max(
+                                        max_dist, _angular_distance_deg(float(ra_degrees), float(dec_degrees), lon_deg, lat_deg)
+                                    )
+                                computed_size = max_dist * 2.0
+                                if computed_size > 0:
+                                    size_degrees = max(float(size_degrees) if size_degrees is not None else 0.0, computed_size)
+                        except Exception:
+                            pass
 
                         # Extract parent constellation from properties first (if available)
                         parent_constellation = (

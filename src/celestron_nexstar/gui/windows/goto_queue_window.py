@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.utils import angular_separation, format_dec, format_ra
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
@@ -185,6 +186,7 @@ class GotoQueueWindow(QMainWindow):
         self.queue_table = QTableWidget()
         self.queue_table.setColumnCount(6)
         self.queue_table.setHorizontalHeaderLabels(["#", "Name", "Type", "RA", "Dec", "Status"])
+        autosize_table_columns(self.queue_table, stretch_last=False)
         self.queue_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.queue_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.queue_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)

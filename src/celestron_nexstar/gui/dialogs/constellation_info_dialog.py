@@ -86,7 +86,7 @@ class MapGenerationWorkerThread(QThread):
 
     map_ready = Signal(bytes)  # type: ignore[type-arg,misc]  # Emits map image data
 
-    def __init__(self, boundaries: dict[str, float], is_dark_theme: bool) -> None:
+    def __init__(self, boundaries: dict[str, Any], is_dark_theme: bool) -> None:
         """Initialize the map generation worker thread."""
         super().__init__()
         self.boundaries = boundaries
@@ -98,7 +98,7 @@ class MapGenerationWorkerThread(QThread):
             if self.isInterruptionRequested():
                 return
 
-            from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
+            from starplot import LambertAzEqArea, MapPlot, _  # type: ignore[import-untyped]
             from starplot.styles import PlotStyle, extensions  # type: ignore[import-untyped]
 
             # Get ephemeris file path (use downloaded ephemeris if available)
@@ -125,73 +125,165 @@ class MapGenerationWorkerThread(QThread):
 
             # Calculate RA/Dec range from boundaries
             # Add padding around the constellation boundaries
+            # A bit more padding helps avoid clipping at the edges.
             padding_ra = 0.5  # hours
             padding_dec = 2.0  # degrees
 
             ra_min_hours = self.boundaries["ra_min_hours"]
             ra_max_hours = self.boundaries["ra_max_hours"]
-            dec_min = self.boundaries["dec_min_degrees"] - padding_dec
-            dec_max = self.boundaries["dec_max_degrees"] + padding_dec
+            # Keep a copy of the *official* bounds for projection heuristics (Cassiopeia example uses polar
+            # projection even with a tighter dec_max in the plot window).
+            proj_dec_min = float(self.boundaries["dec_min_degrees"])
+            proj_dec_max = float(self.boundaries["dec_max_degrees"])
 
-            # Handle RA wrap-around (e.g., constellation spans 22h to 2h)
-            # If ra_max < ra_min, the constellation wraps around 0/24h
-            wraps_around = ra_max_hours < ra_min_hours
+            dec_min = proj_dec_min - padding_dec
+            dec_max = proj_dec_max + padding_dec
+            # Starplot requires declination bounds to be within [-90, 90]
+            dec_min = max(-90.0, float(dec_min))
+            dec_max = min(90.0, float(dec_max))
+            if dec_min >= dec_max:
+                # Fallback to a safe 10° window around the constellation center declination
+                center_dec = float(self.boundaries.get("dec_degrees", (dec_min + dec_max) / 2))
+                dec_min = max(-90.0, center_dec - 5.0)
+                dec_max = min(90.0, center_dec + 5.0)
 
-            if wraps_around:
-                # Constellation wraps around - use a range that doesn't cross 0/24
-                # For wrapped constellations, we'll use a centered approach
-                # Calculate the actual span (accounting for wrap)
-                span = (24 - ra_min_hours) + ra_max_hours
-                # Use center point and add padding
-                center_ra = (ra_min_hours + span / 2) % 24
-                # Create a range that fits within 0-24 without wrapping
-                range_size = span + (padding_ra * 2)
-                # Cap range at reasonable size (max 8 hours = 120 degrees)
-                range_size = min(range_size, 8)
-                ra_min = (center_ra - range_size / 2) % 24
-                ra_max = (center_ra + range_size / 2) % 24
-                # If still wraps, use a simpler approach
-                if ra_min > ra_max:
-                    # Use the constellation's min/max with padding, but clamp
-                    ra_min = max(0, ra_min_hours - padding_ra)
-                    ra_max = min(24, ra_max_hours + padding_ra)
-                    # If still invalid, use default centered range
-                    if ra_min >= ra_max:
-                        center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
-                        ra_min = max(0, center_ra - 2)
-                        ra_max = min(24, center_ra + 2)
-            else:
-                # Normal case - constellation doesn't wrap
-                ra_min = ra_min_hours - padding_ra
-                ra_max = ra_max_hours + padding_ra
-                # Clamp to valid range
-                if ra_min < 0:
-                    ra_min = 0
-                if ra_max > 24:
-                    ra_max = 24
+            # Prefer "pattern star" bounds (closer to Starplot examples) over full IAU border bounds.
+            # The DB's constellation min/max are derived from border polygons and can be much larger than the
+            # visual constellation pattern (e.g. Cassiopeia). Using the brightest stars in the constellation
+            # gives a tighter, more human-friendly plot region.
+            use_star_bounds = False
+            try:
+                constellation_name = self.boundaries.get("constellation_name")
+                if isinstance(constellation_name, str) and constellation_name.strip():
+                    from sqlalchemy import select
 
-            # Final validation: ensure ra_min < ra_max
-            if ra_min >= ra_max:
-                # Fallback: use constellation center with default range
-                if wraps_around:
-                    center_ra = (ra_min_hours + ra_max_hours + 24) / 2 % 24
-                else:
-                    center_ra = (ra_min_hours + ra_max_hours) / 2
-                range_size = 4  # 4 hours = 60 degrees
-                ra_min = max(0, center_ra - range_size / 2)
-                ra_max = min(24, center_ra + range_size / 2)
-                # Final check
-                if ra_min >= ra_max:
-                    ra_min = 0
-                    ra_max = 4  # Default 4-hour range
+                    from celestron_nexstar.api.database.database import get_database
+                    from celestron_nexstar.api.database.models import ConstellationModel, StarModel
+
+                    db = get_database()
+                    with db._get_session() as session:
+                        constellation_model = session.scalar(
+                            select(ConstellationModel).where(ConstellationModel.name == constellation_name).limit(1)
+                        )
+                        if constellation_model is not None:
+                            star_rows = (
+                                session.execute(
+                                    select(StarModel.ra_hours, StarModel.dec_degrees)
+                                    .where(
+                                        StarModel.constellation_id == constellation_model.id,
+                                        StarModel.ra_hours.isnot(None),
+                                        StarModel.dec_degrees.isnot(None),
+                                        (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= 6.5),
+                                    )
+                                    .order_by(StarModel.magnitude.asc().nullslast())
+                                    .limit(120)
+                                )
+                                .all()
+                            )
+                            if len(star_rows) >= 5:
+                                ra_vals = [float(r[0]) % 24.0 for r in star_rows]
+                                dec_vals = [float(r[1]) for r in star_rows]
+
+                                # Tight declination window from stars (with padding + clamp)
+                                dec_min = max(-90.0, min(dec_vals) - padding_dec)
+                                dec_max = min(90.0, max(dec_vals) + padding_dec)
+
+                                # RA window: minimal circular interval containing the stars (gap method)
+                                ra_sorted = sorted(ra_vals)
+                                gaps: list[tuple[float, float, float]] = []  # (gap, start, end)
+                                for a, b in zip(ra_sorted, ra_sorted[1:], strict=False):
+                                    gaps.append((b - a, a, b))
+                                # wrap gap
+                                gaps.append(((ra_sorted[0] + 24.0) - ra_sorted[-1], ra_sorted[-1], ra_sorted[0] + 24.0))
+                                gap_size, gap_start, gap_end = max(gaps, key=lambda t: t[0])
+                                span_h = 24.0 - gap_size
+                                # interval is [gap_end, gap_start + 24] in unwrapped hours
+                                interval_start = gap_end
+                                interval_end = gap_start + 24.0
+                                center_h = (interval_start + interval_end) / 2.0
+                                window_h = min(max(span_h + (padding_ra * 2.0), 2.0), 8.0)
+                                ra_min_h = center_h - (window_h / 2.0)
+                                ra_max_h = center_h + (window_h / 2.0)
+                                ra_min_deg = ra_min_h * 15.0
+                                ra_max_deg = ra_max_h * 15.0
+                                use_star_bounds = True
+            except Exception:
+                # Keep existing bounds logic if star-based bounds fails for any reason.
+                use_star_bounds = False
+
+            # RA window (hours): keep a tight, centered view.
+            # For wrap-around constellations (e.g. 23h..2h), we allow ra_max to exceed 24h
+            # (and thus ra_max_deg > 360°) like Starplot's Cassiopeia example.
+            wraps_around = float(ra_max_hours) < float(ra_min_hours)
+            span_h = (
+                (24.0 - float(ra_min_hours)) + float(ra_max_hours)
+                if wraps_around
+                else float(ra_max_hours) - float(ra_min_hours)
+            )
+            # Desired window: actual span + padding, but cap to avoid "whole-sky" views.
+            max_window_h = 8.0
+            window_h = min(max(span_h + (padding_ra * 2.0), 2.0), max_window_h)
+            center_h = (float(ra_min_hours) + (span_h / 2.0)) % 24.0
+
+            ra_min_h = center_h - (window_h / 2.0)
+            ra_max_h = center_h + (window_h / 2.0)
+            # Normalize into a consistent (possibly unwrapped) interval where ra_max_h > ra_min_h.
+            if ra_min_h < 0.0:
+                ra_min_h += 24.0
+                ra_max_h += 24.0
+            if ra_max_h <= ra_min_h:
+                ra_max_h += 24.0
 
             # Convert RA from hours to degrees for starplot (RA * 15 = degrees)
-            ra_min_deg = ra_min * 15
-            ra_max_deg = ra_max * 15
+            if not use_star_bounds:
+                ra_min_deg = ra_min_h * 15.0
+                ra_max_deg = ra_max_h * 15.0
+
+            # Final RA normalization / safety:
+            # - ensure ra_max_deg > ra_min_deg
+            # - keep ra_min_deg within [0, 360) by shifting both ends together
+            # - cap span so it can never look like a full-sky plot
+            if ra_max_deg <= ra_min_deg:
+                ra_max_deg += 360.0
+            # Shift into a Cassiopeia-like representation (ra_min in [0,360))
+            while ra_min_deg < 0.0:
+                ra_min_deg += 360.0
+                ra_max_deg += 360.0
+            while ra_min_deg >= 360.0:
+                ra_min_deg -= 360.0
+                ra_max_deg -= 360.0
+            # Cap the plotted RA span (in degrees)
+            max_span_deg = 150.0  # 10h
+            span_deg = ra_max_deg - ra_min_deg
+            if span_deg > max_span_deg:
+                center = (ra_min_deg + ra_max_deg) / 2.0
+                ra_min_deg = center - (max_span_deg / 2.0)
+                ra_max_deg = center + (max_span_deg / 2.0)
+
+            # Projection:
+            # - For near-polar constellations (e.g. Cassiopeia), Starplot examples use a polar-centered
+            #   Lambert Azimuthal Equal Area projection (center_dec=±90). This keeps label placement
+            #   centered and reduces distortions compared to Miller near the pole.
+            # - Otherwise, use Miller for mid-latitude constellations.
+            center_dec_deg = float(self.boundaries.get("dec_degrees", (dec_min + dec_max) / 2.0))
+            center_dec_deg = max(-90.0, min(90.0, center_dec_deg))
+            # Prefer centering RA on the plotted window (handles wrap-around cleanly)
+            center_ra_deg = ((ra_min_deg + ra_max_deg) / 2.0) % 360.0
+
+            # IMPORTANT:
+            # Starplot's Miller projection effectively behaves like a full-sky projection (it will expand RA to 360°),
+            # which is why users see "24h wide" even when we request a narrow RA window. Use LambertAzEqArea for
+            # constellation maps so ra_min/ra_max cropping works (matches Starplot examples).
+            if proj_dec_max >= 70.0:
+                projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=90)
+            elif proj_dec_min <= -70.0:
+                projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=-90)
+            else:
+                projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=center_dec_deg)
 
             # Create map plot
             plot = MapPlot(
-                projection=Miller(),
+                projection=projection,
                 ra_min=ra_min_deg,
                 ra_max=ra_max_deg,
                 dec_min=dec_min,
@@ -203,10 +295,47 @@ class MapGenerationWorkerThread(QThread):
                 scale=1.5,
             )
 
-            # Add constellation features
-            plot.gridlines()
-            plot.constellations()
-            plot.constellation_borders()
+            # Add gridlines.
+            # For polar/azimuthal projections, Starplot examples typically show declination gridlines only
+            # (otherwise you can end up with a full 0–24h RA ring that *looks* like a 24h-wide plot).
+            try:
+                if isinstance(projection, LambertAzEqArea):
+                    dec_start = int(max(0.0, float(dec_min) // 5 * 5))
+                    dec_end = int(min(90.0, (float(dec_max) // 5 * 5) + 5))
+                    plot.gridlines(dec_locations=[d for d in range(dec_start, dec_end + 1, 5)])
+                else:
+                    plot.gridlines()
+            except Exception:
+                plot.gridlines()
+            # Plot only this constellation's lines to match Starplot examples and keep label placement centered.
+            iau_id = str(self.boundaries.get("iau_id") or self.boundaries.get("abbreviation") or "").strip().lower()
+            if iau_id:
+                plot.constellations(where=[_.iau_id == iau_id])  # type: ignore[arg-type]
+            else:
+                plot.constellations()
+
+            try:
+                constellation_name = str(self.boundaries.get("constellation_name") or "")
+                logger.info(
+                    "Constellation map bounds: name=%s iau_id=%s "
+                    "requested_ra_min=%.3f requested_ra_max=%.3f requested_span=%.3f "
+                    "requested_dec_min=%.3f requested_dec_max=%.3f "
+                    "plot_ra_min=%.3f plot_ra_max=%.3f plot_span=%.3f plot_dec_min=%.3f plot_dec_max=%.3f",
+                    constellation_name,
+                    iau_id,
+                    float(ra_min_deg),
+                    float(ra_max_deg),
+                    float(ra_max_deg) - float(ra_min_deg),
+                    float(dec_min),
+                    float(dec_max),
+                    float(getattr(plot, "ra_min", ra_min_deg)),
+                    float(getattr(plot, "ra_max", ra_max_deg)),
+                    float(getattr(plot, "ra_max", ra_max_deg)) - float(getattr(plot, "ra_min", ra_min_deg)),
+                    float(getattr(plot, "dec_min", dec_min)),
+                    float(getattr(plot, "dec_max", dec_max)),
+                )
+            except Exception:
+                pass
 
             # Add stars (magnitude < 8, labels for magnitude < 5)
             plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
@@ -245,7 +374,7 @@ class MapGenerationWorkerThread(QThread):
             import io
 
             img_buffer = io.BytesIO()
-            plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
+            plot.export(img_buffer, format="png", padding=0.5, transparent=True)  # type: ignore[no-untyped-call]
             img_buffer.seek(0)
             map_data = img_buffer.read()
 
@@ -560,7 +689,7 @@ class ConstellationInfoDialog(QDialog):
                 constellation_model = result.scalar_one_or_none()
 
                 constellation_data: dict[str, Any] = {}
-                boundaries: dict[str, float] | None = None
+                boundaries: dict[str, Any] | None = None
                 if not constellation_model:
                     constellation_data, boundaries = {}, None
                 else:
@@ -581,6 +710,12 @@ class ConstellationInfoDialog(QDialog):
                             "ra_max_hours": constellation_model.ra_max_hours,
                             "dec_min_degrees": constellation_model.dec_min_degrees,
                             "dec_max_degrees": constellation_model.dec_max_degrees,
+                            # Provide center and IAU id for projection centering and filtering.
+                            "ra_degrees": float(constellation.ra_hours) * 15.0,
+                            "dec_degrees": float(constellation.dec_degrees),
+                            "iau_id": str(constellation.abbreviation).strip().lower(),
+                            "abbreviation": str(constellation.abbreviation).strip(),
+                            "constellation_name": str(constellation.name),
                         }
 
                         constellation_data = {
@@ -792,74 +927,74 @@ class ConstellationInfoDialog(QDialog):
                     f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Stars in {constellation_data['name']} ({len(star_data)} visible):</p>"
                 )
 
-            if star_data:
-                # Create table
-                html_parts.append(
-                    "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
-                )
-                # Use theme-aware colors for table header background and borders
-                header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
-                border_color = colors["text_dim"]
-
-                html_parts.append(
-                    f"<tr style='background-color: {header_bg};'>"
-                    "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Name</th>"
-                    "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
-                    "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Mag</th>"
-                    "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Alt</th>"
-                    "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Chance</th>"
-                    "</tr>"
-                )
-
-                for star_info in star_data[:50]:  # Limit to top 50 stars
-                    obj = star_info["obj"]
-                    display_name = obj.common_name or obj.name
-                    mag_text = f"{star_info['apparent_magnitude']:.2f}" if star_info["apparent_magnitude"] else "-"
-                    # Add user-friendly altitude description
-                    alt_deg = star_info["altitude"]
-                    alt_text = self._format_altitude_user_friendly(alt_deg)
-                    prob_text = f"{star_info['visibility_probability']:.0%}"
-
-                    # Color code by visibility probability
-                    if star_info["visibility_probability"] >= 0.8:
-                        prob_color = colors["green"]
-                    elif star_info["visibility_probability"] >= 0.5:
-                        prob_color = colors["yellow"]
-                    else:
-                        prob_color = colors["text_dim"]
-
-                    # Create info button link
-                    star_name_encoded = display_name.replace('"', "&quot;").replace("'", "&#39;")
-                    info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
-
-                    # Add magnitude explanation
-                    mag_explanation = ""
-                    if star_info["apparent_magnitude"]:
-                        mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(star_info['apparent_magnitude'])})</span>"
+                if star_data:
+                    # Create table
+                    html_parts.append(
+                        "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
+                    )
+                    # Use theme-aware colors for table header background and borders
+                    header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
+                    border_color = colors["text_dim"]
 
                     html_parts.append(
-                        f"<tr>"
-                        f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{display_name}</td>"
-                        f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}{mag_explanation}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; font-size: 0.9em;'>{alt_text}</td>"
-                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>"
-                        f"<span style='color: {prob_color};'>{prob_text}</span></td>"
-                        f"</tr>"
+                        f"<tr style='background-color: {header_bg};'>"
+                        "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Name</th>"
+                        "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
+                        "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Mag</th>"
+                        "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Alt</th>"
+                        "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Chance</th>"
+                        "</tr>"
                     )
 
-                html_parts.append("</table>")
-                # Add helpful tips
-                html_parts.append(
-                    f"<p style='margin-top: 15px; margin-left: 20px; color: {colors['text_dim']}; font-size: 0.9em;'>"
-                    f"💡 <b>Tips:</b> Altitude is shown with helpful descriptions (e.g., 'one fist at arm's length' = 10°). "
-                    f"Magnitude indicates brightness - lower numbers are brighter. "
-                    f"Chance shows visibility probability based on current conditions.</p>"
-                )
-            else:
-                html_parts.append(
-                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>No visible stars found in this constellation.</p>"
-                )
+                    for star_info in star_data[:50]:  # Limit to top 50 stars
+                        obj = star_info["obj"]
+                        display_name = obj.common_name or obj.name
+                        mag_text = f"{star_info['apparent_magnitude']:.2f}" if star_info["apparent_magnitude"] else "-"
+                        # Add user-friendly altitude description
+                        alt_deg = star_info["altitude"]
+                        alt_text = self._format_altitude_user_friendly(alt_deg)
+                        prob_text = f"{star_info['visibility_probability']:.0%}"
+
+                        # Color code by visibility probability
+                        if star_info["visibility_probability"] >= 0.8:
+                            prob_color = colors["green"]
+                        elif star_info["visibility_probability"] >= 0.5:
+                            prob_color = colors["yellow"]
+                        else:
+                            prob_color = colors["text_dim"]
+
+                        # Create info button link
+                        star_name_encoded = display_name.replace('"', "&quot;").replace("'", "&#39;")
+                        info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
+
+                        # Add magnitude explanation
+                        mag_explanation = ""
+                        if star_info["apparent_magnitude"]:
+                            mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(star_info['apparent_magnitude'])})</span>"
+
+                        html_parts.append(
+                            f"<tr>"
+                            f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{display_name}</td>"
+                            f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                            f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}{mag_explanation}</td>"
+                            f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; font-size: 0.9em;'>{alt_text}</td>"
+                            f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>"
+                            f"<span style='color: {prob_color};'>{prob_text}</span></td>"
+                            f"</tr>"
+                        )
+
+                    html_parts.append("</table>")
+                    # Add helpful tips
+                    html_parts.append(
+                        f"<p style='margin-top: 15px; margin-left: 20px; color: {colors['text_dim']}; font-size: 0.9em;'>"
+                        f"💡 <b>Tips:</b> Altitude is shown with helpful descriptions (e.g., 'one fist at arm's length' = 10°). "
+                        f"Magnitude indicates brightness - lower numbers are brighter. "
+                        f"Chance shows visibility probability based on current conditions.</p>"
+                    )
+                else:
+                    html_parts.append(
+                        f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>No visible stars found in this constellation.</p>"
+                    )
 
             # Set HTML content
             self.info_text.setHtml("".join(html_parts))

@@ -166,7 +166,7 @@ class AsterismInfoDialog(QDialog):
                 # Generate map in background thread to avoid blocking UI
                 def _generate_map() -> bytes | None:
                     try:
-                        from starplot import MapPlot, Miller, _  # type: ignore[import-untyped]
+                        from starplot import LambertAzEqArea, MapPlot, _  # type: ignore[import-untyped]
                         from starplot.styles import PlotStyle, extensions  # type: ignore[import-untyped]
 
                         # Get ephemeris file path (use downloaded ephemeris if available)
@@ -200,40 +200,82 @@ class AsterismInfoDialog(QDialog):
                         if asterism.member_stars:
 
                             def _get_star_positions() -> tuple[list[float], list[float]]:
-                                """Get RA/Dec positions of member stars from database."""
-                                from sqlalchemy import or_, select
+                                """Get RA/Dec positions of asterism stars from database.
 
-                                from celestron_nexstar.api.database.models import StarModel, get_db_session
-
+                                Prefer deriving membership from the asterism's own line geometry (more reliable than
+                                the seed member list). Fall back to resolving the member list by name if geometry
+                                isn't available.
+                                """
                                 ra_positions: list[float] = []
                                 dec_positions: list[float] = []
 
-                                with get_db_session() as session:
-                                    # Query each member star by name
-                                    for star_name in asterism.member_stars:
-                                        # Try exact name match first
-                                        stmt = (
-                                            select(StarModel)
-                                            .where(
-                                                or_(
-                                                    StarModel.name.ilike(star_name.strip()),
-                                                    StarModel.common_name.ilike(star_name.strip()),
-                                                )
-                                            )
-                                            .limit(1)
-                                        )
-                                        result = session.execute(stmt)
-                                        star_model = result.scalar_one_or_none()
+                                from geoalchemy2 import functions as geofunc
+                                from sqlalchemy import func, select
 
-                                        if star_model:
-                                            # Normalize RA to 0-24 range (handle negative values)
-                                            ra_hours = star_model.ra_hours
-                                            if ra_hours < 0:
-                                                ra_hours = ra_hours + 24.0
-                                            elif ra_hours >= 24:
-                                                ra_hours = ra_hours - 24.0
-                                            ra_positions.append(ra_hours)
-                                            dec_positions.append(star_model.dec_degrees)
+                                from celestron_nexstar.api.core.enums import CelestialObjectType
+                                from celestron_nexstar.api.database.database import get_database
+                                from celestron_nexstar.api.database.models import AsterismModel, StarModel
+
+                                db = get_database()
+                                with db._get_session() as session:
+                                    asterism_model = session.scalar(
+                                        select(AsterismModel).where(AsterismModel.name == asterism.name).limit(1)
+                                    )
+
+                                    # Primary path: derive nearby stars from asterism geometry.
+                                    if asterism_model is not None and asterism_model.geometry is not None:
+                                        # Distance threshold (degrees) and brightness cutoff for "pattern stars".
+                                        max_distance_deg = 1.5
+                                        mag_limit = 6.0
+                                        limit = 80
+
+                                        star_ids = list(
+                                            session.execute(
+                                                select(StarModel.id)
+                                                .join(AsterismModel, AsterismModel.id == asterism_model.id)
+                                                .where(
+                                                    AsterismModel.geometry.isnot(None),
+                                                    StarModel.geometry.isnot(None),
+                                                    geofunc.ST_Distance(AsterismModel.geometry, StarModel.geometry)
+                                                    <= max_distance_deg,
+                                                    (StarModel.magnitude.is_(None))
+                                                    | (StarModel.magnitude <= mag_limit),
+                                                )
+                                                .order_by(func.coalesce(StarModel.magnitude, 99.0))
+                                                .limit(limit)
+                                            )
+                                            .scalars()
+                                            .all()
+                                        )
+                                        if star_ids:
+                                            star_models = (
+                                                session.execute(select(StarModel).where(StarModel.id.in_(star_ids)))
+                                                .scalars()
+                                                .all()
+                                            )
+                                            for sm in star_models:
+                                                ra_hours = sm.ra_hours
+                                                if ra_hours < 0:
+                                                    ra_hours += 24.0
+                                                elif ra_hours >= 24:
+                                                    ra_hours -= 24.0
+                                                ra_positions.append(float(ra_hours))
+                                                dec_positions.append(float(sm.dec_degrees))
+
+                                # Fallback: resolve seed member list by name if geometry path didn't find enough.
+                                if len(ra_positions) < 2 and asterism.member_stars:
+                                    for star_name in asterism.member_stars:
+                                        resolved = db.get_by_name(star_name.strip())
+                                        if resolved is None or resolved.object_type != CelestialObjectType.STAR:
+                                            continue
+
+                                        ra_hours = float(resolved.ra_hours)
+                                        if ra_hours < 0:
+                                            ra_hours += 24.0
+                                        elif ra_hours >= 24:
+                                            ra_hours -= 24.0
+                                        ra_positions.append(ra_hours)
+                                        dec_positions.append(float(resolved.dec_degrees))
 
                                 return ra_positions, dec_positions
 
@@ -271,9 +313,12 @@ class AsterismInfoDialog(QDialog):
 
                                 # Use a range that covers all stars (24 - gap_size) plus padding
                                 star_span = 24.0 - gap_size
-                                padding_ra = 0.5  # hours
+                                # A bit more padding helps prevent edge clipping (notably for circumpolar asterisms)
+                                padding_ra = 1.0  # hours
                                 range_size = star_span + (padding_ra * 2)
-                                range_size = min(range_size, 6.0)  # Cap at 6 hours max
+                                # For circumpolar patterns (e.g., Little Dipper), RA can span many hours.
+                                # Don't over-cap or we risk clipping.
+                                range_size = min(range_size, 16.0)  # Cap at 16 hours max
 
                                 ra_min = (star_center - range_size / 2) % 24.0
                                 ra_max = (star_center + range_size / 2) % 24.0
@@ -293,7 +338,7 @@ class AsterismInfoDialog(QDialog):
                                 ra_max_hours = max(ra_values)
 
                                 # Add padding around the stars
-                                padding_ra = 0.5  # hours
+                                padding_ra = 1.0  # hours
 
                                 ra_min = ra_min_hours - padding_ra
                                 ra_max = ra_max_hours + padding_ra
@@ -390,9 +435,35 @@ class AsterismInfoDialog(QDialog):
                         ra_min_deg = ra_min * 15
                         ra_max_deg = ra_max * 15
 
+                        # Normalize RA bounds so Starplot doesn't interpret them as a full-sky span.
+                        if ra_max_deg <= ra_min_deg:
+                            ra_max_deg += 360.0
+                        while ra_min_deg < 0.0:
+                            ra_min_deg += 360.0
+                            ra_max_deg += 360.0
+                        while ra_min_deg >= 360.0:
+                            ra_min_deg -= 360.0
+                            ra_max_deg -= 360.0
+                        max_span_deg = 120.0  # 8h cap to keep asterisms tightly framed
+                        span_deg = ra_max_deg - ra_min_deg
+                        if span_deg > max_span_deg:
+                            center = (ra_min_deg + ra_max_deg) / 2.0
+                            ra_min_deg = center - (max_span_deg / 2.0)
+                            ra_max_deg = center + (max_span_deg / 2.0
+                            )
+
+                        # Use LambertAzEqArea (Starplot examples) so ra_min/ra_max cropping works.
+                        center_ra_deg = ((ra_min_deg + ra_max_deg) / 2.0) % 360.0
+                        center_dec_deg = float((dec_min + dec_max) / 2.0)
+                        if float(dec_max) >= 70.0:
+                            center_dec_deg = 90.0
+                        elif float(dec_min) <= -70.0:
+                            center_dec_deg = -90.0
+                        projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=center_dec_deg)
+
                         # Create map plot
                         plot = MapPlot(
-                            projection=Miller(),
+                            projection=projection,
                             ra_min=ra_min_deg,
                             ra_max=ra_max_deg,
                             dec_min=dec_min,
@@ -405,9 +476,42 @@ class AsterismInfoDialog(QDialog):
                         )
 
                         # Add constellation features
-                        plot.gridlines()
+                        # NOTE: For near-polar views, Starplot often expands longitude to a full 360° internally.
+                        # In that case, showing RA labels can make the plot *look* "24h wide" even when the asterism
+                        # is properly framed. Hide labels when the underlying plot span is full-sky.
+                        try:
+                            dec_start = int(max(-90.0, float(dec_min)) // 5 * 5)
+                            dec_end = int(min(90.0, (float(dec_max) // 5 * 5) + 5))
+                            plot_span = float(getattr(plot, "ra_max", ra_max_deg)) - float(getattr(plot, "ra_min", ra_min_deg))
+                            hide_labels = plot_span >= 359.9
+                            plot.gridlines(
+                                labels=not hide_labels,
+                                dec_locations=[d for d in range(dec_start, dec_end + 1, 5)],
+                            )
+                        except Exception:
+                            plot.gridlines()
                         plot.constellations()
                         plot.constellation_borders()
+
+                        try:
+                            logger.info(
+                                "Asterism map bounds: name=%s requested_ra_min=%.3f requested_ra_max=%.3f requested_span=%.3f "
+                                "requested_dec_min=%.3f requested_dec_max=%.3f plot_ra_min=%.3f plot_ra_max=%.3f plot_span=%.3f "
+                                "plot_dec_min=%.3f plot_dec_max=%.3f",
+                                asterism.name,
+                                float(ra_min_deg),
+                                float(ra_max_deg),
+                                float(ra_max_deg) - float(ra_min_deg),
+                                float(dec_min),
+                                float(dec_max),
+                                float(getattr(plot, "ra_min", ra_min_deg)),
+                                float(getattr(plot, "ra_max", ra_max_deg)),
+                                float(getattr(plot, "ra_max", ra_max_deg)) - float(getattr(plot, "ra_min", ra_min_deg)),
+                                float(getattr(plot, "dec_min", dec_min)),
+                                float(getattr(plot, "dec_max", dec_max)),
+                            )
+                        except Exception:
+                            pass
 
                         # Add stars (magnitude < 8, labels for magnitude < 5)
                         plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
@@ -444,7 +548,8 @@ class AsterismInfoDialog(QDialog):
 
                         # Export to PNG in memory
                         img_buffer = io.BytesIO()
-                        plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
+                        # Slightly more padding reduces the chance of clipping at edges.
+                        plot.export(img_buffer, format="png", padding=0.5, transparent=True)  # type: ignore[no-untyped-call]
                         img_buffer.seek(0)
                         return img_buffer.read()
 
@@ -584,9 +689,9 @@ class AsterismInfoDialog(QDialog):
             try:
                 from sqlalchemy import select
 
-                from celestron_nexstar.api.core.enums import SkyBrightness
+                from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
                 from celestron_nexstar.api.database.database import get_database
-                from celestron_nexstar.api.database.models import AsterismModel, StarModel
+                from celestron_nexstar.api.database.models import AsterismModel
                 from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.location.observer import get_observer_location
                 from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
@@ -601,12 +706,40 @@ class AsterismInfoDialog(QDialog):
 
                     visible_star_names: list[str] = []
                     if asterism_model is not None:
-                        # Pull all stars linked to this asterism (prefer FK field)
-                        star_models = (
-                            session.execute(select(StarModel).where(StarModel.asterism_id == asterism_model.id))
-                            .scalars()
-                            .all()
-                        )
+                        # Prefer deriving pattern membership from the asterism geometry (nearby stars),
+                        # rather than relying on the stored member list which may be incomplete.
+                        from celestron_nexstar.api.database.models import StarModel
+
+                        star_models: list[StarModel] = []
+                        if asterism_model.geometry is not None:
+                            from geoalchemy2 import functions as geofunc
+                            from sqlalchemy import func
+
+                            max_distance_deg = 1.5
+                            mag_limit = 6.0
+                            limit = 200
+
+                            star_ids = list(
+                                session.execute(
+                                    select(StarModel.id)
+                                    .join(AsterismModel, AsterismModel.id == asterism_model.id)
+                                    .where(
+                                        AsterismModel.geometry.isnot(None),
+                                        StarModel.geometry.isnot(None),
+                                        geofunc.ST_Distance(AsterismModel.geometry, StarModel.geometry)
+                                        <= max_distance_deg,
+                                        (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= mag_limit),
+                                    )
+                                    .order_by(func.coalesce(StarModel.magnitude, 99.0))
+                                    .limit(limit)
+                                )
+                                .scalars()
+                                .all()
+                            )
+                            if star_ids:
+                                star_models = list(
+                                    session.execute(select(StarModel).where(StarModel.id.in_(star_ids))).scalars().all()
+                                )
 
                         # Determine sky brightness from light pollution if available (used for telescope limiting magnitude)
                         location = get_observer_location()
@@ -630,36 +763,52 @@ class AsterismInfoDialog(QDialog):
                         planner = ObservationPlanner()
                         conditions = planner.get_tonight_conditions()
 
-                        # Filter by actual visibility with configured telescope/conditions
-                        for sm in star_models:
-                            # Build a minimal CelestialObject for visibility check
+                        # Filter derived member stars by actual visibility.
+                        if star_models:
                             from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-                            from celestron_nexstar.api.core.enums import CelestialObjectType
 
-                            obj = CelestialObject(
-                                name=sm.common_name or sm.name or "",
-                                common_name=sm.common_name,
-                                ra_hours=sm.ra_hours,
-                                dec_degrees=sm.dec_degrees,
-                                magnitude=sm.magnitude,
-                                object_type=CelestialObjectType.STAR,
-                                catalog=sm.catalog,
-                                description=sm.description,
-                                parent_planet=None,
-                                constellation=sm.constellation_name,
-                                asterism=asterism.name,
-                            )
+                            for sm in star_models:
+                                obj = CelestialObject(
+                                    name=sm.common_name or sm.name or "",
+                                    common_name=sm.common_name,
+                                    ra_hours=sm.ra_hours,
+                                    dec_degrees=sm.dec_degrees,
+                                    magnitude=sm.magnitude,
+                                    object_type=CelestialObjectType.STAR,
+                                    catalog=sm.catalog,
+                                    description=sm.description,
+                                    parent_planet=None,
+                                    constellation=sm.constellation_name,
+                                    asterism=asterism.name,
+                                )
 
-                            vis_info = assess_visibility(
-                                obj,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=20.0,
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=conditions.timestamp,
-                            )
-                            if vis_info.is_visible:
-                                visible_star_names.append(obj.common_name or obj.name)
+                                vis_info = assess_visibility(
+                                    obj,
+                                    sky_brightness=sky_brightness,
+                                    min_altitude_deg=20.0,
+                                    observer_lat=location.latitude,
+                                    observer_lon=location.longitude,
+                                    dt=conditions.timestamp,
+                                )
+                                if vis_info.is_visible:
+                                    visible_star_names.append(obj.common_name or obj.name)
+                        else:
+                            # Fallback: use member list if geometry is missing/unavailable.
+                            for star_name in asterism.member_stars:
+                                resolved_obj = db.get_by_name(star_name.strip())
+                                if resolved_obj is None or resolved_obj.object_type != CelestialObjectType.STAR:
+                                    continue
+
+                                vis_info = assess_visibility(
+                                    resolved_obj,  # type: ignore[arg-type]
+                                    sky_brightness=sky_brightness,
+                                    min_altitude_deg=20.0,
+                                    observer_lat=location.latitude,
+                                    observer_lon=location.longitude,
+                                    dt=conditions.timestamp,
+                                )
+                                if vis_info.is_visible:
+                                    visible_star_names.append(resolved_obj.common_name or resolved_obj.name)
 
                     if visible_star_names:
                         html_parts.append(

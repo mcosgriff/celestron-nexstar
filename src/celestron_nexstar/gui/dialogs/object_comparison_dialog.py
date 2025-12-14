@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, search_objects
 from celestron_nexstar.api.core.utils import format_dec, format_ra
 from celestron_nexstar.api.observation.planning_utils import DifficultyLevel, get_object_difficulty
@@ -91,6 +92,7 @@ class ObjectComparisonDialog(QDialog):
         self.comparison_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.comparison_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.comparison_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        autosize_table_columns(self.comparison_table, stretch_last=False)
         main_layout.addWidget(self.comparison_table)
 
         # Status label
@@ -314,7 +316,7 @@ class ObjectComparisonDialog(QDialog):
                     item.setForeground(text_color)
 
         # Resize columns to content
-        self.comparison_table.resizeColumnsToContents()
+        autosize_table_columns(self.comparison_table, stretch_last=False)
 
         # Update status
         self.status_label.setText(

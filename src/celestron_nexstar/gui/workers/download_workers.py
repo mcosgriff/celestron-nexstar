@@ -34,57 +34,88 @@ def _backfill_spatial_relationships(
 
     if include_dsos:
         # Constellation containment (POINT-in-POLYGON)
+        # Use set-based CTEs to avoid SQLite correlated UPDATE quirks.
         session.execute(
             text(
                 """
+                WITH matches AS (
+                    SELECT
+                        g.id AS obj_id,
+                        c.id AS const_id,
+                        ROW_NUMBER() OVER (PARTITION BY g.id ORDER BY c.id) AS rn
+                    FROM galaxies g
+                    JOIN constellations c
+                      ON c.geometry IS NOT NULL
+                     AND g.geometry IS NOT NULL
+                     AND ST_Contains(c.geometry, g.geometry)
+                    WHERE g.constellation_id IS NULL
+                )
                 UPDATE galaxies
                 SET constellation_id = (
-                    SELECT c.id FROM (
-                        SELECT id, geometry AS cgeom
-                        FROM constellations
-                        WHERE geometry IS NOT NULL
-                    ) c
-                    WHERE ST_Contains(c.cgeom, geometry)
-                    LIMIT 1
+                    SELECT const_id FROM matches
+                    WHERE matches.obj_id = galaxies.id AND matches.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND constellation_id IS NULL
+                WHERE constellation_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM matches
+                    WHERE matches.obj_id = galaxies.id AND matches.rn = 1
+                  )
                 """
             )
         )
         session.execute(
             text(
                 """
+                WITH matches AS (
+                    SELECT
+                        n.id AS obj_id,
+                        c.id AS const_id,
+                        ROW_NUMBER() OVER (PARTITION BY n.id ORDER BY c.id) AS rn
+                    FROM nebulae n
+                    JOIN constellations c
+                      ON c.geometry IS NOT NULL
+                     AND n.geometry IS NOT NULL
+                     AND ST_Contains(c.geometry, n.geometry)
+                    WHERE n.constellation_id IS NULL
+                )
                 UPDATE nebulae
                 SET constellation_id = (
-                    SELECT c.id FROM (
-                        SELECT id, geometry AS cgeom
-                        FROM constellations
-                        WHERE geometry IS NOT NULL
-                    ) c
-                    WHERE ST_Contains(c.cgeom, geometry)
-                    LIMIT 1
+                    SELECT const_id FROM matches
+                    WHERE matches.obj_id = nebulae.id AND matches.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND constellation_id IS NULL
+                WHERE constellation_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM matches
+                    WHERE matches.obj_id = nebulae.id AND matches.rn = 1
+                  )
                 """
             )
         )
         session.execute(
             text(
                 """
+                WITH matches AS (
+                    SELECT
+                        cl.id AS obj_id,
+                        c.id AS const_id,
+                        ROW_NUMBER() OVER (PARTITION BY cl.id ORDER BY c.id) AS rn
+                    FROM clusters cl
+                    JOIN constellations c
+                      ON c.geometry IS NOT NULL
+                     AND cl.geometry IS NOT NULL
+                     AND ST_Contains(c.geometry, cl.geometry)
+                    WHERE cl.constellation_id IS NULL
+                )
                 UPDATE clusters
                 SET constellation_id = (
-                    SELECT c.id FROM (
-                        SELECT id, geometry AS cgeom
-                        FROM constellations
-                        WHERE geometry IS NOT NULL
-                    ) c
-                    WHERE ST_Contains(c.cgeom, geometry)
-                    LIMIT 1
+                    SELECT const_id FROM matches
+                    WHERE matches.obj_id = clusters.id AND matches.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND constellation_id IS NULL
+                WHERE constellation_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM matches
+                    WHERE matches.obj_id = clusters.id AND matches.rn = 1
+                  )
                 """
             )
         )
@@ -93,57 +124,93 @@ def _backfill_spatial_relationships(
         session.execute(
             text(
                 """
+                WITH nearest AS (
+                    SELECT
+                        g.id AS obj_id,
+                        a.id AS ast_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY g.id
+                            ORDER BY ST_Distance(a.geometry, g.geometry)
+                        ) AS rn
+                    FROM galaxies g
+                    JOIN asterisms a
+                      ON a.geometry IS NOT NULL
+                     AND g.geometry IS NOT NULL
+                     AND ST_Distance(a.geometry, g.geometry) <= 2.0
+                    WHERE g.asterism_id IS NULL
+                )
                 UPDATE galaxies
                 SET asterism_id = (
-                    SELECT a.id FROM (
-                        SELECT id, geometry AS ageom
-                        FROM asterisms
-                        WHERE geometry IS NOT NULL
-                    ) a
-                    WHERE ST_Distance(a.ageom, geometry) <= 2.0
-                    ORDER BY ST_Distance(a.ageom, geometry)
-                    LIMIT 1
+                    SELECT ast_id FROM nearest
+                    WHERE nearest.obj_id = galaxies.id AND nearest.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND asterism_id IS NULL
+                WHERE asterism_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM nearest
+                    WHERE nearest.obj_id = galaxies.id AND nearest.rn = 1
+                  )
                 """
             )
         )
         session.execute(
             text(
                 """
+                WITH nearest AS (
+                    SELECT
+                        n.id AS obj_id,
+                        a.id AS ast_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY n.id
+                            ORDER BY ST_Distance(a.geometry, n.geometry)
+                        ) AS rn
+                    FROM nebulae n
+                    JOIN asterisms a
+                      ON a.geometry IS NOT NULL
+                     AND n.geometry IS NOT NULL
+                     AND ST_Distance(a.geometry, n.geometry) <= 2.0
+                    WHERE n.asterism_id IS NULL
+                )
                 UPDATE nebulae
                 SET asterism_id = (
-                    SELECT a.id FROM (
-                        SELECT id, geometry AS ageom
-                        FROM asterisms
-                        WHERE geometry IS NOT NULL
-                    ) a
-                    WHERE ST_Distance(a.ageom, geometry) <= 2.0
-                    ORDER BY ST_Distance(a.ageom, geometry)
-                    LIMIT 1
+                    SELECT ast_id FROM nearest
+                    WHERE nearest.obj_id = nebulae.id AND nearest.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND asterism_id IS NULL
+                WHERE asterism_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM nearest
+                    WHERE nearest.obj_id = nebulae.id AND nearest.rn = 1
+                  )
                 """
             )
         )
         session.execute(
             text(
                 """
+                WITH nearest AS (
+                    SELECT
+                        cl.id AS obj_id,
+                        a.id AS ast_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY cl.id
+                            ORDER BY ST_Distance(a.geometry, cl.geometry)
+                        ) AS rn
+                    FROM clusters cl
+                    JOIN asterisms a
+                      ON a.geometry IS NOT NULL
+                     AND cl.geometry IS NOT NULL
+                     AND ST_Distance(a.geometry, cl.geometry) <= 2.0
+                    WHERE cl.asterism_id IS NULL
+                )
                 UPDATE clusters
                 SET asterism_id = (
-                    SELECT a.id FROM (
-                        SELECT id, geometry AS ageom
-                        FROM asterisms
-                        WHERE geometry IS NOT NULL
-                    ) a
-                    WHERE ST_Distance(a.ageom, geometry) <= 2.0
-                    ORDER BY ST_Distance(a.ageom, geometry)
-                    LIMIT 1
+                    SELECT ast_id FROM nearest
+                    WHERE nearest.obj_id = clusters.id AND nearest.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND asterism_id IS NULL
+                WHERE asterism_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM nearest
+                    WHERE nearest.obj_id = clusters.id AND nearest.rn = 1
+                  )
                 """
             )
         )
@@ -242,37 +309,59 @@ def _backfill_spatial_relationships(
         session.execute(
             text(
                 """
+                WITH matches AS (
+                    SELECT
+                        s.id AS obj_id,
+                        c.id AS const_id,
+                        ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY c.id) AS rn
+                    FROM stars s
+                    JOIN constellations c
+                      ON c.geometry IS NOT NULL
+                     AND s.geometry IS NOT NULL
+                     AND ST_Contains(c.geometry, s.geometry)
+                    WHERE s.constellation_id IS NULL
+                )
                 UPDATE stars
                 SET constellation_id = (
-                    SELECT c.id FROM (
-                        SELECT id, geometry AS cgeom
-                        FROM constellations
-                        WHERE geometry IS NOT NULL
-                    ) c
-                    WHERE ST_Contains(c.cgeom, geometry)
-                    LIMIT 1
+                    SELECT const_id FROM matches
+                    WHERE matches.obj_id = stars.id AND matches.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND constellation_id IS NULL
+                WHERE constellation_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM matches
+                    WHERE matches.obj_id = stars.id AND matches.rn = 1
+                  )
                 """
             )
         )
         session.execute(
             text(
                 """
+                WITH nearest AS (
+                    SELECT
+                        s.id AS obj_id,
+                        a.id AS ast_id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY s.id
+                            ORDER BY ST_Distance(a.geometry, s.geometry)
+                        ) AS rn
+                    FROM stars s
+                    JOIN asterisms a
+                      ON a.geometry IS NOT NULL
+                     AND s.geometry IS NOT NULL
+                     AND ST_Distance(a.geometry, s.geometry) <= 2.0
+                    WHERE s.asterism_id IS NULL
+                )
                 UPDATE stars
                 SET asterism_id = (
-                    SELECT a.id FROM (
-                        SELECT id, geometry AS ageom
-                        FROM asterisms
-                        WHERE geometry IS NOT NULL
-                    ) a
-                    WHERE ST_Distance(a.ageom, geometry) <= 2.0
-                    ORDER BY ST_Distance(a.ageom, geometry)
-                    LIMIT 1
+                    SELECT ast_id FROM nearest
+                    WHERE nearest.obj_id = stars.id AND nearest.rn = 1
                 )
-                WHERE geometry IS NOT NULL
-                AND asterism_id IS NULL
+                WHERE asterism_id IS NULL
+                  AND EXISTS (
+                    SELECT 1 FROM nearest
+                    WHERE nearest.obj_id = stars.id AND nearest.rn = 1
+                  )
                 """
             )
         )

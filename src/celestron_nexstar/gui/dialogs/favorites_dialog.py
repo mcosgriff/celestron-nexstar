@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.favorites import clear_favorites, get_favorites, remove_favorite
 from celestron_nexstar.gui.dialogs.object_info_dialog import ObjectInfoDialog
 
@@ -66,18 +67,8 @@ class FavoritesDialog(QDialog):
         header_labels = ["Name", "Type", "Actions"]
         self.table.setHorizontalHeaderLabels(header_labels)
 
-        # Set column resize modes - all columns are resizable with minimum width based on header text
-        header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
-
-        # Calculate minimum widths based on header text
-        font_metrics = QFontMetrics(header.font())
-        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]  # Add 20px padding
-
-        # Set all columns to Interactive mode (resizable) and set minimum widths
-        for col in range(self.table.columnCount()):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.setMinimumSectionSize(min_widths[col])
+        # Auto-size columns
+        autosize_table_columns(self.table, stretch_last=False)
 
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -132,15 +123,7 @@ class FavoritesDialog(QDialog):
                 self.table.setCellWidget(row, 2, actions_widget)
 
             # Resize columns to contents after initial population
-            header = self.table.horizontalHeader()
-            # Temporarily switch to ResizeToContents to set initial sizes
-            for col in range(self.table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-            # Force a resize event
-            self.table.resizeColumnsToContents()
-            # Switch back to Interactive mode for manual resizing
-            for col in range(self.table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            autosize_table_columns(self.table, stretch_last=False)
 
             if not favorites:
                 # Show message if no favorites

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 if TYPE_CHECKING:
     pass
@@ -171,7 +172,7 @@ class SettingsDialog(QDialog):
         table = QTableWidget()
         table.setColumnCount(6)
         table.setHorizontalHeaderLabels(["File", "Status", "Size", "Coverage", "Download", "Sync"])
-        table.horizontalHeader().setStretchLastSection(False)
+        autosize_table_columns(table, stretch_last=False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.ephemeris_table = table
@@ -262,7 +263,7 @@ class SettingsDialog(QDialog):
         table = QTableWidget()
         table.setColumnCount(7)
         table.setHorizontalHeaderLabels(["Source", "Description", "Status", "Size", "Download", "Import", "Delete"])
-        table.horizontalHeader().setStretchLastSection(False)
+        autosize_table_columns(table, stretch_last=False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.celestial_data_table = table
@@ -379,7 +380,7 @@ class SettingsDialog(QDialog):
         table = QTableWidget()
         table.setColumnCount(5)
         table.setHorizontalHeaderLabels(["Region", "Status", "Grid Points", "Download", "Import"])
-        table.horizontalHeader().setStretchLastSection(False)
+        autosize_table_columns(table, stretch_last=False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.light_pollution_table = table

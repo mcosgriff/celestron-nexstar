@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.core.enums import MoonPhase
 from celestron_nexstar.api.location.observer import get_observer_location
@@ -299,13 +300,8 @@ class AstronomicalCalendarDialog(QDialog):
         header_labels = ["Date", "Time", "Event Name", "Type", "Description"]
         self.events_table.setHorizontalHeaderLabels(header_labels)
 
-        # Configure table
-        header = self.events_table.horizontalHeader()
-        header.setStretchLastSection(True)  # Description column stretches
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Date
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Time
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Event Name - auto width
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Type
+        # Configure table (auto-size all columns)
+        autosize_table_columns(self.events_table, stretch_last=False)
 
         self.events_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.events_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

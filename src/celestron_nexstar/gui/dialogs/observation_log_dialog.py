@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.observations import delete_observation, get_observations
 from celestron_nexstar.gui.dialogs.observation_edit_dialog import ObservationEditDialog
@@ -59,18 +60,8 @@ class ObservationLogDialog(QDialog):
         header_labels = ["Date/Time", "Object", "Type", "Rating", "Location", "Telescope", "Notes", "Actions"]
         self.table.setHorizontalHeaderLabels(header_labels)
 
-        # Set column resize modes - all columns are resizable with minimum width based on header text
-        header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
-
-        # Calculate minimum widths based on header text
-        font_metrics = QFontMetrics(header.font())
-        min_widths = [font_metrics.horizontalAdvance(label) + 20 for label in header_labels]  # Add 20px padding
-
-        # Set all columns to Interactive mode (resizable) and set minimum widths
-        for col in range(self.table.columnCount()):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.setMinimumSectionSize(min_widths[col])
+        # Auto-size columns
+        autosize_table_columns(self.table, stretch_last=False)
 
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -169,15 +160,7 @@ class ObservationLogDialog(QDialog):
             self.table.sortItems(0, Qt.SortOrder.DescendingOrder)
 
             # Resize columns to contents after initial population
-            header = self.table.horizontalHeader()
-            # Temporarily switch to ResizeToContents to set initial sizes
-            for col in range(self.table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
-            # Force a resize event
-            self.table.resizeColumnsToContents()
-            # Switch back to Interactive mode for manual resizing
-            for col in range(self.table.columnCount()):
-                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+            autosize_table_columns(self.table, stretch_last=False)
         except Exception as e:
             logger.error(f"Error loading observations: {e}", exc_info=True)
 
