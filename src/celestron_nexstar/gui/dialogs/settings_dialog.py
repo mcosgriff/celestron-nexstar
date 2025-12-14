@@ -216,6 +216,9 @@ class SettingsDialog(QDialog):
 
     def _create_optics_tab(self) -> None:
         """Create the optics tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
         optics_text = QTextEdit()
         optics_text.setReadOnly(True)
         optics_text.setAcceptRichText(True)
@@ -229,7 +232,18 @@ class SettingsDialog(QDialog):
         """
         )
         self.optics_text = optics_text
-        self.tab_widget.addTab(optics_text, "Optics")
+        layout.addWidget(optics_text, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        edit_btn = QPushButton("Edit Optics…")
+        edit_btn.setToolTip("Change the active telescope model and eyepiece")
+        edit_btn.clicked.connect(self._on_edit_optics)
+        self.optics_edit_btn = edit_btn
+        button_row.addWidget(edit_btn)
+        layout.addLayout(button_row)
+
+        self.tab_widget.addTab(widget, "Optics")
 
     def _create_time_tab(self) -> None:
         """Create the time tab."""
@@ -1313,10 +1327,6 @@ class SettingsDialog(QDialog):
             )
             html_content.append("</table>")
 
-            html_content.append(
-                f"<p style='color: {colors['text_dim']}; margin-top: 15px;'>To change optics configuration, use the CLI command: <code>nexstar optics config</code></p>"
-            )
-
             self.optics_text.setHtml("\n".join(html_content))
 
         except Exception as e:
@@ -1324,6 +1334,20 @@ class SettingsDialog(QDialog):
             self.optics_text.setHtml(
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load optics information: {e}</span></p>"
             )
+
+    def _on_edit_optics(self) -> None:
+        """Open modal dialog to change telescope and eyepiece configuration."""
+        try:
+            from celestron_nexstar.gui.dialogs.optics_config_dialog import OpticsConfigDialog
+
+            dlg = OpticsConfigDialog(self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self._load_optics_info()
+        except Exception as e:
+            logger.error("Error opening optics configuration dialog", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to open optics configuration dialog:\n{e!s}")
 
     def _load_time_info(self) -> None:
         """Load time configuration information."""
