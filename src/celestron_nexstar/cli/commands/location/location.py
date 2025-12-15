@@ -143,7 +143,7 @@ def set_observer(
     location: str | None = typer.Argument(None, help="City, address, or ZIP code (e.g., 'New York, NY', '90210')"),
     latitude: float | None = typer.Option(None, "--lat", help="Latitude in degrees (-90 to +90)"),
     longitude: float | None = typer.Option(None, "--lon", help="Longitude in degrees (-180 to +180)"),
-    elevation: float = typer.Option(0.0, "--elev", help="Elevation in meters above sea level"),
+    elevation: float = typer.Option(0.0, "--elev", help="Elevation in feet above sea level"),
     name: str | None = typer.Option(None, "--name", help="Optional location name"),
 ) -> None:
     """
@@ -208,7 +208,7 @@ def set_observer(
         table.add_row("Latitude", f"{abs(observer_loc.latitude):.4f}°{lat_dir}")
         table.add_row("Longitude", f"{abs(observer_loc.longitude):.4f}°{lon_dir}")
         if observer_loc.elevation:
-            table.add_row("Elevation", f"{observer_loc.elevation:.0f} m")
+            table.add_row("Elevation", f"{observer_loc.elevation:.0f} ft")
 
         console.print(table)
         print_info("This location will be used for planetary position calculations")
@@ -267,7 +267,7 @@ def get_observer(
             table.add_row("Longitude", f"{abs(observer_loc.longitude):.4f}°{lon_dir}")
 
             if observer_loc.elevation:
-                table.add_row("Elevation", f"{observer_loc.elevation:.0f} m above sea level")
+                table.add_row("Elevation", f"{observer_loc.elevation:.0f} ft above sea level")
 
             console.print(table)
             print_info("Used for planetary position calculations")
@@ -316,7 +316,7 @@ def detect_location(
         table.add_row("Latitude", f"{abs(detected.latitude):.4f}°{lat_dir}")
         table.add_row("Longitude", f"{abs(detected.longitude):.4f}°{lon_dir}")
         if detected.elevation:
-            table.add_row("Elevation", f"{detected.elevation:.0f} m")
+            table.add_row("Elevation", f"{detected.elevation:.0f} ft")
 
         console.print(table)
 

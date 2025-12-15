@@ -29,10 +29,14 @@ __all__ = [
     "ObserverLocation",
     "clear_observer_location",
     "detect_location_automatically",
+    "enrich_location_with_elevation_feet",
     "geocode_location",
     "get_observer_location",
     "set_observer_location",
 ]
+
+METERS_TO_FEET = 3.28084
+FEET_TO_METERS = 1.0 / METERS_TO_FEET
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,7 @@ class ObserverLocation:
 
     latitude: float  # Degrees north (negative for south)
     longitude: float  # Degrees east (negative for west)
-    elevation: float = 0.0  # Meters above sea level
+    elevation: float = 0.0  # Feet above sea level
     name: str | None = None  # Optional location name
 
 
@@ -85,7 +89,9 @@ def save_location(location: ObserverLocation) -> None:
     data = {
         "latitude": location.latitude,
         "longitude": location.longitude,
-        "elevation": location.elevation,
+        # Persist elevation in feet (preferred). Keep meters too for clarity/debugging.
+        "elevation_ft": location.elevation,
+        "elevation_m": location.elevation / METERS_TO_FEET if location.elevation else 0.0,
         "name": location.name,
     }
 
@@ -192,7 +198,14 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
         if not -180 <= longitude <= 180:
             raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
 
-        elevation = data.get("elevation", 0.0)
+        # Backwards compatibility:
+        # - New configs: elevation_ft
+        # - Old configs: elevation (meters)
+        if "elevation_ft" in data:
+            elevation = float(data.get("elevation_ft", 0.0))
+        else:
+            elevation_m = float(data.get("elevation", 0.0))
+            elevation = elevation_m * METERS_TO_FEET
         if elevation < 0:
             logger.warning(f"Negative elevation in config: {elevation}, using 0.0")
             elevation = 0.0
@@ -321,16 +334,10 @@ def geocode_location(query: str) -> ObserverLocation:
         longitude = float(result["lon"])
         address = result.get("display_name", query)
 
-        # Try to get elevation from addressdetails if available
-        elevation = 0.0
-        if "addressdetails" in result:
-            # Elevation not typically in Nominatim response, but we can try
-            pass
-
         return ObserverLocation(
             latitude=latitude,
             longitude=longitude,
-            elevation=elevation,
+            elevation=0.0,  # Elevation can be enriched via Open-Elevation
             name=address,
         )
 
@@ -593,3 +600,51 @@ def detect_location_automatically() -> ObserverLocation:
         return location
 
     raise LocationNotSetError("Could not automatically detect location. Please set it manually.")
+
+
+def _lookup_elevation_meters(lat: float, lon: float) -> float | None:
+    """
+    Lookup elevation in meters using Open-Elevation.
+
+    Endpoint format:
+      https://api.open-elevation.com/api/v1/lookup?locations=LAT,LON
+    """
+    import requests
+
+    try:
+        url = "https://api.open-elevation.com/api/v1/lookup"
+        params = {"locations": f"{lat:.6f},{lon:.6f}"}
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        results = data.get("results", [])
+        if not results:
+            return None
+        elev = results[0].get("elevation")
+        if elev is None:
+            return None
+        return float(elev)
+    except Exception:
+        return None
+
+
+def enrich_location_with_elevation_feet(location: ObserverLocation) -> ObserverLocation:
+    """
+    Return a copy of `location` with elevation set (feet above sea level) using Open-Elevation.
+
+    If the elevation lookup fails, returns the original location unchanged.
+    """
+    try:
+        elev_m = _lookup_elevation_meters(location.latitude, location.longitude)
+        if elev_m is None:
+            return location
+        elev_ft = max(0.0, float(elev_m) * METERS_TO_FEET)
+        return ObserverLocation(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            elevation=elev_ft,
+            name=location.name,
+        )
+    except Exception:
+        return location

@@ -100,7 +100,14 @@ def _angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> flo
     return math.degrees(separation_rad)
 
 
-def _get_altitude(planet_name: str, observer_lat: float, observer_lon: float, t: Any, eph: Any) -> float:
+def _get_altitude(
+    planet_name: str,
+    observer_lat: float,
+    observer_lon: float,
+    t: Any,
+    eph: Any,
+    elevation_ft: float | None = None,
+) -> float:
     """Get planet altitude above horizon."""
     planet_key = planet_name.lower()
     if planet_key not in PLANET_NAMES:
@@ -108,7 +115,19 @@ def _get_altitude(planet_name: str, observer_lat: float, observer_lon: float, t:
 
     ephemeris_name, _bsp_file = PLANET_NAMES[planet_key]
     earth = eph["earth"]
-    observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+    elev_m = 0.0
+    try:
+        from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+        if elevation_ft is None:
+            loc = get_observer_location()
+            if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                elevation_ft = loc.elevation
+        elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+    except Exception:
+        elev_m = 0.0
+
+    observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
     try:
         target = eph[ephemeris_name]
@@ -188,8 +207,22 @@ def get_planetary_conjunctions(
                             event_time = event_time.replace(tzinfo=UTC)
 
                         # Get altitude for both planets
-                        alt1 = _get_altitude(planet1, location.latitude, location.longitude, min_time, eph)
-                        alt2 = _get_altitude(planet2, location.latitude, location.longitude, min_time, eph)
+                        alt1 = _get_altitude(
+                            planet1,
+                            location.latitude,
+                            location.longitude,
+                            min_time,
+                            eph,
+                            elevation_ft=location.elevation,
+                        )
+                        alt2 = _get_altitude(
+                            planet2,
+                            location.latitude,
+                            location.longitude,
+                            min_time,
+                            eph,
+                            elevation_ft=location.elevation,
+                        )
                         is_visible = alt1 > 0 or alt2 > 0
                         avg_altitude = (alt1 + alt2) / 2.0
 
@@ -303,7 +336,14 @@ def get_planetary_oppositions(
                     dec_sun = dec_sun_obj.degrees
                     elongation = _angular_separation(ra_planet, dec_planet, ra_sun, dec_sun)
 
-                    altitude = _get_altitude(planet_name, location.latitude, location.longitude, min_time, eph)
+                    altitude = _get_altitude(
+                        planet_name,
+                        location.latitude,
+                        location.longitude,
+                        min_time,
+                        eph,
+                        elevation_ft=location.elevation,
+                    )
                     is_visible = altitude > 0
 
                     notes = f"{planet_name.capitalize()} at opposition - best viewing time"

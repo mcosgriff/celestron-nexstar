@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QProgressBar,
     QPushButton,
@@ -199,6 +200,9 @@ class SettingsDialog(QDialog):
 
     def _create_location_tab(self) -> None:
         """Create the location tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
         location_text = QTextEdit()
         location_text.setReadOnly(True)
         location_text.setAcceptRichText(True)
@@ -212,7 +216,18 @@ class SettingsDialog(QDialog):
         """
         )
         self.location_text = location_text
-        self.tab_widget.addTab(location_text, "Location")
+        layout.addWidget(location_text, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        set_btn = QPushButton("Set Location…")
+        set_btn.setToolTip("Set observer location used for calculations")
+        set_btn.clicked.connect(self._on_set_location)
+        self.location_set_btn = set_btn
+        button_row.addWidget(set_btn)
+        layout.addLayout(button_row)
+
+        self.tab_widget.addTab(widget, "Location")
 
     def _create_optics_tab(self) -> None:
         """Create the optics tab."""
@@ -459,20 +474,52 @@ class SettingsDialog(QDialog):
 
     def _create_data_tab(self) -> None:
         """Create the data tab."""
-        data_text = QTextEdit()
-        data_text.setReadOnly(True)
-        data_text.setAcceptRichText(True)
-        data_text.setStyleSheet(
-            f"""
-            QTextEdit {{
-                font-family: {self._font_family};
-                background-color: transparent;
-                border: none;
-            }}
-        """
-        )
-        self.data_text = data_text
-        self.tab_widget.addTab(data_text, "Data")
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        header_row = QHBoxLayout()
+        header = QLabel("Data Usage")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 6px;")
+        header_row.addWidget(header)
+        header_row.addStretch()
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.setToolTip("Re-scan data directories and file sizes")
+        refresh_btn.clicked.connect(self._load_data_info)
+        header_row.addWidget(refresh_btn)
+        layout.addLayout(header_row)
+
+        summary = QLabel()
+        summary.setWordWrap(True)
+        self.data_summary_label = summary
+        layout.addWidget(summary)
+
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Type", "Name", "Size", "Modified", "Path"])
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setStretchLastSection(True)
+        self.data_table = table
+        layout.addWidget(table, 1)
+
+        self.tab_widget.addTab(widget, "Data")
+
+    @staticmethod
+    def _format_bytes(num_bytes: int) -> str:
+        """Format bytes as a human readable string."""
+        try:
+            size = float(max(0, int(num_bytes)))
+        except Exception:
+            return "—"
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if size < 1024.0 or unit == "TB":
+                if unit == "B":
+                    return f"{int(size)} {unit}"
+                return f"{size:.1f} {unit}"
+            size /= 1024.0
+        return f"{size:.1f} TB"
 
     def _load_config_info(self) -> None:
         """Load user-config values into the Config tab."""
@@ -1218,7 +1265,7 @@ class SettingsDialog(QDialog):
                 f"<tr><td style='color: {colors['text']};'>Longitude</td><td style='color: {colors['text']};'>{abs(location.longitude):.4f}°{lon_dir}</td></tr>"
             )
             html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Elevation</td><td style='color: {colors['text']};'>{location.elevation:.0f} m above sea level</td></tr>"
+                f"<tr><td style='color: {colors['text']};'>Elevation</td><td style='color: {colors['text']};'>{location.elevation:.0f} ft above sea level</td></tr>"
             )
             html_content.append("</table>")
 
@@ -1232,7 +1279,7 @@ class SettingsDialog(QDialog):
             )
             html_content.append(f"<p style='color: {colors['text']};'>{exists_marker}</p>")
             html_content.append(
-                f"<p style='color: {colors['text_dim']}; margin-top: 15px;'>To change location, use the CLI command: <code>nexstar location set</code></p>"
+                f"<p style='color: {colors['text_dim']}; margin-top: 15px;'>Tip: You can also set it via CLI: nexstar location set.</p>"
             )
 
             self.location_text.setHtml("\n".join(html_content))
@@ -1242,6 +1289,20 @@ class SettingsDialog(QDialog):
             self.location_text.setHtml(
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load location information: {e}</span></p>"
             )
+
+    def _on_set_location(self) -> None:
+        """Open modal dialog to set observer location."""
+        try:
+            from celestron_nexstar.gui.dialogs.location_config_dialog import LocationConfigDialog
+
+            dlg = LocationConfigDialog(self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                self._load_location_info()
+        except Exception as e:
+            logger.error("Error opening location configuration dialog", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to open location configuration dialog:\n{e!s}")
 
     def _load_optics_info(self) -> None:
         """Load optics configuration information."""
@@ -1401,60 +1462,141 @@ class SettingsDialog(QDialog):
         """Load data directory and file information."""
         colors = self._get_theme_colors()
         try:
+            from datetime import datetime
             from pathlib import Path
 
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
 
+            # Directories we own/use
             config_dir = Path.home() / ".config" / "celestron-nexstar"
             eph_dir = get_ephemeris_directory()
+            # Celestial data download cache
+            try:
+                from celestron_nexstar.cli.data_import import get_cache_dir
 
-            html_content = []
-            html_content.append(
-                f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Data Directories</span></p>"
-            )
+                celestial_cache_dir = get_cache_dir()
+            except Exception:
+                celestial_cache_dir = Path.home() / ".cache" / "celestron-nexstar" / "celestial-data"
 
-            html_content.append(
-                "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; margin-bottom: 15px;'>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['cyan']};'><b>Directory</b></td><td style='color: {colors['green']};'><b>Path</b></td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Configuration</td><td style='color: {colors['text_dim']};'>{config_dir}</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Ephemeris</td><td style='color: {colors['text_dim']};'>{eph_dir}</td></tr>"
-            )
-            html_content.append("</table>")
+            light_pollution_cache_dir = Path.home() / ".cache" / "celestron-nexstar" / "light-pollution"
 
-            # Check directory sizes
-            config_size = (
-                sum(f.stat().st_size for f in config_dir.rglob("*") if f.is_file()) if config_dir.exists() else 0
-            )
-            eph_size = sum(f.stat().st_size for f in eph_dir.rglob("*") if f.is_file()) if eph_dir.exists() else 0
+            # Database file (SQLite)
+            db_path = config_dir / "catalogs.db"
 
-            html_content.append(
-                f"<p><span style='color: {colors['header']}; font-weight: bold; font-size: 12pt;'>Directory Sizes</span></p>"
-            )
-            html_content.append("<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse;'>")
-            html_content.append(
-                f"<tr><td style='color: {colors['cyan']};'><b>Directory</b></td><td style='color: {colors['green']};'><b>Size</b></td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Configuration</td><td style='color: {colors['text']};'>{config_size / 1024:.1f} KB</td></tr>"
-            )
-            html_content.append(
-                f"<tr><td style='color: {colors['text']};'>Ephemeris</td><td style='color: {colors['text']};'>{eph_size / 1024 / 1024:.1f} MB</td></tr>"
-            )
-            html_content.append("</table>")
+            def _safe_list_files(base: Path) -> list[Path]:
+                if not base.exists():
+                    return []
+                try:
+                    return [p for p in base.rglob("*") if p.is_file()]
+                except Exception:
+                    return []
 
-            self.data_text.setHtml("\n".join(html_content))
+            def _dir_total_bytes(files: list[Path]) -> int:
+                total = 0
+                for p in files:
+                    try:
+                        total += int(p.stat().st_size)
+                    except Exception:
+                        continue
+                return total
+
+            def _mtime_str(p: Path) -> str:
+                try:
+                    ts = p.stat().st_mtime
+                    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    return "—"
+
+            # Collect files
+            config_files = _safe_list_files(config_dir)
+            eph_files = _safe_list_files(eph_dir)
+            celestial_cache_files = _safe_list_files(celestial_cache_dir)
+            light_pollution_cache_files = _safe_list_files(light_pollution_cache_dir)
+
+            # Build rows: (type, name, size_bytes, mtime, path)
+            rows: list[tuple[str, str, int, str, str]] = []
+
+            # Database row first (even though it also lives in config dir)
+            if db_path.exists():
+                try:
+                    size = int(db_path.stat().st_size)
+                except Exception:
+                    size = 0
+                rows.append(("Database", db_path.name, size, _mtime_str(db_path), str(db_path)))
+            else:
+                rows.append(("Database", db_path.name, 0, "—", f"{db_path} (missing)"))
+
+            # Individual files
+            def _add_files(file_type: str, files: list[Path]) -> None:
+                for p in files:
+                    # Avoid duplicating the DB row (still keep it in config totals)
+                    if p == db_path:
+                        continue
+                    try:
+                        sz = int(p.stat().st_size)
+                    except Exception:
+                        sz = 0
+                    rows.append((file_type, p.name, sz, _mtime_str(p), str(p)))
+
+            _add_files("Config", config_files)
+            _add_files("Ephemeris", eph_files)
+            _add_files("Cache (Celestial)", celestial_cache_files)
+            _add_files("Cache (Light Pollution)", light_pollution_cache_files)
+
+            # Sort by size descending for easier “what's using space” scanning
+            rows.sort(key=lambda r: r[2], reverse=True)
+
+            # Cap rows to keep UI responsive if a directory is unexpectedly huge
+            max_rows = 500
+            truncated = False
+            if len(rows) > max_rows:
+                rows = rows[:max_rows]
+                truncated = True
+
+            # Populate table
+            table: QTableWidget = self.data_table
+            table.setRowCount(len(rows))
+            for i, (typ, name, size_b, mtime, path_str) in enumerate(rows):
+                table.setItem(i, 0, QTableWidgetItem(typ))
+                table.setItem(i, 1, QTableWidgetItem(name))
+                table.setItem(i, 2, QTableWidgetItem(self._format_bytes(size_b)))
+                table.setItem(i, 3, QTableWidgetItem(mtime))
+                table.setItem(i, 4, QTableWidgetItem(path_str))
+
+            autosize_table_columns(table, stretch_last=True)
+
+            # Summary totals
+            totals = {
+                "Config": _dir_total_bytes(config_files),
+                "Ephemeris": _dir_total_bytes(eph_files),
+                "Cache (Celestial)": _dir_total_bytes(celestial_cache_files),
+                "Cache (Light Pollution)": _dir_total_bytes(light_pollution_cache_files),
+            }
+            overall = sum(totals.values())
+            summary_lines = [
+                f"<b>Database:</b> <span style='color:{colors['text_dim']};'>{db_path}</span>",
+                f"<b>Config dir:</b> <span style='color:{colors['text_dim']};'>{config_dir}</span> "
+                f"(<b>{self._format_bytes(totals['Config'])}</b>)",
+                f"<b>Ephemeris dir:</b> <span style='color:{colors['text_dim']};'>{eph_dir}</span> "
+                f"(<b>{self._format_bytes(totals['Ephemeris'])}</b>)",
+                f"<b>Celestial cache:</b> <span style='color:{colors['text_dim']};'>{celestial_cache_dir}</span> "
+                f"(<b>{self._format_bytes(totals['Cache (Celestial)'])}</b>)",
+                f"<b>Light pollution cache:</b> <span style='color:{colors['text_dim']};'>{light_pollution_cache_dir}</span> "
+                f"(<b>{self._format_bytes(totals['Cache (Light Pollution)'])}</b>)",
+                f"<b>Total (dirs):</b> {self._format_bytes(overall)}",
+            ]
+            if truncated:
+                summary_lines.append(
+                    f"<span style='color:{colors['yellow']};'>Showing first {max_rows} files (sorted by size).</span>"
+                )
+            self.data_summary_label.setText("<br/>".join(summary_lines))
 
         except Exception as e:
             logger.error(f"Error loading data info: {e}", exc_info=True)
-            self.data_text.setHtml(
-                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load data information: {e}</span></p>"
-            )
+            if hasattr(self, "data_summary_label"):
+                self.data_summary_label.setText(
+                    f"<span style='color: {colors['error']};'><b>Error:</b> Failed to load data information: {e}</span>"
+                )
 
     def _on_download_ephemeris_file(self, file_key: str) -> None:
         """Handle ephemeris file download button click."""

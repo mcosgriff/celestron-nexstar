@@ -455,9 +455,14 @@ class AsterismInfoDialog(QDialog):
                         # Use LambertAzEqArea (Starplot examples) so ra_min/ra_max cropping works.
                         center_ra_deg = ((ra_min_deg + ra_max_deg) / 2.0) % 360.0
                         center_dec_deg = float((dec_min + dec_max) / 2.0)
-                        if float(dec_max) >= 70.0:
+                        # Only use pole-centered projection if the asterism is *entirely* within the polar cap.
+                        # Otherwise, forcing center_dec=±90 tends to make Starplot expand RA to a full 360° extent,
+                        # which looks "huge" (e.g., Argo Navis with dec_min ~ -72 but dec_max ~ -21).
+                        dec_min_f = float(dec_min)
+                        dec_max_f = float(dec_max)
+                        if dec_max_f >= 70.0 and dec_min_f >= 50.0:
                             center_dec_deg = 90.0
-                        elif float(dec_min) <= -70.0:
+                        elif dec_min_f <= -70.0 and dec_max_f <= -50.0:
                             center_dec_deg = -90.0
                         projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=center_dec_deg)
 
@@ -470,9 +475,10 @@ class AsterismInfoDialog(QDialog):
                             dec_max=dec_max,
                             ephemeris=ephemeris_file,  # Use downloaded ephemeris file
                             style=plot_style,
-                            resolution=4096,  # Good quality for asterism view
+                            # Smaller than constellation maps; keeps the dialog from becoming vertically huge.
+                            resolution=2400,
                             autoscale=False,
-                            scale=1.5,
+                            scale=1.2,
                         )
 
                         # Add constellation features
@@ -513,8 +519,12 @@ class AsterismInfoDialog(QDialog):
                                 float(getattr(plot, "dec_max", dec_max)),
                             )
 
-                        # Add stars (magnitude < 8, labels for magnitude < 5)
-                        plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
+                        # Match constellation map defaults (and Starplot examples) for consistency.
+                        plot.stars(  # type: ignore[arg-type]
+                            where=[_.magnitude < 9],
+                            bayer_labels=True,
+                            flamsteed_labels=True,
+                        )
 
                         # Add open clusters
                         plot.open_clusters(
@@ -549,7 +559,7 @@ class AsterismInfoDialog(QDialog):
                         # Export to PNG in memory
                         img_buffer = io.BytesIO()
                         # Slightly more padding reduces the chance of clipping at edges.
-                        plot.export(img_buffer, format="png", padding=0.5, transparent=True)  # type: ignore[no-untyped-call]
+                        plot.export(img_buffer, format="png", padding=0.3, transparent=True)  # type: ignore[no-untyped-call]
                         img_buffer.seek(0)
                         return img_buffer.read()
 
@@ -570,7 +580,9 @@ class AsterismInfoDialog(QDialog):
                     html_parts.append(
                         f"<div style='margin: 15px 0; text-align: center; padding: 5px; background-color: transparent; display: inline-block;'>"
                         f"<img src='data:image/png;base64,{img_base64}' "
-                        f"style='max-width: 900px; max-height: 600px; width: auto; height: auto; display: block;' "
+                        # QTextBrowser does not reliably honor CSS max-height; set an explicit width to keep the
+                        # embedded image from inflating the document and forcing a tall scrollbar.
+                        f"width='900' style='max-width: 900px; width: 900px; height: auto; display: block;' "
                         f"alt='{asterism.name} asterism map' />"
                         f"<p style='margin-top: 5px; font-size: 0.9em; color: {colors['text_dim']};'>Asterism map generated with starplot</p>"
                         f"</div>"

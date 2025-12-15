@@ -184,7 +184,7 @@ class GPSInfoDialog(QDialog):
         try:
             location = get_observer_location()
             if location.elevation is not None:
-                elevation_text = f"{location.elevation:.0f} m"
+                elevation_text = f"{location.elevation:.0f} ft"
         except Exception:
             pass  # Keep default "Not available"
         self.elevation_label.setText(elevation_text)

@@ -128,7 +128,10 @@ class MapGenerationWorkerThread(QThread):
             # Add padding around the constellation boundaries
             # A bit more padding helps avoid clipping at the edges.
             padding_ra = 0.5  # hours
-            padding_dec = 2.0  # degrees
+            # Slightly more padding helps avoid clipping key pattern stars (e.g., Meissa in Orion),
+            # but keep it conservative for near-polar constellations where extra DEC padding can
+            # dramatically widen the RA extent after projection.
+            padding_dec = 3.0  # degrees (non-polar default)
 
             ra_min_hours = self.boundaries["ra_min_hours"]
             ra_max_hours = self.boundaries["ra_max_hours"]
@@ -136,6 +139,8 @@ class MapGenerationWorkerThread(QThread):
             # projection even with a tighter dec_max in the plot window).
             proj_dec_min = float(self.boundaries["dec_min_degrees"])
             proj_dec_max = float(self.boundaries["dec_max_degrees"])
+            if proj_dec_max >= 70.0 or proj_dec_min <= -70.0:
+                padding_dec = 2.0
 
             dec_min = proj_dec_min - padding_dec
             dec_max = proj_dec_max + padding_dec
@@ -167,17 +172,30 @@ class MapGenerationWorkerThread(QThread):
                             select(ConstellationModel).where(ConstellationModel.name == constellation_name).limit(1)
                         )
                         if constellation_model is not None:
-                            star_rows = session.execute(
-                                select(StarModel.ra_hours, StarModel.dec_degrees)
-                                .where(
-                                    StarModel.constellation_id == constellation_model.id,
-                                    StarModel.ra_hours.isnot(None),
-                                    StarModel.dec_degrees.isnot(None),
-                                    (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= 6.5),
-                                )
-                                .order_by(StarModel.magnitude.asc().nullslast())
-                                .limit(120)
-                            ).all()
+                            # For map *bounds*, prefer the constellation's main pattern stars (brighter).
+                            # This matches Starplot examples better than using all faint stars that can
+                            # extend the official IAU region toward the pole and dramatically widen the map.
+                            #
+                            # Strategy:
+                            # - Use *known-magnitude* stars (exclude NULL magnitudes for bounds)
+                            # - Prefer brighter subsets first (2.5, 3.0, 3.5, 4.5), then fall back to 6.5
+                            # - Limit to the brightest 60 to avoid “full constellation population” sprawl
+                            star_rows = []
+                            for mag_limit in (2.5, 3.0, 3.5, 4.5, 6.5):
+                                star_rows = session.execute(
+                                    select(StarModel.ra_hours, StarModel.dec_degrees)
+                                    .where(
+                                        StarModel.constellation_id == constellation_model.id,
+                                        StarModel.ra_hours.isnot(None),
+                                        StarModel.dec_degrees.isnot(None),
+                                        StarModel.magnitude.isnot(None),
+                                        StarModel.magnitude <= mag_limit,
+                                    )
+                                    .order_by(StarModel.magnitude.asc())
+                                    .limit(60)
+                                ).all()
+                                if len(star_rows) >= 5:
+                                    break
                             if len(star_rows) >= 5:
                                 ra_vals = [float(r[0]) % 24.0 for r in star_rows]
                                 dec_vals = [float(r[1]) for r in star_rows]
@@ -212,16 +230,38 @@ class MapGenerationWorkerThread(QThread):
             # RA window (hours): keep a tight, centered view.
             # For wrap-around constellations (e.g. 23h..2h), we allow ra_max to exceed 24h
             # (and thus ra_max_deg > 360°) like Starplot's Cassiopeia example.
-            wraps_around = float(ra_max_hours) < float(ra_min_hours)
-            span_h = (
-                (24.0 - float(ra_min_hours)) + float(ra_max_hours)
-                if wraps_around
-                else float(ra_max_hours) - float(ra_min_hours)
-            )
+            # RA bounds can wrap across 0h. Some sources provide naive numeric min/max which can
+            # incorrectly yield a huge span (e.g. ra_min=1h, ra_max=23h for a constellation that
+            # actually spans 23h..1h). Prefer the shorter circular interval whenever span > 12h.
+            ra_min_f = float(ra_min_hours) % 24.0
+            ra_max_f = float(ra_max_hours) % 24.0
+            wraps_around = ra_max_f < ra_min_f
+            if wraps_around:
+                span_h = (24.0 - ra_min_f) + ra_max_f
+                # If the wrapped span is huge, the stored bounds are likely inverted (common with
+                # naive min/max over a wrapped interval). Prefer the shorter (non-wrapped) interval.
+                if span_h > 12.0:
+                    wraps_around = False
+                    interval_start_h = ra_max_f
+                    interval_end_h = ra_min_f
+                    span_h = interval_end_h - interval_start_h
+                else:
+                    interval_start_h = ra_min_f
+                    interval_end_h = ra_min_f + span_h
+            else:
+                span_h = ra_max_f - ra_min_f
+                if span_h > 12.0:
+                    wraps_around = True
+                    interval_start_h = ra_max_f
+                    interval_end_h = ra_min_f + 24.0
+                    span_h = interval_end_h - interval_start_h
+                else:
+                    interval_start_h = ra_min_f
+                    interval_end_h = ra_max_f
             # Desired window: actual span + padding, but cap to avoid "whole-sky" views.
             max_window_h = 8.0
             window_h = min(max(span_h + (padding_ra * 2.0), 2.0), max_window_h)
-            center_h = (float(ra_min_hours) + (span_h / 2.0)) % 24.0
+            center_h = ((interval_start_h + interval_end_h) / 2.0) % 24.0
 
             ra_min_h = center_h - (window_h / 2.0)
             ra_max_h = center_h + (window_h / 2.0)
@@ -251,7 +291,8 @@ class MapGenerationWorkerThread(QThread):
                 ra_min_deg -= 360.0
                 ra_max_deg -= 360.0
             # Cap the plotted RA span (in degrees)
-            max_span_deg = 150.0  # 10h
+            # Hard cap for safety: keep within the same maximum window as our hours cap (8h = 120°).
+            max_span_deg = 120.0  # 8h
             span_deg = ra_max_deg - ra_min_deg
             if span_deg > max_span_deg:
                 center = (ra_min_deg + ra_max_deg) / 2.0
@@ -288,9 +329,10 @@ class MapGenerationWorkerThread(QThread):
                 dec_max=dec_max,
                 ephemeris=ephemeris_file,  # Use downloaded ephemeris file
                 style=plot_style,
-                resolution=4096,  # Good quality for constellation view
+                # Match Starplot examples (e.g. Cassiopeia): ~4000px is crisp and predictable.
+                resolution=4000,
                 autoscale=False,
-                scale=1.5,
+                scale=1.2,
             )
 
             # Add gridlines.
@@ -298,9 +340,8 @@ class MapGenerationWorkerThread(QThread):
             # (otherwise you can end up with a full 0-24h RA ring that *looks* like a 24h-wide plot).
             try:
                 if isinstance(projection, LambertAzEqArea):
-                    dec_start = int(max(0.0, float(dec_min) // 5 * 5))
-                    dec_end = int(min(90.0, (float(dec_max) // 5 * 5) + 5))
-                    plot.gridlines(dec_locations=list(range(dec_start, dec_end + 1, 5)))
+                    # Match Starplot examples: show a full declination ladder for polar maps.
+                    plot.gridlines(dec_locations=list(range(0, 90, 5)))
                 else:
                     plot.gridlines()
             except Exception:
@@ -335,22 +376,24 @@ class MapGenerationWorkerThread(QThread):
             except Exception:
                 pass
 
-            # Add stars (magnitude < 8, labels for magnitude < 5)
-            plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])  # type: ignore[arg-type]
+            # Match Starplot examples:
+            # - Plot stars to mag 9
+            # - Show Bayer + Flamsteed labels (Starplot handles collisions)
+            plot.stars(  # type: ignore[arg-type]
+                where=[_.magnitude < 9],
+                bayer_labels=True,
+                flamsteed_labels=True,
+            )
 
-            # Add open clusters
-            plot.open_clusters(
-                where=[_.size < 1, _.magnitude < 9],  # type: ignore[arg-type]
-                where_labels=[False],
+            # Add nebula / open clusters similar to Starplot examples (mag < 8 or unknown)
+            plot.nebula(  # type: ignore[arg-type]
+                where=[(_.magnitude.isnull()) | (_.magnitude < 8)],
+                true_size=True,
+            )
+            plot.open_clusters(  # type: ignore[arg-type]
+                where=[(_.magnitude.isnull()) | (_.magnitude < 8)],
                 true_size=False,
             )
-            plot.open_clusters(
-                where=[_.size > 1, (_.magnitude < 9) | (_.magnitude.isnull())],  # type: ignore[arg-type]
-                where_labels=[False],
-            )
-
-            # Add nebula
-            plot.nebula(where=[(_.magnitude < 9) | (_.magnitude.isnull())])  # type: ignore[arg-type]
 
             # Add constellation labels
             try:

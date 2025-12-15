@@ -256,7 +256,16 @@ class MoonDiskWorkerThread(QThread):
             sun = eph["sun"]
             moon = eph["moon"]
 
-            observer = earth + Topos(latitude_degrees=location.latitude, longitude_degrees=location.longitude)
+            elev_m = 0.0
+            try:
+                from celestron_nexstar.api.location.observer import FEET_TO_METERS
+
+                elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
+            except Exception:
+                elev_m = 0.0
+            observer = earth + Topos(
+                latitude_degrees=location.latitude, longitude_degrees=location.longitude, elevation_m=elev_m
+            )
 
             # Topocentric apparent positions
             moon_app = observer.at(t).observe(moon).apparent()

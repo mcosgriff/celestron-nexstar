@@ -148,6 +148,7 @@ def get_moon_info(
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
+    elevation_ft: float | None = None,
 ) -> MoonInfo | None:
     """
     Get current moon information including phase and position.
@@ -171,7 +172,21 @@ def get_moon_info(
             return None
 
         t = ts.from_datetime(dt)
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        # Use observer elevation (in meters) for more accurate horizon/altitude calculations.
+        # Elevation is stored in feet in our config; Skyfield expects meters.
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            if elevation_ft is None:
+                loc = get_observer_location()
+                if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                    elevation_ft = loc.elevation
+            elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         # Get moon position
         astrometric = observer.at(t).observe(moon)
@@ -325,6 +340,7 @@ def get_sun_info(
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
+    elevation_ft: float | None = None,
 ) -> SunInfo | None:
     """
     Get current sun information including position and sunset/sunrise.
@@ -348,7 +364,19 @@ def get_sun_info(
             return None
 
         t = ts.from_datetime(dt)
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            if elevation_ft is None:
+                loc = get_observer_location()
+                if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                    elevation_ft = loc.elevation
+            elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         # Get sun position
         astrometric = observer.at(t).observe(sun)
@@ -434,6 +462,7 @@ def calculate_golden_hour(
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
+    elevation_ft: float | None = None,
 ) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
     """
     Calculate golden hour times (sun altitude between 0° and 6°).
@@ -461,7 +490,19 @@ def calculate_golden_hour(
         if ts is None or earth is None or sun is None:
             return (None, None, None, None)
 
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            if elevation_ft is None:
+                loc = get_observer_location()
+                if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                    elevation_ft = loc.elevation
+            elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         evening_start = None
         evening_end = None
@@ -537,6 +578,7 @@ def calculate_blue_hour(
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
+    elevation_ft: float | None = None,
 ) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
     """
     Calculate blue hour times (sun altitude between -6° and -4°).
@@ -563,7 +605,19 @@ def calculate_blue_hour(
         if ts is None or earth is None or sun is None:
             return (None, None, None, None)
 
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            if elevation_ft is None:
+                loc = get_observer_location()
+                if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                    elevation_ft = loc.elevation
+            elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         evening_start = None
         evening_end = None
@@ -639,6 +693,7 @@ def calculate_astronomical_twilight(
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
+    elevation_ft: float | None = None,
 ) -> tuple[datetime | None, datetime | None, datetime | None, datetime | None]:
     """
     Calculate astronomical twilight times (sun altitude between -18° and -12°).
@@ -667,7 +722,19 @@ def calculate_astronomical_twilight(
         if ts is None or earth is None or sun is None:
             return (None, None, None, None)
 
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            if elevation_ft is None:
+                loc = get_observer_location()
+                if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                    elevation_ft = loc.elevation
+            elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         evening_start = None
         evening_end = None

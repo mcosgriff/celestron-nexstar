@@ -126,7 +126,14 @@ def get_bright_satellite_passes(
     end_time = start_time + timedelta(days=days)
 
     # Create observer and load timescale once (reused for all satellites)
-    observer = wgs84.latlon(location.latitude, location.longitude)
+    elev_m = 0.0
+    try:
+        from celestron_nexstar.api.location.observer import FEET_TO_METERS
+
+        elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
+    except Exception:
+        elev_m = 0.0
+    observer = wgs84.latlon(location.latitude, location.longitude, elevation_m=elev_m)
     from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
     ts = get_skyfield_timescale()
@@ -620,7 +627,14 @@ def _calculate_passes_for_satellites(
         return []
 
     passes: list[SatellitePass] = []
-    observer = wgs84.latlon(location.latitude, location.longitude)
+    elev_m = 0.0
+    try:
+        from celestron_nexstar.api.location.observer import FEET_TO_METERS
+
+        elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
+    except Exception:
+        elev_m = 0.0
+    observer = wgs84.latlon(location.latitude, location.longitude, elevation_m=elev_m)
 
     # Load timescale and ephemeris
     from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale

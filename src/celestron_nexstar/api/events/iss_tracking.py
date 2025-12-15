@@ -223,6 +223,7 @@ def get_iss_passes(
     start_time: datetime | None = None,
     days: int = 7,
     min_altitude_deg: float = 10.0,
+    elevation_ft: float | None = None,
 ) -> list[ISSPass]:
     """
     Calculate ISS passes for a location.
@@ -259,8 +260,20 @@ def get_iss_passes(
     # Get ISS satellite
     satellite = _get_iss_satellite()
 
-    # Create observer location
-    observer = wgs84.latlon(latitude, longitude)
+    # Create observer location (Skyfield expects meters)
+    elev_m = 0.0
+    try:
+        from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+        if elevation_ft is None:
+            loc = get_observer_location()
+            if abs(loc.latitude - latitude) < 1e-6 and abs(loc.longitude - longitude) < 1e-6:
+                elevation_ft = loc.elevation
+        elev_m = float(elevation_ft or 0.0) * FEET_TO_METERS
+    except Exception:
+        elev_m = 0.0
+
+    observer = wgs84.latlon(latitude, longitude, elevation_m=elev_m)
 
     # Load timescale
     ts = get_skyfield_timescale()

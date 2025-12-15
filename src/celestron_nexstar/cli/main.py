@@ -261,7 +261,7 @@ def show_all_config(
             location_table.add_row("Longitude", f"{abs(observer_location.longitude):.4f}°{lon_dir}")
 
             if observer_location.elevation:
-                location_table.add_row("Elevation", f"{observer_location.elevation:.0f} m above sea level")
+                location_table.add_row("Elevation", f"{observer_location.elevation:.0f} ft above sea level")
 
             console.print(location_table)
             console.print()

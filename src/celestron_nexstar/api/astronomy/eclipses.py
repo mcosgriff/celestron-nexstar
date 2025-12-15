@@ -136,7 +136,17 @@ def _calculate_lunar_eclipse(
             eclipse_time_utc = eclipse_time.astimezone(UTC)
 
         t = ts.from_datetime(eclipse_time_utc)
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            loc = get_observer_location()
+            if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                elev_m = float(loc.elevation or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         # Get moon position
         moon_astrometric = observer.at(t).observe(moon)
@@ -407,7 +417,17 @@ def _calculate_solar_eclipse(
             eclipse_time_utc = eclipse_time.astimezone(UTC)
 
         t = ts.from_datetime(eclipse_time_utc)
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        elev_m = 0.0
+        try:
+            from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
+
+            loc = get_observer_location()
+            if abs(loc.latitude - observer_lat) < 1e-6 and abs(loc.longitude - observer_lon) < 1e-6:
+                elev_m = float(loc.elevation or 0.0) * FEET_TO_METERS
+        except Exception:
+            elev_m = 0.0
+
+        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
         # Get sun position
         sun_astrometric = observer.at(t).observe(sun)
