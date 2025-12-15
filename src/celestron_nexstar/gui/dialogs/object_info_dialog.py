@@ -306,6 +306,17 @@ class ObjectInfoDialog(QDialog):
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
                     f"Constellation: <span style='color: {colors['cyan']};'>{obj.constellation}</span></p>"
                 )
+                # For stars, also show asterism (if any) directly under constellation
+                if obj.object_type.value == "star":
+                    asterism_text = (
+                        f"<span style='color: {colors['cyan']};'>{obj.asterism}</span>"
+                        if obj.asterism
+                        else f"<span style='color: {colors['text_dim']};'>—</span>"
+                    )
+                    html_parts.append(
+                        f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                        f"Asterism: {asterism_text}</p>"
+                    )
             html_parts.append(
                 f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Catalog: {obj.catalog}</p>"
             )

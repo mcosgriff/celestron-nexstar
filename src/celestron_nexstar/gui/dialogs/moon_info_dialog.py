@@ -117,7 +117,19 @@ class MoonPlotWorkerThread(QThread):
 
             # Center the plot on the moon's current position
             # Show a 90-degree field of view
-            altitude_range = (max(0, moon_info.altitude_deg - 45), min(90, moon_info.altitude_deg + 45))
+            # Starplot requires altitude_min < altitude_max and values within [0, 90].
+            # When the Moon is below the horizon, (alt+45) can be < 0 which yields an invalid range.
+            alt_center = max(0.0, min(90.0, float(moon_info.altitude_deg)))
+            alt_min = max(0.0, alt_center - 45.0)
+            alt_max = min(90.0, alt_center + 45.0)
+            if alt_max <= alt_min:
+                # Minimal valid window
+                alt_min = max(0.0, alt_center - 1.0)
+                alt_max = min(90.0, alt_center + 1.0)
+            if alt_max <= alt_min:
+                # Last resort: full altitude range
+                alt_min, alt_max = 0.0, 90.0
+            altitude_range = (alt_min, alt_max)
             # Azimuth wraps around 360
             azimuth_min = (moon_info.azimuth_deg - 45) % 360
             azimuth_max = (moon_info.azimuth_deg + 45) % 360

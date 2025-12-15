@@ -2152,6 +2152,67 @@ class CatalogDatabase:
 _database_instance: CatalogDatabase | None = None
 
 
+def _repair_polar_constellation_holes(db: CatalogDatabase) -> None:
+    """
+    Repair missing constellation assignments for objects in the uncovered polar caps.
+
+    Our imported IAU constellation boundary geometries intentionally stop at about ±88.6639° declination
+    (matching common boundary datasets). This leaves small polar caps not contained by any polygon.
+    Without a fix, stars like Polaris (Dec ~ +89.26°) end up with NULL constellation_id.
+
+    Strategy:
+    - Find the maximum ConstellationModel.dec_max_degrees and minimum dec_min_degrees.
+    - Assign any StarModel with constellation_id IS NULL and dec beyond those extrema to:
+      - UMi for the north cap
+      - Oct for the south cap
+    """
+    try:
+        from sqlalchemy import func, select, update
+
+        from celestron_nexstar.api.database.models import ConstellationModel, StarModel
+
+        with db._get_session() as session:
+            max_dec = session.execute(select(func.max(ConstellationModel.dec_max_degrees))).scalar_one_or_none()
+            min_dec = session.execute(select(func.min(ConstellationModel.dec_min_degrees))).scalar_one_or_none()
+            if max_dec is None or min_dec is None:
+                return
+
+            umi_id = session.execute(
+                select(ConstellationModel.id).where(ConstellationModel.abbreviation == "UMi").limit(1)
+            ).scalar_one_or_none()
+            oct_id = session.execute(
+                select(ConstellationModel.id).where(ConstellationModel.abbreviation == "Oct").limit(1)
+            ).scalar_one_or_none()
+            if umi_id is None or oct_id is None:
+                return
+
+            # Only touch rows that are currently unassigned.
+            updated = 0
+            updated += (
+                session.execute(
+                    update(StarModel)
+                    .where(StarModel.constellation_id.is_(None), StarModel.dec_degrees > float(max_dec))
+                    .values(constellation_id=umi_id)
+                ).rowcount
+                or 0
+            )
+            updated += (
+                session.execute(
+                    update(StarModel)
+                    .where(StarModel.constellation_id.is_(None), StarModel.dec_degrees < float(min_dec))
+                    .values(constellation_id=oct_id)
+                ).rowcount
+                or 0
+            )
+
+            if updated:
+                logger.info(f"Repaired {updated} polar-cap stars with missing constellation_id")
+                session.commit()
+    except Exception as e:
+        # Best-effort repair; never block app startup.
+        logger.debug(f"Polar-cap constellation repair skipped/failed: {e}")
+
+
 @deal.post(lambda result: result is not None, message="Database instance must be returned")
 def get_database(use_memory: bool | None = None) -> CatalogDatabase:
     """
@@ -2184,6 +2245,8 @@ def get_database(use_memory: bool | None = None) -> CatalogDatabase:
                     use_memory = False
 
         _database_instance = CatalogDatabase(use_memory=use_memory)
+        # Best-effort repair for known boundary-coverage holes near the poles (e.g., Polaris).
+        _repair_polar_constellation_holes(_database_instance)
     return _database_instance
 
 

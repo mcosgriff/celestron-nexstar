@@ -865,7 +865,11 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
         if rows and fetched_recently:
             return [
                 HourlySeeingForecast(
-                    timestamp=r.forecast_timestamp,
+                    timestamp=(
+                        r.forecast_timestamp.replace(tzinfo=UTC)
+                        if getattr(r.forecast_timestamp, "tzinfo", None) is None
+                        else r.forecast_timestamp.astimezone(UTC)
+                    ),
                     seeing_score=r.seeing_score or 50.0,
                     temperature_f=r.temperature_f,
                     dew_point_f=r.dew_point_f,
@@ -1039,7 +1043,11 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
         if db_rows_fallback:
             return [
                 HourlySeeingForecast(
-                    timestamp=r.forecast_timestamp,
+                    timestamp=(
+                        r.forecast_timestamp.replace(tzinfo=UTC)
+                        if getattr(r.forecast_timestamp, "tzinfo", None) is None
+                        else r.forecast_timestamp.astimezone(UTC)
+                    ),
                     seeing_score=r.seeing_score or 50.0,
                     temperature_f=r.temperature_f,
                     dew_point_f=r.dew_point_f,

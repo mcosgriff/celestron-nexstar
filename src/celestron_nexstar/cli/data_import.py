@@ -1093,6 +1093,28 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
         result_const = db_session.execute(stmt_const)
         constellation_id = result_const.scalar_one_or_none()
 
+        # Polar-cap fix: our constellation bounds geometries intentionally stop at about ±88.6639°,
+        # leaving the immediate polar caps uncovered (no polygon contains those points). That means
+        # stars like Polaris (Dec ~ +89.26°) end up with NULL constellation_id.
+        #
+        # If spatial lookup fails, assign objects beyond the boundary extrema to:
+        # - North polar cap: Ursa Minor (UMi)
+        # - South polar cap: Octans (Oct)
+        if constellation_id is None and hasattr(model_obj, "dec_degrees") and model_obj.dec_degrees is not None:
+            from sqlalchemy import func
+
+            max_dec = db_session.execute(select(func.max(ConstellationModel.dec_max_degrees))).scalar_one_or_none()
+            min_dec = db_session.execute(select(func.min(ConstellationModel.dec_min_degrees))).scalar_one_or_none()
+
+            if max_dec is not None and float(model_obj.dec_degrees) > float(max_dec):
+                constellation_id = db_session.execute(
+                    select(ConstellationModel.id).where(ConstellationModel.abbreviation == "UMi").limit(1)
+                ).scalar_one_or_none()
+            elif min_dec is not None and float(model_obj.dec_degrees) < float(min_dec):
+                constellation_id = db_session.execute(
+                    select(ConstellationModel.id).where(ConstellationModel.abbreviation == "Oct").limit(1)
+                ).scalar_one_or_none()
+
         # Find asterism using ST_Distance (point near MultiLineString)
         # MultiLineString geometries represent asterism patterns, so we check if the point
         # is within a reasonable distance (2 degrees) of any line segment

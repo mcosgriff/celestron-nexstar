@@ -347,7 +347,14 @@ class WeatherInfoDialog(QDialog):
             today_start_utc = today_start_local.astimezone(UTC)
 
             # Filter forecasts to only include today (from 12 AM to now)
-            forecasts = [f for f in all_forecasts if today_start_utc <= f.timestamp <= now_utc]
+            from dataclasses import replace
+
+            forecasts = []
+            for f in all_forecasts:
+                ts = f.timestamp
+                ts_utc = ts.replace(tzinfo=UTC) if getattr(ts, "tzinfo", None) is None else ts.astimezone(UTC)
+                if today_start_utc <= ts_utc <= now_utc:
+                    forecasts.append(replace(f, timestamp=ts_utc))
 
             if not forecasts:
                 logger.warning("No weather data available for charts")
