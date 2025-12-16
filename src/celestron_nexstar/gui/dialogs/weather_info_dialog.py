@@ -382,6 +382,8 @@ class WeatherInfoDialog(QDialog):
             # Create figure with subplots
             fig = Figure(figsize=(12, 10))
             canvas = FigureCanvas(fig)
+            # Improves hover responsiveness for interactive tooltips.
+            canvas.setMouseTracking(True)
 
             # Set theme colors
             is_dark = self._is_dark_theme()
@@ -418,7 +420,7 @@ class WeatherInfoDialog(QDialog):
             ax4 = fig.add_subplot(4, 1, 4)  # Wind Speed
 
             # Plot Temperature
-            ax1.plot(timestamps, temperatures, color="#ff6b6b", linewidth=2, label="Temperature")
+            (temp_line,) = ax1.plot(timestamps, temperatures, color="#ff6b6b", linewidth=2, label="Temperature")
             ax1.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5, label="Now")
             ax1.set_ylabel("Temperature (°F)", color=text_color)
             ax1.tick_params(colors=text_color)
@@ -428,7 +430,8 @@ class WeatherInfoDialog(QDialog):
 
             # Plot Cloud Cover
             ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
-            ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2)
+            # Use a non-legend label so the filled region remains the legend entry.
+            (cloud_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
             ax2.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax2.set_ylabel("Cloud Cover (%)", color=text_color)
             ax2.set_ylim(0, 100)
@@ -438,7 +441,7 @@ class WeatherInfoDialog(QDialog):
             ax2.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
 
             # Plot Humidity
-            ax3.plot(timestamps, humidity, color="#50c878", linewidth=2, label="Humidity")
+            (humidity_line,) = ax3.plot(timestamps, humidity, color="#50c878", linewidth=2, label="Humidity")
             ax3.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax3.set_ylabel("Humidity (%)", color=text_color)
             ax3.set_ylim(0, 100)
@@ -448,7 +451,7 @@ class WeatherInfoDialog(QDialog):
             ax3.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
 
             # Plot Wind Speed
-            ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="Wind Speed")
+            (wind_line,) = ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="Wind Speed")
             ax4.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax4.set_ylabel("Wind Speed (mph)", color=text_color)
             ax4.set_xlabel("Time", color=text_color)
@@ -470,6 +473,60 @@ class WeatherInfoDialog(QDialog):
             # Add extra left padding to prevent y-axis labels from being cut off
             fig.tight_layout(pad=2.0)  # Padding around the figure
             fig.subplots_adjust(hspace=0.4, left=0.12)  # More spacing between charts, left margin for y-axis labels
+
+            # Optional: interactive hover tooltips (like NWS graphical forecast).
+            # This is best-effort; if mplcursors isn't installed, charts still render normally.
+            try:
+                import mplcursors  # type: ignore[import-untyped]
+
+                line_units: dict[int, str] = {
+                    id(temp_line): "°F",
+                    id(cloud_line): "%",
+                    id(humidity_line): "%",
+                    id(wind_line): "mph",
+                }
+                line_names: dict[int, str] = {
+                    id(temp_line): "Temperature",
+                    id(cloud_line): "Cloud Cover",
+                    id(humidity_line): "Humidity",
+                    id(wind_line): "Wind Speed",
+                }
+
+                cursor = mplcursors.cursor([temp_line, cloud_line, humidity_line, wind_line], hover=True)
+
+                @cursor.connect("add")  # type: ignore[misc]
+                def _on_add(sel: Any) -> None:
+                    artist = sel.artist
+                    series = line_names.get(id(artist), "Value")
+                    unit = line_units.get(id(artist), "")
+
+                    try:
+                        idx = int(getattr(sel, "index", 0))
+                    except Exception:
+                        idx = 0
+
+                    try:
+                        x = artist.get_xdata()[idx]
+                        # x is datetime-like in our charts
+                        ts_local = x.astimezone(local_tz) if getattr(x, "tzinfo", None) else x
+                        time_str = ts_local.strftime("%H:%M")
+                    except Exception:
+                        time_str = ""
+
+                    y = float(sel.target[1]) if hasattr(sel, "target") else None
+                    if y is None:
+                        text = f"{series}"
+                    else:
+                        text = f"{series}\n{time_str}  {y:.1f}{(' ' + unit) if unit else ''}"
+
+                    sel.annotation.set_text(text)
+                    sel.annotation.get_bbox_patch().set_alpha(0.9)
+                    sel.annotation.get_bbox_patch().set_facecolor("#222222" if is_dark else "#ffffff")
+                    sel.annotation.get_bbox_patch().set_edgecolor("#777777" if is_dark else "#cccccc")
+                    sel.annotation.get_text().set_color("#ffffff" if is_dark else "#000000")
+            except Exception:
+                # Hover is optional; ignore if missing or unsupported backend.
+                pass
 
             # Add canvas to widget
             layout = self.charts_widget.layout()

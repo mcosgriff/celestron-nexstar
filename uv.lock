@@ -318,6 +318,7 @@ dependencies = [
     { name = "ibis-framework", extra = ["duckdb"] },
     { name = "matplotlib" },
     { name = "matplotlib-stubs" },
+    { name = "mplcursors" },
     { name = "nest-asyncio" },
     { name = "numpy" },
     { name = "openmeteo-requests" },
@@ -393,6 +394,7 @@ requires-dist = [
     { name = "ibis-framework", extras = ["duckdb"] },
     { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "matplotlib-stubs", specifier = ">=0.3.11" },
+    { name = "mplcursors", specifier = ">=0.5.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.18.2" },
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "numpy", specifier = ">=2.3.4" },
@@ -1733,6 +1735,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "mplcursors"
+version = "0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/4b/777032b40e5e41cd0c8dc1b4a9d4d760aacbb6f0aaec0bb8b5889bc88945/mplcursors-0.7.tar.gz", hash = "sha256:a4dda539931ff961498f98bd35386bf345954c6235849eb8981728d479b099a9", size = 88940, upload-time = "2025-09-02T09:14:59.385Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/e6/35e28d41f24c8ad071385709a7cbb983344387a92900e7b8a9b70b5e5599/mplcursors-0.7-py3-none-any.whl", hash = "sha256:140102df515e275f4df6c80c6dde4d22188c5fc30f38133444fa799a4716bd3f", size = 20556, upload-time = "2025-09-02T09:14:57.772Z" },
 ]
 
 [[package]]

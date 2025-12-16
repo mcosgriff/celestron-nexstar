@@ -63,6 +63,7 @@ dependencies = [
     "pyqt-toast-notification>=1.0.0",
     "matplotlib>=3.10.7",
     "matplotlib-stubs>=0.3.11",
+    "mplcursors>=0.5.3",
     "starplot>=0.7.0",
     "ibis-framework[duckdb]",
 ]
