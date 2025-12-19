@@ -2674,11 +2674,47 @@ def run_migrations(
             if db._engine is not None:
                 db._engine.dispose()
         except Exception as e:
-            console.print(f"[red]✗[/red] Failed to apply migrations: {e}")
-            import traceback
-
-            console.print(f"[dim]{traceback.format_exc()}[/dim]")
-            raise typer.Exit(code=1) from e
+            # If migration fails due to triggers referencing non-existent FTS table,
+            # drop the triggers and retry (common issue on fresh installs)
+            error_str = str(e)
+            if isinstance(e, Exception) and hasattr(e, "__cause__") and e.__cause__:
+                error_str += " " + str(e.__cause__)
+            if hasattr(e, "orig") and e.orig:
+                error_str += " " + str(e.orig)
+            error_msg = error_str.lower()
+            
+            if "objects_fts" in error_msg and ("trigger" in error_msg or "no such table" in error_msg):
+                console.print("[dim]Migration encountered trigger issue (this is normal for fresh installs). Fixing and retrying...[/dim]")
+                # Get a connection to drop triggers
+                db_temp = get_database()
+                try:
+                    db_temp._engine.dispose()
+                    
+                    def _drop_triggers() -> None:
+                        with db_temp._get_session() as session:
+                            from sqlalchemy import text
+                            
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                            session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                            session.commit()
+                    
+                    _drop_triggers()
+                    # Dispose again before retrying migration
+                    db_temp._engine.dispose()
+                    # Retry migration
+                    command.upgrade(alembic_cfg, upgrade_target)
+                    console.print("\n[bold green]✓ Migrations applied successfully![/bold green]\n")
+                except Exception as retry_error:
+                    console.print(f"[red]✗[/red] Failed to recover from trigger error: {retry_error}")
+                    import traceback
+                    console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                    raise typer.Exit(code=1) from retry_error
+            else:
+                console.print(f"[red]✗[/red] Failed to apply migrations: {e}")
+                import traceback
+                console.print(f"[dim]{traceback.format_exc()}[/dim]")
+                raise typer.Exit(code=1) from e
     except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
         # AttributeError: missing Alembic attributes
         # RuntimeError: migration errors

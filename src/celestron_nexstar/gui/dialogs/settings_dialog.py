@@ -76,6 +76,7 @@ class SettingsDialog(QDialog):
         self._create_optics_tab()
         self._create_time_tab()
         self._create_data_tab()
+        self._create_database_tab()
 
         # Track active download workers
         self._download_workers: dict[str, object] = {}
@@ -97,6 +98,7 @@ class SettingsDialog(QDialog):
         self._load_optics_info()
         self._load_time_info()
         self._load_data_info()
+        self._load_database_info()
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -172,10 +174,37 @@ class SettingsDialog(QDialog):
         header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(header)
 
+        # Quick download sets
+        sets_row = QHBoxLayout()
+        sets_row.addWidget(QLabel("Download set:"))
+        set_buttons = [
+            ("Basic", "minimal"),
+            ("Recommended", "recommended"),
+            ("Standard", "standard"),
+            ("Complete", "complete"),
+            ("Full", "full"),
+        ]
+        for label, set_name in set_buttons:
+            btn = QPushButton(label)
+            btn.setToolTip(f"Download ephemeris set: {set_name}")
+            btn.clicked.connect(lambda checked, s=set_name: self._on_download_ephemeris_set(s))
+            sets_row.addWidget(btn)
+        sets_row.addStretch()
+        layout.addLayout(sets_row)
+
+        # Sync metadata (all files)
+        sync_row = QHBoxLayout()
+        sync_all_btn = QPushButton("Sync Metadata")
+        sync_all_btn.setToolTip("Refresh ephemeris file metadata from NAIF for all files")
+        sync_all_btn.clicked.connect(self._on_sync_ephemeris_all)
+        sync_row.addWidget(sync_all_btn)
+        sync_row.addStretch()
+        layout.addLayout(sync_row)
+
         # Table for ephemeris files
         table = QTableWidget()
-        table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["File", "Status", "Size", "Coverage", "Download", "Sync"])
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["File", "Status", "Size", "Coverage", "Download"])
         autosize_table_columns(table, stretch_last=False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -506,6 +535,61 @@ class SettingsDialog(QDialog):
 
         self.tab_widget.addTab(widget, "Data")
 
+    def _create_database_tab(self) -> None:
+        """Create the database tab for migrations and stats."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        header = QLabel("Database")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(header)
+
+        info = QLabel(
+            "Manage the local database: create it if missing, apply Alembic migrations, "
+            "and view basic statistics."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        self.database_status_label = QLabel()
+        self.database_status_label.setWordWrap(True)
+        layout.addWidget(self.database_status_label)
+
+        self.database_migration_label = QLabel()
+        self.database_migration_label.setWordWrap(True)
+        layout.addWidget(self.database_migration_label)
+
+        self.database_stats_label = QLabel()
+        self.database_stats_label.setWordWrap(True)
+        layout.addWidget(self.database_stats_label)
+
+        btn_row = QHBoxLayout()
+        create_btn = QPushButton("Create DB + Apply Migrations")
+        create_btn.clicked.connect(self._on_database_create_and_migrate)
+        btn_row.addWidget(create_btn)
+
+        migrate_btn = QPushButton("Apply Migrations")
+        migrate_btn.clicked.connect(self._on_database_apply_migrations)
+        btn_row.addWidget(migrate_btn)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._load_database_info)
+        btn_row.addWidget(refresh_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        log_label = QLabel("Migration Output")
+        layout.addWidget(log_label)
+
+        log = QTextEdit()
+        log.setReadOnly(True)
+        log.setMinimumHeight(120)
+        self.database_log = log
+        layout.addWidget(log)
+
+        self.tab_widget.addTab(widget, "Database")
+
     @staticmethod
     def _format_bytes(num_bytes: int) -> str:
         """Format bytes as a human readable string."""
@@ -520,6 +604,178 @@ class SettingsDialog(QDialog):
                 return f"{size:.1f} {unit}"
             size /= 1024.0
         return f"{size:.1f} TB"
+
+    def _load_database_info(self) -> None:
+        """Load database status, migrations, and stats."""
+        try:
+            from alembic.config import Config
+            from alembic.runtime.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+            from sqlalchemy import create_engine
+
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.database.statistics import get_light_pollution_stats, get_tle_stats
+
+            db = get_database()
+            db_path = db.db_path
+            exists = db_path.exists()
+            size_str = f"{db_path.stat().st_size/1024/1024:.2f} MB" if exists else "n/a"
+            status_lines = [
+                f"<b>Path:</b> {db_path}",
+                f"<b>Exists:</b> {'Yes' if exists else 'No'}",
+                f"<b>Size:</b> {size_str}",
+            ]
+
+            alembic_cfg = Config("alembic.ini")
+            alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+            current_rev = None
+            heads: list[str] | None = None
+            pending: list[str] | None = None
+
+            engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+            try:
+                with engine.connect() as conn:
+                    context = MigrationContext.configure(conn)
+                    current_rev = context.get_current_revision()
+                script = ScriptDirectory.from_config(alembic_cfg)
+                heads = script.get_heads()
+                pending = list(script.iterate_revisions(heads, current_rev)) if heads else []
+            finally:
+                engine.dispose()
+
+            pending_list = [rev.revision for rev in pending] if pending else []
+            migration_text = (
+                f"<b>Current revision:</b> {current_rev or 'None'}<br>"
+                f"<b>Head(s):</b> {', '.join(heads) if heads else 'None'}<br>"
+                f"<b>Pending:</b> {', '.join(pending_list) if pending_list else 'None'}"
+            )
+
+            # Stats
+            lp_stats = get_light_pollution_stats()
+            tle_stats = get_tle_stats()
+            stats_parts = []
+            stats_parts.append(
+                f"<b>Light pollution:</b> "
+                f"{'table missing' if not lp_stats.table_exists else f'{lp_stats.total_count or 0:,} rows'}"
+            )
+            if lp_stats.table_exists and lp_stats.total_count:
+                regions_str = ", ".join(f"{r[0]} ({r[1]:,})" for r in (lp_stats.region_counts or [])) or "none"
+                stats_parts.append(f"Regions: {regions_str}")
+            stats_parts.append(
+                f"<b>TLE:</b> "
+                f"{'table missing' if not tle_stats.table_exists else f'{tle_stats.total_count or 0:,} rows'}"
+            )
+            stats_text = "<br>".join(stats_parts)
+
+            self.database_status_label.setText("<br>".join(status_lines))
+            self.database_migration_label.setText(migration_text)
+            self.database_stats_label.setText(stats_text)
+        except Exception as e:
+            logger.error(f"Error loading database info: {e}", exc_info=True)
+            self.database_status_label.setText(f"Error loading database info: {e}")
+
+    def _on_database_create_and_migrate(self) -> None:
+        """Create DB if needed and apply migrations."""
+        self._run_database_action(create_if_missing=True)
+
+    def _on_database_apply_migrations(self) -> None:
+        """Apply migrations to existing DB."""
+        self._run_database_action(create_if_missing=False)
+
+    def _run_database_action(self, create_if_missing: bool) -> None:
+        """Run migrations (and optionally create DB) with UI updates."""
+        try:
+            msg, applied = self._apply_migrations(create_if_missing=create_if_missing)
+            applied_str = ", ".join(applied) if applied else "None"
+            self.database_log.setPlainText(msg)
+            self._show_toast(
+                f"Database updated. Applied migrations: {applied_str}",
+                duration_ms=4000,
+                preset="success",
+            )
+        except Exception as e:
+            logger.error(f"Database action failed: {e}", exc_info=True)
+            self.database_log.setPlainText(str(e))
+            self._show_toast(f"Database action failed: {e}", duration_ms=4000, preset="error")
+        finally:
+            self._load_database_info()
+
+    def _apply_migrations(self, create_if_missing: bool) -> tuple[str, list[str]]:
+        """Apply Alembic migrations, returning log text and applied revisions."""
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
+        from alembic import command  # type: ignore[attr-defined]
+        from sqlalchemy import create_engine, text
+
+        from celestron_nexstar.api.database.database import get_database
+
+        db = get_database()
+        db_path = db.db_path
+        if create_if_missing and not db_path.exists():
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            db_path.touch()
+
+        alembic_cfg = Config("alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+        engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+
+        current_rev = None
+        pending_revs: list[str] = []
+
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            current_rev = context.get_current_revision()
+
+        script = ScriptDirectory.from_config(alembic_cfg)
+        heads = script.get_heads()
+        if heads:
+            pending = list(script.iterate_revisions(heads, current_rev))
+            pending_revs = [rev.revision for rev in pending]
+
+        log_lines = [
+            f"DB Path: {db_path}",
+            f"Current revision: {current_rev or 'None'}",
+            f"Target head(s): {', '.join(heads) if heads else 'None'}",
+            f"Pending: {', '.join(pending_revs) if pending_revs else 'None'}",
+            "Applying migrations...",
+        ]
+
+        try:
+            try:
+                command.upgrade(alembic_cfg, "heads")
+            except Exception as e:
+                error_str = str(e)
+                if hasattr(e, "__cause__") and e.__cause__:
+                    error_str += f" {e.__cause__}"
+                if hasattr(e, "orig") and getattr(e, "orig", None):
+                    error_str += f" {e.orig}"
+                error_msg = error_str.lower()
+                if "objects_fts" in error_msg and ("trigger" in error_msg or "no such table" in error_msg):
+                    log_lines.append("Encountered FTS trigger issue; dropping triggers and retrying.")
+                    with engine.connect() as conn:
+                        conn.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
+                        conn.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
+                        conn.execute(text("DROP TRIGGER IF EXISTS objects_au"))
+                        conn.commit()
+                    command.upgrade(alembic_cfg, "heads")
+                else:
+                    raise
+        finally:
+            engine.dispose()
+
+        # Determine new revision after upgrade
+        engine2 = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+        new_rev = None
+        with engine2.connect() as conn:
+            context = MigrationContext.configure(conn)
+            new_rev = context.get_current_revision()
+        engine2.dispose()
+
+        log_lines.append(f"Completed. Current revision: {new_rev or 'None'}")
+        return "\n".join(log_lines), pending_revs
 
     def _load_config_info(self) -> None:
         """Load user-config values into the Config tab."""
@@ -616,18 +872,6 @@ class SettingsDialog(QDialog):
                 )
                 download_btn.clicked.connect(lambda checked, key=file_key: self._on_download_ephemeris_file(key))
                 table.setCellWidget(row, 4, download_btn)
-
-                # Sync button (syncs metadata to database)
-                sync_btn = QPushButton("Sync")
-                sync_btn.setFixedWidth(80)
-                sync_btn.setEnabled(installed)  # Only enable if file is downloaded
-                sync_btn.setToolTip(
-                    "Sync ephemeris file metadata from NAIF to the database. "
-                    "This updates file information, coverage dates, and descriptions. "
-                    "Only available after the file has been downloaded."
-                )
-                sync_btn.clicked.connect(lambda checked, key=file_key: self._on_sync_ephemeris_file(key))
-                table.setCellWidget(row, 5, sync_btn)
 
             table.resizeColumnsToContents()
 
@@ -830,13 +1074,8 @@ class SettingsDialog(QDialog):
             table.setRowCount(len(celestial_sources))
 
             filename_map = {
-                "celestial_stars_6": "stars.6.min.geojson",
-                "celestial_stars_8": "stars.8.min.geojson",
                 "celestial_stars_14": "stars.14.min.geojson",
-                "celestial_dsos_6": "dsos.6.min.geojson",
-                "celestial_dsos_14": "dsos.14.min.geojson",
                 "celestial_dsos_20": "dsos.20.min.geojson",
-                "celestial_dsos_bright": "dsos.bright.min.geojson",
                 "celestial_messier": "messier.min.geojson",
                 "celestial_asterisms": "asterisms.min.geojson",
                 "celestial_constellations": "constellations.min.geojson",
@@ -978,9 +1217,12 @@ class SettingsDialog(QDialog):
             from sqlalchemy import func, select
 
             from celestron_nexstar.api.database.models import (
+                BortleCharacteristicsModel,
                 ConstellationModel,
                 DarkSkySiteModel,
                 MeteorShowerModel,
+                MoonModel,
+                PlanetModel,
                 SpaceEventModel,
                 StarNameMappingModel,
                 get_db_session,
@@ -1002,6 +1244,21 @@ class SettingsDialog(QDialog):
                     "id": "constellations",
                     "name": "Constellations",
                     "description": "Constellation reference data (names, abbreviations, mythology)",
+                },
+                {
+                    "id": "planets",
+                    "name": "Planets",
+                    "description": "Planetary reference data (core solar system bodies)",
+                },
+                {
+                    "id": "moons",
+                    "name": "Moons",
+                    "description": "Major planetary moons (ephemeris-linked)",
+                },
+                {
+                    "id": "bortle_characteristics",
+                    "name": "Bortle Characteristics",
+                    "description": "Reference characteristics for Bortle classes 1-9",
                 },
                 {
                     "id": "dark_sky_sites",
@@ -1028,11 +1285,20 @@ class SettingsDialog(QDialog):
                         elif seed_id == "constellations":
                             count = session.scalar(select(func.count(ConstellationModel.id)))
                             return int(count or 0)
+                        elif seed_id == "planets":
+                            count = session.scalar(select(func.count(PlanetModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "moons":
+                            count = session.scalar(select(func.count(MoonModel.id)))
+                            return int(count or 0)
                         elif seed_id == "dark_sky_sites":
                             count = session.scalar(select(func.count(DarkSkySiteModel.id)))
                             return int(count or 0)
                         elif seed_id == "space_events":
                             count = session.scalar(select(func.count(SpaceEventModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "bortle_characteristics":
+                            count = session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
                             return int(count or 0)
                 except Exception:
                     return 0
@@ -1621,6 +1887,28 @@ class SettingsDialog(QDialog):
         self._download_workers[worker_key] = worker
         worker.start()
 
+    def _on_download_ephemeris_set(self, set_name: str) -> None:
+        """Download an ephemeris set (e.g., recommended, standard, full)."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadEphemerisSetThread
+
+        worker_key = f"ephemeris_set_{set_name}"
+        if worker_key in self._download_workers:
+            return
+
+        worker = DownloadEphemerisSetThread(set_name=set_name, force=False)
+
+        worker.progress_updated.connect(
+            lambda status, current, total, s=set_name: self._on_ephemeris_set_progress(s, status, current, total)
+        )
+        worker.download_complete.connect(
+            lambda key, success, message: self._on_ephemeris_set_complete(key, success, message)
+        )
+        worker.error_occurred.connect(lambda key, error: self._on_ephemeris_set_error(key, error))
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
     def _on_ephemeris_progress(self, file_key: str, status: str, current: int, total: int) -> None:
         """Handle ephemeris download progress update."""
         # Update progress bar and status label
@@ -1660,6 +1948,40 @@ class SettingsDialog(QDialog):
         logger.error(f"Ephemeris download error for {file_key}: {error}")
         self._show_toast(f"Ephemeris download error: {error}", duration_ms=4000, preset="error")
 
+    def _on_ephemeris_set_progress(self, set_name: str, status: str, current: int, total: int) -> None:
+        """Handle ephemeris set download progress update."""
+        if total > 0:
+            percentage = int((current / total) * 100) if total > 0 else 0
+            self.ephemeris_progress.setValue(percentage)
+            self.ephemeris_progress.setVisible(True)
+        else:
+            self.ephemeris_progress.setValue(0)
+            self.ephemeris_progress.setVisible(True)
+
+        if status:
+            self.ephemeris_status_label.setText(status)
+            self.ephemeris_status_label.setVisible(True)
+
+    def _on_ephemeris_set_complete(self, set_name: str, success: bool, message: str) -> None:
+        """Handle ephemeris set download completion."""
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+
+        if success:
+            logger.info(f"Ephemeris set download complete: {message}")
+            self._load_ephemeris_info()
+            self._show_toast(f"Ephemeris set downloaded: {message}", duration_ms=3000, preset="success")
+        else:
+            logger.error(f"Ephemeris set download failed: {message}")
+            self._show_toast(f"Ephemeris set download failed: {message}", duration_ms=4000, preset="error")
+
+    def _on_ephemeris_set_error(self, set_name: str, error: str) -> None:
+        """Handle ephemeris set download error."""
+        self.ephemeris_progress.setVisible(False)
+        self.ephemeris_status_label.setVisible(False)
+        logger.error(f"Ephemeris set download error for {set_name}: {error}")
+        self._show_toast(f"Ephemeris set download error: {error}", duration_ms=4000, preset="error")
+
     def _on_sync_ephemeris_file(self, file_key: str) -> None:
         """Handle ephemeris file sync button click."""
         # Sync ephemeris metadata to database
@@ -1679,6 +2001,25 @@ class SettingsDialog(QDialog):
             lambda success, message: self._on_ephemeris_sync_complete(file_key, success, message)
         )
         worker.error_occurred.connect(lambda error: self._on_ephemeris_sync_error(file_key, error))
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_sync_ephemeris_all(self) -> None:
+        """Sync ephemeris metadata for all files."""
+        from celestron_nexstar.gui.workers.download_workers import SyncEphemerisThread
+
+        worker_key = "ephemeris_sync_all"
+        if worker_key in self._download_workers:
+            return
+
+        worker = SyncEphemerisThread(force=False)
+        worker.progress_updated.connect(
+            lambda status, current, total: self._on_ephemeris_sync_progress("all", status, current, total)
+        )
+        worker.sync_complete.connect(lambda success, message: self._on_ephemeris_sync_complete("all", success, message))
+        worker.error_occurred.connect(lambda error: self._on_ephemeris_sync_error("all", error))
         worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
 
         self._download_workers[worker_key] = worker
@@ -2090,13 +2431,8 @@ class SettingsDialog(QDialog):
 
             # Delete the GeoJSON file
             filename_map = {
-                "celestial_stars_6": "stars.6.min.geojson",
-                "celestial_stars_8": "stars.8.min.geojson",
                 "celestial_stars_14": "stars.14.min.geojson",
-                "celestial_dsos_6": "dsos.6.min.geojson",
-                "celestial_dsos_14": "dsos.14.min.geojson",
                 "celestial_dsos_20": "dsos.20.min.geojson",
-                "celestial_dsos_bright": "dsos.bright.min.geojson",
                 "celestial_messier": "messier.min.geojson",
                 "celestial_asterisms": "asterisms.min.geojson",
                 "celestial_constellations": "constellations.min.geojson",
@@ -2132,9 +2468,12 @@ class SettingsDialog(QDialog):
     def _on_reimport_seed_data(self, seed_id: str) -> None:
         """Handle seed data re-import button click."""
         from celestron_nexstar.api.database.database_seeder import (
+            seed_bortle_characteristics,
             seed_constellations,
             seed_dark_sky_sites,
             seed_meteor_showers,
+            seed_moons,
+            seed_planets,
             seed_space_events,
             seed_star_name_mappings,
         )
@@ -2145,8 +2484,11 @@ class SettingsDialog(QDialog):
             "star_name_mappings": (seed_star_name_mappings, "Star Name Mappings"),
             "meteor_showers": (seed_meteor_showers, "Meteor Showers"),
             "constellations": (seed_constellations, "Constellations"),
+            "planets": (seed_planets, "Planets"),
+            "moons": (seed_moons, "Moons"),
             "dark_sky_sites": (seed_dark_sky_sites, "Dark Sky Sites"),
             "space_events": (seed_space_events, "Space Events"),
+            "bortle_characteristics": (seed_bortle_characteristics, "Bortle Characteristics"),
         }
 
         if seed_id not in seed_map:
@@ -2690,8 +3032,9 @@ class SettingsDialog(QDialog):
         def on_progress(status: str, current: int, total: int) -> None:
             self._on_light_pollution_import_progress(region, status, current, total)
 
-        def on_complete(success: bool, message: str, points: int) -> None:
-            self._on_light_pollution_import_complete(region, success, message, points)
+        def on_complete(sig_region: str, success: bool, message: str, points: int) -> None:
+            # Signal emits (region, success, message, points); prefer emitted region
+            self._on_light_pollution_import_complete(sig_region, success, message, points)
             self._download_workers.pop(worker_key, None)
             self.light_pollution_progress.setVisible(False)
 

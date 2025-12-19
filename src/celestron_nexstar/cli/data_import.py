@@ -386,6 +386,7 @@ def import_celestial_data_geojson(
     object_enhancer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     progress_callback: Callable[[str, int, int], None] | None = None,
     status_callback: Callable[[str], None] | None = None,
+    truncate_catalog: bool = False,
 ) -> tuple[int, int]:
     """
     Import celestial data from a GeoJSON file.
@@ -405,6 +406,33 @@ def import_celestial_data_geojson(
         (imported_count, skipped_count)
     """
     db = get_database()
+
+    # Optionally truncate existing rows for this catalog to avoid stale entries from prior snapshots.
+    if truncate_catalog:
+        from sqlalchemy import delete
+
+        from celestron_nexstar.api.database.models import (
+            ClusterModel,
+            GalaxyModel,
+            NebulaModel,
+            StarModel,
+            DoubleStarModel,
+            PlanetModel,
+            MoonModel,
+        )
+
+        with db._get_session() as session:
+            for model in (
+                StarModel,
+                DoubleStarModel,
+                GalaxyModel,
+                NebulaModel,
+                ClusterModel,
+                PlanetModel,
+                MoonModel,
+            ):
+                session.execute(delete(model).where(model.catalog == catalog))
+            session.commit()
 
     # Pre-fetch existing objects for deduplication
     status_msg = f"Loading existing {catalog} objects for deduplication..."
@@ -1197,6 +1225,14 @@ def import_celestial_stars(
     # Import stars with name enhancement
     db = get_database()
 
+    # Truncate existing celestial_stars rows for a clean re-import
+    from sqlalchemy import delete
+    from celestron_nexstar.api.database.models import StarModel
+
+    with db._get_session() as session:
+        session.execute(delete(StarModel).where(StarModel.catalog == "celestial_stars"))
+        session.commit()
+
     # Pre-fetch existing objects for deduplication
     status_msg = "Loading existing stars for deduplication..."
     console.print(f"[dim]{status_msg}[/dim]")
@@ -1343,6 +1379,13 @@ def import_celestial_stars(
                         or (name.isdigit() and int(name) == star_id)
                     ):
                         name = common_name or name
+
+                # Human-friendly fallback for unnamed stars (e.g., celestial_stars_109492)
+                if name.startswith("celestial_stars_") or (name.isdigit() and star_id and int(name) == star_id):
+                    pretty = f"Star {star_id}" if star_id else "Star"
+                    if magnitude is not None:
+                        pretty = f"{pretty} (mag {magnitude:.2f})"
+                    name = pretty
 
                 # Extract magnitude
                 magnitude = None
@@ -1639,6 +1682,26 @@ def import_celestial_dsos(
             # If the name is just a catalog ID, we could optionally update it
             # For now, we'll keep the catalog ID as name and set proper name as common_name
 
+        # Fallback: if no common_name was set, reuse the provided name (helps search)
+        if not obj.get("common_name") and obj.get("name"):
+            obj["common_name"] = obj["name"]
+
+        # Collect aliases from fields present in the source
+        aliases: list[str] = []
+        for key in ("name", "id", "desig"):
+            val = obj.get(key)
+            if isinstance(val, str):
+                val = val.strip()
+                if val:
+                    aliases.append(val)
+        # Deduplicate while preserving order
+        seen_aliases: set[str] = set()
+        unique_aliases = []
+        for alias in aliases:
+            if alias not in seen_aliases:
+                seen_aliases.add(alias)
+                unique_aliases.append(alias)
+
         # Replace abbreviated type codes in description with descriptive names
         description = obj.get("description", "")
         if description:
@@ -1653,6 +1716,15 @@ def import_celestial_dsos(
                     # Replace the abbreviation with the descriptive name
                     descriptive_name = dso_type_descriptions[type_code]
                     obj["description"] = description.replace(f"Type: {type_code}", f"Type: {descriptive_name}")
+                    description = obj["description"]
+
+        # Append alias list into description so substring search can match common catalog IDs (e.g., M 42 / NGC 1976)
+        if unique_aliases:
+            alias_text = "; ".join(unique_aliases)
+            if description:
+                obj["description"] = f"{description}\nAliases: {alias_text}"
+            else:
+                obj["description"] = f"Aliases: {alias_text}"
 
         return obj
 
@@ -1666,6 +1738,7 @@ def import_celestial_dsos(
         object_enhancer=enhance_dso_object,
         progress_callback=progress_callback,
         status_callback=status_callback,
+        truncate_catalog=True,
     )
 
 
@@ -1684,6 +1757,7 @@ def import_celestial_messier(
         verbose=verbose,
         progress_callback=progress_callback,
         status_callback=status_callback,
+        truncate_catalog=True,
     )
 
 
@@ -1737,7 +1811,12 @@ def import_celestial_local_group(geojson_path: Path, mag_limit: float = 15.0, ve
         "Galaxy": CelestialObjectType.GALAXY,
     }
     return import_celestial_data_geojson(
-        geojson_path, catalog="local_group", mag_limit=mag_limit, verbose=verbose, object_type_map=lg_type_map
+        geojson_path,
+        catalog="local_group",
+        mag_limit=mag_limit,
+        verbose=verbose,
+        object_type_map=lg_type_map,
+        truncate_catalog=True,
     )
 
 
@@ -1759,7 +1838,7 @@ def import_celestial_constellations(
         (imported_count, skipped_count)
     """
 
-    from sqlalchemy import select
+    from sqlalchemy import delete, select
 
     from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
 
@@ -1800,6 +1879,11 @@ def import_celestial_constellations(
         interval_start_deg = gap_end % 360.0
         interval_end_deg = gap_start % 360.0
         return (interval_start_deg / 15.0, interval_end_deg / 15.0)
+
+    # Truncate constellations for clean re-import
+    with get_db_session() as db_session:
+        db_session.execute(delete(ConstellationModel))
+        db_session.commit()
 
     imported = 0
     skipped = 0
@@ -2226,6 +2310,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     """
 
     from celestron_nexstar.api.database.models import AsterismModel, get_db_session
+    from sqlalchemy import delete
 
     imported = 0
     skipped = 0
@@ -2255,7 +2340,12 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
     def _import() -> tuple[int, int]:
         nonlocal imported, skipped, errors, all_asterisms
 
-        # Pre-fetch existing asterisms for deduplication
+        # Truncate asterisms to ensure clean re-import
+        with get_db_session() as db_session:
+            db_session.execute(delete(AsterismModel))
+            db_session.commit()
+
+        # Pre-fetch existing asterisms for deduplication (should be empty after truncate)
         existing_names: set[str] = set()
         with get_db_session() as db_session:
             from sqlalchemy import select
@@ -3247,15 +3337,6 @@ DATA_SOURCES: dict[str, DataSource] = {
         attribution="Olaf Frohn and Diego Hernangómez",
         importer=lambda path, mag, verbose: import_celestial_dsos(path, mag, verbose),
     ),
-    "celestial_dsos_bright": DataSource(
-        name="Celestial Data - Bright DSOs",
-        description="Hand-selected bright deep sky objects from celestial_data",
-        url="https://github.com/dieghernan/celestial_data",
-        objects_available=200,  # Approximate
-        license="BSD-3-Clause",
-        attribution="Olaf Frohn and Diego Hernangómez",
-        importer=lambda path, mag, verbose: import_celestial_dsos(path, mag, verbose),
-    ),
     "celestial_messier": DataSource(
         name="Celestial Data - Messier Objects",
         description="Messier catalog from celestial_data repository",
@@ -3475,13 +3556,8 @@ def import_data_source(source_id: str, mag_limit: float = 15.0, force_download: 
     if source_id.startswith("celestial_"):
         # Map celestial_data source IDs to filenames
         filename_map = {
-            "celestial_stars_6": "stars.6.min.geojson",
-            "celestial_stars_8": "stars.8.min.geojson",
             "celestial_stars_14": "stars.14.min.geojson",
-            "celestial_dsos_6": "dsos.6.min.geojson",
-            "celestial_dsos_14": "dsos.14.min.geojson",
             "celestial_dsos_20": "dsos.20.min.geojson",
-            "celestial_dsos_bright": "dsos.bright.min.geojson",
             "celestial_messier": "messier.min.geojson",
             "celestial_asterisms": "asterisms.min.geojson",
             "celestial_constellations": "constellations.min.geojson",

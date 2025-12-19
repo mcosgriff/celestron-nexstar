@@ -444,8 +444,9 @@ class DownloadEphemerisSetThread(QThread):
         """Download ephemeris set in background thread."""
         try:
             from celestron_nexstar.api.ephemeris.ephemeris_manager import (
+                EPHEMERIS_FILES,
                 EPHEMERIS_SETS,
-                download_set,
+                download_file,
                 get_set_info,
             )
 
@@ -454,17 +455,27 @@ class DownloadEphemerisSetThread(QThread):
                 return
 
             set_info = get_set_info(self.set_name)
-            file_count = set_info["file_count"]
+            file_count: int = set_info["file_count"]
+            file_keys = EPHEMERIS_SETS[self.set_name]
             self.progress_updated.emit(f"Downloading {self.set_name} set ({file_count} files)...", 0, file_count)
 
-            # Download the set
-            set_name = cast(Literal["recommended", "minimal", "standard", "complete", "full"], self.set_name)
-            downloaded = download_set(set_name, force=self.force)
+            downloaded_paths = []
+            for idx, file_key in enumerate(file_keys, start=1):
+                if file_key not in EPHEMERIS_FILES:
+                    # Skip unknown file keys but keep going
+                    continue
+                info = EPHEMERIS_FILES[file_key]
+                status = f"Downloading {info.display_name} ({idx}/{file_count})"
+                self.progress_updated.emit(status, idx - 1, file_count)
+                path = download_file(file_key, force=self.force)
+                downloaded_paths.append(path)
+                # Update after each file
+                self.progress_updated.emit(f"Downloaded {info.display_name}", idx, file_count)
 
-            self.progress_updated.emit(f"Downloaded {self.set_name} set", file_count, file_count)
-            total_size = sum(p.stat().st_size for p in downloaded) / (1024 * 1024)
+            # Final completion
+            total_size = sum(p.stat().st_size for p in downloaded_paths) / (1024 * 1024) if downloaded_paths else 0.0
             self.download_complete.emit(
-                self.set_name, True, f"Downloaded {len(downloaded)} files ({total_size:.1f} MB total)"
+                self.set_name, True, f"Downloaded {len(downloaded_paths)} files ({total_size:.1f} MB total)"
             )
         except Exception as e:
             logger.error(f"Error downloading ephemeris set {self.set_name}: {e}", exc_info=True)
@@ -498,13 +509,8 @@ class DownloadCelestialDataThread(QThread):
 
             # Map source IDs to filenames
             filename_map = {
-                "celestial_stars_6": "stars.6.min.geojson",
-                "celestial_stars_8": "stars.8.min.geojson",
                 "celestial_stars_14": "stars.14.min.geojson",
-                "celestial_dsos_6": "dsos.6.min.geojson",
-                "celestial_dsos_14": "dsos.14.min.geojson",
                 "celestial_dsos_20": "dsos.20.min.geojson",
-                "celestial_dsos_bright": "dsos.bright.min.geojson",
                 "celestial_messier": "messier.min.geojson",
                 "celestial_asterisms": "asterisms.min.geojson",
                 "celestial_constellations": "constellations.min.geojson",
@@ -749,13 +755,8 @@ class ImportCelestialDataThread(QThread):
 
             # Map source IDs to filenames
             filename_map = {
-                "celestial_stars_6": "stars.6.min.geojson",
-                "celestial_stars_8": "stars.8.min.geojson",
                 "celestial_stars_14": "stars.14.min.geojson",
-                "celestial_dsos_6": "dsos.6.min.geojson",
-                "celestial_dsos_14": "dsos.14.min.geojson",
                 "celestial_dsos_20": "dsos.20.min.geojson",
-                "celestial_dsos_bright": "dsos.bright.min.geojson",
                 "celestial_messier": "messier.min.geojson",
                 "celestial_asterisms": "asterisms.min.geojson",
                 "celestial_constellations": "constellations.min.geojson",

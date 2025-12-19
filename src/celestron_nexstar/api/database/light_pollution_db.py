@@ -136,8 +136,20 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
 
         # Ensure spatial index exists (SpatiaLite requirement)
         try:
-            # Try to create spatial index if it doesn't exist
-            conn.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
+            # Check if spatial index already exists to avoid noisy errors.
+            # SpatiaLite creates an RTree table named idx_<table>_<column> (type='table')
+            # and also registers an entry in sqlite_master (sometimes as type='index').
+            index_exists = conn.execute(
+                text(
+                    """
+                    SELECT name FROM sqlite_master
+                    WHERE name='idx_light_pollution_grid_geometry'
+                    """
+                )
+            ).fetchone()
+
+            if not index_exists:
+                conn.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
         except Exception as e:
             # Check if it's because SpatiaLite isn't available
             error_msg = str(e).lower()
@@ -150,7 +162,13 @@ def _create_light_pollution_table(db: CatalogDatabase) -> None:
                     "  Linux: apt-get install spatialite-bin libspatialite-dev\n"
                     "  Or download from: https://www.gaia-gis.it/fossil/libspatialite/"
                 ) from e
-            # Index might already exist, which is fine
+
+            # If the spatial index is already defined or geometry is already indexed, ignore.
+            if "spatialindex is already defined" in error_msg or "isn't a geometry column" in error_msg:
+                logger.debug(f"Spatial index already present or geometry already indexed: {e}")
+                return
+
+            # Otherwise just log; this is non-fatal for import.
             logger.debug(f"Spatial index check: {e}")
 
 
@@ -819,10 +837,25 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
                 try:
                     # Ensure spatial index exists (SpatiaLite requirement)
                     # This is usually handled by GeoAlchemy2, but we ensure it here
-                    session.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
-                    session.commit()
+                    index_exists = session.execute(
+                        text(
+                            """
+                            SELECT name FROM sqlite_master
+                            WHERE name='idx_light_pollution_grid_geometry'
+                            """
+                        )
+                    ).fetchone()
+
+                    if not index_exists:
+                        session.execute(text("SELECT CreateSpatialIndex('light_pollution_grid', 'geometry')"))
+                        session.commit()
                 except Exception as e:
-                    # Index might already exist, which is fine
+                    error_msg = str(e).lower()
+                    # Index might already exist or geometry already indexed; ignore these cases
+                    if "spatialindex is already defined" in error_msg or "isn't a geometry column" in error_msg:
+                        logger.debug(f"Spatial index already present or geometry already indexed: {e}")
+                        session.rollback()
+                        return
                     logger.debug(f"Spatial index check: {e}")
                     session.rollback()
     except Exception as e:

@@ -2,9 +2,13 @@
 Dialog to display detailed information about a celestial object.
 """
 
+import base64
+import io
 import logging
+import re
 from typing import TYPE_CHECKING, Any, cast
 
+from PySide6.QtCore import QThread, Signal, Slot, Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -23,6 +27,92 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class DSOMapWorker(QThread):
+    """Background worker to generate a starplot map for DSOs."""
+
+    map_ready = Signal(bytes)
+    error = Signal(str)
+
+    def __init__(self, ra_hours: float, dec_degrees: float, is_dark: bool) -> None:
+        super().__init__()
+        self.ra_hours = ra_hours
+        self.dec_degrees = dec_degrees
+        self.is_dark = is_dark
+
+    def run(self) -> None:
+        try:
+            from starplot import LambertAzEqArea, MapPlot, _  # type: ignore[import-untyped]
+            from starplot.styles import PlotStyle, extensions  # type: ignore[import-untyped]
+
+            # Build style
+            if self.is_dark:
+                plot_style = PlotStyle().extend(extensions.BLUE_DARK, extensions.MAP)
+            else:
+                plot_style = PlotStyle().extend(extensions.BLUE_LIGHT, extensions.MAP)
+
+            # Center on object; small FoV for context using MapPlot's RA/Dec bounds
+            ra_deg = (self.ra_hours * 15.0) % 360.0
+            dec_deg = float(self.dec_degrees)
+            fov_deg = 12.0
+
+            # Clamp declination and build a tight window
+            dec_min = max(-90.0, dec_deg - fov_deg / 2.0)
+            dec_max = min(90.0, dec_deg + fov_deg / 2.0)
+
+            # Keep RA span narrow and normalized
+            ra_min = ra_deg - fov_deg / 2.0
+            ra_max = ra_deg + fov_deg / 2.0
+            while ra_min < 0.0:
+                ra_min += 360.0
+                ra_max += 360.0
+            while ra_min >= 360.0:
+                ra_min -= 360.0
+                ra_max -= 360.0
+            if ra_max <= ra_min:
+                ra_max = ra_min + fov_deg
+
+            projection = LambertAzEqArea(center_ra=ra_deg, center_dec=dec_deg)
+            plot = MapPlot(
+                projection=projection,
+                ra_min=ra_min,
+                ra_max=ra_max,
+                dec_min=dec_min,
+                dec_max=dec_max,
+                style=plot_style,
+                resolution=2200,
+                autoscale=False,
+                scale=1.1,
+            )
+
+            # Add sky context: constellations + DSOs around the target
+            plot.gridlines()
+            plot.constellations()
+            plot.constellation_borders()
+            plot.stars(  # type: ignore[arg-type]
+                where=[_.magnitude < 9],
+                bayer_labels=True,
+                flamsteed_labels=True,
+            )
+            plot.galaxies(where=[(_.magnitude.isnull()) | (_.magnitude < 12)])  # type: ignore[arg-type]
+            plot.nebula(where=[(_.magnitude.isnull()) | (_.magnitude < 12)], true_size=True)  # type: ignore[arg-type]
+            plot.open_clusters(  # type: ignore[arg-type]
+                where=[(_.magnitude.isnull()) | (_.magnitude < 11)],
+                true_size=False,
+            )
+            plot.globular_clusters(  # type: ignore[arg-type]
+                where=[(_.magnitude.isnull()) | (_.magnitude < 11)],
+                true_size=True,
+            )
+
+            fig = plot.fig
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+            buf.seek(0)
+            self.map_ready.emit(buf.read())
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class ObjectInfoDialog(QDialog):
     """Dialog to display detailed information about a celestial object."""
 
@@ -39,6 +129,12 @@ class ObjectInfoDialog(QDialog):
         self.object_ra_hours: float | None = None  # Will be set when object info is loaded
         self.object_dec_degrees: float | None = None  # Will be set when object info is loaded
         self.object: CelestialObject | None = None  # Will be set when object info is loaded
+        self._dso_map_worker: DSOMapWorker | None = None
+        self._dso_map_placeholder_id = "dso-map-placeholder"
+        self._dso_map_placeholder = (
+            f"<p id='{self._dso_map_placeholder_id}' style='margin-left:20px; color: #888;'>"
+            "Generating finder map…</p>"
+        )
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -47,6 +143,10 @@ class ObjectInfoDialog(QDialog):
         self.info_text = QTextEdit()
         self.info_text.setReadOnly(True)
         self.info_text.setAcceptRichText(True)
+        # Only show scrollbars when needed; avoid always-on bar
+        self.info_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.info_text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.info_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         layout.addWidget(self.info_text)
 
         # Add button box with favorite toggle
@@ -702,6 +802,19 @@ class ObjectInfoDialog(QDialog):
             html_content = "".join(html_parts)
             self.info_text.setHtml(html_content)
 
+            # Start DSO map worker for galaxies/nebulae/clusters if coordinates available
+            if obj.object_type.value in {"galaxy", "nebula", "cluster"} and (
+                obj.ra_hours is not None and obj.dec_degrees is not None
+            ):
+                # Insert placeholder into the existing HTML
+                map_header = (
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                    "Finder Map:</p>"
+                )
+                html_with_placeholder = html_content + map_header + self._dso_map_placeholder
+                self.info_text.setHtml(html_with_placeholder)
+                self._start_dso_map_worker(obj.ra_hours, obj.dec_degrees)
+
             # Store object type for favorite button
             if hasattr(obj, "object_type") and obj.object_type:
                 self.object_type = obj.object_type.value
@@ -719,6 +832,77 @@ class ObjectInfoDialog(QDialog):
         # Update favorite button and optic plot button after loading
         self._update_favorite_button()
         self._update_optic_plot_button()
+
+    def _start_dso_map_worker(self, ra_hours: float, dec_degrees: float) -> None:
+        """Start background worker to generate DSO map."""
+        self._stop_dso_map_worker()
+        worker = DSOMapWorker(ra_hours=ra_hours, dec_degrees=dec_degrees, is_dark=self._is_dark_theme())
+        worker.map_ready.connect(self._on_dso_map_ready)
+        worker.error.connect(self._on_dso_map_error)
+        self._dso_map_worker = worker
+        worker.start()
+
+    def _stop_dso_map_worker(self) -> None:
+        """Stop DSO map worker if running."""
+        if self._dso_map_worker is not None:
+            try:
+                if self._dso_map_worker.isRunning():
+                    self._dso_map_worker.requestInterruption()
+                    self._dso_map_worker.quit()
+                    self._dso_map_worker.wait(2000)
+            except Exception:
+                pass
+            self._dso_map_worker = None
+
+    def closeEvent(self, event: Any) -> None:  # noqa: N802
+        """Ensure background worker is stopped on close."""
+        self._stop_dso_map_worker()
+        super().closeEvent(event)
+
+    @Slot(bytes)
+    def _on_dso_map_ready(self, png_data: bytes) -> None:
+        """Replace placeholder with generated map."""
+        try:
+            png_b64 = base64.b64encode(png_data).decode("ascii")
+            img_html = (
+                f"<div id='{self._dso_map_placeholder_id}_container' style='margin-left: 10px; margin-top: 5px;'>"
+                f"<img src='data:image/png;base64,{png_b64}' "
+                f"style='max-width: 100%; max-height: 420px; border: 1px solid #555; border-radius: 6px;'/>"
+                "</div>"
+                f"<p style='margin-left: 10px; font-size: 0.9em; color: #888;'>"
+                "Finder map generated with starplot</p>"
+            )
+            html = self.info_text.toHtml()
+            pattern = re.compile(
+                r"<p[^>]*id=['\"]" + re.escape(self._dso_map_placeholder_id) + r"['\"][^>]*>.*?</p>",
+                re.DOTALL,
+            )
+            if pattern.search(html):
+                html = pattern.sub(img_html, html, count=1)
+            else:
+                html += img_html
+            self.info_text.setHtml(html)
+        except Exception as e:
+            logger.error(f"Error updating DSO map: {e}", exc_info=True)
+
+    @Slot(str)
+    def _on_dso_map_error(self, error: str) -> None:
+        """Show error in placeholder."""
+        colors = self._get_theme_colors()
+        err_html = (
+            f"<p id='{self._dso_map_placeholder_id}' style='margin-left:20px; color: {colors['error']};'>"
+            f"Error generating finder map: {error}</p>"
+        )
+        html = self.info_text.toHtml()
+        pattern = re.compile(
+            r"<p[^>]*id=['\"]" + re.escape(self._dso_map_placeholder_id) + r"['\"][^>]*>.*?</p>",
+            re.DOTALL,
+        )
+        if pattern.search(html):
+            html = pattern.sub(err_html, html, count=1)
+        else:
+            html += err_html
+        self.info_text.setHtml(html)
 
     def _update_favorite_button(self) -> None:
         """Update the favorite button state and icon."""

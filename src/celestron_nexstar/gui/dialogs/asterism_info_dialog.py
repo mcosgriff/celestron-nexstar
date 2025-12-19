@@ -1,3 +1,75 @@
+from PySide6.QtCore import QThread, Signal, Slot, QUrl
+
+
+class VisibleAsterismStarsWorker(QThread):
+    """Background worker to compute visible stars for an asterism."""
+
+    stars_ready = Signal(list)  # Emits list of star display names
+    error = Signal(str)
+
+    def __init__(self, asterism_name: str) -> None:
+        super().__init__()
+        self.asterism_name = asterism_name
+
+    def run(self) -> None:
+        try:
+            from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+            from celestron_nexstar.api.observation.visibility import assess_visibility
+
+            db = get_database()
+            visible_star_names: list[str] = []
+
+            location = get_observer_location()
+            bortle_to_sky_brightness = {
+                1: SkyBrightness.EXCELLENT,
+                2: SkyBrightness.EXCELLENT,
+                3: SkyBrightness.GOOD,
+                4: SkyBrightness.FAIR,
+                5: SkyBrightness.FAIR,
+                6: SkyBrightness.POOR,
+                7: SkyBrightness.URBAN,
+                8: SkyBrightness.URBAN,
+                9: SkyBrightness.URBAN,
+            }
+            try:
+                with db._get_session() as session:
+                    lp = get_light_pollution_data(session, location.latitude, location.longitude)
+                    sky_brightness = bortle_to_sky_brightness.get(lp.bortle_class.value, SkyBrightness.FAIR)
+            except Exception:
+                sky_brightness = SkyBrightness.FAIR
+
+            planner = ObservationPlanner()
+            conditions = planner.get_tonight_conditions()
+
+            # Load asterism and member stars
+            asterism = db.get_asterism(self.asterism_name)
+            if not asterism:
+                self.stars_ready.emit([])
+                return
+
+            for star_name in asterism.member_stars:
+                resolved_obj = db.get_by_name(star_name.strip())
+                if resolved_obj is None or resolved_obj.object_type != CelestialObjectType.STAR:
+                    continue
+
+                vis_info = assess_visibility(
+                    resolved_obj,  # type: ignore[arg-type]
+                    sky_brightness=sky_brightness,
+                    min_altitude_deg=20.0,
+                    observer_lat=location.latitude,
+                    observer_lon=location.longitude,
+                    dt=conditions.timestamp,
+                )
+                if vis_info.is_visible:
+                    visible_star_names.append(resolved_obj.common_name or resolved_obj.name)
+
+            self.stars_ready.emit(sorted(set(visible_star_names)))
+        except Exception as e:
+            self.error.emit(str(e))
 """
 Dialog to display detailed information about an asterism.
 """
@@ -6,7 +78,7 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, Signal, QThread
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -79,6 +151,7 @@ class AsterismInfoDialog(QDialog):
         self.resize(1000, 700)  # Wider to accommodate asterism map without horizontal scrollbar
 
         self.asterism_name = asterism_name
+        self._vis_worker: VisibleAsterismStarsWorker | None = None
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -89,6 +162,12 @@ class AsterismInfoDialog(QDialog):
         self.info_text.setOpenExternalLinks(False)  # Handle links ourselves
         # Handle link clicks for star info buttons
         self.info_text.set_link_click_handler(self._on_link_clicked)
+        # Placeholder for deferred visible-stars section
+        self._visible_stars_placeholder_id = "visible-stars-placeholder"
+        self._visible_stars_placeholder = (
+            f"<p id='{self._visible_stars_placeholder_id}' style='margin-left:20px; color: #888;'>"
+            "Calculating visible stars…</p>"
+        )
         layout.addWidget(self.info_text)
 
         # Add button box
@@ -98,6 +177,8 @@ class AsterismInfoDialog(QDialog):
 
         # Load asterism information
         self._load_asterism_info()
+        # Kick off background worker for visible stars
+        self._start_visible_stars_worker()
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -697,159 +778,12 @@ class AsterismInfoDialog(QDialog):
 
                 html_parts.append("</table>")
 
-            # Visible stars in this asterism (from DB relationships, filtered by current telescope configuration)
-            try:
-                from sqlalchemy import select
-
-                from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
-                from celestron_nexstar.api.database.database import get_database
-                from celestron_nexstar.api.database.models import AsterismModel
-                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-                from celestron_nexstar.api.location.observer import get_observer_location
-                from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
-                from celestron_nexstar.api.observation.visibility import assess_visibility
-
-                # Get asterism model row for relationship lookup
-                db = get_database()
-                with db._get_session() as session:
-                    asterism_model = session.scalar(
-                        select(AsterismModel).where(AsterismModel.name == asterism.name).limit(1)
-                    )
-
-                    visible_star_names: list[str] = []
-                    if asterism_model is not None:
-                        # Prefer deriving pattern membership from the asterism geometry (nearby stars),
-                        # rather than relying on the stored member list which may be incomplete.
-                        from celestron_nexstar.api.database.models import StarModel
-
-                        star_models: list[StarModel] = []
-                        if asterism_model.geometry is not None:
-                            from geoalchemy2 import functions as geofunc
-                            from sqlalchemy import func
-
-                            max_distance_deg = 1.5
-                            mag_limit = 6.0
-                            limit = 200
-
-                            star_ids = list(
-                                session.execute(
-                                    select(StarModel.id)
-                                    .join(AsterismModel, AsterismModel.id == asterism_model.id)
-                                    .where(
-                                        AsterismModel.geometry.isnot(None),
-                                        StarModel.geometry.isnot(None),
-                                        geofunc.ST_Distance(AsterismModel.geometry, StarModel.geometry)
-                                        <= max_distance_deg,
-                                        (StarModel.magnitude.is_(None)) | (StarModel.magnitude <= mag_limit),
-                                    )
-                                    .order_by(func.coalesce(StarModel.magnitude, 99.0))
-                                    .limit(limit)
-                                )
-                                .scalars()
-                                .all()
-                            )
-                            if star_ids:
-                                star_models = list(
-                                    session.execute(select(StarModel).where(StarModel.id.in_(star_ids))).scalars().all()
-                                )
-
-                        # Determine sky brightness from light pollution if available (used for telescope limiting magnitude)
-                        location = get_observer_location()
-                        bortle_to_sky_brightness = {
-                            1: SkyBrightness.EXCELLENT,
-                            2: SkyBrightness.EXCELLENT,
-                            3: SkyBrightness.GOOD,
-                            4: SkyBrightness.FAIR,
-                            5: SkyBrightness.FAIR,
-                            6: SkyBrightness.POOR,
-                            7: SkyBrightness.URBAN,
-                            8: SkyBrightness.URBAN,
-                            9: SkyBrightness.URBAN,
-                        }
-                        try:
-                            lp = get_light_pollution_data(session, location.latitude, location.longitude)
-                            sky_brightness = bortle_to_sky_brightness.get(lp.bortle_class.value, SkyBrightness.FAIR)
-                        except Exception:
-                            sky_brightness = SkyBrightness.FAIR
-
-                        planner = ObservationPlanner()
-                        conditions = planner.get_tonight_conditions()
-
-                        # Filter derived member stars by actual visibility.
-                        if star_models:
-                            from celestron_nexstar.api.catalogs.catalogs import CelestialObject
-
-                            for sm in star_models:
-                                obj = CelestialObject(
-                                    name=sm.common_name or sm.name or "",
-                                    common_name=sm.common_name,
-                                    ra_hours=sm.ra_hours,
-                                    dec_degrees=sm.dec_degrees,
-                                    magnitude=sm.magnitude,
-                                    object_type=CelestialObjectType.STAR,
-                                    catalog=sm.catalog,
-                                    description=sm.description,
-                                    parent_planet=None,
-                                    constellation=sm.constellation_name,
-                                    asterism=asterism.name,
-                                )
-
-                                vis_info = assess_visibility(
-                                    obj,
-                                    sky_brightness=sky_brightness,
-                                    min_altitude_deg=20.0,
-                                    observer_lat=location.latitude,
-                                    observer_lon=location.longitude,
-                                    dt=conditions.timestamp,
-                                )
-                                if vis_info.is_visible:
-                                    visible_star_names.append(obj.common_name or obj.name)
-                        else:
-                            # Fallback: use member list if geometry is missing/unavailable.
-                            for star_name in asterism.member_stars:
-                                resolved_obj = db.get_by_name(star_name.strip())
-                                if resolved_obj is None or resolved_obj.object_type != CelestialObjectType.STAR:
-                                    continue
-
-                                vis_info = assess_visibility(
-                                    resolved_obj,  # type: ignore[arg-type]
-                                    sky_brightness=sky_brightness,
-                                    min_altitude_deg=20.0,
-                                    observer_lat=location.latitude,
-                                    observer_lon=location.longitude,
-                                    dt=conditions.timestamp,
-                                )
-                                if vis_info.is_visible:
-                                    visible_star_names.append(resolved_obj.common_name or resolved_obj.name)
-
-                    if visible_star_names:
-                        html_parts.append(
-                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
-                            f"Visible Stars in this Asterism ({len(visible_star_names)}):</p>"
-                        )
-                        html_parts.append(
-                            "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
-                        )
-                        header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
-                        border_color = colors["text_dim"]
-                        html_parts.append(
-                            f"<tr style='background-color: {header_bg};'>"
-                            "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
-                            "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
-                            "</tr>"
-                        )
-                        for star_name in sorted(set(visible_star_names)):
-                            star_name_encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
-                            info_link = f'<a href="starinfo://{star_name_encoded}" style="text-decoration: none; color: {colors["cyan"]}; font-weight: bold;" title="Show star information">\u2139\ufe0f</a>'
-                            html_parts.append(
-                                f"<tr>"
-                                f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{star_name}</td>"
-                                f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
-                                f"</tr>"
-                            )
-                        html_parts.append("</table>")
-            except Exception as e:
-                logger.debug(f"Could not compute visible asterism stars: {e}")
+            # Visible stars are computed in background; show placeholder
+            html_parts.append(
+                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                "Visible Stars in this Asterism:</p>"
+            )
+            html_parts.append(self._visible_stars_placeholder)
 
             # Wikipedia link
             if hasattr(asterism, "wikipedia_url") and asterism.wikipedia_url:
@@ -870,6 +804,89 @@ class AsterismInfoDialog(QDialog):
             self.info_text.setHtml(
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load asterism information: {e}</p>"
             )
+
+    def _start_visible_stars_worker(self) -> None:
+        """Start background worker to compute visible stars."""
+        # Stop any existing worker
+        self._stop_visible_stars_worker()
+        worker = VisibleAsterismStarsWorker(self.asterism_name)
+        worker.stars_ready.connect(self._on_visible_stars_ready)
+        worker.error.connect(self._on_visible_stars_error)
+        self._vis_worker = worker
+        worker.start()
+
+    def _stop_visible_stars_worker(self) -> None:
+        """Stop background worker if running."""
+        if self._vis_worker is not None:
+            try:
+                if self._vis_worker.isRunning():
+                    self._vis_worker.requestInterruption()
+                    self._vis_worker.quit()
+                    self._vis_worker.wait(2000)
+            except Exception:
+                pass
+            self._vis_worker = None
+
+    def closeEvent(self, event: Any) -> None:  # noqa: N802
+        """Ensure background worker is stopped on close."""
+        self._stop_visible_stars_worker()
+        super().closeEvent(event)
+
+    @Slot(list)
+    def _on_visible_stars_ready(self, star_names: list[str]) -> None:
+        """Update the placeholder with visible stars table."""
+        try:
+            colors = self._get_theme_colors()
+            border_color = colors["text_dim"]
+            header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
+
+            if star_names:
+                rows = []
+                for star_name in star_names:
+                    encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
+                    info_link = (
+                        f'<a href="starinfo://{encoded}" style="text-decoration: none; '
+                        f'color: {colors["cyan"]}; font-weight: bold;" title="Show star information">ℹ️</a>'
+                    )
+                    rows.append(
+                        f"<tr>"
+                        f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{star_name}</td>"
+                        f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                        f"</tr>"
+                    )
+                table_html = (
+                    "<table style='border-collapse: collapse; width: 100%; margin-left: 20px; margin-top: 10px;'>"
+                    f"<tr style='background-color: {header_bg};'>"
+                    "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
+                    "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
+                    "</tr>"
+                    + "".join(rows)
+                    + "</table>"
+                )
+            else:
+                table_html = (
+                    f"<p id='{self._visible_stars_placeholder_id}' style='margin-left:20px; color: {colors['text_dim']};'>"
+                    "No visible stars right now (below horizon or too faint for current conditions).</p>"
+                )
+
+            # Replace placeholder
+            html = self.info_text.toHtml()
+            html = html.replace(self._visible_stars_placeholder, table_html)
+            self.info_text.setHtml(html)
+        except Exception as e:
+            logger.error(f"Error updating visible stars: {e}", exc_info=True)
+
+    @Slot(str)
+    def _on_visible_stars_error(self, error: str) -> None:
+        """Show error in placeholder."""
+        colors = self._get_theme_colors()
+        err_html = (
+            f"<p id='{self._visible_stars_placeholder_id}' style='margin-left:20px; color: {colors['error']};'>"
+            f"Error computing visible stars: {error}</p>"
+        )
+        html = self.info_text.toHtml()
+        html = html.replace(self._visible_stars_placeholder, err_html)
+        self.info_text.setHtml(html)
 
     def _on_link_clicked(self, url: str) -> None:
         """Handle link clicks - open star info dialog."""
