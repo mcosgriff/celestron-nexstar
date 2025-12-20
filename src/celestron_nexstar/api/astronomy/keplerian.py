@@ -268,28 +268,115 @@ def _cartesian_to_spherical(x: float, y: float, z: float) -> tuple[float, float,
     return ra_hours, dec_degrees, r
 
 
-def compute_comet_position(
+def _compute_from_spk(
     comet: Comet,
     observer_lat: float,
     observer_lon: float,
     dt: datetime | None = None,
 ) -> CometPosition | None:
     """
-    Compute comet position using Keplerian propagation.
+    Try to compute comet position from cached SPK file.
 
-    Uses the comet's orbital elements to compute its position at the given time,
-    then transforms to observer-centric coordinates.
+    Args:
+        comet: Comet object
+        observer_lat: Observer latitude
+        observer_lon: Observer longitude
+        dt: Datetime for calculation
+
+    Returns:
+        CometPosition if SPK available and calculation succeeds, else None
+    """
+    try:
+        from celestron_nexstar.api.solar_system.horizons_spk import compute_position_from_spk
+
+        result = compute_position_from_spk(comet.designation, observer_lat, observer_lon, dt)
+        if result is None:
+            return None
+
+        ra_hours, dec_degrees, altitude, azimuth, helio_dist, geo_dist = result
+
+        # Compute elongation from Sun
+        from celestron_nexstar.api.core.utils import angular_separation
+        from celestron_nexstar.api.ephemeris.skyfield_utils import (
+            get_skyfield_ephemeris,
+            get_skyfield_timescale,
+        )
+
+        if dt is None:
+            dt = datetime.now(UTC)
+        elif dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+
+        ts = get_skyfield_timescale()
+        try:
+            eph = get_skyfield_ephemeris("de421.bsp")
+        except FileNotFoundError:
+            eph = get_skyfield_ephemeris("de440s.bsp")
+
+        t = ts.from_datetime(dt)
+        earth = eph["earth"]
+        sun = eph["sun"]
+        sun_astrometric = earth.at(t).observe(sun)
+        sun_ra, sun_dec, _ = sun_astrometric.radec()
+
+        elongation = angular_separation(ra_hours, dec_degrees, sun_ra.hours, sun_dec.degrees)
+
+        # Estimate phase angle
+        R = 1.0  # Approximate Earth-Sun distance
+        cos_phase = (helio_dist**2 + geo_dist**2 - R**2) / (2 * helio_dist * geo_dist)
+        cos_phase = max(-1.0, min(1.0, cos_phase))
+        phase_angle = math.degrees(math.acos(cos_phase))
+
+        logger.debug(f"Computed position for {comet.name} from SPK")
+        return CometPosition(
+            ra_hours=ra_hours,
+            dec_degrees=dec_degrees,
+            altitude_deg=altitude,
+            azimuth_deg=azimuth,
+            helio_distance_au=helio_dist,
+            geo_distance_au=geo_dist,
+            elongation_deg=elongation,
+            phase_angle_deg=phase_angle,
+        )
+
+    except ImportError:
+        # SPK module not available
+        return None
+    except Exception as e:
+        logger.debug(f"SPK calculation failed for {comet.name}: {e}")
+        return None
+
+
+def compute_comet_position(
+    comet: Comet,
+    observer_lat: float,
+    observer_lon: float,
+    dt: datetime | None = None,
+    prefer_spk: bool = True,
+) -> CometPosition | None:
+    """
+    Compute comet position using SPK (if available) or Keplerian propagation.
+
+    Prefers SPK files from JPL Horizons when available for highest accuracy,
+    falling back to two-body Keplerian propagation from orbital elements.
 
     Args:
         comet: Comet with orbital elements
         observer_lat: Observer latitude in degrees
         observer_lon: Observer longitude in degrees
         dt: Datetime to compute position for (default: now UTC)
+        prefer_spk: If True, check for SPK file first (default: True)
 
     Returns:
         CometPosition with RA/Dec, Alt/Az, distances, or None if cannot compute
     """
-    # Check if we have required orbital elements
+    # Try SPK first if preferred
+    if prefer_spk:
+        spk_result = _compute_from_spk(comet, observer_lat, observer_lon, dt)
+        if spk_result is not None:
+            return spk_result
+
+    # Check if we have required orbital elements for Keplerian propagation
     if (
         comet.eccentricity is None
         or comet.inclination_deg is None

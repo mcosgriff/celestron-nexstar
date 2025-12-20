@@ -3320,6 +3320,231 @@ def eclipses_import(
     console.print(f"[green]✓[/green] Imported {added} eclipses")
 
 
+@app.command("spk-download", rich_help_panel="Solar System")
+def spk_download(
+    designation: str = typer.Argument(..., help="Comet designation (e.g., 'C/2023 A3')"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-download even if file exists"),
+) -> None:
+    """
+    Download SPK ephemeris file for a comet from JPL Horizons.
+
+    SPK files provide high-accuracy ephemeris data for offline comet tracking.
+    Files are cached in ~/.skyfield/spk/ and tracked in the database.
+
+    Examples:
+        nexstar data spk-download "C/2023 A3"
+        nexstar data spk-download "C/2023 A3 (Tsuchinshan-ATLAS)" --force
+    """
+    from celestron_nexstar.api.solar_system.horizons_spk import download_comet_spk_sync
+
+    console.print(f"[bold]Downloading SPK for {designation}...[/bold]")
+
+    result = download_comet_spk_sync(designation, force=force)
+
+    if result is None:
+        console.print("[red]✗[/red] Failed to download SPK from JPL Horizons.")
+        console.print("[dim]Check that the designation is correct and try again.[/dim]")
+        raise typer.Exit(code=1)
+
+    # Save to database
+    try:
+        from sqlalchemy import select
+
+        from celestron_nexstar.api.database.models import CometSPKModel, get_db_session
+
+        with get_db_session() as session:
+            existing = session.execute(
+                select(CometSPKModel).where(CometSPKModel.comet_designation == designation)
+            ).scalar_one_or_none()
+
+            if existing:
+                existing.filename = result.filename
+                existing.file_path = str(result.file_path)
+                existing.size_bytes = result.size_bytes
+                existing.coverage_start = result.coverage_start
+                existing.coverage_end = result.coverage_end
+                existing.downloaded_at = result.downloaded_at
+                existing.is_valid = True
+                existing.error_message = None
+            else:
+                spk_model = CometSPKModel(
+                    comet_designation=designation,
+                    comet_name=designation,  # Will be updated if comet exists
+                    filename=result.filename,
+                    file_path=str(result.file_path),
+                    size_bytes=result.size_bytes,
+                    coverage_start=result.coverage_start,
+                    coverage_end=result.coverage_end,
+                    downloaded_at=result.downloaded_at,
+                    source="JPL Horizons",
+                    is_valid=True,
+                )
+                session.add(spk_model)
+
+            session.commit()
+    except Exception as db_err:
+        console.print(f"[yellow]⚠[/yellow] Could not save SPK metadata to database: {db_err}")
+
+    size_kb = result.size_bytes / 1024
+    console.print(f"[green]✓[/green] Downloaded {result.filename} ({size_kb:.1f} KB)")
+    console.print(f"[dim]Coverage: {result.coverage_start.date()} to {result.coverage_end.date()}[/dim]")
+    console.print(f"[dim]Path: {result.file_path}[/dim]")
+
+
+@app.command("spk-list", rich_help_panel="Solar System")
+def spk_list() -> None:
+    """
+    List all cached SPK files for comets.
+
+    Shows SPK files downloaded from JPL Horizons with their status and size.
+    """
+    from rich.table import Table
+    from sqlalchemy import select
+
+    from celestron_nexstar.api.database.models import CometSPKModel, get_db_session
+    from celestron_nexstar.api.solar_system.horizons_spk import list_cached_spks
+
+    # Get database records
+    with get_db_session() as session:
+        spk_records = session.execute(select(CometSPKModel).order_by(CometSPKModel.comet_name)).scalars().all()
+
+    if not spk_records:
+        # Check for any cached files not in DB
+        cached = list_cached_spks()
+        if cached:
+            console.print(f"[yellow]⚠[/yellow] Found {len(cached)} SPK files not in database.")
+            for spk in cached:
+                console.print(f"  • {spk.filename} ({spk.size_bytes / 1024:.1f} KB)")
+            console.print("[dim]Run 'nexstar data spk-download' to register these files.[/dim]")
+        else:
+            console.print("[dim]No SPK files cached. Use 'nexstar data spk-download' to download.[/dim]")
+        return
+
+    table = Table(title="Cached Comet SPK Files", show_header=True, header_style="bold magenta")
+    table.add_column("Comet", style="cyan")
+    table.add_column("Designation", style="green")
+    table.add_column("Status", style="yellow")
+    table.add_column("Size", justify="right", style="magenta")
+    table.add_column("Coverage", style="blue")
+    table.add_column("Downloaded", style="white")
+
+    for spk in spk_records:
+        status = "[green]✓ Valid[/green]" if spk.is_valid else f"[red]✗ {spk.error_message or 'Invalid'}[/red]"
+        size_kb = spk.size_bytes / 1024
+        coverage = f"{spk.coverage_start.date()} to {spk.coverage_end.date()}"
+        downloaded = spk.downloaded_at.strftime("%Y-%m-%d") if spk.downloaded_at else "-"
+
+        table.add_row(
+            spk.comet_name[:30] + ("..." if len(spk.comet_name) > 30 else ""),
+            spk.comet_designation,
+            status,
+            f"{size_kb:.1f} KB",
+            coverage,
+            downloaded,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(spk_records)} SPK files[/dim]")
+
+
+@app.command("spk-download-bright", rich_help_panel="Solar System")
+def spk_download_bright(
+    max_magnitude: float = typer.Option(8.0, "--max-magnitude", "-m", help="Maximum peak magnitude to include"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force re-download existing files"),
+) -> None:
+    """
+    Download SPK files for all bright comets.
+
+    Downloads SPK ephemeris files from JPL Horizons for all comets in the database
+    with peak magnitude brighter than the specified limit.
+
+    Examples:
+        nexstar data spk-download-bright
+        nexstar data spk-download-bright --max-magnitude 6
+        nexstar data spk-download-bright --force
+    """
+    from rich.progress import Progress
+    from sqlalchemy import select
+
+    from celestron_nexstar.api.database.models import CometModel, get_db_session
+    from celestron_nexstar.api.solar_system.horizons_spk import download_comet_spk_sync
+
+    # Get bright comets
+    with get_db_session() as session:
+        comets = (
+            session.execute(
+                select(CometModel).where(CometModel.peak_magnitude <= max_magnitude).order_by(CometModel.peak_magnitude)
+            )
+            .scalars()
+            .all()
+        )
+
+    if not comets:
+        console.print(f"[yellow]⚠[/yellow] No comets brighter than magnitude {max_magnitude} found.")
+        console.print("[dim]Run 'nexstar data mpc-download' and 'nexstar data mpc-import' first.[/dim]")
+        return
+
+    console.print(f"[bold]Downloading SPK for {len(comets)} comets brighter than mag {max_magnitude}...[/bold]")
+
+    downloaded = 0
+    errors = 0
+
+    with Progress() as progress:
+        task = progress.add_task("Downloading SPKs...", total=len(comets))
+
+        for comet in comets:
+            progress.update(task, description=f"[cyan]{comet.name[:30]}...[/cyan]")
+
+            result = download_comet_spk_sync(comet.designation, force=force)
+
+            if result:
+                # Save to database
+                try:
+                    from celestron_nexstar.api.database.models import CometSPKModel
+
+                    with get_db_session() as db_session:
+                        existing = db_session.execute(
+                            select(CometSPKModel).where(CometSPKModel.comet_designation == comet.designation)
+                        ).scalar_one_or_none()
+
+                        if existing:
+                            existing.filename = result.filename
+                            existing.file_path = str(result.file_path)
+                            existing.size_bytes = result.size_bytes
+                            existing.coverage_start = result.coverage_start
+                            existing.coverage_end = result.coverage_end
+                            existing.downloaded_at = result.downloaded_at
+                            existing.is_valid = True
+                        else:
+                            spk_model = CometSPKModel(
+                                comet_designation=comet.designation,
+                                comet_name=comet.name,
+                                filename=result.filename,
+                                file_path=str(result.file_path),
+                                size_bytes=result.size_bytes,
+                                coverage_start=result.coverage_start,
+                                coverage_end=result.coverage_end,
+                                downloaded_at=result.downloaded_at,
+                                source="JPL Horizons",
+                                is_valid=True,
+                            )
+                            db_session.add(spk_model)
+
+                        db_session.commit()
+                except Exception:
+                    pass  # Ignore DB errors for bulk download
+
+                downloaded += 1
+            else:
+                errors += 1
+
+            progress.advance(task)
+
+    console.print(f"\n[green]✓[/green] Downloaded {downloaded} SPK files")
+    if errors:
+        console.print(f"[yellow]⚠[/yellow] {errors} downloads failed (comet may not be in Horizons)")
+
+
 def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) -> list[dict[str, Any]]:
     """
     Fetch comet data from MPC.

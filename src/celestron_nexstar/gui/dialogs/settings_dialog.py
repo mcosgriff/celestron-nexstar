@@ -1426,6 +1426,10 @@ class SettingsDialog(QDialog):
             with get_db_session() as session:
                 comet_count = int(session.scalar(select(func.count(CometModel.id))) or 0)
                 eclipse_count = int(session.scalar(select(func.count(EclipseModel.id))) or 0)
+                # Count SPK files
+                from celestron_nexstar.api.database.models import CometSPKModel
+
+                spk_count = int(session.scalar(select(func.count(CometSPKModel.id))) or 0)
 
             seed_dir = get_seed_data_path()
             comet_seed_exists = (seed_dir / "comets.json").exists()
@@ -1440,10 +1444,10 @@ class SettingsDialog(QDialog):
                 },
                 {
                     "id": "horizons_spk",
-                    "name": "Horizons SPK (coming soon)",
-                    "description": "Download SPK kernels for priority comets/asteroids for highest accuracy",
-                    "count": 0,
-                    "seed_exists": False,
+                    "name": "Horizons SPK",
+                    "description": "High-accuracy SPK kernels for comets from JPL Horizons",
+                    "count": spk_count,
+                    "seed_exists": spk_count > 0,
                 },
                 {
                     "id": "eclipses",
@@ -1481,9 +1485,11 @@ class SettingsDialog(QDialog):
                     action_layout.addWidget(import_btn)
 
                 elif source["id"] == "horizons_spk":
-                    placeholder_btn = QPushButton("Coming Soon")
-                    placeholder_btn.setEnabled(False)
-                    action_layout.addWidget(placeholder_btn)
+                    manage_btn = QPushButton("Manage SPKs...")
+                    manage_btn.clicked.connect(self._on_manage_spks)
+                    manage_btn.setToolTip("Download and manage SPK files for comets")
+                    self.solar_spk_manage_btn = manage_btn
+                    action_layout.addWidget(manage_btn)
 
                 elif source["id"] == "eclipses":
                     import_btn = QPushButton("Re-import" if source["count"] > 0 else "Import")
@@ -2820,6 +2826,15 @@ class SettingsDialog(QDialog):
             self.solar_system_status.setText(f"✗ Error importing: {e}")
         finally:
             self.solar_system_progress.setVisible(False)
+
+    def _on_manage_spks(self) -> None:
+        """Open the SPK management dialog."""
+        from celestron_nexstar.gui.dialogs.spk_manager_dialog import SPKManagerDialog
+
+        dialog = SPKManagerDialog(self)
+        dialog.exec()
+        # Refresh solar system info after dialog closes
+        self._load_solar_system_info()
 
     def _on_celestial_import_progress(self, source_id: str, status: str, current: int, total: int) -> None:
         """Handle celestial data import progress update."""

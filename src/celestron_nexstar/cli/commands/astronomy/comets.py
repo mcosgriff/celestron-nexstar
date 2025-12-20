@@ -150,6 +150,7 @@ def _show_comets_content(
     table.add_column("Magnitude", justify="right")
     table.add_column("Visible", justify="center")
     table.add_column("Altitude", justify="right")
+    table.add_column("Method", justify="center")
 
     for vis in comets:
         # Format date
@@ -178,7 +179,10 @@ def _show_comets_content(
         # Format altitude
         alt_str = f"{vis.altitude:.0f}°"
 
-        table.add_row(date_str, comet_str, mag_str, visible_str, alt_str)
+        # Format propagation method
+        method_str = "[green]Orbital[/green]" if vis.propagation_method == "keplerian" else "[dim]Est.[/dim]"
+
+        table.add_row(date_str, comet_str, mag_str, visible_str, alt_str, method_str)
 
     output_console.print(table)
 
@@ -197,8 +201,36 @@ def _show_comets_content(
         output_console.print(f"\n  [bold]{vis.comet.name}[/bold] ({vis.comet.designation})")
         output_console.print(f"    Peak: {peak_str} at magnitude {vis.comet.peak_magnitude:.2f}")
         output_console.print(f"    {date_str}: Magnitude {vis.magnitude:.2f} at {vis.altitude:.0f}° altitude")
+
+        # Show RA/Dec if available (from Keplerian propagation)
+        if vis.ra_hours is not None and vis.dec_degrees is not None:
+            ra_h = int(vis.ra_hours)
+            ra_m = int((vis.ra_hours - ra_h) * 60)
+            dec_sign = "+" if vis.dec_degrees >= 0 else ""
+            output_console.print(f"    Position: RA {ra_h}h {ra_m}m, Dec {dec_sign}{vis.dec_degrees:.1f}°")
+
+        # Show elongation if available
+        if vis.elongation_deg is not None:
+            output_console.print(f"    Elongation from Sun: {vis.elongation_deg:.0f}°")
+
+        # Show distances if available
+        if vis.helio_distance_au is not None and vis.geo_distance_au is not None:
+            output_console.print(
+                f"    Distance: {vis.helio_distance_au:.2f} AU from Sun, {vis.geo_distance_au:.2f} AU from Earth"
+            )
+
         if vis.comet.is_periodic and vis.comet.period_years:
             output_console.print(f"    Periodic: {vis.comet.period_years:.0f}-year orbit")
+
+        # Show propagation method and source
+        if vis.propagation_method == "keplerian":
+            output_console.print("    [green]✓ Computed from orbital elements[/green]")
+        else:
+            output_console.print("    [dim]≈ Estimated (orbital elements unavailable)[/dim]")
+
+        if vis.source:
+            output_console.print(f"    [dim]Source: {vis.source}[/dim]")
+
         output_console.print(f"    {vis.comet.notes}")
         output_console.print(f"    {vis.notes}")
 

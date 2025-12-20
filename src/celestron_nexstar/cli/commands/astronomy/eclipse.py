@@ -200,6 +200,7 @@ def _show_eclipses_content(
     table.add_column("Type")
     table.add_column("Maximum Time", style="cyan")
     table.add_column("Visible", justify="center")
+    table.add_column("Path", justify="center")
     table.add_column("Altitude", justify="right")
     table.add_column("Magnitude", justify="right")
 
@@ -220,13 +221,24 @@ def _show_eclipses_content(
         # Format visibility
         visible_str = "[green]✓ Yes[/green]" if eclipse.is_visible else "[dim]✗ No[/dim]"
 
+        # Format path status
+        if eclipse.eclipse_type.startswith("solar"):
+            if eclipse.in_path is True:
+                path_str = "[bold green]IN PATH[/bold green]"
+            elif eclipse.in_path is False:
+                path_str = "[dim]Outside[/dim]"
+            else:
+                path_str = "[dim]N/A[/dim]"
+        else:
+            path_str = "[dim]Global[/dim]"
+
         # Format altitude
         alt_str = f"{eclipse.altitude_at_maximum:.0f}°"
 
         # Format magnitude
         mag_str = f"{eclipse.magnitude:.2f}"
 
-        table.add_row(date_str, type_str, max_str, visible_str, alt_str, mag_str)
+        table.add_row(date_str, type_str, max_str, visible_str, path_str, alt_str, mag_str)
 
     output_console.print(table)
 
@@ -258,8 +270,36 @@ def _show_eclipses_content(
 
             output_console.print(f"\n  [bold]{_format_eclipse_type(eclipse.eclipse_type)}[/bold] - {date_str}")
             output_console.print(f"    Maximum: {max_str} at {eclipse.altitude_at_maximum:.0f}° altitude")
-            if eclipse.visibility_start and eclipse.visibility_end:
+
+            # Show contact times if available
+            if eclipse.start_time and eclipse.end_time:
+                if tz:
+                    start_contact = eclipse.start_time.astimezone(tz).strftime("%I:%M %p")
+                    end_contact = eclipse.end_time.astimezone(tz).strftime("%I:%M %p")
+                else:
+                    start_contact = eclipse.start_time.strftime("%I:%M %p UTC")
+                    end_contact = eclipse.end_time.strftime("%I:%M %p UTC")
+                output_console.print(f"    Contact times: First {start_contact}, Last {end_contact}")
+            elif eclipse.visibility_start and eclipse.visibility_end:
                 output_console.print(f"    Duration: {start_str} to {end_str} ({eclipse.duration_minutes:.0f} minutes)")
+
+            # Show obscuration if available
+            if eclipse.obscuration is not None:
+                output_console.print(f"    Obscuration: {eclipse.obscuration:.0%}")
+
+            # Show central duration for solar eclipses
+            if eclipse.central_duration_sec and eclipse.eclipse_type.startswith("solar"):
+                mins = eclipse.central_duration_sec // 60
+                secs = eclipse.central_duration_sec % 60
+                output_console.print(f"    Central duration: {mins}m {secs}s")
+
+            # Show path status for solar eclipses
+            if eclipse.eclipse_type.startswith("solar"):
+                if eclipse.in_path is True:
+                    output_console.print("    [bold green]🎯 YOU ARE IN THE PATH OF TOTALITY/ANNULARITY![/bold green]")
+                elif eclipse.in_path is False:
+                    output_console.print("    [dim]You are outside the central path - partial eclipse visible[/dim]")
+
             output_console.print(f"    {eclipse.notes}")
 
     output_console.print("\n[bold]Viewing Tips:[/bold]")

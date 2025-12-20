@@ -469,6 +469,90 @@ class DownloadMPCCometsThread(QThread):
             self.download_complete.emit(False, str(e))
 
 
+class DownloadCometSPKThread(QThread):
+    """Worker thread to download SPK file for a comet from JPL Horizons."""
+
+    progress_updated = Signal(str, int, int)  # type: ignore[type-arg,misc]
+    download_complete = Signal(str, bool, str)  # type: ignore[type-arg,misc]  # (designation, success, message)
+    error_occurred = Signal(str, str)  # type: ignore[type-arg,misc]  # (designation, error)
+
+    def __init__(self, designation: str, name: str, force: bool = False) -> None:
+        """Initialize the SPK download thread."""
+        super().__init__()
+        self.designation = designation
+        self.name = name
+        self.force = force
+
+    def run(self) -> None:
+        """Download SPK file in background thread."""
+        try:
+            from celestron_nexstar.api.solar_system.horizons_spk import download_comet_spk_sync
+
+            self.progress_updated.emit(f"Downloading SPK for {self.name}...", 50, 100)
+
+            result = download_comet_spk_sync(self.designation, force=self.force)
+
+            if result is None:
+                self.error_occurred.emit(self.designation, "Failed to download SPK from JPL Horizons")
+                self.download_complete.emit(self.designation, False, "Download failed")
+                return
+
+            # Save to database
+            try:
+                from celestron_nexstar.api.database.models import CometSPKModel, get_db_session
+
+                with get_db_session() as session:
+                    # Check if exists
+                    from sqlalchemy import select
+
+                    existing = session.execute(
+                        select(CometSPKModel).where(CometSPKModel.comet_designation == self.designation)
+                    ).scalar_one_or_none()
+
+                    if existing:
+                        # Update existing record
+                        existing.filename = result.filename
+                        existing.file_path = str(result.file_path)
+                        existing.size_bytes = result.size_bytes
+                        existing.coverage_start = result.coverage_start
+                        existing.coverage_end = result.coverage_end
+                        existing.downloaded_at = result.downloaded_at
+                        existing.is_valid = True
+                        existing.error_message = None
+                    else:
+                        # Create new record
+                        spk_model = CometSPKModel(
+                            comet_designation=self.designation,
+                            comet_name=self.name,
+                            filename=result.filename,
+                            file_path=str(result.file_path),
+                            size_bytes=result.size_bytes,
+                            coverage_start=result.coverage_start,
+                            coverage_end=result.coverage_end,
+                            downloaded_at=result.downloaded_at,
+                            source="JPL Horizons",
+                            is_valid=True,
+                        )
+                        session.add(spk_model)
+
+                    session.commit()
+            except Exception as db_err:
+                logger.warning(f"Could not save SPK metadata to database: {db_err}")
+
+            size_kb = result.size_bytes / 1024
+            self.progress_updated.emit(f"Downloaded SPK for {self.name}", 100, 100)
+            self.download_complete.emit(
+                self.designation,
+                True,
+                f"Downloaded {result.filename} ({size_kb:.1f} KB)",
+            )
+
+        except Exception as e:
+            logger.error(f"Error downloading SPK for {self.designation}: {e}", exc_info=True)
+            self.error_occurred.emit(self.designation, str(e))
+            self.download_complete.emit(self.designation, False, str(e))
+
+
 class DownloadEphemerisSetThread(QThread):
     """Worker thread to download an ephemeris file set."""
 

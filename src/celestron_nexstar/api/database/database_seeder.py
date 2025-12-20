@@ -612,6 +612,24 @@ def seed_comets(db_session: Session, force: bool = False) -> int:
     return added
 
 
+def _update_eclipse_fields(eclipse: EclipseModel, item: dict) -> None:
+    """Update eclipse model with new fields from seed data."""
+    from datetime import datetime
+
+    if item.get("start_time"):
+        eclipse.start_time = datetime.fromisoformat(item["start_time"].replace("Z", "+00:00"))
+    if item.get("max_time"):
+        eclipse.max_time = datetime.fromisoformat(item["max_time"].replace("Z", "+00:00"))
+    if item.get("end_time"):
+        eclipse.end_time = datetime.fromisoformat(item["end_time"].replace("Z", "+00:00"))
+    if "obscuration" in item:
+        eclipse.obscuration = item["obscuration"]
+    if "central_duration_sec" in item:
+        eclipse.central_duration_sec = item["central_duration_sec"]
+    if "path_geojson" in item:
+        eclipse.path_geojson = item["path_geojson"]
+
+
 def seed_eclipses(db_session: Session, force: bool = False) -> int:
     """
     Seed eclipses into the database.
@@ -648,11 +666,30 @@ def seed_eclipses(db_session: Session, force: bool = False) -> int:
             select(EclipseModel).where(EclipseModel.eclipse_type == eclipse_type, EclipseModel.date == eclipse_date)
         )
         if existing:
+            # Update existing with new fields if force is True
+            if force:
+                _update_eclipse_fields(existing, item)
             continue
 
         # Create new eclipse
-        eclipse_data = {**item}
-        eclipse_data["date"] = eclipse_date
+        eclipse_data = {"eclipse_type": eclipse_type, "date": eclipse_date, "magnitude": item["magnitude"]}
+
+        # Parse optional datetime fields
+        if item.get("start_time"):
+            eclipse_data["start_time"] = datetime.fromisoformat(item["start_time"].replace("Z", "+00:00"))
+        if item.get("max_time"):
+            eclipse_data["max_time"] = datetime.fromisoformat(item["max_time"].replace("Z", "+00:00"))
+        if item.get("end_time"):
+            eclipse_data["end_time"] = datetime.fromisoformat(item["end_time"].replace("Z", "+00:00"))
+
+        # Copy optional non-datetime fields
+        if "obscuration" in item:
+            eclipse_data["obscuration"] = item["obscuration"]
+        if "central_duration_sec" in item:
+            eclipse_data["central_duration_sec"] = item["central_duration_sec"]
+        if "path_geojson" in item:
+            eclipse_data["path_geojson"] = item["path_geojson"]
+
         eclipse = EclipseModel(**eclipse_data)
         db_session.add(eclipse)
         added += 1

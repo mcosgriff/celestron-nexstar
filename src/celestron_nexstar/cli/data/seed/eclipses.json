@@ -2,116 +2,236 @@
   {
     "eclipse_type": "lunar_total",
     "date": "2025-03-14T06:00:00+00:00",
-    "magnitude": 1.18
+    "magnitude": 1.18,
+    "start_time": "2025-03-14T03:58:00+00:00",
+    "max_time": "2025-03-14T06:00:00+00:00",
+    "end_time": "2025-03-14T08:02:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 3960
   },
   {
     "eclipse_type": "lunar_partial",
     "date": "2025-09-07T18:00:00+00:00",
-    "magnitude": 0.93
+    "magnitude": 0.93,
+    "start_time": "2025-09-07T16:27:00+00:00",
+    "max_time": "2025-09-07T18:12:00+00:00",
+    "end_time": "2025-09-07T19:57:00+00:00",
+    "obscuration": 0.93
   },
   {
     "eclipse_type": "lunar_total",
     "date": "2026-03-03T11:00:00+00:00",
-    "magnitude": 1.15
+    "magnitude": 1.15,
+    "start_time": "2026-03-03T09:09:00+00:00",
+    "max_time": "2026-03-03T11:33:00+00:00",
+    "end_time": "2026-03-03T13:58:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 3540
   },
   {
     "eclipse_type": "lunar_partial",
     "date": "2026-08-28T04:00:00+00:00",
-    "magnitude": 0.93
+    "magnitude": 0.93,
+    "start_time": "2026-08-28T02:29:00+00:00",
+    "max_time": "2026-08-28T04:13:00+00:00",
+    "end_time": "2026-08-28T05:57:00+00:00",
+    "obscuration": 0.93
   },
   {
     "eclipse_type": "lunar_total",
     "date": "2027-02-20T23:00:00+00:00",
-    "magnitude": 1.24
+    "magnitude": 1.24,
+    "start_time": "2027-02-20T21:03:00+00:00",
+    "max_time": "2027-02-20T23:13:00+00:00",
+    "end_time": "2027-02-21T01:24:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 4380
   },
   {
     "eclipse_type": "lunar_partial",
     "date": "2027-08-17T12:00:00+00:00",
-    "magnitude": 0.92
+    "magnitude": 0.92,
+    "start_time": "2027-08-17T10:04:00+00:00",
+    "max_time": "2027-08-17T12:13:00+00:00",
+    "end_time": "2027-08-17T14:22:00+00:00",
+    "obscuration": 0.92
   },
   {
     "eclipse_type": "lunar_total",
     "date": "2028-01-12T04:00:00+00:00",
-    "magnitude": 1.14
+    "magnitude": 1.14,
+    "start_time": "2028-01-12T02:08:00+00:00",
+    "max_time": "2028-01-12T04:13:00+00:00",
+    "end_time": "2028-01-12T06:18:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 3480
   },
   {
     "eclipse_type": "lunar_total",
     "date": "2028-07-06T18:00:00+00:00",
-    "magnitude": 1.68
+    "magnitude": 1.68,
+    "start_time": "2028-07-06T16:04:00+00:00",
+    "max_time": "2028-07-06T18:19:00+00:00",
+    "end_time": "2028-07-06T20:35:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 6060
   },
   {
     "eclipse_type": "lunar_total",
     "date": "2029-01-01T00:00:00+00:00",
-    "magnitude": 1.12
+    "magnitude": 1.12,
+    "start_time": "2028-12-31T22:03:00+00:00",
+    "max_time": "2029-01-01T00:23:00+00:00",
+    "end_time": "2029-01-01T02:42:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 3360
   },
   {
     "eclipse_type": "lunar_partial",
     "date": "2029-06-26T03:00:00+00:00",
-    "magnitude": 0.54
+    "magnitude": 0.54,
+    "start_time": "2029-06-26T01:37:00+00:00",
+    "max_time": "2029-06-26T03:22:00+00:00",
+    "end_time": "2029-06-26T05:07:00+00:00",
+    "obscuration": 0.54
   },
   {
     "eclipse_type": "lunar_partial",
     "date": "2029-12-20T22:00:00+00:00",
-    "magnitude": 0.92
+    "magnitude": 0.92,
+    "start_time": "2029-12-20T20:04:00+00:00",
+    "max_time": "2029-12-20T22:42:00+00:00",
+    "end_time": "2029-12-21T01:20:00+00:00",
+    "obscuration": 0.92
   },
   {
     "eclipse_type": "solar_partial",
     "date": "2025-03-29T10:00:00+00:00",
-    "magnitude": 0.94
+    "magnitude": 0.94,
+    "start_time": "2025-03-29T09:01:00+00:00",
+    "max_time": "2025-03-29T10:48:00+00:00",
+    "end_time": "2025-03-29T12:35:00+00:00",
+    "obscuration": 0.89
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2025-10-02T18:00:00+00:00",
-    "magnitude": 0.96
+    "magnitude": 0.96,
+    "start_time": "2025-10-02T15:42:00+00:00",
+    "max_time": "2025-10-02T18:00:00+00:00",
+    "end_time": "2025-10-02T20:18:00+00:00",
+    "obscuration": 0.92,
+    "central_duration_sec": 391,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-170, -40], [-100, -20], [-60, -35], [-40, -55], [-170, -55], [-170, -40]]]}}"
   },
   {
     "eclipse_type": "solar_total",
     "date": "2026-02-17T12:00:00+00:00",
-    "magnitude": 1.04
+    "magnitude": 1.04,
+    "start_time": "2026-02-17T10:04:00+00:00",
+    "max_time": "2026-02-17T12:13:00+00:00",
+    "end_time": "2026-02-17T14:22:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 156,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"total\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-90, -30], [-50, -40], [-20, -60], [10, -70], [-90, -70], [-90, -30]]]}}"
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2026-08-12T17:00:00+00:00",
-    "magnitude": 0.94
+    "magnitude": 0.94,
+    "start_time": "2026-08-12T14:30:00+00:00",
+    "max_time": "2026-08-12T17:46:00+00:00",
+    "end_time": "2026-08-12T21:01:00+00:00",
+    "obscuration": 0.88,
+    "central_duration_sec": 130,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[140, 75], [100, 60], [60, 50], [30, 45], [0, 50], [-30, 60], [140, 75]]]}}"
   },
   {
     "eclipse_type": "solar_total",
     "date": "2027-08-02T10:00:00+00:00",
-    "magnitude": 1.08
+    "magnitude": 1.08,
+    "start_time": "2027-08-02T07:36:00+00:00",
+    "max_time": "2027-08-02T10:07:00+00:00",
+    "end_time": "2027-08-02T12:37:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 386,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"total\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-10, 40], [10, 45], [30, 40], [50, 35], [70, 25], [90, 15], [90, 10], [70, 20], [50, 30], [30, 35], [10, 40], [-10, 35], [-10, 40]]]}}"
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2028-01-26T15:00:00+00:00",
-    "magnitude": 0.92
+    "magnitude": 0.92,
+    "start_time": "2028-01-26T12:48:00+00:00",
+    "max_time": "2028-01-26T15:08:00+00:00",
+    "end_time": "2028-01-26T17:29:00+00:00",
+    "obscuration": 0.85,
+    "central_duration_sec": 638,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-160, -20], [-120, -10], [-80, 0], [-40, 10], [0, 15], [40, 20], [40, 15], [0, 10], [-40, 5], [-80, -5], [-120, -15], [-160, -25], [-160, -20]]]}}"
   },
   {
     "eclipse_type": "solar_total",
     "date": "2028-07-22T02:00:00+00:00",
-    "magnitude": 1.06
+    "magnitude": 1.06,
+    "start_time": "2028-07-21T23:44:00+00:00",
+    "max_time": "2028-07-22T02:55:00+00:00",
+    "end_time": "2028-07-22T06:06:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 310,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"total\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[100, 35], [120, 40], [140, 45], [160, 50], [180, 55], [-160, 60], [-160, 55], [180, 50], [160, 45], [140, 40], [120, 35], [100, 30], [100, 35]]]}}"
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2029-01-14T17:00:00+00:00",
-    "magnitude": 0.87
+    "magnitude": 0.87,
+    "start_time": "2029-01-14T14:35:00+00:00",
+    "max_time": "2029-01-14T17:13:00+00:00",
+    "end_time": "2029-01-14T19:50:00+00:00",
+    "obscuration": 0.75,
+    "central_duration_sec": 420,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-170, 40], [-150, 50], [-130, 55], [-110, 55], [-90, 50], [-70, 45], [-50, 40], [-50, 35], [-70, 40], [-90, 45], [-110, 50], [-130, 50], [-150, 45], [-170, 35], [-170, 40]]]}}"
   },
   {
     "eclipse_type": "solar_total",
     "date": "2029-06-12T04:00:00+00:00",
-    "magnitude": 1.05
+    "magnitude": 1.05,
+    "start_time": "2029-06-12T01:17:00+00:00",
+    "max_time": "2029-06-12T04:06:00+00:00",
+    "end_time": "2029-06-12T06:55:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 257,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"total\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-80, 50], [-60, 55], [-40, 60], [-20, 65], [0, 70], [20, 75], [20, 70], [0, 65], [-20, 60], [-40, 55], [-60, 50], [-80, 45], [-80, 50]]]}}"
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2029-12-05T15:00:00+00:00",
-    "magnitude": 0.94
+    "magnitude": 0.94,
+    "start_time": "2029-12-05T12:26:00+00:00",
+    "max_time": "2029-12-05T15:03:00+00:00",
+    "end_time": "2029-12-05T17:39:00+00:00",
+    "obscuration": 0.89,
+    "central_duration_sec": 365,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[-20, -35], [10, -45], [40, -50], [70, -50], [100, -45], [130, -35], [130, -40], [100, -50], [70, -55], [40, -55], [10, -50], [-20, -40], [-20, -35]]]}}"
   },
   {
     "eclipse_type": "solar_total",
     "date": "2030-06-01T06:00:00+00:00",
-    "magnitude": 1.05
+    "magnitude": 1.05,
+    "start_time": "2030-06-01T03:33:00+00:00",
+    "max_time": "2030-06-01T06:29:00+00:00",
+    "end_time": "2030-06-01T09:24:00+00:00",
+    "obscuration": 1.0,
+    "central_duration_sec": 277,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"total\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[20, 35], [40, 40], [60, 45], [80, 50], [100, 55], [120, 60], [120, 55], [100, 50], [80, 45], [60, 40], [40, 35], [20, 30], [20, 35]]]}}"
   },
   {
     "eclipse_type": "solar_annular",
     "date": "2030-11-25T06:00:00+00:00",
-    "magnitude": 0.97
+    "magnitude": 0.97,
+    "start_time": "2030-11-25T03:10:00+00:00",
+    "max_time": "2030-11-25T06:50:00+00:00",
+    "end_time": "2030-11-25T10:30:00+00:00",
+    "obscuration": 0.94,
+    "central_duration_sec": 239,
+    "path_geojson": "{\"type\": \"Feature\", \"properties\": {\"eclipse_type\": \"annular\"}, \"geometry\": {\"type\": \"Polygon\", \"coordinates\": [[[130, 0], [150, -10], [170, -20], [-170, -30], [-150, -35], [-130, -40], [-110, -40], [-110, -35], [-130, -35], [-150, -30], [-170, -25], [170, -15], [150, -5], [130, 5], [130, 0]]]}}"
   }
 ]
