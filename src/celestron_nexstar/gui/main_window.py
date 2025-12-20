@@ -115,7 +115,9 @@ class VisibilityCountThread(QThread):
                         8: SkyBrightness.URBAN,
                         9: SkyBrightness.URBAN,
                     }
-                    sky_brightness = bortle_to_sky_brightness.get(light_pollution.bortle_class.value, SkyBrightness.FAIR)
+                    sky_brightness = bortle_to_sky_brightness.get(
+                        light_pollution.bortle_class.value, SkyBrightness.FAIR
+                    )
                 except DatabaseError:
                     # Light pollution data not available, use default
                     logger.warning("Light pollution data not available, using default sky brightness")
@@ -125,6 +127,7 @@ class VisibilityCountThread(QThread):
                 max_workers = max(2, min(4, (os.cpu_count() or 4)))
 
                 if self.is_asterism:
+
                     def _count_asterism(name: str) -> tuple[str, int]:
                         if self.isInterruptionRequested():
                             return name, 0
@@ -171,6 +174,7 @@ class VisibilityCountThread(QThread):
                             except Exception:
                                 continue
                 else:
+
                     def _count_constellation(name: str) -> tuple[str, int]:
                         if self.isInterruptionRequested():
                             return name, 0
@@ -201,8 +205,12 @@ class VisibilityCountThread(QThread):
                                 continue
                         return name, visible_count
 
-                    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="vis-constellation") as executor:
-                        futures = {executor.submit(_count_constellation, name): name for name in self.constellation_names}
+                    with ThreadPoolExecutor(
+                        max_workers=max_workers, thread_name_prefix="vis-constellation"
+                    ) as executor:
+                        futures = {
+                            executor.submit(_count_constellation, name): name for name in self.constellation_names
+                        }
                         for future in as_completed(futures):
                             if self.isInterruptionRequested():
                                 break
@@ -283,6 +291,7 @@ class ObjectsLoaderThread(QThread):
                 objects = asterisms  # Keep full objects for asterisms
             elif obj_type == CelestialObjectType.VARIABLE_STAR:
                 # Load variable stars and convert to RecommendedObject format
+                from celestron_nexstar.api.astronomy.solar_system import get_moon_info
                 from celestron_nexstar.api.astronomy.variable_stars import get_known_variable_stars
                 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
                 from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
@@ -295,9 +304,17 @@ class ObjectsLoaderThread(QThread):
                 db = get_database()
                 config = get_current_configuration()
                 location = get_observer_location()
+                moon_info = get_moon_info(location.latitude, location.longitude, conditions.timestamp)
+                moon_ra = moon_info.ra_hours if moon_info else None
+                moon_dec = moon_info.dec_degrees if moon_info else None
 
                 with db._get_session() as session:
-                    variable_stars = get_known_variable_stars(session)
+                    try:
+                        variable_stars = get_known_variable_stars(session)
+                    except DatabaseError as e:
+                        logger.warning(f"No variable stars loaded: {e}")
+                        self.data_loaded.emit(self.obj_type_str, [])
+                        return
                     try:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
@@ -353,6 +370,8 @@ class ObjectsLoaderThread(QThread):
                         else:
                             visibility_prob = visibility_prob_result
 
+                        moon_sep = planner._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
+
                         # Create RecommendedObject
                         rec_obj = RecommendedObject(
                             obj=obj,
@@ -366,6 +385,7 @@ class ObjectsLoaderThread(QThread):
                             priority=1 if visibility_prob > 0.5 else 3,
                             reason=f"Variable star: {var_star.variable_type}",
                             viewing_tips=(),
+                            moon_separation_deg=moon_sep,
                         )
                         recommended_objects.append(rec_obj)
 
@@ -494,7 +514,6 @@ class ObjectsLoaderThread(QThread):
                     try:
                         from celestron_nexstar.api.core.enums import SkyBrightness
                         from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-                        from celestron_nexstar.api.location.observer import get_observer_location
                         from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                         from celestron_nexstar.api.observation.optics import get_current_configuration
                         from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -546,7 +565,9 @@ class ObjectsLoaderThread(QThread):
                                 dt=conditions.timestamp,
                             )
 
-                            visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
+                            visibility_prob_result = planner._calculate_visibility_probability(
+                                obj, conditions, vis_info
+                            )
                             if isinstance(visibility_prob_result, tuple):
                                 visibility_prob = visibility_prob_result[0]
                             else:
@@ -1966,14 +1987,33 @@ class MainWindow(QMainWindow):
             table.setHorizontalHeaderLabels(["Asterism", "Visible Stars", "Favorite"])
         # For star tab, add a Constellation and Asterism column
         elif obj_type == CelestialObjectType.STAR:
-            table.setColumnCount(13)
+            table.setColumnCount(12)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
                     "Name",
-                    "Type",
                     "Constellation",
                     "Asterism",
+                    "Mag",
+                    "Alt",
+                    "Visibility",
+                    "Transit",
+                    "Moon Sep",
+                    "Chance",
+                    "Tips",
+                    "Favorite",
+                ]
+            )
+        elif (
+            obj_type in (CelestialObjectType.GALAXY, CelestialObjectType.CLUSTER)
+            or obj_type == CelestialObjectType.NEBULA
+        ):
+            table.setColumnCount(11)
+            table.setHorizontalHeaderLabels(
+                [
+                    "Priority",
+                    "Name",
+                    "Subtype",
                     "Mag",
                     "Alt",
                     "Visibility",
@@ -2206,6 +2246,9 @@ class MainWindow(QMainWindow):
         obj_type_str = table.property("object_type")
         is_star_tab = obj_type_str == "star"
         is_moon_tab = obj_type_str == "moon"
+        is_nebula_tab = obj_type_str == "nebula"
+        is_galaxy_tab = obj_type_str == "galaxy"
+        is_cluster_tab = obj_type_str == "cluster"
 
         # Check all favorites in a single batch query (much more efficient)
         from celestron_nexstar.api.favorites import are_favorites
@@ -2236,15 +2279,16 @@ class MainWindow(QMainWindow):
 
             # Column indices per tab
             if is_star_tab:
-                type_col = 2
-                mag_col = 3
-                alt_col = 4
-                vis_col = 5
-                transit_col = 6
-                moonsep_col = 7
-                prob_col = 8
-                tips_col = 9
-                fav_col = 10
+                constellation_col = 2
+                asterism_col = 3
+                mag_col = 4
+                alt_col = 5
+                vis_col = 6
+                transit_col = 7
+                moonsep_col = 8
+                prob_col = 9
+                tips_col = 10
+                fav_col = 11
             elif is_moon_tab:
                 type_col = 3
                 mag_col = 4
@@ -2267,7 +2311,11 @@ class MainWindow(QMainWindow):
                 fav_col = 10
 
             # Type
-            table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))
+            if is_nebula_tab or is_galaxy_tab or is_cluster_tab:
+                subtype_text = getattr(obj, "object_subtype", None) or "-"
+                table.setItem(row, type_col, QTableWidgetItem(subtype_text))
+            elif not is_star_tab:
+                table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))
 
             # Planet column for moons
             if is_moon_tab:
@@ -2277,9 +2325,9 @@ class MainWindow(QMainWindow):
             # Constellation (only for star tab)
             if is_star_tab:
                 constellation_text = obj.constellation or "-"
-                table.setItem(row, 3, QTableWidgetItem(constellation_text))
+                table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
                 asterism_text = obj.asterism or "-"
-                table.setItem(row, 4, QTableWidgetItem(asterism_text))
+                table.setItem(row, asterism_col, QTableWidgetItem(asterism_text))
 
             # Magnitude
             mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"
@@ -2468,7 +2516,6 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
-            from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -2583,10 +2630,10 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
             # Get conditions
-            location = get_observer_location()
             config = get_current_configuration()
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
+            location = get_observer_location()
 
             def _count_all_stars() -> dict[str, int]:
                 db = get_database()
@@ -3843,8 +3890,8 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
 
             # Get location and light pollution data
-            location = get_observer_location()
             db = get_database()
+            location = get_observer_location()
 
             try:
                 with db._get_session() as session:

@@ -51,6 +51,8 @@ class CelestialObject:
     object_type: CelestialObjectType
     catalog: str
     description: str | None = None
+    object_subtype: str | None = None
+    aliases: str | None = None
     parent_planet: str | None = None
     constellation: str | None = None
     asterism: str | None = None
@@ -881,9 +883,33 @@ def search_objects(
         print(f"Traceback:\n{error_details}", file=sys.stderr)
         return []
 
-    # Sort by score (lower is better) and return
-    all_results.sort(key=lambda x: x[0])
-    return [(obj, match_type) for score, obj, match_type in all_results]
+    # Trim noisy description matches and very-short-query fuzz
+    trimmed_results: list[tuple[int, CelestialObject, str]] = []
+    description_bucket: list[tuple[int, CelestialObject, str]] = []
+    for score, obj, match_type in all_results:
+        if match_type == "description":
+            # For very short queries, suppress description matches to avoid noise
+            if len(query_lower) < 4:
+                continue
+            description_bucket.append((score, obj, match_type))
+            continue
+        trimmed_results.append((score, obj, match_type))
+
+    # Limit description matches to a small, predictable set
+    if description_bucket:
+        description_bucket.sort(key=lambda x: x[0])
+        trimmed_results.extend(description_bucket[:15])
+
+    # Deduplicate by (name, catalog) keeping the best (lowest score) match
+    deduped: dict[tuple[str, str | None], tuple[int, CelestialObject, str]] = {}
+    for score, obj, match_type in trimmed_results:
+        key = (str(obj.name).lower(), obj.catalog if hasattr(obj, "catalog") else None)
+        if key not in deduped or score < deduped[key][0]:
+            deduped[key] = (score, obj, match_type)
+
+    deduped_results = list(deduped.values())
+    deduped_results.sort(key=lambda x: x[0])
+    return [(obj, match_type) for score, obj, match_type in deduped_results]
 
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]

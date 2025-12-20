@@ -824,8 +824,10 @@ class CatalogDatabase:
                 "ra_hours": ra_hours,
                 "dec_degrees": dec_degrees,
                 "magnitude": magnitude,
+                "object_subtype": None,
                 "size_arcmin": size_arcmin,
                 "description": description,
+                "aliases": None,
                 "constellation": constellation,
             }
 
@@ -923,8 +925,10 @@ class CatalogDatabase:
                         "ra_hours": obj["ra_hours"],
                         "dec_degrees": obj["dec_degrees"],
                         "magnitude": obj.get("magnitude"),
+                        "object_subtype": obj.get("object_subtype"),
                         "size_arcmin": obj.get("size_arcmin"),
                         "description": obj.get("description"),
+                        "aliases": obj.get("aliases"),
                         "constellation": obj.get("constellation"),
                     }
 
@@ -1811,7 +1815,8 @@ class CatalogDatabase:
 
                 if constellation:
                     # For StarModel, use constellation_id foreign key
-                    # For other models, use constellation string field
+                    # For DoubleStarModel, use constellation_id (no constellation string column)
+                    # For other models, use constellation string field if present
                     if model_class.__name__ == "StarModel":
                         # Find constellation by name and use its ID
                         const_stmt = (
@@ -1819,21 +1824,26 @@ class CatalogDatabase:
                         )
                         constellation_obj = session.scalar(const_stmt)
                         if constellation_obj:
-                            # Type ignore: we know this is StarModel based on the check
                             stmt = stmt.where(StarModel.constellation_id == constellation_obj.id)  # type: ignore[attr-defined]
-                        # If constellation not found, skip filter for stars
+                    elif model_class.__name__ == "DoubleStarModel":
+                        const_stmt = (
+                            select(ConstellationModel).where(ConstellationModel.name.ilike(constellation)).limit(1)
+                        )
+                        constellation_obj = session.scalar(const_stmt)
+                        if constellation_obj:
+                            stmt = stmt.where(DoubleStarModel.constellation_id == constellation_obj.id)
                     else:
-                        # Other models use constellation string field
-                        if constellation_match:
-                            # Match by full name or abbreviation
-                            stmt = stmt.where(
-                                (model_class.constellation == constellation_match)
-                                | (model_class.constellation == constellation_abbrev)
-                                | (model_class.constellation.ilike(f"%{constellation_match}%"))
-                            )
-                        else:
-                            # Fallback: use ILIKE if we couldn't find the constellation
-                            stmt = stmt.where(model_class.constellation.ilike(f"%{constellation}%"))
+                        if hasattr(model_class, "constellation"):
+                            if constellation_match:
+                                # Match by full name or abbreviation
+                                stmt = stmt.where(
+                                    (model_class.constellation == constellation_match)
+                                    | (model_class.constellation == constellation_abbrev)
+                                    | (model_class.constellation.ilike(f"%{constellation_match}%"))
+                                )
+                            else:
+                                # Fallback: use ILIKE if we couldn't find the constellation
+                                stmt = stmt.where(model_class.constellation.ilike(f"%{constellation}%"))
 
                 # is_dynamic filter (only for planets and moons)
                 # Type ignore: Protocol includes is_dynamic but mypy needs help with the check
@@ -2100,6 +2110,8 @@ class CatalogDatabase:
             object_type=object_type,
             catalog=model.catalog,
             description=model.description,
+            object_subtype=getattr(model, "object_subtype", None),
+            aliases=getattr(model, "aliases", None),
             parent_planet=parent_planet,
             constellation=constellation,
             asterism=asterism,

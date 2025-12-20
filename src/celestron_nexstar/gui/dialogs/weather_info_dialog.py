@@ -4,7 +4,7 @@ Dialog to display current weather information.
 
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -514,10 +514,7 @@ class WeatherInfoDialog(QDialog):
                         time_str = ""
 
                     y = float(sel.target[1]) if hasattr(sel, "target") else None
-                    if y is None:
-                        text = f"{series}"
-                    else:
-                        text = f"{series}\n{time_str}  {y:.1f}{(' ' + unit) if unit else ''}"
+                    text = f"{series}" if y is None else f"{series}\n{time_str}  {y:.1f}{' ' + unit if unit else ''}"
 
                     sel.annotation.set_text(text)
                     sel.annotation.get_bbox_patch().set_alpha(0.9)

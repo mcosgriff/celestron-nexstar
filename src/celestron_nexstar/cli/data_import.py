@@ -413,12 +413,12 @@ def import_celestial_data_geojson(
 
         from celestron_nexstar.api.database.models import (
             ClusterModel,
-            GalaxyModel,
-            NebulaModel,
-            StarModel,
             DoubleStarModel,
-            PlanetModel,
+            GalaxyModel,
             MoonModel,
+            NebulaModel,
+            PlanetModel,
+            StarModel,
         )
 
         with db._get_session() as session:
@@ -1227,6 +1227,7 @@ def import_celestial_stars(
 
     # Truncate existing celestial_stars rows for a clean re-import
     from sqlalchemy import delete
+
     from celestron_nexstar.api.database.models import StarModel
 
     with db._get_session() as session:
@@ -1380,13 +1381,6 @@ def import_celestial_stars(
                     ):
                         name = common_name or name
 
-                # Human-friendly fallback for unnamed stars (e.g., celestial_stars_109492)
-                if name.startswith("celestial_stars_") or (name.isdigit() and star_id and int(name) == star_id):
-                    pretty = f"Star {star_id}" if star_id else "Star"
-                    if magnitude is not None:
-                        pretty = f"{pretty} (mag {magnitude:.2f})"
-                    name = pretty
-
                 # Extract magnitude
                 magnitude = None
                 for mag_field in ["mag", "magnitude", "Mag", "Magnitude", "vmag", "V-Mag"]:
@@ -1398,6 +1392,13 @@ def import_celestial_stars(
                                 break
                         except (ValueError, TypeError):
                             pass
+
+                # Human-friendly fallback for unnamed stars (e.g., celestial_stars_109492)
+                if name.startswith("celestial_stars_") or (name.isdigit() and star_id and int(name) == star_id):
+                    pretty = f"Star {star_id}" if star_id else "Star"
+                    if magnitude is not None:
+                        pretty = f"{pretty} (mag {magnitude:.2f})"
+                    name = pretty
 
                 # Filter by magnitude
                 if magnitude is not None and magnitude > mag_limit:
@@ -1639,6 +1640,7 @@ def import_celestial_dsos(
         "e": CelestialObjectType.GALAXY,  # Elliptical galaxy
         "i": CelestialObjectType.GALAXY,  # Irregular galaxy
         "sd": CelestialObjectType.GALAXY,  # S0/a galaxy
+        "gg": CelestialObjectType.GALAXY,  # Giant galaxy (map as generic galaxy)
         "oc": CelestialObjectType.CLUSTER,  # Open cluster
         "gc": CelestialObjectType.CLUSTER,  # Globular cluster
         "bn": CelestialObjectType.NEBULA,  # Bright nebula
@@ -1646,6 +1648,8 @@ def import_celestial_dsos(
         "dn": CelestialObjectType.NEBULA,  # Dark nebula
         "snr": CelestialObjectType.NEBULA,  # Supernova remnant
         "sfr": CelestialObjectType.NEBULA,  # Star forming region (treat as nebula)
+        "rn": CelestialObjectType.NEBULA,  # Reflection nebula
+        "en": CelestialObjectType.NEBULA,  # Emission nebula (explicit code)
     }
 
     # Map abbreviated type codes to descriptive names for display in descriptions
@@ -1657,6 +1661,7 @@ def import_celestial_dsos(
         "e": "Elliptical Galaxy",
         "i": "Irregular Galaxy",
         "sd": "S0/a Galaxy",
+        "gg": "Giant Galaxy",
         # Cluster types
         "oc": "Open Cluster",
         "gc": "Globular Cluster",
@@ -1666,6 +1671,8 @@ def import_celestial_dsos(
         "dn": "Dark Nebula",
         "snr": "Supernova Remnant",
         "sfr": "Star Forming Region",
+        "rn": "Reflection Nebula",
+        "en": "Emission Nebula",
     }
 
     # Custom function to enhance DSO objects with proper names and descriptive types
@@ -1703,7 +1710,11 @@ def import_celestial_dsos(
                 unique_aliases.append(alias)
 
         # Replace abbreviated type codes in description with descriptive names
-        description = obj.get("description", "")
+        description = obj.get("description", "") or ""
+        dso_subtype: str | None = None
+        source_type_code = (obj.get("type") or "").strip().lower()
+        if source_type_code and source_type_code in dso_type_descriptions:
+            dso_subtype = dso_type_descriptions[source_type_code]
         if description:
             # Check if description contains "Type: <abbreviation>"
             import re
@@ -1717,14 +1728,21 @@ def import_celestial_dsos(
                     descriptive_name = dso_type_descriptions[type_code]
                     obj["description"] = description.replace(f"Type: {type_code}", f"Type: {descriptive_name}")
                     description = obj["description"]
+                    dso_subtype = descriptive_name
 
         # Append alias list into description so substring search can match common catalog IDs (e.g., M 42 / NGC 1976)
         if unique_aliases:
             alias_text = "; ".join(unique_aliases)
+            obj["aliases"] = alias_text
+            # Keep aliases in description too for search discoverability
             if description:
                 obj["description"] = f"{description}\nAliases: {alias_text}"
             else:
                 obj["description"] = f"Aliases: {alias_text}"
+
+        # Store subtype separately so UI can render dedicated column (galaxy/cluster/nebula)
+        if dso_subtype:
+            obj["object_subtype"] = dso_subtype
 
         return obj
 
@@ -2309,8 +2327,9 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
         (imported_count, skipped_count)
     """
 
-    from celestron_nexstar.api.database.models import AsterismModel, get_db_session
     from sqlalchemy import delete
+
+    from celestron_nexstar.api.database.models import AsterismModel, get_db_session
 
     imported = 0
     skipped = 0

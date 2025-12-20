@@ -361,8 +361,8 @@ class SettingsDialog(QDialog):
 
         # Table for seed data sources
         table = QTableWidget()
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Source", "Description", "Count", "Re-import"])
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Source", "Description", "Count", "Re-import", "All"])
         autosize_table_columns(table, stretch_last=False)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -545,8 +545,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(header)
 
         info = QLabel(
-            "Manage the local database: create it if missing, apply Alembic migrations, "
-            "and view basic statistics."
+            "Manage the local database: create it if missing, apply Alembic migrations, and view basic statistics."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -619,7 +618,7 @@ class SettingsDialog(QDialog):
             db = get_database()
             db_path = db.db_path
             exists = db_path.exists()
-            size_str = f"{db_path.stat().st_size/1024/1024:.2f} MB" if exists else "n/a"
+            size_str = f"{db_path.stat().st_size / 1024 / 1024:.2f} MB" if exists else "n/a"
             status_lines = [
                 f"<b>Path:</b> {db_path}",
                 f"<b>Exists:</b> {'Yes' if exists else 'No'}",
@@ -706,9 +705,9 @@ class SettingsDialog(QDialog):
         from alembic.config import Config
         from alembic.runtime.migration import MigrationContext
         from alembic.script import ScriptDirectory
-        from alembic import command  # type: ignore[attr-defined]
         from sqlalchemy import create_engine, text
 
+        from alembic import command  # type: ignore[attr-defined]
         from celestron_nexstar.api.database.database import get_database
 
         db = get_database()
@@ -1225,6 +1224,7 @@ class SettingsDialog(QDialog):
                 PlanetModel,
                 SpaceEventModel,
                 StarNameMappingModel,
+                VariableStarModel,
                 get_db_session,
             )
 
@@ -1270,6 +1270,11 @@ class SettingsDialog(QDialog):
                     "name": "Space Events",
                     "description": "Calendar of astronomical events (eclipses, meteor showers, etc.)",
                 },
+                {
+                    "id": "variable_stars",
+                    "name": "Variable Stars",
+                    "description": "Reference set of notable variable stars",
+                },
             ]
 
             def get_seed_count(seed_id: str) -> int:
@@ -1300,6 +1305,9 @@ class SettingsDialog(QDialog):
                         elif seed_id == "bortle_characteristics":
                             count = session.scalar(select(func.count(BortleCharacteristicsModel.bortle_class)))
                             return int(count or 0)
+                        elif seed_id == "variable_stars":
+                            count = session.scalar(select(func.count(VariableStarModel.id)))
+                            return int(count or 0)
                 except Exception:
                     return 0
                 return 0
@@ -1326,6 +1334,12 @@ class SettingsDialog(QDialog):
                 reimport_btn.setToolTip("Clear existing data and re-import from seed files")
                 reimport_btn.clicked.connect(lambda checked, sid=source["id"]: self._on_reimport_seed_data(sid))
                 table.setCellWidget(row, 3, reimport_btn)
+
+                # Disabled placeholder for per-row "All" to keep column alignment (global button below)
+                placeholder_btn = QPushButton("-")
+                placeholder_btn.setEnabled(False)
+                placeholder_btn.setFixedWidth(80)
+                table.setCellWidget(row, 4, placeholder_btn)
 
             table.resizeColumnsToContents()
 
@@ -2476,6 +2490,7 @@ class SettingsDialog(QDialog):
             seed_planets,
             seed_space_events,
             seed_star_name_mappings,
+            seed_variable_stars,
         )
         from celestron_nexstar.api.database.models import get_db_session
 
@@ -2489,6 +2504,7 @@ class SettingsDialog(QDialog):
             "dark_sky_sites": (seed_dark_sky_sites, "Dark Sky Sites"),
             "space_events": (seed_space_events, "Space Events"),
             "bortle_characteristics": (seed_bortle_characteristics, "Bortle Characteristics"),
+            "variable_stars": (seed_variable_stars, "Variable Stars"),
         }
 
         if seed_id not in seed_map:
@@ -2527,6 +2543,35 @@ class SettingsDialog(QDialog):
                 duration_ms=4000,
                 preset="error",
             )
+        finally:
+            self.seed_data_progress.setVisible(False)
+            self.seed_data_status_label.clear()
+
+    def _on_reimport_all_seed_data(self) -> None:
+        """Re-import all seed datasets in sequence."""
+        seed_ids = [
+            "star_name_mappings",
+            "meteor_showers",
+            "constellations",
+            "planets",
+            "moons",
+            "dark_sky_sites",
+            "space_events",
+            "bortle_characteristics",
+            "variable_stars",
+        ]
+
+        self.seed_data_progress.setVisible(True)
+        self.seed_data_progress.setRange(0, 0)  # Indeterminate
+        self.seed_data_status_label.setText("Re-importing all seed data...")
+
+        try:
+            for sid in seed_ids:
+                self._on_reimport_seed_data(sid)
+            self._show_toast("All seed data re-imported.", duration_ms=4000, preset="success")
+        except Exception as e:
+            logger.error(f"Error importing all seed data: {e}", exc_info=True)
+            self._show_toast(f"Error importing all seed data: {e}", duration_ms=4000, preset="error")
         finally:
             self.seed_data_progress.setVisible(False)
             self.seed_data_status_label.clear()

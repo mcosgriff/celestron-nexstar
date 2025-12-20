@@ -142,10 +142,12 @@ class CelestialObjectMixin:
 
     # Physical properties
     magnitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    object_subtype: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     size_arcmin: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Metadata
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aliases: Mapped[str | None] = mapped_column(Text, nullable=True)
     constellation: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     # Timestamps

@@ -1,4 +1,18 @@
-from PySide6.QtCore import QThread, Signal, Slot, QUrl
+import contextlib
+import logging
+from typing import Any
+
+from PySide6.QtCore import QThread, QUrl, Signal, Slot
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QTextBrowser,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class VisibleAsterismStarsWorker(QThread):
@@ -70,29 +84,6 @@ class VisibleAsterismStarsWorker(QThread):
             self.stars_ready.emit(sorted(set(visible_star_names)))
         except Exception as e:
             self.error.emit(str(e))
-"""
-Dialog to display detailed information about an asterism.
-"""
-
-import contextlib
-import logging
-from typing import TYPE_CHECKING, Any
-
-from PySide6.QtCore import QUrl, Signal, QThread
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QTextBrowser,
-    QVBoxLayout,
-    QWidget,
-)
-
-
-if TYPE_CHECKING:
-    pass
-
-
-logger = logging.getLogger(__name__)
 
 
 class LinkClickableTextBrowser(QTextBrowser):
@@ -846,7 +837,7 @@ class AsterismInfoDialog(QDialog):
                     encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
                     info_link = (
                         f'<a href="starinfo://{encoded}" style="text-decoration: none; '
-                        f'color: {colors["cyan"]}; font-weight: bold;" title="Show star information">ℹ️</a>'
+                        f'color: {colors["cyan"]}; font-weight: bold;" title="Show star information">i</a>'
                     )
                     rows.append(
                         f"<tr>"
@@ -859,9 +850,7 @@ class AsterismInfoDialog(QDialog):
                     f"<tr style='background-color: {header_bg};'>"
                     "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
                     "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
-                    "</tr>"
-                    + "".join(rows)
-                    + "</table>"
+                    "</tr>" + "".join(rows) + "</table>"
                 )
             else:
                 table_html = (

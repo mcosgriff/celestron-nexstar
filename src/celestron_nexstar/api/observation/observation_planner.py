@@ -511,6 +511,11 @@ class ObservationPlanner:
         from celestron_nexstar.api.core.enums import CelestialObjectType
 
         is_star_query = isinstance(target_types, CelestialObjectType) and target_types == CelestialObjectType.STAR
+        is_dso_query = isinstance(target_types, CelestialObjectType) and target_types in {
+            CelestialObjectType.GALAXY,
+            CelestialObjectType.NEBULA,
+            CelestialObjectType.CLUSTER,
+        }
 
         # Pre-filter by magnitude to reduce load:
         # - For poor seeing: only bright objects (mag < 10)
@@ -527,9 +532,15 @@ class ObservationPlanner:
         # Limit initial query to reduce memory usage
         # We'll get more than max_results to account for filtering
         # For stars, use smaller multiplier since we're already filtering by magnitude more aggressively
-        initial_limit = (
-            min(2000, max_results * 20) if is_star_query else min(5000, max_results * 50)
-        )  # Stars: up to 2k or 20x requested, Others: up to 5k or 50x requested
+        if is_star_query:
+            # Stars: up to 2k or 20x requested
+            initial_limit = min(2000, max_results * 20)
+        elif is_dso_query:
+            # Galaxies/Nebulae/Clusters: smaller pool to avoid heavy visibility/scoring passes
+            initial_limit = min(800, max_results * 15)
+        else:
+            # Other objects: moderate pool
+            initial_limit = min(3000, max_results * 30)
 
         # If filtering by a specific object type, pass it to filter_objects
         # This ensures objects without magnitudes are still included for that type

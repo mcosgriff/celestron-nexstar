@@ -8,7 +8,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide6.QtCore import QThread, Signal, Slot, Qt
+from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -132,8 +132,7 @@ class ObjectInfoDialog(QDialog):
         self._dso_map_worker: DSOMapWorker | None = None
         self._dso_map_placeholder_id = "dso-map-placeholder"
         self._dso_map_placeholder = (
-            f"<p id='{self._dso_map_placeholder_id}' style='margin-left:20px; color: #888;'>"
-            "Generating finder map…</p>"
+            f"<p id='{self._dso_map_placeholder_id}' style='margin-left:20px; color: #888;'>Generating finder map…</p>"
         )
 
         # Create layout

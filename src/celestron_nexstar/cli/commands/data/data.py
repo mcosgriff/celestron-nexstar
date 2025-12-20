@@ -2682,23 +2682,25 @@ def run_migrations(
             if hasattr(e, "orig") and e.orig:
                 error_str += " " + str(e.orig)
             error_msg = error_str.lower()
-            
+
             if "objects_fts" in error_msg and ("trigger" in error_msg or "no such table" in error_msg):
-                console.print("[dim]Migration encountered trigger issue (this is normal for fresh installs). Fixing and retrying...[/dim]")
+                console.print(
+                    "[dim]Migration encountered trigger issue (this is normal for fresh installs). Fixing and retrying...[/dim]"
+                )
                 # Get a connection to drop triggers
                 db_temp = get_database()
                 try:
                     db_temp._engine.dispose()
-                    
+
                     def _drop_triggers() -> None:
                         with db_temp._get_session() as session:
                             from sqlalchemy import text
-                            
+
                             session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
                             session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
                             session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
                             session.commit()
-                    
+
                     _drop_triggers()
                     # Dispose again before retrying migration
                     db_temp._engine.dispose()
@@ -2708,11 +2710,13 @@ def run_migrations(
                 except Exception as retry_error:
                     console.print(f"[red]✗[/red] Failed to recover from trigger error: {retry_error}")
                     import traceback
+
                     console.print(f"[dim]{traceback.format_exc()}[/dim]")
                     raise typer.Exit(code=1) from retry_error
             else:
                 console.print(f"[red]✗[/red] Failed to apply migrations: {e}")
                 import traceback
+
                 console.print(f"[dim]{traceback.format_exc()}[/dim]")
                 raise typer.Exit(code=1) from e
     except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
