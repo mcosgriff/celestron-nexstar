@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <!-- Celestron-inspired telescope icon: orange accent (#f97316) on transparent background -->
+  <g transform="translate(112 96)">
+    <!-- Tripod legs -->
+    <path d="M360 520 L260 840" stroke="#374151" stroke-width="44" stroke-linecap="round"/>
+    <path d="M440 520 L540 840" stroke="#374151" stroke-width="44" stroke-linecap="round"/>
+    <path d="M400 520 L400 840" stroke="#4B5563" stroke-width="48" stroke-linecap="round"/>
+
+    <!-- Mount base -->
+    <rect x="320" y="470" width="160" height="70" rx="18" fill="#111827" stroke="#1F2937" stroke-width="8"/>
+
+    <!-- Telescope tube -->
+    <g transform="translate(140 80) rotate(-18 300 180)">
+      <rect x="140" y="120" width="420" height="120" rx="36" fill="#111827" stroke="#1F2937" stroke-width="10"/>
+      <rect x="140" y="120" width="200" height="120" rx="36" fill="#f97316" opacity="0.9"/>
+      <!-- Objective rim -->
+      <circle cx="560" cy="180" r="68" fill="#111827" stroke="#1F2937" stroke-width="10"/>
+      <circle cx="560" cy="180" r="50" fill="#D1D5DB"/>
+      <circle cx="560" cy="180" r="32" fill="#F3F4F6"/>
+      <!-- Eyepiece -->
+      <rect x="120" y="150" width="32" height="60" rx="12" fill="#4B5563" stroke="#1F2937" stroke-width="6"/>
+    </g>
+
+    <!-- Finder scope -->
+    <g transform="translate(360 60) rotate(-12 60 40)">
+      <rect x="0" y="0" width="120" height="40" rx="12" fill="#4B5563" stroke="#1F2937" stroke-width="6"/>
+      <rect x="0" y="0" width="60" height="40" rx="12" fill="#f97316" opacity="0.9"/>
+    </g>
+
+    <!-- Accent star -->
+    <g transform="translate(640 120)">
+      <path d="M64 0 L82 44 L130 44 L92 72 L108 116 L64 90 L20 116 L36 72  -2 44 46 44 Z"
+            fill="#f97316" stroke="#1F2937" stroke-width="6" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
+

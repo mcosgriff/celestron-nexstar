@@ -27,6 +27,7 @@ import duckdb  # type: ignore[import-untyped]  # noqa: F401
 
 # Import starplot after duckdb to ensure it can import duckdb successfully
 import starplot  # type: ignore[import-untyped]  # noqa: F401
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from celestron_nexstar.api.core.utils import configure_astropy_iers
@@ -93,6 +94,7 @@ def main() -> int:
     except Exception:
         pass
     app.setApplicationName("Celestron NexStar")
+    app.setApplicationDisplayName("Celestron NexStar")
     app.setOrganizationName("Celestron NexStar")
 
     # Pre-import qtawesome to ensure fonts/resources are loaded
@@ -104,6 +106,11 @@ def main() -> int:
     except Exception:
         # If qtawesome fails to load, we'll fall back to theme icons
         pass
+
+    # Set application/window icon (shows in macOS Dock, GNOME dock, Windows taskbar)
+    icon_path = Path(__file__).parent / "assets" / "icons" / "app.svg"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Load JetBrains Mono font
     try:

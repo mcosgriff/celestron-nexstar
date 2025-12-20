@@ -31,6 +31,7 @@ __all__ = [
     "configure_astropy_iers",
     "dec_to_degrees",
     "degrees_to_dms",
+    "ensure_utc",
     "format_dec",
     "format_local_time",
     "format_position",
@@ -45,6 +46,15 @@ __all__ = [
 
 # Global timezone finder instance (cached for performance)
 _tz_finder = TimezoneFinder()
+
+
+def ensure_utc(dt: datetime | None) -> datetime | None:
+    """Return a UTC-aware datetime, treating naive values as UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def configure_astropy_iers() -> None:

@@ -3,7 +3,7 @@ Dialog to display current weather information.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtWidgets import (
@@ -340,20 +340,22 @@ class WeatherInfoDialog(QDialog):
             # Fetch weather data (past 3 days + 24 hours future to ensure we have today's data)
             all_forecasts = fetch_weather_for_charts(location, future_hours=24)
 
-            # Filter to only current day (12 AM to now in local time)
+            # Use a +/- 6 hour window around "now" (total 12 hours) in local time
             now_utc = datetime.now(UTC)
             now_local = now_utc.astimezone(local_tz)
-            today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_start_utc = today_start_local.astimezone(UTC)
+            window_start_local = now_local - timedelta(hours=6)
+            window_end_local = now_local + timedelta(hours=6)
+            window_start_utc = window_start_local.astimezone(UTC)
+            window_end_utc = window_end_local.astimezone(UTC)
 
-            # Filter forecasts to only include today (from 12 AM to now)
+            # Filter forecasts to only the 12-hour window
             from dataclasses import replace
 
             forecasts = []
             for f in all_forecasts:
                 ts = f.timestamp
                 ts_utc = ts.replace(tzinfo=UTC) if getattr(ts, "tzinfo", None) is None else ts.astimezone(UTC)
-                if today_start_utc <= ts_utc <= now_utc:
+                if window_start_utc <= ts_utc <= window_end_utc:
                     forecasts.append(replace(f, timestamp=ts_utc))
 
             if not forecasts:
@@ -391,42 +393,48 @@ class WeatherInfoDialog(QDialog):
                 fig.patch.set_facecolor("#1e1e1e")  # type: ignore[attr-defined]
                 text_color = "#ffffff"
                 grid_color = "#444444"
+                axes_facecolor = "#1a1a1a"
             else:
                 fig.patch.set_facecolor("#ffffff")  # type: ignore[attr-defined]
                 text_color = "#000000"
                 grid_color = "#cccccc"
+                axes_facecolor = "#ffffff"
 
             # Prepare data
-            timestamps = [f.timestamp for f in forecasts]
+            timestamps_utc = [f.timestamp for f in forecasts]
+            timestamps = [ts.astimezone(local_tz) for ts in timestamps_utc]
             temperatures = [f.temperature_f for f in forecasts]
+            dew_points = [f.dew_point_f if f.dew_point_f is not None else float("nan") for f in forecasts]
             cloud_cover = [f.cloud_cover_percent for f in forecasts]
             humidity = [f.humidity_percent for f in forecasts]
             wind_speed = [f.wind_speed_mph for f in forecasts]
 
-            # Find current time index
-            current_idx = next((i for i, ts in enumerate(timestamps) if ts >= now_utc), len(timestamps) - 1)
-
-            # Convert datetime to matplotlib date numbers for axvline
+            # Convert datetime to matplotlib date numbers for axvline and x-limits
             import matplotlib.dates as mdates
 
-            current_time_mpl = mdates.date2num(
-                timestamps[current_idx] if current_idx < len(timestamps) else timestamps[-1]
-            )
+            current_time_mpl = mdates.date2num(now_local)
+            start_time_mpl = mdates.date2num(window_start_local)
+            end_time_mpl = mdates.date2num(window_end_local)
 
             # Create subplots
             ax1 = fig.add_subplot(4, 1, 1)  # Temperature
             ax2 = fig.add_subplot(4, 1, 2)  # Cloud Cover
             ax3 = fig.add_subplot(4, 1, 3)  # Humidity
             ax4 = fig.add_subplot(4, 1, 4)  # Wind Speed
+            for ax in (ax1, ax2, ax3, ax4):
+                ax.set_facecolor(axes_facecolor)
 
             # Plot Temperature
-            (temp_line,) = ax1.plot(timestamps, temperatures, color="#ff6b6b", linewidth=2, label="Temperature")
-            ax1.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5, label="Now")
+            (temp_line,) = ax1.plot(timestamps, temperatures, color="#ff6b6b", linewidth=2, label="_nolegend_")
+            (dew_line,) = ax1.plot(
+                timestamps, dew_points, color="#50c8e0", linewidth=1.5, linestyle="--", label="_nolegend_"
+            )
+            ax1.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax1.set_ylabel("Temperature (°F)", color=text_color)
             ax1.tick_params(colors=text_color)
             ax1.grid(True, color=grid_color, alpha=0.3)
             ax1.set_title("Temperature", color=text_color, fontweight="bold")
-            ax1.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+            ax1.set_xlim(start_time_mpl, end_time_mpl)
 
             # Plot Cloud Cover
             ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
@@ -438,41 +446,40 @@ class WeatherInfoDialog(QDialog):
             ax2.tick_params(colors=text_color)
             ax2.grid(True, color=grid_color, alpha=0.3)
             ax2.set_title("Cloud Cover", color=text_color, fontweight="bold")
-            ax2.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+            ax2.set_xlim(start_time_mpl, end_time_mpl)
 
             # Plot Humidity
-            (humidity_line,) = ax3.plot(timestamps, humidity, color="#50c878", linewidth=2, label="Humidity")
+            (humidity_line,) = ax3.plot(timestamps, humidity, color="#50c878", linewidth=2, label="_nolegend_")
             ax3.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax3.set_ylabel("Humidity (%)", color=text_color)
             ax3.set_ylim(0, 100)
             ax3.tick_params(colors=text_color)
             ax3.grid(True, color=grid_color, alpha=0.3)
             ax3.set_title("Humidity", color=text_color, fontweight="bold")
-            ax3.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+            ax3.set_xlim(start_time_mpl, end_time_mpl)
 
             # Plot Wind Speed
-            (wind_line,) = ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="Wind Speed")
+            (wind_line,) = ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="_nolegend_")
             ax4.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax4.set_ylabel("Wind Speed (mph)", color=text_color)
             ax4.set_xlabel("Time", color=text_color)
             ax4.tick_params(colors=text_color)
             ax4.grid(True, color=grid_color, alpha=0.3)
             ax4.set_title("Wind Speed", color=text_color, fontweight="bold")
-            ax4.legend(loc="upper left", facecolor="none", edgecolor="none", labelcolor=text_color)
+            ax4.set_xlim(start_time_mpl, end_time_mpl)
 
-            # Format x-axis dates - show time (HH format) on all charts
-            # Use 4-hour interval for better spacing
+            # Format x-axis dates - show time (HH) on all charts within 12h window
             for ax in [ax1, ax2, ax3, ax4]:
                 ax.tick_params(axis="x", rotation=0)  # No rotation needed for time-only
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H"))  # Just hour (01, 06, 12, 23, etc.)
-                ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))  # Every 4 hours
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H", tz=local_tz))  # 24-hour local hour
+                ax.xaxis.set_major_locator(mdates.HourLocator(interval=2, tz=local_tz))  # Every 2 hours for a 12h window
                 # Add padding to top, bottom, and left (y-axis) of each chart
-                ax.margins(y=0.15, x=0.02)  # 15% margin on top/bottom, 2% on left/right for y-axis labels
+                ax.margins(y=0.15, x=0.0)  # 15% margin on top/bottom, no extra x-margin since window fixed
 
             # Adjust layout with more spacing between subplots
             # Add extra left padding to prevent y-axis labels from being cut off
             fig.tight_layout(pad=2.0)  # Padding around the figure
-            fig.subplots_adjust(hspace=0.4, left=0.12)  # More spacing between charts, left margin for y-axis labels
+            fig.subplots_adjust(hspace=0.7, left=0.12)  # More vertical spacing and left margin for y-axis labels
 
             # Optional: interactive hover tooltips (like NWS graphical forecast).
             # This is best-effort; if mplcursors isn't installed, charts still render normally.
@@ -481,18 +488,20 @@ class WeatherInfoDialog(QDialog):
 
                 line_units: dict[int, str] = {
                     id(temp_line): "°F",
+                    id(dew_line): "°F",
                     id(cloud_line): "%",
                     id(humidity_line): "%",
                     id(wind_line): "mph",
                 }
                 line_names: dict[int, str] = {
                     id(temp_line): "Temperature",
+                    id(dew_line): "Dew Point",
                     id(cloud_line): "Cloud Cover",
                     id(humidity_line): "Humidity",
                     id(wind_line): "Wind Speed",
                 }
 
-                cursor = mplcursors.cursor([temp_line, cloud_line, humidity_line, wind_line], hover=True)
+                cursor = mplcursors.cursor([temp_line, dew_line, cloud_line, humidity_line, wind_line], hover=True)
 
                 @cursor.connect("add")  # type: ignore[misc]
                 def _on_add(sel: Any) -> None:
@@ -520,7 +529,7 @@ class WeatherInfoDialog(QDialog):
                     sel.annotation.get_bbox_patch().set_alpha(0.9)
                     sel.annotation.get_bbox_patch().set_facecolor("#222222" if is_dark else "#ffffff")
                     sel.annotation.get_bbox_patch().set_edgecolor("#777777" if is_dark else "#cccccc")
-                    sel.annotation.get_text().set_color("#ffffff" if is_dark else "#000000")
+                    sel.annotation.set_color("#ffffff" if is_dark else "#000000")
             except Exception:
                 # Hover is optional; ignore if missing or unsupported backend.
                 pass

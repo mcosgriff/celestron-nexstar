@@ -855,12 +855,11 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
             ).scalar_one_or_none()
 
         # If we have reasonable coverage and it was fetched recently, return DB data.
+        fetched_recently = False
         if last_fetch is not None:
-            if last_fetch.tzinfo is None:
-                last_fetch = last_fetch.replace(tzinfo=UTC)
+            # Normalize to UTC
+            last_fetch = last_fetch if getattr(last_fetch, "tzinfo", None) else last_fetch.replace(tzinfo=UTC)
             fetched_recently = (now - last_fetch) < timedelta(minutes=30)
-        else:
-            fetched_recently = False
 
         if rows and fetched_recently:
             return [

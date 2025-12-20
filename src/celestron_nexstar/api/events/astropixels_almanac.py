@@ -304,6 +304,8 @@ def fetch_and_parse_almanac(year: int, timezone: str = "MST") -> list[AstroPixel
             return events
 
         html = response.text
+        # Sanitize broken numeric character refs like "&#176E" -> "&#176;E" to avoid parser errors
+        html = re.sub(r"&#176([A-Za-z])", r"&#176;\1", html)
         soup = BeautifulSoup(html, "html.parser")
 
         # Find the main table with events
