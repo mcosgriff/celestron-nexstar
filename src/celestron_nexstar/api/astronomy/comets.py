@@ -44,6 +44,15 @@ class Comet:
     peak_date: datetime  # Expected peak brightness date
     is_periodic: bool  # Whether comet is periodic
     period_years: float | None  # Orbital period in years (if periodic)
+    eccentricity: float | None
+    inclination_deg: float | None
+    arg_perihelion_deg: float | None
+    ascending_node_deg: float | None
+    semi_major_axis_au: float | None
+    perihelion_time: datetime | None
+    absolute_magnitude_h: float | None
+    slope_g: float | None
+    source: str | None
     notes: str  # Additional information
 
 

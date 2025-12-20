@@ -447,8 +447,15 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             # IndexError: missing array indices
             # SQLAlchemyError: table missing or other DB errors
             logger.warning(f"Error checking database for weather forecasts: {e}")
+        # Always return timezone-aware now; ensure forecast timestamps are aware too
+        safe_forecasts: list[WeatherForecastModel] = []
+        for f in existing_forecasts:
+            ts = f.forecast_timestamp
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            safe_forecasts.append(f)
 
-        return existing_forecasts, now
+        return safe_forecasts, now
 
     cached_fallback: list[WeatherForecastModel] = []
 

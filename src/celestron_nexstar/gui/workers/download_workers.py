@@ -6,6 +6,7 @@ QThread workers for async data downloads to prevent UI blocking.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -425,6 +426,47 @@ class DownloadEphemerisFileThread(QThread):
             logger.error(f"Error downloading ephemeris file {self.file_key}: {e}", exc_info=True)
             self.error_occurred.emit(self.file_key, str(e))
             self.download_complete.emit(self.file_key, False, str(e))
+
+
+class DownloadMPCCometsThread(QThread):
+    """Worker to fetch MPC comet elements and write to seed file."""
+
+    progress_updated = Signal(str, int, int)  # type: ignore[type-arg,misc]
+    download_complete = Signal(bool, str)  # type: ignore[type-arg,misc]  # Emits (success, message)
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]
+
+    def __init__(self, max_magnitude: float = 12.0, limit: int | None = None, force: bool = True) -> None:
+        super().__init__()
+        self.max_magnitude = max_magnitude
+        self.limit = limit
+        self.force = force
+
+    def run(self) -> None:
+        try:
+            from celestron_nexstar.api.database.database_seeder import get_seed_data_path
+            from celestron_nexstar.api.solar_system.mpc import fetch_mpc_comets
+
+            self.progress_updated.emit("Fetching MPC comet elements...", 0, 0)
+            comets = fetch_mpc_comets(max_magnitude=self.max_magnitude, limit=self.limit)
+            if not comets:
+                self.download_complete.emit(False, "No comet data fetched from MPC")
+                return
+
+            seed_dir = get_seed_data_path()
+            seed_dir.mkdir(parents=True, exist_ok=True)
+            target = seed_dir / "comets.json"
+            if self.force and target.exists():
+                target.unlink()
+
+            with target.open("w", encoding="utf-8") as f:
+                json.dump(comets, f, indent=2, ensure_ascii=False)
+
+            self.progress_updated.emit("Saved MPC comet seed file", 100, 100)
+            self.download_complete.emit(True, f"Saved {len(comets)} comets to {target}")
+        except Exception as e:
+            logger.error(f"Error downloading MPC comets: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.download_complete.emit(False, str(e))
 
 
 class DownloadEphemerisSetThread(QThread):

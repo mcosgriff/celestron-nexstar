@@ -472,7 +472,9 @@ class WeatherInfoDialog(QDialog):
             for ax in [ax1, ax2, ax3, ax4]:
                 ax.tick_params(axis="x", rotation=0)  # No rotation needed for time-only
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%H", tz=local_tz))  # 24-hour local hour
-                ax.xaxis.set_major_locator(mdates.HourLocator(interval=2, tz=local_tz))  # Every 2 hours for a 12h window
+                ax.xaxis.set_major_locator(
+                    mdates.HourLocator(interval=2, tz=local_tz)
+                )  # Every 2 hours for a 12h window
                 # Add padding to top, bottom, and left (y-axis) of each chart
                 ax.margins(y=0.15, x=0.0)  # 15% margin on top/bottom, no extra x-margin since window fixed
 

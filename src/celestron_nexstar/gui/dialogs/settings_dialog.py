@@ -69,6 +69,7 @@ class SettingsDialog(QDialog):
         self._create_ephemeris_tab()
         self._create_celestial_data_tab()
         self._create_seed_data_tab()
+        self._create_solar_system_tab()
         self._create_custom_yaml_tab()
         self._create_wds_tab()
         self._create_light_pollution_tab()
@@ -91,6 +92,7 @@ class SettingsDialog(QDialog):
         self._load_ephemeris_info()
         self._load_celestial_data_info()
         self._load_seed_data_info()
+        self._load_solar_system_info()
         self._load_custom_yaml_info()
         self._load_wds_info()
         self._load_light_pollution_info()
@@ -163,6 +165,45 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         self.tab_widget.addTab(widget, "Config")
+
+    def _create_solar_system_tab(self) -> None:
+        """Create Solar System tab for MPC/Horizons data management."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        header = QLabel("Solar System Data (MPC / Horizons)")
+        header.setStyleSheet("font-size: 14pt; font-weight: bold; margin-bottom: 8px;")
+        layout.addWidget(header)
+
+        desc = QLabel(
+            "Manage offline comet/asteroid elements (MPC), optional Horizons/SPK caches, and eclipse seeds "
+            "for accurate offline visibility when traveling without internet."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        table = QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["Source", "Description", "Count", "Actions"])
+        autosize_table_columns(table, stretch_last=True)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.solar_system_table = table
+        layout.addWidget(table)
+
+        progress = QProgressBar()
+        progress.setVisible(False)
+        progress.setRange(0, 0)
+        self.solar_system_progress = progress
+        layout.addWidget(progress)
+
+        status = QLabel()
+        status.setWordWrap(True)
+        self.solar_system_status = status
+        layout.addWidget(status)
+
+        layout.addStretch()
+        self.tab_widget.addTab(widget, "Solar System Data")
 
     def _create_ephemeris_tab(self) -> None:
         """Create the ephemeris tab with download functionality."""
@@ -1218,8 +1259,10 @@ class SettingsDialog(QDialog):
 
             from celestron_nexstar.api.database.models import (
                 BortleCharacteristicsModel,
+                CometModel,
                 ConstellationModel,
                 DarkSkySiteModel,
+                EclipseModel,
                 MeteorShowerModel,
                 MoonModel,
                 PlanetModel,
@@ -1276,6 +1319,16 @@ class SettingsDialog(QDialog):
                     "name": "Variable Stars",
                     "description": "Reference set of notable variable stars",
                 },
+                {
+                    "id": "comets",
+                    "name": "Comets",
+                    "description": "Reference set of bright/cometary objects",
+                },
+                {
+                    "id": "eclipses",
+                    "name": "Eclipses",
+                    "description": "Reference solar/lunar eclipses",
+                },
             ]
 
             def get_seed_count(seed_id: str) -> int:
@@ -1309,6 +1362,12 @@ class SettingsDialog(QDialog):
                         elif seed_id == "variable_stars":
                             count = session.scalar(select(func.count(VariableStarModel.id)))
                             return int(count or 0)
+                        elif seed_id == "comets":
+                            count = session.scalar(select(func.count(CometModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "eclipses":
+                            count = session.scalar(select(func.count(EclipseModel.id)))
+                            return int(count or 0)
                 except Exception:
                     return 0
                 return 0
@@ -1329,10 +1388,15 @@ class SettingsDialog(QDialog):
                 count_item = QTableWidgetItem(count_text)
                 table.setItem(row, 2, count_item)
 
-                # Re-import button
-                reimport_btn = QPushButton("Re-import")
+                # Import / Re-import button based on whether data exists
+                has_data = count > 0
+                button_label = "Re-import" if has_data else "Import"
+                button_tooltip = (
+                    "Clear existing data and re-import from seed files" if has_data else "Import from seed files"
+                )
+                reimport_btn = QPushButton(button_label)
                 reimport_btn.setFixedWidth(100)
-                reimport_btn.setToolTip("Clear existing data and re-import from seed files")
+                reimport_btn.setToolTip(button_tooltip)
                 reimport_btn.clicked.connect(lambda checked, sid=source["id"]: self._on_reimport_seed_data(sid))
                 table.setCellWidget(row, 3, reimport_btn)
 
@@ -1350,6 +1414,91 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logger.error(f"Error loading seed data info: {e}", exc_info=True)
             self.seed_data_status_label.setText(f"Error: {e}")
+
+    def _load_solar_system_info(self) -> None:
+        """Load solar system data (MPC/Horizons/Eclipses) into table."""
+        try:
+            from sqlalchemy import func, select
+
+            from celestron_nexstar.api.database.database_seeder import get_seed_data_path
+            from celestron_nexstar.api.database.models import CometModel, EclipseModel, get_db_session
+
+            with get_db_session() as session:
+                comet_count = int(session.scalar(select(func.count(CometModel.id))) or 0)
+                eclipse_count = int(session.scalar(select(func.count(EclipseModel.id))) or 0)
+
+            seed_dir = get_seed_data_path()
+            comet_seed_exists = (seed_dir / "comets.json").exists()
+
+            sources = [
+                {
+                    "id": "mpc_comets",
+                    "name": "MPC Comets",
+                    "description": "Comet orbital elements + photometric params (MPC Soft00Cmt)",
+                    "count": comet_count,
+                    "seed_exists": comet_seed_exists,
+                },
+                {
+                    "id": "horizons_spk",
+                    "name": "Horizons SPK (coming soon)",
+                    "description": "Download SPK kernels for priority comets/asteroids for highest accuracy",
+                    "count": 0,
+                    "seed_exists": False,
+                },
+                {
+                    "id": "eclipses",
+                    "name": "Eclipses Seed",
+                    "description": "Seed eclipses with contact times/path (offline visibility)",
+                    "count": eclipse_count,
+                    "seed_exists": True,
+                },
+            ]
+
+            table = self.solar_system_table
+            table.setRowCount(len(sources))
+
+            for row, source in enumerate(sources):
+                table.setItem(row, 0, QTableWidgetItem(source["name"]))
+                table.setItem(row, 1, QTableWidgetItem(source["description"]))
+                table.setItem(row, 2, QTableWidgetItem(f"{source['count']:,}"))
+
+                action_widget = QWidget()
+                action_layout = QHBoxLayout(action_widget)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+
+                if source["id"] == "mpc_comets":
+                    download_btn = QPushButton("Download")
+                    download_btn.clicked.connect(self._on_download_mpc_comets)
+                    self.solar_mpc_download_btn = download_btn
+                    action_layout.addWidget(download_btn)
+
+                    import_btn = QPushButton("Re-import" if source["count"] > 0 else "Import")
+                    import_btn.clicked.connect(self._on_import_mpc_comets)
+                    import_btn.setEnabled(source["seed_exists"])
+                    if not source["seed_exists"]:
+                        import_btn.setToolTip("Download MPC comets first to enable import")
+                    self.solar_mpc_import_btn = import_btn
+                    action_layout.addWidget(import_btn)
+
+                elif source["id"] == "horizons_spk":
+                    placeholder_btn = QPushButton("Coming Soon")
+                    placeholder_btn.setEnabled(False)
+                    action_layout.addWidget(placeholder_btn)
+
+                elif source["id"] == "eclipses":
+                    import_btn = QPushButton("Re-import" if source["count"] > 0 else "Import")
+                    import_btn.clicked.connect(self._on_import_eclipses_solar)
+                    self.solar_eclipses_import_btn = import_btn
+                    action_layout.addWidget(import_btn)
+
+                action_layout.addStretch()
+                table.setCellWidget(row, 3, action_widget)
+
+            table.resizeColumnsToContents()
+            self.solar_system_status.clear()
+        except Exception as e:
+            logger.error(f"Error loading solar system info: {e}", exc_info=True)
+            self.solar_system_status.setText(f"Error: {e}")
 
     def _load_custom_yaml_info(self) -> None:
         """Load custom YAML catalog information."""
@@ -2484,8 +2633,10 @@ class SettingsDialog(QDialog):
         """Handle seed data re-import button click."""
         from celestron_nexstar.api.database.database_seeder import (
             seed_bortle_characteristics,
+            seed_comets,
             seed_constellations,
             seed_dark_sky_sites,
+            seed_eclipses,
             seed_meteor_showers,
             seed_moons,
             seed_planets,
@@ -2506,6 +2657,8 @@ class SettingsDialog(QDialog):
             "space_events": (seed_space_events, "Space Events"),
             "bortle_characteristics": (seed_bortle_characteristics, "Bortle Characteristics"),
             "variable_stars": (seed_variable_stars, "Variable Stars"),
+            "comets": (seed_comets, "Comets"),
+            "eclipses": (seed_eclipses, "Eclipses"),
         }
 
         if seed_id not in seed_map:
@@ -2576,6 +2729,97 @@ class SettingsDialog(QDialog):
         finally:
             self.seed_data_progress.setVisible(False)
             self.seed_data_status_label.clear()
+
+    def _on_download_mpc_comets(self) -> None:
+        """Handle MPC comet download."""
+        from celestron_nexstar.gui.workers.download_workers import DownloadMPCCometsThread
+
+        worker_key = "mpc_comets_download"
+        if worker_key in self._download_workers:
+            return
+
+        self.solar_system_progress.setVisible(True)
+        self.solar_system_progress.setRange(0, 0)
+        self.solar_system_status.setText("Fetching MPC comet elements...")
+
+        worker = DownloadMPCCometsThread()
+
+        def on_progress(status: str, current: int, total: int) -> None:
+            self.solar_system_status.setText(status)
+            if total > 0:
+                self.solar_system_progress.setRange(0, total)
+                self.solar_system_progress.setValue(current)
+
+        def on_complete(success: bool, message: str) -> None:
+            self._download_workers.pop(worker_key, None)
+            self.solar_system_progress.setVisible(False)
+            if success:
+                self.solar_system_status.setText(f"✓ {message}")
+                self._show_toast(message, preset="success", duration_ms=3000)
+                self._load_solar_system_info()
+            else:
+                self.solar_system_status.setText(f"✗ {message}")
+                self._show_toast(message, preset="error", duration_ms=4000)
+
+        def on_error(error: str) -> None:
+            self._download_workers.pop(worker_key, None)
+            self.solar_system_progress.setVisible(False)
+            self.solar_system_status.setText(f"✗ {error}")
+            self._show_toast(f"Download error: {error}", preset="error", duration_ms=4000)
+
+        worker.progress_updated.connect(on_progress)
+        worker.download_complete.connect(on_complete)
+        worker.error_occurred.connect(on_error)
+        worker.finished.connect(lambda: self._download_workers.pop(worker_key, None))
+
+        self._download_workers[worker_key] = worker
+        worker.start()
+
+    def _on_import_mpc_comets(self) -> None:
+        """Import MPC comet seed data into DB."""
+        from celestron_nexstar.api.database.database_seeder import seed_comets
+        from celestron_nexstar.api.database.models import get_db_session
+
+        self.solar_system_progress.setVisible(True)
+        self.solar_system_progress.setRange(0, 0)
+        self.solar_system_status.setText("Importing MPC comets...")
+
+        try:
+            with get_db_session() as session:
+                added = seed_comets(session, force=True)
+                session.commit()
+            self._load_solar_system_info()
+            self._show_toast(f"Imported {added} MPC comets", preset="success", duration_ms=3000)
+            self.solar_system_status.setText(f"✓ Imported {added} comets")
+        except Exception as e:
+            logger.error(f"Error importing MPC comets: {e}", exc_info=True)
+            self._show_toast(f"Error importing MPC comets: {e}", preset="error", duration_ms=4000)
+            self.solar_system_status.setText(f"✗ Error importing: {e}")
+        finally:
+            self.solar_system_progress.setVisible(False)
+
+    def _on_import_eclipses_solar(self) -> None:
+        """Import eclipses seed data from Solar System tab."""
+        from celestron_nexstar.api.database.database_seeder import seed_eclipses
+        from celestron_nexstar.api.database.models import get_db_session
+
+        self.solar_system_progress.setVisible(True)
+        self.solar_system_progress.setRange(0, 0)
+        self.solar_system_status.setText("Importing eclipses...")
+
+        try:
+            with get_db_session() as session:
+                added = seed_eclipses(session, force=True)
+                session.commit()
+            self._load_solar_system_info()
+            self._show_toast(f"Imported {added} eclipses", preset="success", duration_ms=3000)
+            self.solar_system_status.setText(f"✓ Imported {added} eclipses")
+        except Exception as e:
+            logger.error(f"Error importing eclipses: {e}", exc_info=True)
+            self._show_toast(f"Error importing eclipses: {e}", preset="error", duration_ms=4000)
+            self.solar_system_status.setText(f"✗ Error importing: {e}")
+        finally:
+            self.solar_system_progress.setVisible(False)
 
     def _on_celestial_import_progress(self, source_id: str, status: str, current: int, total: int) -> None:
         """Handle celestial data import progress update."""

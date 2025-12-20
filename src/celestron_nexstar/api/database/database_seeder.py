@@ -594,6 +594,9 @@ def seed_comets(db_session: Session, force: bool = False) -> int:
 
         item["perihelion_date"] = datetime.fromisoformat(item["perihelion_date"].replace("Z", "+00:00"))
         item["peak_date"] = datetime.fromisoformat(item["peak_date"].replace("Z", "+00:00"))
+        perihelion_time = item.get("perihelion_time")
+        if perihelion_time:
+            item["perihelion_time"] = datetime.fromisoformat(str(perihelion_time).replace("Z", "+00:00"))
 
         # Create new comet
         comet = CometModel(**item)

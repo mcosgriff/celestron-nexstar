@@ -1369,6 +1369,16 @@ class CometModel(Base):
     peak_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     is_periodic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     period_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Orbital elements / photometric params (nullable when not provided)
+    eccentricity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    inclination_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    arg_perihelion_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ascending_node_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    semi_major_axis_au: Mapped[float | None] = mapped_column(Float, nullable=True)
+    perihelion_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    absolute_magnitude_h: Mapped[float | None] = mapped_column(Float, nullable=True)
+    slope_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Notes
     notes: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1378,6 +1388,7 @@ class CometModel(Base):
         Index("idx_perihelion_date", "perihelion_date"),
         Index("idx_peak_date", "peak_date"),
         Index("idx_is_periodic", "is_periodic"),
+        Index("idx_comet_perihelion_time", "perihelion_time"),
     )
 
     def to_comet(self) -> Comet:
@@ -1398,6 +1409,15 @@ class CometModel(Base):
             peak_date=self.peak_date,
             is_periodic=self.is_periodic,
             period_years=self.period_years,
+            eccentricity=self.eccentricity,
+            inclination_deg=self.inclination_deg,
+            arg_perihelion_deg=self.arg_perihelion_deg,
+            ascending_node_deg=self.ascending_node_deg,
+            semi_major_axis_au=self.semi_major_axis_au,
+            perihelion_time=self.perihelion_time,
+            absolute_magnitude_h=self.absolute_magnitude_h,
+            slope_g=self.slope_g,
+            source=self.source,
             notes=self.notes,
         )
 
@@ -1423,13 +1443,24 @@ class EclipseModel(Base):
         String(50), nullable=False, index=True
     )  # "lunar_total", "solar_annular", etc.
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    magnitude: Mapped[float] = mapped_column(Float, nullable=False)  # Eclipse magnitude
+    magnitude: Mapped[float] = mapped_column(Float, nullable=False)  # Eclipse magnitude (global)
+
+    # Contact times (UTC) and visibility metrics
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    max_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    obscuration: Mapped[float | None] = mapped_column(Float, nullable=True)  # Fraction obscured at max (0-1, global)
+    central_duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Max duration along centerline
+    path_geojson: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Optional path polygon/multipolygon (lon/lat)
 
     # Indexes
     __table_args__ = (
         Index("idx_eclipse_type", "eclipse_type"),
         Index("idx_eclipse_date", "date"),
         Index("idx_type_date", "eclipse_type", "date"),
+        Index("idx_eclipse_max_time", "max_time"),
     )
 
     def __repr__(self) -> str:

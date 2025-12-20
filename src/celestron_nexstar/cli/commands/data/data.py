@@ -5,6 +5,8 @@ Commands for importing and managing catalog data sources.
 """
 
 import asyncio
+import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -2719,18 +2721,25 @@ def run_migrations(
 
                 console.print(f"[dim]{traceback.format_exc()}[/dim]")
                 raise typer.Exit(code=1) from e
-    except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
-        # AttributeError: missing Alembic attributes
-        # RuntimeError: migration errors
-        # ValueError: invalid configuration or revision format
-        # TypeError: wrong argument types
-        # OSError: file I/O errors
-        # FileNotFoundError: missing alembic.ini or migration files
-        console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
+        except (AttributeError, RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as e:
+            # AttributeError: missing Alembic attributes
+            # RuntimeError: migration errors
+            # ValueError: invalid configuration or revision format
+            # TypeError: wrong argument types
+            # OSError: file I/O errors
+            # FileNotFoundError: missing alembic.ini or migration files
+            console.print(f"\n[red]✗[/red] Error applying migrations: {e}\n")
+            import traceback
+
+            console.print(f"[dim]{traceback.format_exc()}[/dim]")
+            raise typer.Exit(code=1) from e
+    except Exception as e:  # Catch any unexpected errors in migration check
+        console.print(f"\n[red]✗[/red] Unexpected error during migration check: {e}\n")
         import traceback
 
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(code=1) from e
+    return
 
 
 @app.command("database-setup", rich_help_panel="Database Management")
@@ -3223,199 +3232,129 @@ def rebuild_seed_files(
     console.print("[dim]Run 'nexstar data seed --force' to update the database with new data.[/dim]\n")
 
 
+@app.command("mpc-download", rich_help_panel="Solar System")
+def mpc_download(
+    max_magnitude: float = typer.Option(12.0, "--max-magnitude", "-m", help="Maximum peak magnitude to include"),
+    limit: int = typer.Option(0, "--limit", "-l", help="Maximum number of comets (0 = no limit)"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Optional output path (defaults to seed comets.json)"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing seed file"),
+) -> None:
+    """
+    Download comet elements from MPC and write to the seed file.
+    """
+    from celestron_nexstar.api.database.database_seeder import get_seed_data_path
+    from celestron_nexstar.api.solar_system.mpc import fetch_mpc_comets
+
+    console.print("[bold]Fetching MPC comet elements...[/bold]")
+    comets = fetch_mpc_comets(max_magnitude=max_magnitude, limit=limit if limit > 0 else None)
+    if not comets:
+        console.print("[red]✗[/red] No comet data fetched from MPC.")
+        raise typer.Exit(code=1)
+
+    seed_dir = get_seed_data_path()
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    target = output if output else seed_dir / "comets.json"
+
+    if target.exists() and not force:
+        console.print(f"[yellow]⚠[/yellow] {target} exists; use --force to overwrite.")
+        raise typer.Exit(code=1)
+
+    with target.open("w", encoding="utf-8") as f:
+        json.dump(comets, f, indent=2, ensure_ascii=False)
+
+    console.print(f"[green]✓[/green] Wrote {len(comets)} comets to {target}")
+
+
+@app.command("mpc-import", rich_help_panel="Solar System")
+def mpc_import(
+    seed_file: Path | None = typer.Option(None, "--seed-file", "-s", help="Optional path to comets seed JSON"),
+    force: bool = typer.Option(True, "--force/--no-force", help="Truncate existing comets before import"),
+) -> None:
+    """
+    Import MPC comet elements into the database from the seed file.
+    """
+    from celestron_nexstar.api.database.database_seeder import get_seed_data_path, load_seed_json, seed_comets
+    from celestron_nexstar.api.database.models import get_db_session
+
+    seed_dir = get_seed_data_path()
+    target = seed_dir / "comets.json"
+
+    if seed_file:
+        if not seed_file.exists():
+            console.print(f"[red]✗[/red] Seed file not found: {seed_file}")
+            raise typer.Exit(code=1)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(seed_file, target)
+        console.print(f"[dim]Copied seed file to {target}[/dim]")
+
+    if not target.exists():
+        console.print(f"[red]✗[/red] Seed file not found: {target}")
+        raise typer.Exit(code=1)
+
+    data = load_seed_json("comets.json")
+    if not data:
+        console.print("[red]✗[/red] Seed file is empty or invalid.")
+        raise typer.Exit(code=1)
+
+    with get_db_session() as session:
+        added = seed_comets(session, force=force)
+        session.commit()
+    console.print(f"[green]✓[/green] Imported {added} comets from {target}")
+
+
+@app.command("eclipses-import", rich_help_panel="Solar System")
+def eclipses_import(
+    force: bool = typer.Option(True, "--force/--no-force", help="Truncate existing eclipses before import"),
+) -> None:
+    """
+    Import eclipses seed data into the database.
+    """
+    from celestron_nexstar.api.database.database_seeder import seed_eclipses
+    from celestron_nexstar.api.database.models import get_db_session
+
+    with get_db_session() as session:
+        added = seed_eclipses(session, force=force)
+        session.commit()
+    console.print(f"[green]✓[/green] Imported {added} eclipses")
+
+
 def _fetch_comets_data(max_magnitude: float = 10.0, limit: int | None = None) -> list[dict[str, Any]]:
     """
-    Fetch comet data from external sources.
-
-    Sources:
-    - Minor Planet Center (MPC) - official source
-    - COBS (Comet Observation Database) - comprehensive observations
-
-    Args:
-        max_magnitude: Maximum magnitude to include
-        limit: Maximum number of comets to fetch (None = no limit)
-
-    Returns:
-        List of comet dictionaries in seed file format
+    Fetch comet data from MPC.
     """
-    import aiohttp
+    from celestron_nexstar.api.database.database_seeder import get_seed_data_path, load_seed_json
+    from celestron_nexstar.api.solar_system.mpc import fetch_mpc_comets
 
-    comets: list[dict[str, Any]] = []
+    comets = fetch_mpc_comets(max_magnitude=max_magnitude, limit=limit)
+    if comets:
+        console.print(f"[green]✓[/green] Fetched {len(comets)} comets from MPC")
+        return comets
 
-    async def _fetch_from_mpc() -> list[dict[str, Any]]:
-        """Fetch bright comets from Minor Planet Center."""
-        # MPC provides comet orbital elements via their website
-        # For bright comets, we can query their database
-        # Note: MPC doesn't have a public API, so we'll parse their HTML/text pages
-        url = "https://minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt"
+    console.print("[yellow]⚠[/yellow] Could not fetch comet data from MPC.")
+    console.print("[dim]The existing seed file will be preserved if available.[/dim]")
+    seed_dir = get_seed_data_path()
+    existing_file = seed_dir / "comets.json"
+    if existing_file.exists():
+        try:
+            from typing import cast
 
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                    if response.status == 200:
-                        text = await response.text()
-                        parsed = _parse_mpc_comet_data(text, max_magnitude)
-                        if parsed:
-                            console.print(f"[green]✓[/green] Fetched {len(parsed)} comets from MPC")
-                        return parsed
-                    else:
-                        console.print(f"[yellow]⚠[/yellow] MPC returned status {response.status}")
-            except aiohttp.ClientError as e:
-                console.print(f"[yellow]⚠[/yellow] Network error fetching from MPC: {e}")
-            except (TimeoutError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
-                # TimeoutError: request timeout
-                # ValueError: invalid JSON or data format
-                # TypeError: wrong data types
-                # KeyError: missing keys in response
-                # IndexError: missing array indices
-                # AttributeError: missing attributes in response
-                console.print(f"[yellow]⚠[/yellow] Error fetching from MPC: {e}")
-                console.print(f"[dim]Error type: {type(e).__name__}[/dim]")
-
-        return []
-
-    async def _fetch_from_cobs() -> list[dict[str, Any]]:
-        """Fetch comet data from COBS (Comet Observation Database)."""
-        # COBS has a web interface but may not have a public API
-        # For now, we'll use a fallback approach
-        return []
-
-    # Try MPC first
-    import asyncio
-
-    mpc_comets = asyncio.run(_fetch_from_mpc())
-    if mpc_comets:
-        comets.extend(mpc_comets)
-
-    # If we still don't have data, inform the user
-    if not comets:
-        console.print("[yellow]⚠[/yellow] Could not fetch comet data from external sources.")
-        console.print(
-            "[dim]The existing seed file will be preserved. Check your internet connection and try again.[/dim]"
-        )
-        # Load existing seed file if it exists
-        from celestron_nexstar.api.database.database_seeder import get_seed_data_path, load_seed_json
-
-        seed_dir = get_seed_data_path()
-        existing_file = seed_dir / "comets.json"
-        if existing_file.exists():
-            try:
-                from typing import cast
-
-                existing_data = load_seed_json("comets.json")
-                console.print(f"[dim]Found existing seed file with {len(existing_data)} comets.[/dim]")
-                return cast(list[dict[str, Any]], existing_data)
-            except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
-                # FileNotFoundError: missing seed file
-                # PermissionError: can't read file
-                # ValueError: invalid JSON format
-                # TypeError: wrong data types
-                # KeyError: missing keys in JSON
-                # IndexError: missing array indices
-                # Silently skip if seed file doesn't exist or is invalid
-                pass
-        return []
-
-    # Apply limit if specified
-    if limit and len(comets) > limit:
-        comets = comets[:limit]
-
-    return comets
+            existing_data = load_seed_json("comets.json")
+            console.print(f"[dim]Found existing seed file with {len(existing_data)} comets.[/dim]")
+            return cast(list[dict[str, Any]], existing_data)
+        except (FileNotFoundError, PermissionError, ValueError, TypeError, KeyError, IndexError):
+            pass
+    return []
 
 
 def _parse_mpc_comet_data(text: str, max_magnitude: float) -> list[dict[str, Any]]:
     """
-    Parse MPC comet data format.
-
-    MPC format is a text file with comet orbital elements.
-    Format documentation: https://minorplanetcenter.net/iau/info/CometOrbitFormat.html
+    Deprecated: retained for backward compatibility. Prefer fetch_mpc_comets().
     """
-    from datetime import UTC, datetime
+    from celestron_nexstar.api.solar_system.mpc import parse_mpc_comet_data
 
-    comets: list[dict[str, Any]] = []
-    lines = text.strip().split("\n")
-
-    for line in lines:
-        if not line.strip() or line.startswith("#"):
-            continue
-
-        try:
-            # MPC format: Designation code, Epoch (Y M D), q, e, i, w, Node, T (YYYYMMDD), H, G, Full name, Reference
-            # Example: "CJ95O010  1997 03 30.4369  0.910384  0.994930  130.3983  281.9480   89.6379  20251113  -2.0  4.0  C/1995 O1 (Hale-Bopp)  MPEC 2022-S20"
-            parts = line.split()
-            if len(parts) < 12:
-                continue
-
-            # Parse orbital elements (fixed positions)
-            # Parts: [0]=designation_code, [1]=epoch_year, [2]=epoch_month, [3]=epoch_day,
-            #        [4]=q, [5]=e, [6]=i, [7]=w, [8]=Node, [9]=T (YYYYMMDD), [10]=H, [11]=G,
-            #        [12+]=full_name, [last]=reference
-            q = float(parts[4])  # Perihelion distance in AU
-            e = float(parts[5])  # Eccentricity
-            # i, w, Node skipped for now
-            t_yyyymmdd = parts[9]  # Time of perihelion as YYYYMMDD
-            h_magnitude = float(parts[10])  # Absolute magnitude H
-            # G (magnitude slope) is in parts[11], but we don't use it
-
-            # Parse perihelion date from YYYYMMDD format
-            if len(t_yyyymmdd) == 8:
-                t_year = int(t_yyyymmdd[:4])
-                t_month = int(t_yyyymmdd[4:6])
-                t_day = int(t_yyyymmdd[6:8])
-            else:
-                # Fallback: try to parse from epoch if T format is unexpected
-                t_year = int(parts[1])
-                t_month = int(parts[2])
-                t_day = int(float(parts[3]))
-
-            # Calculate perihelion date
-            perihelion_date = datetime(t_year, t_month, t_day, tzinfo=UTC)
-
-            # Extract full designation name (everything between G and the last field)
-            if len(parts) > 12:
-                # Full name is from parts[12] to parts[-2] (last is reference)
-                full_name_parts = parts[12:-1] if len(parts) > 13 else parts[12:]
-                designation = " ".join(full_name_parts)
-            else:
-                # Fallback to designation code
-                designation = parts[0]
-
-            # Rough magnitude estimate (comets are brightest near perihelion)
-            peak_magnitude = h_magnitude + 5.0  # Rough estimate
-
-            if peak_magnitude > max_magnitude:
-                continue
-
-            # Determine if periodic (eccentricity < 1.0 and period can be calculated)
-            is_periodic = e < 1.0
-            period_years = None
-            if is_periodic:
-                # Calculate period from semi-major axis: P = sqrt(a^3)
-                # a = q / (1 - e)
-                a = q / (1 - e)
-                period_years = (a**1.5) ** 0.5  # Kepler's third law
-
-            # Use designation as name
-            name = designation
-
-            comet = {
-                "name": name,
-                "designation": designation,
-                "perihelion_date": perihelion_date.isoformat(),
-                "perihelion_distance_au": q,
-                "peak_magnitude": peak_magnitude,
-                "peak_date": perihelion_date.isoformat(),
-                "is_periodic": is_periodic,
-                "period_years": period_years,
-                "notes": f"Orbital data from MPC. Eccentricity: {e:.3f}",
-            }
-
-            comets.append(comet)
-        except (ValueError, IndexError):
-            # Skip malformed lines
-            continue
-
-    return comets
+    return parse_mpc_comet_data(text, max_magnitude=max_magnitude)
 
 
 def _fetch_variable_stars_data(max_magnitude: float = 8.0, limit: int | None = None) -> list[dict[str, Any]]:
