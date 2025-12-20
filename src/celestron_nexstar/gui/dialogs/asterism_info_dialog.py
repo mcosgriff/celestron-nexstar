@@ -60,7 +60,7 @@ class VisibleAsterismStarsWorker(QThread):
             conditions = planner.get_tonight_conditions()
 
             # Load asterism and member stars
-            asterism = db.get_asterism(self.asterism_name)
+            asterism = db.get_asterism(self.asterism_name)  # type: ignore[attr-defined]
             if not asterism:
                 self.stars_ready.emit([])
                 return

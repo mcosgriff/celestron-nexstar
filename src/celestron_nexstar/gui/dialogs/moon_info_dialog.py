@@ -390,11 +390,11 @@ class MoonDiskWorkerThread(QThread):
 
                     if f <= 0.5:
                         # Add illuminated crescent on top of shadow base
-                        pts = _poly(lit_side, scale)
+                        pts = _poly(lit_side, scale).tolist()
                         ax.add_patch(Polygon(pts, closed=True, facecolor=light, edgecolor="none"))
                     else:
                         # Add shadow crescent on top of lit base
-                        pts = _poly(-lit_side, scale)
+                        pts = _poly(-lit_side, scale).tolist()
                         ax.add_patch(Polygon(pts, closed=True, facecolor=shadow, edgecolor="none"))
 
                 # Title / info

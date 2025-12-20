@@ -455,7 +455,11 @@ class DownloadEphemerisSetThread(QThread):
                 return
 
             set_info = get_set_info(self.set_name)
-            file_count: int = set_info["file_count"]
+            file_count_raw = set_info.get("file_count", len(EPHEMERIS_SETS[self.set_name]))
+            if isinstance(file_count_raw, (int, float, str)):
+                file_count: int = int(file_count_raw)
+            else:
+                file_count = len(EPHEMERIS_SETS[self.set_name])
             file_keys = EPHEMERIS_SETS[self.set_name]
             self.progress_updated.emit(f"Downloading {self.set_name} set ({file_count} files)...", 0, file_count)
 

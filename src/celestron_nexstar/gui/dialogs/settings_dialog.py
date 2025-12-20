@@ -629,8 +629,8 @@ class SettingsDialog(QDialog):
             alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 
             current_rev = None
-            heads: list[str] | None = None
-            pending: list[str] | None = None
+            heads: tuple[str, ...] | None = None
+            pending: list[Any] | None = None
 
             engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
             try:
@@ -638,12 +638,13 @@ class SettingsDialog(QDialog):
                     context = MigrationContext.configure(conn)
                     current_rev = context.get_current_revision()
                 script = ScriptDirectory.from_config(alembic_cfg)
-                heads = script.get_heads()
-                pending = list(script.iterate_revisions(heads, current_rev)) if heads else []
+                heads_tuple = tuple(script.get_heads())
+                heads = heads_tuple
+                pending = list(script.iterate_revisions(heads_tuple, current_rev)) if heads_tuple else []  # type: ignore[arg-type]
             finally:
                 engine.dispose()
 
-            pending_list = [rev.revision for rev in pending] if pending else []
+            pending_list = [getattr(rev, "revision", "") for rev in pending] if pending else []
             migration_text = (
                 f"<b>Current revision:</b> {current_rev or 'None'}<br>"
                 f"<b>Head(s):</b> {', '.join(heads) if heads else 'None'}<br>"

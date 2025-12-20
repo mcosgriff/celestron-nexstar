@@ -2205,7 +2205,7 @@ def _repair_polar_constellation_holes(db: CatalogDatabase) -> None:
                     update(StarModel)
                     .where(StarModel.constellation_id.is_(None), StarModel.dec_degrees > float(max_dec))
                     .values(constellation_id=umi_id)
-                ).rowcount
+                ).rowcount  # type: ignore[attr-defined]
                 or 0
             )
             updated += (
@@ -2213,7 +2213,7 @@ def _repair_polar_constellation_holes(db: CatalogDatabase) -> None:
                     update(StarModel)
                     .where(StarModel.constellation_id.is_(None), StarModel.dec_degrees < float(min_dec))
                     .values(constellation_id=oct_id)
-                ).rowcount
+                ).rowcount  # type: ignore[attr-defined]
                 or 0
             )
 

@@ -763,7 +763,7 @@ def import_celestial_data_geojson(
                                 geometry_blob = geojson_to_spatialite_geometry_async(obj["_temp_geometry"], db_session)
                                 if geometry_blob:
                                     # model_obj is a SQLAlchemy model instance, but mypy can't narrow it well here.
-                                    model_obj.geometry = geometry_blob
+                                    model_obj.geometry = geometry_blob  # type: ignore[attr-defined]
 
                                     # Find spatial relationships (constellation and asterism) via spatial queries
                                     if hasattr(model_obj, "constellation_id") and hasattr(model_obj, "asterism_id"):

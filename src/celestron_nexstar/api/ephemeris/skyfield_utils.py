@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
@@ -74,7 +74,7 @@ def get_skyfield_timescale() -> Timescale:
 
 
 @lru_cache(maxsize=16)
-def get_skyfield_ephemeris(bsp_file: str):
+def get_skyfield_ephemeris(bsp_file: str) -> Any:
     """
     Load and cache a Skyfield ephemeris kernel (BSP file).
 

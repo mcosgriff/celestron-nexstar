@@ -143,8 +143,8 @@ class ObjectInfoDialog(QDialog):
         self.info_text.setReadOnly(True)
         self.info_text.setAcceptRichText(True)
         # Only show scrollbars when needed; avoid always-on bar
-        self.info_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.info_text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.info_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.info_text.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.info_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         layout.addWidget(self.info_text)
 

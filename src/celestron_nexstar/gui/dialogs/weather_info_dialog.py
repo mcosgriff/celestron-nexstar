@@ -364,8 +364,8 @@ class WeatherInfoDialog(QDialog):
             import matplotlib
 
             matplotlib.use("QtAgg")  # Use Qt backend for PySide6 integration
-            from matplotlib.backends.backend_qt5agg import (
-                FigureCanvasQTAgg as FigureCanvas,  # type: ignore[attr-defined]
+            from matplotlib.backends.backend_qt5agg import (  # type: ignore[attr-defined]
+                FigureCanvasQTAgg as FigureCanvas,
             )
             from matplotlib.figure import Figure
 

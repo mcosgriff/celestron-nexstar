@@ -520,7 +520,9 @@ class ObjectsLoaderThread(QThread):
 
                         config = get_current_configuration()
                         location = get_observer_location()
-                        lp = get_light_pollution_data()
+                        db = get_database()
+                        with db._get_session() as session:
+                            lp = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
                             2: SkyBrightness.EXCELLENT,
@@ -2633,6 +2635,7 @@ class MainWindow(QMainWindow):
             config = get_current_configuration()
             planner = ObservationPlanner()
             conditions = planner.get_tonight_conditions()
+            location = get_observer_location()
             location = get_observer_location()
 
             def _count_all_stars() -> dict[str, int]:

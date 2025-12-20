@@ -180,9 +180,9 @@ class MapGenerationWorkerThread(QThread):
                             # - Use *known-magnitude* stars (exclude NULL magnitudes for bounds)
                             # - Prefer brighter subsets first (2.5, 3.0, 3.5, 4.5), then fall back to 6.5
                             # - Limit to the brightest 60 to avoid “full constellation population” sprawl
-                            star_rows = []
+                            star_rows: list[tuple[float, float]] = []
                             for mag_limit in (2.5, 3.0, 3.5, 4.5, 6.5):
-                                star_rows = session.execute(
+                                rows = session.execute(
                                     select(StarModel.ra_hours, StarModel.dec_degrees)
                                     .where(
                                         StarModel.constellation_id == constellation_model.id,
@@ -194,6 +194,7 @@ class MapGenerationWorkerThread(QThread):
                                     .order_by(StarModel.magnitude.asc())
                                     .limit(60)
                                 ).all()
+                                star_rows = [(float(r[0]), float(r[1])) for r in rows]
                                 if len(star_rows) >= 5:
                                     break
                             if len(star_rows) >= 5:

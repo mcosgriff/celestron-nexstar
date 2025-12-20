@@ -845,7 +845,7 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                 .scalars()
                 .all()
             )
-            db_rows_fallback = rows
+            db_rows_fallback = list(rows)
 
             last_fetch = session.execute(
                 select(func.max(WeatherForecastModel.fetched_at)).where(
