@@ -15,6 +15,7 @@ from celestron_nexstar.cli.commands import glossary
 
 # Import and register subcommands
 from celestron_nexstar.cli.commands.astronomy import (
+    asteroids,
     aurora,
     binoculars,
     comets,
@@ -411,6 +412,12 @@ app.add_typer(
     comets.app,
     name="comets",
     help="Bright comet tracking and visibility",
+    rich_help_panel="Celestial Events",
+)
+app.add_typer(
+    asteroids.app,
+    name="asteroids",
+    help="Asteroid visibility and opposition tracking",
     rich_help_panel="Celestial Events",
 )
 app.add_typer(

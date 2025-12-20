@@ -24,10 +24,14 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "SPKFileInfo",
+    "download_asteroid_spk",
+    "download_asteroid_spk_sync",
     "download_comet_spk",
+    "get_asteroid_spk_file_path",
     "get_spk_cache_dir",
     "get_spk_file_path",
     "list_cached_spks",
+    "load_asteroid_spk",
     "load_comet_spk",
 ]
 
@@ -158,8 +162,8 @@ async def _fetch_spk_async(
     timeout = ClientTimeout(total=60)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(HORIZONS_API_URL, params=params) as resp:
+        async with (aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(HORIZONS_API_URL, params=params) as resp):
                 if resp.status != 200:
                     logger.error(f"Horizons API returned status {resp.status} for {designation}")
                     return None
@@ -184,8 +188,8 @@ async def _fetch_spk_async(
 
                 # Download the actual SPK file (using session timeout)
                 download_timeout = ClientTimeout(total=120)
-                async with aiohttp.ClientSession(timeout=download_timeout) as dl_session:
-                    async with dl_session.get(spk_url) as spk_resp:
+                async with (aiohttp.ClientSession(timeout=download_timeout) as dl_session,
+                     dl_session.get(spk_url) as spk_resp):
                         if spk_resp.status != 200:
                             logger.error(f"Failed to download SPK file for {designation}: {spk_resp.status}")
                             return None
@@ -392,6 +396,282 @@ def load_comet_spk(designation: str) -> tuple[bool, Path | None]:
         Tuple of (is_available, file_path)
     """
     file_path = get_spk_file_path(designation)
+    if file_path.exists():
+        return True, file_path
+    return False, None
+
+
+# =============================================================================
+# ASTEROID SPK FUNCTIONS
+# =============================================================================
+
+
+def _sanitize_asteroid_designation(designation: str) -> str:
+    """
+    Sanitize an asteroid designation for use as a filename.
+
+    Args:
+        designation: Asteroid designation (e.g., "1", "4 Vesta", "99942 Apophis")
+
+    Returns:
+        Sanitized string safe for filenames
+    """
+    # Remove parenthetical names
+    clean = re.sub(r"\s*\([^)]*\)", "", designation)
+    # Replace special chars with underscores
+    clean = re.sub(r"[/\\:\s]+", "_", clean)
+    # Remove leading/trailing underscores
+    clean = clean.strip("_")
+    return f"asteroid_{clean}"
+
+
+def get_asteroid_spk_file_path(designation: str) -> Path:
+    """
+    Get the expected path for an asteroid's SPK file.
+
+    Args:
+        designation: Asteroid designation (e.g., "1", "4")
+
+    Returns:
+        Path where SPK file would be stored
+    """
+    filename = f"{_sanitize_asteroid_designation(designation)}.bsp"
+    return get_spk_cache_dir() / filename
+
+
+def _build_asteroid_horizons_params(
+    designation: str,
+    start_date: datetime,
+    end_date: datetime,
+) -> dict[str, str]:
+    """
+    Build Horizons API request parameters for asteroid SPK generation.
+
+    Args:
+        designation: Asteroid number or name (e.g., "1", "Ceres", "4 Vesta")
+        start_date: Start of ephemeris coverage
+        end_date: End of ephemeris coverage
+
+    Returns:
+        Dict of request parameters
+    """
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+
+    # For asteroids, use the number directly or search by name
+    # Numbers are simplest
+    clean_des = designation.split()[0] if " " in designation else designation
+
+    return {
+        "format": "json",
+        "COMMAND": clean_des,  # Just the number for asteroids
+        "OBJ_DATA": "NO",
+        "MAKE_EPHEM": "YES",
+        "EPHEM_TYPE": "SPK",
+        "CENTER": "@sun",
+        "START_TIME": start_str,
+        "STOP_TIME": end_str,
+        "STEP_SIZE": "1d",
+    }
+
+
+def download_asteroid_spk(
+    designation: str,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+    force: bool = False,
+) -> SPKFileInfo | None:
+    """
+    Download SPK file for an asteroid from JPL Horizons.
+
+    Args:
+        designation: Asteroid designation (number like "1", "4", "99942")
+        start_date: Start of ephemeris coverage (default: 1 year ago)
+        end_date: End of ephemeris coverage (default: 2 years from now)
+        force: Force re-download even if file exists
+
+    Returns:
+        SPKFileInfo if successful, None if failed
+    """
+    import asyncio
+
+    now = datetime.now(UTC)
+    if start_date is None:
+        start_date = now - timedelta(days=365)
+    if end_date is None:
+        end_date = now + timedelta(days=730)
+
+    file_path = get_asteroid_spk_file_path(designation)
+    if file_path.exists() and not force:
+        stat = file_path.stat()
+        return SPKFileInfo(
+            designation=designation,
+            filename=file_path.name,
+            file_path=file_path,
+            size_bytes=stat.st_size,
+            downloaded_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            coverage_start=start_date,
+            coverage_end=end_date,
+        )
+
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            spk_data = loop.run_until_complete(_fetch_asteroid_spk_async(designation, start_date, end_date))
+        finally:
+            loop.close()
+
+        if spk_data is None:
+            return None
+
+        file_path.write_bytes(spk_data)
+        logger.info(f"Downloaded SPK for asteroid {designation} ({len(spk_data)} bytes)")
+
+        return SPKFileInfo(
+            designation=designation,
+            filename=file_path.name,
+            file_path=file_path,
+            size_bytes=len(spk_data),
+            downloaded_at=datetime.now(UTC),
+            coverage_start=start_date,
+            coverage_end=end_date,
+        )
+
+    except Exception as e:
+        logger.error(f"Error downloading SPK for asteroid {designation}: {e}")
+        return None
+
+
+async def _fetch_asteroid_spk_async(
+    designation: str,
+    start_date: datetime,
+    end_date: datetime,
+) -> bytes | None:
+    """Fetch asteroid SPK data from Horizons API asynchronously."""
+    import aiohttp
+    from aiohttp import ClientTimeout
+
+    params = _build_asteroid_horizons_params(designation, start_date, end_date)
+    timeout = ClientTimeout(total=60)
+
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(HORIZONS_API_URL, params=params) as resp,
+        ):
+            if resp.status != 200:
+                logger.error(f"Horizons API returned status {resp.status} for asteroid {designation}")
+                return None
+
+            data = await resp.json()
+
+            if "error" in data:
+                logger.error(f"Horizons API error for asteroid {designation}: {data['error']}")
+                return None
+
+            spk_url = data.get("spk_file_id") or data.get("spk")
+            if not spk_url:
+                logger.error(f"No SPK URL in Horizons response for asteroid {designation}")
+                return None
+
+            download_timeout = ClientTimeout(total=120)
+            async with (aiohttp.ClientSession(timeout=download_timeout) as dl_session,
+                dl_session.get(spk_url) as spk_resp):
+                    if spk_resp.status != 200:
+                        logger.error(f"Failed to download SPK for asteroid {designation}: {spk_resp.status}")
+                        return None
+                    return await spk_resp.read()
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Network error fetching SPK for asteroid {designation}: {e}")
+        return None
+    except TimeoutError:
+        logger.error(f"Timeout fetching SPK for asteroid {designation}")
+        return None
+
+
+def download_asteroid_spk_sync(
+    designation: str,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+    force: bool = False,
+) -> SPKFileInfo | None:
+    """
+    Synchronous version of asteroid SPK download using requests.
+    """
+    import requests
+
+    now = datetime.now(UTC)
+    if start_date is None:
+        start_date = now - timedelta(days=365)
+    if end_date is None:
+        end_date = now + timedelta(days=730)
+
+    file_path = get_asteroid_spk_file_path(designation)
+    if file_path.exists() and not force:
+        stat = file_path.stat()
+        return SPKFileInfo(
+            designation=designation,
+            filename=file_path.name,
+            file_path=file_path,
+            size_bytes=stat.st_size,
+            downloaded_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            coverage_start=start_date,
+            coverage_end=end_date,
+        )
+
+    params = _build_asteroid_horizons_params(designation, start_date, end_date)
+
+    try:
+        resp = requests.get(HORIZONS_API_URL, params=params, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+
+        if "error" in data:
+            logger.error(f"Horizons API error for asteroid {designation}: {data['error']}")
+            return None
+
+        spk_url = data.get("spk_file_id") or data.get("spk")
+        if not spk_url:
+            logger.error(f"No SPK URL in Horizons response for asteroid {designation}")
+            return None
+
+        spk_resp = requests.get(spk_url, timeout=120)
+        spk_resp.raise_for_status()
+        spk_data = spk_resp.content
+
+        file_path.write_bytes(spk_data)
+        logger.info(f"Downloaded SPK for asteroid {designation} ({len(spk_data)} bytes)")
+
+        return SPKFileInfo(
+            designation=designation,
+            filename=file_path.name,
+            file_path=file_path,
+            size_bytes=len(spk_data),
+            downloaded_at=datetime.now(UTC),
+            coverage_start=start_date,
+            coverage_end=end_date,
+        )
+
+    except requests.RequestException as e:
+        logger.error(f"Network error downloading SPK for asteroid {designation}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error downloading SPK for asteroid {designation}: {e}")
+        return None
+
+
+def load_asteroid_spk(designation: str) -> tuple[bool, Path | None]:
+    """
+    Check if SPK exists for asteroid and return path if available.
+
+    Args:
+        designation: Asteroid designation
+
+    Returns:
+        Tuple of (is_available, file_path)
+    """
+    file_path = get_asteroid_spk_file_path(designation)
     if file_path.exists():
         return True, file_path
     return False, None

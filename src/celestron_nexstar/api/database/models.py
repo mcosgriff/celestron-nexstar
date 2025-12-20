@@ -1481,6 +1481,72 @@ class CometModel(Base):
         return f"<Comet(id={self.id}, name='{self.name}', designation='{self.designation}')>"
 
 
+class AsteroidModel(Base):
+    """
+    SQLAlchemy model for asteroids.
+
+    Stores information about notable asteroids including orbital elements
+    for visibility calculations and ephemeris.
+    """
+
+    __tablename__ = "asteroids"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Asteroid identification
+    designation: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    asteroid_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )  # main_belt, neo, trojan, centaur, dwarf_planet
+
+    # Orbital elements (osculating)
+    semi_major_axis_au: Mapped[float] = mapped_column(Float, nullable=False)
+    eccentricity: Mapped[float] = mapped_column(Float, nullable=False)
+    inclination_deg: Mapped[float] = mapped_column(Float, nullable=False)
+    ascending_node_deg: Mapped[float] = mapped_column(Float, nullable=False)
+    arg_perihelion_deg: Mapped[float] = mapped_column(Float, nullable=False)
+    mean_anomaly_deg: Mapped[float] = mapped_column(Float, nullable=False)
+    epoch: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Photometric properties
+    absolute_magnitude_h: Mapped[float] = mapped_column(Float, nullable=False)
+    slope_g: Mapped[float | None] = mapped_column(Float, nullable=True)  # Default 0.15
+    diameter_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    albedo: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Derived orbital properties
+    perihelion_au: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aphelion_au: Mapped[float | None] = mapped_column(Float, nullable=True)
+    orbital_period_years: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Metadata
+    discovery_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discoverer: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="seed")
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_asteroid_type", "asteroid_type"),
+        Index("idx_asteroid_magnitude", "absolute_magnitude_h"),
+        Index("idx_asteroid_name", "name"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of asteroid."""
+        return f"<Asteroid(id={self.id}, designation='{self.designation}', name='{self.name}')>"
+
+
 class EclipseModel(Base):
     """
     SQLAlchemy model for eclipses.

@@ -1584,6 +1584,7 @@ class MainWindow(QMainWindow):
         solar_system_objects = [
             ("planets", "Planets", ["alpha-p-box-outline"]),
             ("comets", "Comets", ["alpha-c-box-outline"]),
+            ("asteroids", "Asteroids", ["alpha-a-box-outline"]),
             ("eclipse", "Eclipse", ["alpha-e-box-outline"]),
         ]
 
@@ -4354,6 +4355,20 @@ class MainWindow(QMainWindow):
             comets_dialog = CometsInfoDialog(self)
             progress.close()
             comets_dialog.exec()
+        elif object_name == "asteroids":
+            # Show progress dialog while loading
+            progress = self._create_progress_dialog("Loading asteroid visibility information...")
+            progress.show()
+
+            from PySide6.QtWidgets import QApplication
+
+            QApplication.processEvents()
+
+            from celestron_nexstar.gui.dialogs.asteroids_info_dialog import AsteroidsInfoDialog
+
+            asteroids_dialog = AsteroidsInfoDialog(self)
+            progress.close()
+            asteroids_dialog.exec()
         elif object_name == "eclipse":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading eclipse information...")

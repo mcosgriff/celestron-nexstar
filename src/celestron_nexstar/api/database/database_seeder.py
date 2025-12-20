@@ -703,6 +703,86 @@ def seed_eclipses(db_session: Session, force: bool = False) -> int:
     return added
 
 
+def seed_asteroids(db_session: Session, force: bool = False) -> int:
+    """
+    Seed asteroids into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, clear existing data before seeding
+
+    Returns:
+        Number of records added
+    """
+    from celestron_nexstar.api.database.models import AsteroidModel
+
+    logger.info("Seeding asteroids...")
+
+    if force:
+        db_session.execute(delete(AsteroidModel))
+        db_session.commit()
+        logger.info("Cleared existing asteroids")
+
+    # Load seed data
+    data = load_seed_json("asteroids.json")
+
+    added = 0
+    for item in data:
+        designation = str(item["designation"])
+
+        # Check if already exists (idempotent)
+        existing = db_session.scalar(select(AsteroidModel).where(AsteroidModel.designation == designation))
+        if existing:
+            continue
+
+        # Parse epoch
+        from datetime import datetime
+
+        epoch = datetime.fromisoformat(item["epoch"].replace("Z", "+00:00"))
+
+        # Compute derived orbital properties
+        a = item["semi_major_axis_au"]
+        e = item["eccentricity"]
+        perihelion = a * (1 - e)
+        aphelion = a * (1 + e)
+        # Kepler's third law: T^2 = a^3 (for Sun, T in years, a in AU)
+        import math
+
+        orbital_period = math.sqrt(a**3)
+
+        asteroid = AsteroidModel(
+            designation=designation,
+            name=item.get("name"),
+            asteroid_type=item["asteroid_type"],
+            semi_major_axis_au=a,
+            eccentricity=e,
+            inclination_deg=item["inclination_deg"],
+            ascending_node_deg=item["ascending_node_deg"],
+            arg_perihelion_deg=item["arg_perihelion_deg"],
+            mean_anomaly_deg=item["mean_anomaly_deg"],
+            epoch=epoch,
+            absolute_magnitude_h=item["absolute_magnitude_h"],
+            slope_g=item.get("slope_g", 0.15),
+            diameter_km=item.get("diameter_km"),
+            albedo=item.get("albedo"),
+            perihelion_au=perihelion,
+            aphelion_au=aphelion,
+            orbital_period_years=orbital_period,
+            notes=item.get("notes"),
+            source="seed",
+        )
+        db_session.add(asteroid)
+        added += 1
+
+    if added > 0:
+        db_session.commit()
+        logger.info(f"Added {added} asteroids")
+    else:
+        logger.info("Asteroids already seeded (no new records)")
+
+    return added
+
+
 def seed_bortle_characteristics(db_session: Session, force: bool = False) -> int:
     """
     Seed Bortle characteristics into the database.
@@ -1033,6 +1113,24 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
     ) as e:
         logger.error(f"Failed to seed eclipses: {e}")
         results["eclipses"] = 0
+
+    try:
+        results["asteroids"] = seed_asteroids(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Asteroids seed file not found, skipping")
+        results["asteroids"] = 0
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
+        logger.error(f"Failed to seed asteroids: {e}")
+        results["asteroids"] = 0
 
     try:
         results["bortle_characteristics"] = seed_bortle_characteristics(db_session, force=force)

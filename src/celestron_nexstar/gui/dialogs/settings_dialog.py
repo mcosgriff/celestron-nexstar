@@ -1329,6 +1329,11 @@ class SettingsDialog(QDialog):
                     "name": "Eclipses",
                     "description": "Reference solar/lunar eclipses",
                 },
+                {
+                    "id": "asteroids",
+                    "name": "Asteroids",
+                    "description": "Notable asteroids with orbital elements",
+                },
             ]
 
             def get_seed_count(seed_id: str) -> int:
@@ -1367,6 +1372,11 @@ class SettingsDialog(QDialog):
                             return int(count or 0)
                         elif seed_id == "eclipses":
                             count = session.scalar(select(func.count(EclipseModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "asteroids":
+                            from celestron_nexstar.api.database.models import AsteroidModel
+
+                            count = session.scalar(select(func.count(AsteroidModel.id)))
                             return int(count or 0)
                 except Exception:
                     return 0
