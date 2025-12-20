@@ -222,6 +222,7 @@ class CometsInfoDialog(QDialog):
                     "<th style='padding: 8px; text-align: right;'>Magnitude</th>"
                     "<th style='padding: 8px; text-align: center;'>Visible</th>"
                     "<th style='padding: 8px; text-align: right;'>Altitude</th>"
+                    "<th style='padding: 8px; text-align: center;'>Method</th>"
                     "</tr>"
                 )
 
@@ -261,6 +262,14 @@ class CometsInfoDialog(QDialog):
                     # Format altitude with user-friendly description
                     alt_str = self._format_altitude_user_friendly(vis.altitude)
 
+                    # Format propagation method
+                    if vis.propagation_method == "keplerian":
+                        method_str = "⚙ Orbital"
+                        method_color = colors["green"]
+                    else:
+                        method_str = "≈ Est."
+                        method_color = colors["text_dim"]
+
                     content_parts.append(
                         f"<tr style='border-bottom: 1px solid #444;'>"
                         f"<td style='padding: 6px; color: {colors['cyan']};'>{date_only}</td>"
@@ -268,6 +277,7 @@ class CometsInfoDialog(QDialog):
                         f"<td style='padding: 6px; text-align: right; {mag_style}'>{vis.magnitude:.2f}{mag_explanation}</td>"
                         f"<td style='padding: 6px; text-align: center; color: {visible_color};'>{visible_str}</td>"
                         f"<td style='padding: 6px; text-align: right; color: {colors['text']}; font-size: 0.9em;'>{alt_str}</td>"
+                        f"<td style='padding: 6px; text-align: center; color: {method_color}; font-size: 0.85em;'>{method_str}</td>"
                         "</tr>"
                     )
 
@@ -309,8 +319,41 @@ class CometsInfoDialog(QDialog):
                         f"<li>{date_display}: Magnitude {vis.magnitude:.2f} ({mag_explanation}) at {alt_desc}</li>"
                     )
 
+                    # Show RA/Dec if available (from Keplerian propagation)
+                    if vis.ra_hours is not None and vis.dec_degrees is not None:
+                        ra_h = int(vis.ra_hours)
+                        ra_m = int((vis.ra_hours - ra_h) * 60)
+                        dec_sign = "+" if vis.dec_degrees >= 0 else ""
+                        content_parts.append(
+                            f"<li>Position: RA {ra_h}h {ra_m}m, Dec {dec_sign}{vis.dec_degrees:.1f}°</li>"
+                        )
+
+                    # Show elongation if available
+                    if vis.elongation_deg is not None:
+                        content_parts.append(f"<li>Elongation from Sun: {vis.elongation_deg:.0f}°</li>")
+
+                    # Show distances if available
+                    if vis.helio_distance_au is not None and vis.geo_distance_au is not None:
+                        content_parts.append(
+                            f"<li>Distance: {vis.helio_distance_au:.2f} AU from Sun, {vis.geo_distance_au:.2f} AU from Earth</li>"
+                        )
+
                     if vis.comet.is_periodic and vis.comet.period_years:
                         content_parts.append(f"<li>Periodic: {vis.comet.period_years:.0f}-year orbit</li>")
+
+                    # Show source if available
+                    if vis.source:
+                        content_parts.append(f"<li style='color: {colors['text_dim']};'>Data source: {vis.source}</li>")
+
+                    # Show propagation method
+                    if vis.propagation_method == "keplerian":
+                        content_parts.append(
+                            f"<li style='color: {colors['green']};'>✓ Computed from orbital elements</li>"
+                        )
+                    else:
+                        content_parts.append(
+                            f"<li style='color: {colors['text_dim']};'>≈ Estimated (orbital elements unavailable)</li>"
+                        )
 
                     content_parts.append(f"<li>{vis.comet.notes}</li>")
                     content_parts.append(f"<li>{vis.notes}</li>")

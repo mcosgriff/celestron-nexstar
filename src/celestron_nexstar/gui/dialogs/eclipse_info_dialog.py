@@ -263,6 +263,7 @@ class EclipseInfoDialog(QDialog):
             "<th style='padding: 8px; text-align: left;'>Type</th>"
             "<th style='padding: 8px; text-align: left;'>Maximum Time</th>"
             "<th style='padding: 8px; text-align: center;'>Visible</th>"
+            "<th style='padding: 8px; text-align: center;'>Path</th>"
             "<th style='padding: 8px; text-align: right;'>Altitude</th>"
             "<th style='padding: 8px; text-align: right;'>Magnitude</th>"
             "</tr>"
@@ -300,12 +301,32 @@ class EclipseInfoDialog(QDialog):
             mag_str = f"{eclipse.magnitude:.2f}"
             mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(eclipse.magnitude)})</span>"
 
+            # Format path status (for solar eclipses)
+            if eclipse.eclipse_type.startswith("solar"):
+                if eclipse.in_path is True:
+                    path_str = "✓ IN PATH"
+                    path_color = colors["bright_green"]
+                elif eclipse.in_path is False:
+                    path_str = "Outside"
+                    path_color = colors["text_dim"]
+                elif eclipse.path_available:
+                    path_str = "Unknown"
+                    path_color = colors["yellow"]
+                else:
+                    path_str = "N/A"
+                    path_color = colors["text_dim"]
+            else:
+                # Lunar eclipses visible from entire night side
+                path_str = "Global"
+                path_color = colors["text_dim"]
+
             html_content.append(
                 f"<tr style='border-bottom: 1px solid #444;'>"
                 f"<td style='padding: 6px; color: {colors['cyan']};'>{date_only}</td>"
                 f"<td style='padding: 6px; color: {type_color}; font-weight: bold;'>{type_label}</td>"
                 f"<td style='padding: 6px; color: {colors['cyan']};'>{max_time_only}</td>"
                 f"<td style='padding: 6px; text-align: center; color: {visible_color};'>{visible_str}</td>"
+                f"<td style='padding: 6px; text-align: center; color: {path_color}; font-size: 0.85em;'>{path_str}</td>"
                 f"<td style='padding: 6px; text-align: right; color: {colors['text']}; font-size: 0.9em;'>{alt_str}</td>"
                 f"<td style='padding: 6px; text-align: right; color: {colors['text']};'>{mag_str}{mag_explanation}</td>"
                 "</tr>"
@@ -343,7 +364,22 @@ class EclipseInfoDialog(QDialog):
                     f"<li>Magnitude: {eclipse.magnitude:.2f} ({mag_explanation})</li>"
                 )
 
-                if eclipse.visibility_start and eclipse.visibility_end:
+                # Show contact times if available from DB
+                if eclipse.start_time and eclipse.end_time:
+                    start_obj = (
+                        eclipse.start_time.replace(tzinfo=UTC)
+                        if eclipse.start_time.tzinfo is None
+                        else eclipse.start_time.astimezone(UTC)
+                    )
+                    end_obj = (
+                        eclipse.end_time.replace(tzinfo=UTC)
+                        if eclipse.end_time.tzinfo is None
+                        else eclipse.end_time.astimezone(UTC)
+                    )
+                    start_str = start_obj.strftime("%I:%M %p")
+                    end_str = end_obj.strftime("%I:%M %p")
+                    html_content.append(f"<li>Contact times: First contact {start_str}, Last contact {end_str}</li>")
+                elif eclipse.visibility_start and eclipse.visibility_end:
                     start_obj = (
                         eclipse.visibility_start.replace(tzinfo=UTC)
                         if eclipse.visibility_start.tzinfo is None
@@ -359,6 +395,32 @@ class EclipseInfoDialog(QDialog):
                     html_content.append(
                         f"<li>Duration: {start_str} to {end_str} ({eclipse.duration_minutes:.0f} minutes)</li>"
                     )
+
+                # Show obscuration if available
+                if eclipse.obscuration is not None:
+                    html_content.append(f"<li>Obscuration: {eclipse.obscuration:.0%} of solar/lunar disk</li>")
+
+                # Show central duration for solar eclipses
+                if eclipse.central_duration_sec and eclipse.eclipse_type.startswith("solar"):
+                    mins = eclipse.central_duration_sec // 60
+                    secs = eclipse.central_duration_sec % 60
+                    html_content.append(f"<li>Central duration (along centerline): {mins}m {secs}s</li>")
+
+                # Show path status for solar eclipses
+                if eclipse.eclipse_type.startswith("solar"):
+                    if eclipse.in_path is True:
+                        html_content.append(
+                            f"<li style='color: {colors['bright_green']}; font-weight: bold;'>"
+                            "🎯 YOU ARE IN THE PATH OF TOTALITY/ANNULARITY!</li>"
+                        )
+                    elif eclipse.in_path is False:
+                        html_content.append(
+                            f"<li style='color: {colors['text_dim']};'>You are outside the central path - partial eclipse visible</li>"
+                        )
+                    elif eclipse.path_available:
+                        html_content.append(
+                            f"<li style='color: {colors['yellow']};'>Path data available but location check inconclusive</li>"
+                        )
 
                 html_content.append(f"<li>{eclipse.notes}</li>")
                 html_content.append("</ul>")

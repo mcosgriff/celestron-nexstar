@@ -48,7 +48,14 @@ class Eclipse:
     visibility_start: datetime | None  # When eclipse becomes visible
     visibility_end: datetime | None  # When eclipse ends
     altitude_at_maximum: float  # Altitude of moon/sun at maximum eclipse
-    notes: str  # Additional information
+    notes: str
+    # Enhanced fields from database
+    start_time: datetime | None = None  # Eclipse start (first contact)
+    end_time: datetime | None = None  # Eclipse end (last contact)
+    obscuration: float | None = None  # Fraction obscured (0-1)
+    central_duration_sec: int | None = None  # Duration along centerline (seconds)
+    in_path: bool | None = None  # Whether observer is in path of totality/annularity
+    path_available: bool = False  # Whether path data is available  # Additional information
 
 
 class EclipseType:
@@ -60,6 +67,61 @@ class EclipseType:
     SOLAR_TOTAL = "solar_total"
     SOLAR_PARTIAL = "solar_partial"
     SOLAR_ANNULAR = "solar_annular"
+
+
+def _check_point_in_path(
+    observer_lon: float,
+    observer_lat: float,
+    path_geojson: str | None,
+) -> bool | None:
+    """
+    Check if observer location is within eclipse path polygon.
+
+    Args:
+        observer_lon: Observer longitude in degrees
+        observer_lat: Observer latitude in degrees
+        path_geojson: GeoJSON string of path polygon/multipolygon
+
+    Returns:
+        True if in path, False if outside, None if cannot determine
+    """
+    if not path_geojson:
+        return None
+
+    try:
+        import json
+
+        from shapely.geometry import Point, shape
+
+        geojson = json.loads(path_geojson)
+
+        # Handle both Feature and direct geometry
+        if geojson.get("type") == "Feature":
+            geometry = geojson.get("geometry")
+        elif geojson.get("type") == "FeatureCollection":
+            # Combine all features
+            from shapely.ops import unary_union
+
+            geometries = [shape(f["geometry"]) for f in geojson.get("features", [])]
+            if not geometries:
+                return None
+            combined = unary_union(geometries)
+            observer_point = Point(observer_lon, observer_lat)
+            return bool(combined.contains(observer_point))
+        else:
+            geometry = geojson
+
+        if not geometry:
+            return None
+
+        path_shape = shape(geometry)
+        observer_point = Point(observer_lon, observer_lat)
+
+        return bool(path_shape.contains(observer_point))
+
+    except (json.JSONDecodeError, ImportError, ValueError, KeyError, TypeError) as e:
+        logger.debug(f"Error checking eclipse path: {e}")
+        return None
 
 
 def _get_skyfield_objects() -> tuple[Any, Any, Any, Any | None, Any] | tuple[None, None, None, None, None]:
@@ -110,32 +172,44 @@ def _calculate_lunar_eclipse(
     earth: Any,
     sun: Any,
     moon: Any | None,
+    start_time: datetime | None = None,
+    max_time: datetime | None = None,
+    end_time: datetime | None = None,
+    obscuration: float | None = None,
+    central_duration_sec: int | None = None,
 ) -> Eclipse | None:
     """
     Calculate lunar eclipse details for a specific time.
 
+    Uses stored contact times when available, otherwise estimates.
+
     Args:
         observer_lat: Observer latitude
         observer_lon: Observer longitude
-        eclipse_time: Time of eclipse
+        eclipse_time: Time of eclipse (date from DB)
         eclipse_type: Type of eclipse
         magnitude: Eclipse magnitude
         ts: Skyfield timescale
         earth: Skyfield earth object
         sun: Skyfield sun object
         moon: Skyfield moon object
+        start_time: Eclipse start (first contact) from DB
+        max_time: Eclipse maximum from DB
+        end_time: Eclipse end (last contact) from DB
+        obscuration: Fraction obscured from DB
+        central_duration_sec: Central duration in seconds from DB
 
     Returns:
         Eclipse object or None if calculation fails
     """
     try:
-        # Normalize eclipse_time to UTC
-        if eclipse_time.tzinfo is None:
-            eclipse_time_utc = eclipse_time.replace(tzinfo=UTC)
-        else:
-            eclipse_time_utc = eclipse_time.astimezone(UTC)
+        # Use stored max_time if available, otherwise use eclipse_time
+        eclipse_max = max_time if max_time else eclipse_time
 
-        t = ts.from_datetime(eclipse_time_utc)
+        # Normalize to UTC
+        eclipse_max_utc = eclipse_max.replace(tzinfo=UTC) if eclipse_max.tzinfo is None else eclipse_max.astimezone(UTC)
+
+        t = ts.from_datetime(eclipse_max_utc)
         elev_m = 0.0
         try:
             from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
@@ -148,42 +222,64 @@ def _calculate_lunar_eclipse(
 
         observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
-        # Get moon position
+        # Get moon position at maximum
         moon_astrometric = observer.at(t).observe(moon)
         moon_alt, _moon_az, _ = moon_astrometric.apparent().altaz()
 
-        # For lunar eclipse, check if moon is above horizon
+        # For lunar eclipse, check if moon is above horizon during event
         is_visible = moon_alt.degrees > 0
 
-        # Determine duration and notes based on type
+        # Use stored contact times if available
+        if start_time and end_time:
+            start_utc = start_time.replace(tzinfo=UTC) if start_time.tzinfo is None else start_time.astimezone(UTC)
+            end_utc = end_time.replace(tzinfo=UTC) if end_time.tzinfo is None else end_time.astimezone(UTC)
+            duration_minutes = (end_utc - start_utc).total_seconds() / 60.0
+            visibility_start = start_utc if is_visible else None
+            visibility_end = end_utc if is_visible else None
+        else:
+            # Estimate duration based on type
+            match eclipse_type:
+                case "lunar_total":
+                    duration_minutes = 180.0
+                case "lunar_partial":
+                    duration_minutes = 200.0
+                case _:
+                    duration_minutes = 240.0
+            visibility_start = eclipse_max_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None
+            visibility_end = eclipse_max_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None
+
+        # Build notes
         match eclipse_type:
             case "lunar_total":
-                duration_minutes = 180.0  # Typical total lunar eclipse duration
                 notes = "Total lunar eclipse - moon fully in Earth's shadow"
             case "lunar_partial":
-                duration_minutes = 200.0  # Partial eclipses last longer
-                notes = f"Partial lunar eclipse - {magnitude:.0%} of moon in shadow"
-            case _:  # penumbral
-                duration_minutes = 240.0
+                obs_pct = obscuration if obscuration else magnitude
+                notes = f"Partial lunar eclipse - {obs_pct:.0%} of moon in shadow"
+            case _:
                 notes = "Penumbral lunar eclipse - subtle darkening"
+
+        if not is_visible:
+            notes += " (Moon below horizon at your location)"
 
         return Eclipse(
             eclipse_type=eclipse_type,
-            date=eclipse_time_utc,
-            maximum_time=eclipse_time_utc,
+            date=eclipse_time.replace(tzinfo=UTC) if eclipse_time.tzinfo is None else eclipse_time.astimezone(UTC),
+            maximum_time=eclipse_max_utc,
             duration_minutes=duration_minutes,
             magnitude=magnitude,
             is_visible=is_visible,
-            visibility_start=eclipse_time_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None,
-            visibility_end=eclipse_time_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_start=visibility_start,
+            visibility_end=visibility_end,
             altitude_at_maximum=moon_alt.degrees,
             notes=notes,
+            start_time=start_time,
+            end_time=end_time,
+            obscuration=obscuration,
+            central_duration_sec=central_duration_sec,
+            in_path=None,  # Not applicable for lunar eclipses
+            path_available=False,
         )
     except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
-        # ValueError: invalid datetime or coordinates
-        # TypeError: wrong argument types
-        # AttributeError: missing attributes on Skyfield objects
-        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Error calculating lunar eclipse: {e}")
         return None
 
@@ -270,6 +366,11 @@ def get_next_lunar_eclipse(
                 earth,
                 sun,
                 moon,
+                start_time=eclipse_data.get("start_time"),
+                max_time=eclipse_data.get("max_time"),
+                end_time=eclipse_data.get("end_time"),
+                obscuration=eclipse_data.get("obscuration"),
+                central_duration_sec=eclipse_data.get("central_duration_sec"),
             )
             if eclipse:
                 eclipses.append(eclipse)
@@ -291,7 +392,7 @@ def get_known_eclipses(db_session: Session) -> list[dict[str, Any]]:
         db_session: Database session
 
     Returns:
-        List of dicts with keys: type, date, magnitude
+        List of dicts with eclipse data including contact times and path.
 
     Raises:
         RuntimeError: If no eclipses found in database (seed data required)
@@ -315,6 +416,12 @@ def get_known_eclipses(db_session: Session) -> list[dict[str, Any]]:
                 "type": model.eclipse_type,
                 "date": model.date,
                 "magnitude": model.magnitude,
+                "start_time": model.start_time,
+                "max_time": model.max_time,
+                "end_time": model.end_time,
+                "obscuration": model.obscuration,
+                "central_duration_sec": model.central_duration_sec,
+                "path_geojson": model.path_geojson,
             }
         )
     return eclipses
@@ -374,6 +481,12 @@ def get_next_solar_eclipse(
                 earth,
                 sun,
                 moon,
+                start_time=eclipse_data.get("start_time"),
+                max_time=eclipse_data.get("max_time"),
+                end_time=eclipse_data.get("end_time"),
+                obscuration=eclipse_data.get("obscuration"),
+                central_duration_sec=eclipse_data.get("central_duration_sec"),
+                path_geojson=eclipse_data.get("path_geojson"),
             )
             if eclipse:
                 eclipses.append(eclipse)
@@ -391,32 +504,45 @@ def _calculate_solar_eclipse(
     earth: Any,
     sun: Any,
     moon: Any | None,
+    start_time: datetime | None = None,
+    max_time: datetime | None = None,
+    end_time: datetime | None = None,
+    obscuration: float | None = None,
+    central_duration_sec: int | None = None,
+    path_geojson: str | None = None,
 ) -> Eclipse | None:
     """
     Calculate solar eclipse details for a specific time.
 
+    Uses stored contact times and path data when available.
+
     Args:
         observer_lat: Observer latitude
         observer_lon: Observer longitude
-        eclipse_time: Time of eclipse
+        eclipse_time: Time of eclipse (date from DB)
         eclipse_type: Type of eclipse
         magnitude: Eclipse magnitude
         ts: Skyfield timescale
         earth: Skyfield earth object
         sun: Skyfield sun object
         moon: Skyfield moon object
+        start_time: Eclipse start from DB
+        max_time: Eclipse maximum from DB
+        end_time: Eclipse end from DB
+        obscuration: Fraction obscured from DB
+        central_duration_sec: Central duration in seconds from DB
+        path_geojson: Path polygon GeoJSON from DB
 
     Returns:
         Eclipse object or None if calculation fails
     """
     try:
-        # Normalize eclipse_time to UTC
-        if eclipse_time.tzinfo is None:
-            eclipse_time_utc = eclipse_time.replace(tzinfo=UTC)
-        else:
-            eclipse_time_utc = eclipse_time.astimezone(UTC)
+        # Use stored max_time if available
+        eclipse_max = max_time if max_time else eclipse_time
 
-        t = ts.from_datetime(eclipse_time_utc)
+        eclipse_max_utc = eclipse_max.replace(tzinfo=UTC) if eclipse_max.tzinfo is None else eclipse_max.astimezone(UTC)
+
+        t = ts.from_datetime(eclipse_max_utc)
         elev_m = 0.0
         try:
             from celestron_nexstar.api.location.observer import FEET_TO_METERS, get_observer_location
@@ -429,42 +555,80 @@ def _calculate_solar_eclipse(
 
         observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
 
-        # Get sun position
+        # Get sun position at maximum
         sun_astrometric = observer.at(t).observe(sun)
         sun_alt, _sun_az, _ = sun_astrometric.apparent().altaz()
 
         # For solar eclipse, sun must be above horizon
         is_visible = sun_alt.degrees > 0
 
-        # Determine duration (varies by type and location)
+        # Check if observer is in path of totality/annularity
+        in_path = _check_point_in_path(observer_lon, observer_lat, path_geojson)
+        path_available = path_geojson is not None and len(path_geojson) > 0
+
+        # Use stored contact times if available
+        if start_time and end_time:
+            start_utc = start_time.replace(tzinfo=UTC) if start_time.tzinfo is None else start_time.astimezone(UTC)
+            end_utc = end_time.replace(tzinfo=UTC) if end_time.tzinfo is None else end_time.astimezone(UTC)
+            duration_minutes = (end_utc - start_utc).total_seconds() / 60.0
+            visibility_start = start_utc if is_visible else None
+            visibility_end = end_utc if is_visible else None
+        else:
+            # Estimate duration based on type
+            match eclipse_type:
+                case "solar_total":
+                    duration_minutes = 2.0 if in_path else 120.0
+                case "solar_annular":
+                    duration_minutes = 3.0 if in_path else 120.0
+                case _:
+                    duration_minutes = 120.0
+            visibility_start = eclipse_max_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None
+            visibility_end = eclipse_max_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None
+
+        # Build notes
         match eclipse_type:
             case "solar_total":
-                duration_minutes = 2.0  # Typical total eclipse duration (varies by location)
-                notes = "Total solar eclipse - requires special eye protection"
+                if in_path is True:
+                    notes = "Total solar eclipse - YOU ARE IN THE PATH OF TOTALITY!"
+                elif in_path is False:
+                    notes = "Total solar eclipse - partial from your location"
+                else:
+                    notes = "Total solar eclipse"
             case "solar_annular":
-                duration_minutes = 3.0  # Typical annular eclipse duration
-                notes = "Annular solar eclipse - requires special eye protection"
-            case _:  # partial
-                duration_minutes = 120.0  # Partial eclipses last longer
-                notes = f"Partial solar eclipse ({magnitude:.0%} coverage) - requires special eye protection"
+                if in_path is True:
+                    notes = "Annular solar eclipse - YOU ARE IN THE PATH OF ANNULARITY!"
+                elif in_path is False:
+                    notes = "Annular solar eclipse - partial from your location"
+                else:
+                    notes = "Annular solar eclipse"
+            case _:
+                obs_pct = obscuration if obscuration else magnitude
+                notes = f"Partial solar eclipse ({obs_pct:.0%} coverage)"
+
+        notes += " - requires special eye protection"
+
+        if not is_visible:
+            notes += " (Sun below horizon at your location)"
 
         return Eclipse(
             eclipse_type=eclipse_type,
-            date=eclipse_time_utc,
-            maximum_time=eclipse_time_utc,
+            date=eclipse_time.replace(tzinfo=UTC) if eclipse_time.tzinfo is None else eclipse_time.astimezone(UTC),
+            maximum_time=eclipse_max_utc,
             duration_minutes=duration_minutes,
             magnitude=magnitude,
             is_visible=is_visible,
-            visibility_start=eclipse_time_utc - timedelta(minutes=duration_minutes / 2) if is_visible else None,
-            visibility_end=eclipse_time_utc + timedelta(minutes=duration_minutes / 2) if is_visible else None,
+            visibility_start=visibility_start,
+            visibility_end=visibility_end,
             altitude_at_maximum=sun_alt.degrees,
             notes=notes,
+            start_time=start_time,
+            end_time=end_time,
+            obscuration=obscuration,
+            central_duration_sec=central_duration_sec,
+            in_path=in_path,
+            path_available=path_available,
         )
     except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
-        # ValueError: invalid datetime or coordinates
-        # TypeError: wrong argument types
-        # AttributeError: missing attributes on Skyfield objects
-        # ZeroDivisionError: division by zero in calculations
         logger.error(f"Error calculating solar eclipse: {e}")
         return None
 
