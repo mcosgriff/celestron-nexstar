@@ -437,7 +437,7 @@ class ObjectInfoDialog(QDialog):
 
             if visibility_info.altitude_deg is not None:
                 # Add user-friendly altitude description
-                alt_desc = self._format_altitude_user_friendly(visibility_info.altitude_deg)
+                alt_desc = f"{visibility_info.altitude_deg:.0f}°"
                 html_parts.append(
                     f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>Altitude: {alt_desc}</p>"
                 )

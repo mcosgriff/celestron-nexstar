@@ -43,6 +43,7 @@ from celestron_nexstar.gui.dialogs.weather_info_dialog import WeatherInfoDialog
 from celestron_nexstar.gui.themes import FusionTheme, ThemeMode
 from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 from celestron_nexstar.gui.widgets.collapsible_log_panel import CollapsibleLogPanel
+from celestron_nexstar.gui.widgets.debug_log_panel import DebugLogPanel
 from celestron_nexstar.gui.workers.telescope_workers import (
     DisconnectThread,
     GetLocationThread,
@@ -708,6 +709,7 @@ class MainWindow(QMainWindow):
             "aurora": "mdi.alpha-a-box-outline",
             "binoculars": "mdi.alpha-b-box-outline",
             "comets": "mdi.alpha-c-box-outline",
+            "asteroids": "mdi.alpha-a-box-outline",
             "eclipse": "mdi.alpha-e-box-outline",
             "iss": "mdi.alpha-i-box-outline",
             "meteors": "mdi.alpha-m-box-outline",
@@ -732,6 +734,7 @@ class MainWindow(QMainWindow):
             "check": "mdi.check",
             # Communication
             "console": "mdi.console",  # No outline version available
+            "utilities-log-viewer": "mdi.information-outline",
             "chart": "mdi.chart-line",
             "graph": "mdi.chart-timeline-variant",
             "analytics": "mdi.chart-box",
@@ -902,6 +905,8 @@ class MainWindow(QMainWindow):
         self._goto_queue_window = None  # Store reference to goto queue window
         self._sky_map_window = None  # Store reference to sky map window
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
+        self._comets_dialog = None  # Store reference to comets info dialog
+        self._asteroids_dialog = None  # Store reference to asteroids info dialog
         self.setWindowTitle("Celestron NexStar Telescope Control")
 
         # Explicitly ensure window has decorations (titlebar, borders, etc.)
@@ -983,6 +988,16 @@ class MainWindow(QMainWindow):
         self.log_panel.setMaximumHeight(0)  # Start with no height
         self.log_panel.setMinimumHeight(0)
         main_layout.addWidget(self.log_panel)
+
+        # Create debug log panel at bottom (header will be hidden, controlled by toolbar button)
+        self.debug_panel = DebugLogPanel()
+        self.debug_panel.header.hide()  # Hide the header since we'll use a toolbar button
+        # Ensure debug panel starts collapsed (hidden)
+        self.debug_panel.controls_widget.hide()
+        self.debug_panel.log_text.hide()
+        self.debug_panel.setMaximumHeight(0)  # Start with no height
+        self.debug_panel.setMinimumHeight(0)
+        main_layout.addWidget(self.debug_panel)
 
         # Create status bar at bottom
         self._create_status_bar()
@@ -1553,6 +1568,16 @@ class MainWindow(QMainWindow):
         self.log_toggle_action.setChecked(False)
         self.log_toggle_action.triggered.connect(self._on_toggle_log)
 
+        # Debug log toggle action
+        debug_icon = self._create_icon("utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"])
+        self.debug_toggle_action = tools_menu.addAction(debug_icon, "Debug Log")
+        self.debug_toggle_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
+        self.debug_toggle_action.setToolTip("DEBUG LOG")
+        self.debug_toggle_action.setStatusTip("Toggle debug log panel")
+        self.debug_toggle_action.setCheckable(True)
+        self.debug_toggle_action.setChecked(False)
+        self.debug_toggle_action.triggered.connect(self._on_toggle_debug_log)
+
         tools_menu.addSeparator()
 
         settings_icon = self._create_icon("settings", ["cog", "settings"])
@@ -1790,6 +1815,9 @@ class MainWindow(QMainWindow):
         # Communication log toggle
         if hasattr(self, "log_toggle_action"):
             self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
+        # Debug log toggle
+        if hasattr(self, "debug_toggle_action"):
+            self.debug_toggle_action.setIcon(self._create_icon("utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"]))
         # Catalog button
         if hasattr(self, "catalog_action"):
             self.catalog_action.setIcon(self._create_icon("catalog", ["folder", "folder-open", "folder-documents"]))
@@ -4288,9 +4316,10 @@ class MainWindow(QMainWindow):
             # Show aurora dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.aurora_info_dialog import AuroraInfoDialog
 
-            dialog = AuroraInfoDialog(self)
+            self._aurora_dialog = AuroraInfoDialog(self)
+            self._aurora_dialog.finished.connect(lambda: setattr(self, '_aurora_dialog', None))
             progress.close()
-            dialog.exec()
+            self._aurora_dialog.show()
         elif object_name == "iss":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading ISS pass predictions...")
@@ -4304,9 +4333,10 @@ class MainWindow(QMainWindow):
             # Show ISS dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.iss_info_dialog import ISSInfoDialog
 
-            iss_dialog = ISSInfoDialog(self)
+            self._iss_dialog = ISSInfoDialog(self)
+            self._iss_dialog.finished.connect(lambda: setattr(self, '_iss_dialog', None))
             progress.close()
-            iss_dialog.exec()
+            self._iss_dialog.show()
         elif object_name == "binoculars":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading binocular viewing information...")
@@ -4320,9 +4350,10 @@ class MainWindow(QMainWindow):
             # Show binoculars dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.binoculars_info_dialog import BinocularsInfoDialog
 
-            binoculars_dialog = BinocularsInfoDialog(self)
+            self._binoculars_dialog = BinocularsInfoDialog(self)
+            self._binoculars_dialog.finished.connect(lambda: setattr(self, '_binoculars_dialog', None))
             progress.close()
-            binoculars_dialog.exec()
+            self._binoculars_dialog.show()
         elif object_name == "naked_eye":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading naked-eye viewing information...")
@@ -4336,10 +4367,17 @@ class MainWindow(QMainWindow):
             # Show naked-eye dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.naked_eye_info_dialog import NakedEyeInfoDialog
 
-            naked_eye_dialog = NakedEyeInfoDialog(self)
+            self._naked_eye_dialog = NakedEyeInfoDialog(self)
+            self._naked_eye_dialog.finished.connect(lambda: setattr(self, '_naked_eye_dialog', None))
             progress.close()
-            naked_eye_dialog.exec()
+            self._naked_eye_dialog.show()
         elif object_name == "comets":
+            # Check if dialog already open
+            if self._comets_dialog is not None:
+                self._comets_dialog.raise_()
+                self._comets_dialog.activateWindow()
+                return
+
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading comet visibility information...")
             progress.show()
@@ -4352,10 +4390,17 @@ class MainWindow(QMainWindow):
             # Show comets dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.comets_info_dialog import CometsInfoDialog
 
-            comets_dialog = CometsInfoDialog(self)
+            self._comets_dialog = CometsInfoDialog(self)
+            self._comets_dialog.finished.connect(lambda: setattr(self, '_comets_dialog', None))
             progress.close()
-            comets_dialog.exec()
+            self._comets_dialog.show()
         elif object_name == "asteroids":
+            # Check if dialog already open
+            if self._asteroids_dialog is not None:
+                self._asteroids_dialog.raise_()
+                self._asteroids_dialog.activateWindow()
+                return
+
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading asteroid visibility information...")
             progress.show()
@@ -4366,9 +4411,10 @@ class MainWindow(QMainWindow):
 
             from celestron_nexstar.gui.dialogs.asteroids_info_dialog import AsteroidsInfoDialog
 
-            asteroids_dialog = AsteroidsInfoDialog(self)
+            self._asteroids_dialog = AsteroidsInfoDialog(self)
+            self._asteroids_dialog.finished.connect(lambda: setattr(self, '_asteroids_dialog', None))
             progress.close()
-            asteroids_dialog.exec()
+            self._asteroids_dialog.show()
         elif object_name == "eclipse":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading eclipse information...")
@@ -4382,9 +4428,10 @@ class MainWindow(QMainWindow):
             # Show eclipse dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.eclipse_info_dialog import EclipseInfoDialog
 
-            eclipse_dialog = EclipseInfoDialog(self, progress=progress)
+            self._eclipse_dialog = EclipseInfoDialog(self, progress=progress)
+            self._eclipse_dialog.finished.connect(lambda: setattr(self, '_eclipse_dialog', None))
             progress.close()
-            eclipse_dialog.exec()
+            self._eclipse_dialog.show()
         elif object_name == "planets":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading planetary events information...")
@@ -4398,9 +4445,10 @@ class MainWindow(QMainWindow):
             # Show planets dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.planets_info_dialog import PlanetsInfoDialog
 
-            planets_dialog = PlanetsInfoDialog(self, progress=progress)
+            self._planets_dialog = PlanetsInfoDialog(self, progress=progress)
+            self._planets_dialog.finished.connect(lambda: setattr(self, '_planets_dialog', None))
             progress.close()
-            planets_dialog.exec()
+            self._planets_dialog.show()
         elif object_name == "space_weather":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading space weather information...")
@@ -4414,9 +4462,10 @@ class MainWindow(QMainWindow):
             # Show space weather dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.space_weather_info_dialog import SpaceWeatherInfoDialog
 
-            space_weather_dialog = SpaceWeatherInfoDialog(self)
+            self._space_weather_dialog = SpaceWeatherInfoDialog(self)
+            self._space_weather_dialog.finished.connect(lambda: setattr(self, '_space_weather_dialog', None))
             progress.close()
-            space_weather_dialog.exec()
+            self._space_weather_dialog.show()
         elif object_name == "satellites":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading satellite passes information...")
@@ -4430,9 +4479,10 @@ class MainWindow(QMainWindow):
             # Show satellites dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.satellites_info_dialog import SatellitesInfoDialog
 
-            satellites_dialog = SatellitesInfoDialog(self, progress=progress)
+            self._satellites_dialog = SatellitesInfoDialog(self, progress=progress)
+            self._satellites_dialog.finished.connect(lambda: setattr(self, '_satellites_dialog', None))
             progress.close()
-            satellites_dialog.exec()
+            self._satellites_dialog.show()
         elif object_name == "meteors":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading meteor shower predictions...")
@@ -4446,9 +4496,10 @@ class MainWindow(QMainWindow):
             # Show meteors dialog (it will load data in its constructor)
             from celestron_nexstar.gui.dialogs.meteors_info_dialog import MeteorsInfoDialog
 
-            meteors_dialog = MeteorsInfoDialog(self, progress=progress)
+            self._meteors_dialog = MeteorsInfoDialog(self, progress=progress)
+            self._meteors_dialog.finished.connect(lambda: setattr(self, '_meteors_dialog', None))
             progress.close()
-            meteors_dialog.exec()
+            self._meteors_dialog.show()
         elif object_name == "milky_way":
             # Show progress dialog while loading
             progress = self._create_progress_dialog("Loading Milky Way visibility information...")
@@ -4461,9 +4512,10 @@ class MainWindow(QMainWindow):
 
             from celestron_nexstar.gui.dialogs.milky_way_info_dialog import MilkyWayInfoDialog
 
-            milky_way_dialog = MilkyWayInfoDialog(self, progress=progress)
+            self._milky_way_dialog = MilkyWayInfoDialog(self, progress=progress)
+            self._milky_way_dialog.finished.connect(lambda: setattr(self, '_milky_way_dialog', None))
             progress.close()
-            milky_way_dialog.exec()
+            self._milky_way_dialog.show()
         elif object_name == "variables":
             # Switch to Variable Star tab
             # Find the tab index for Variable Star
@@ -4494,3 +4546,18 @@ class MainWindow(QMainWindow):
             self.log_panel.log_text.hide()
             self.log_panel.setMaximumHeight(30)  # Collapsed height
             self.log_panel.setMinimumHeight(30)
+
+    def _on_toggle_debug_log(self, checked: bool) -> None:
+        """Handle debug log toggle button click."""
+        if checked:
+            # Show debug panel
+            self.debug_panel.controls_widget.show()
+            self.debug_panel.log_text.show()
+            self.debug_panel.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+            self.debug_panel.setMinimumHeight(200)  # Minimum height when expanded
+        else:
+            # Hide debug panel
+            self.debug_panel.controls_widget.hide()
+            self.debug_panel.log_text.hide()
+            self.debug_panel.setMaximumHeight(0)  # Collapsed height
+            self.debug_panel.setMinimumHeight(0)

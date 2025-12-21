@@ -62,17 +62,16 @@ class DoubleClickableTextBrowser(QTextBrowser):
     def _on_anchor_clicked(self, url: QUrl) -> None:
         """Handle anchor clicks."""
         url_str = url.toString()
-        if url_str.startswith("starinfo://") and self._link_click_handler:
+        if url_str.startswith("starinfo://"):
             # Handle star info links ourselves - don't let QTextBrowser navigate
-            self._link_click_handler(url_str)
+            if self._link_click_handler is not None:
+                self._link_click_handler(url_str)
             # Don't call setSource for starinfo links to avoid warnings
-        else:
+        elif url_str.startswith(("http://", "https://")):
             # For other links (like http/https), use default behavior (open in browser)
-            # Only if it's a valid external URL
-            if url_str.startswith(("http://", "https://")):
-                from PySide6.QtGui import QDesktopServices
+            from PySide6.QtGui import QDesktopServices
 
-                QDesktopServices.openUrl(url)
+            QDesktopServices.openUrl(url)
 
     def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
         """Override double-click event to call custom handler if set."""
@@ -994,7 +993,7 @@ class ConstellationInfoDialog(QDialog):
                         mag_text = f"{star_info['apparent_magnitude']:.2f}" if star_info["apparent_magnitude"] else "-"
                         # Add user-friendly altitude description
                         alt_deg = star_info["altitude"]
-                        alt_text = self._format_altitude_user_friendly(alt_deg)
+                        alt_text = f"{alt_deg:.0f}°"
                         prob_text = f"{star_info['visibility_probability']:.0%}"
 
                         # Color code by visibility probability

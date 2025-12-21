@@ -1262,6 +1262,64 @@ class CometSPKModel(Base):
         return f"<CometSPK(designation='{self.comet_designation}', filename='{self.filename}')>"
 
 
+class AsteroidSPKModel(Base):
+    """
+    SQLAlchemy model for asteroid SPK (SPICE kernel) files.
+
+    Tracks SPK files downloaded from JPL Horizons for high-accuracy
+    asteroid ephemeris calculations.
+    """
+
+    __tablename__ = "asteroid_spks"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Asteroid identification (links to AsteroidModel via designation)
+    asteroid_designation: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    asteroid_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # File information
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Coverage period
+    coverage_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    coverage_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Metadata
+    downloaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False, default="JPL Horizons")
+
+    # Status
+    is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    last_verified: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_asteroid_spk_designation", "asteroid_designation"),
+        Index("idx_asteroid_spk_coverage", "coverage_start", "coverage_end"),
+        Index("idx_asteroid_spk_valid", "is_valid"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of the SPK file."""
+        return f"<AsteroidSPK(designation='{self.asteroid_designation}', filename='{self.filename}')>"
+
+
 class StarNameMappingModel(Base):
     """
     SQLAlchemy model for star name mappings.

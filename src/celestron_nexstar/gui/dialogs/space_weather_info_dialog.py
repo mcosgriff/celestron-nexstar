@@ -45,11 +45,7 @@ class SpaceWeatherInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        self._font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        self._font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Set initial stylesheet (will be updated with theme colors in _load_space_weather_info)
         self.info_text.setStyleSheet(
@@ -89,7 +85,7 @@ class SpaceWeatherInfoDialog(QDialog):
         return {
             "text": "#ffffff" if is_dark else "#000000",
             "text_dim": "#9e9e9e" if is_dark else "#666666",
-            "header": "#00bcd4" if is_dark else "#00838f",  # Cyan
+            "header": "#ff9800" if is_dark else "#e65100",  # Orange
             "cyan": "#00bcd4" if is_dark else "#00838f",
             "green": "#4caf50" if is_dark else "#2e7d32",
             "yellow": "#ffc107" if is_dark else "#f57c00",
@@ -144,7 +140,12 @@ class SpaceWeatherInfoDialog(QDialog):
         )
 
         try:
+            from celestron_nexstar.api.core.utils import format_local_time
             from celestron_nexstar.api.events.space_weather import get_space_weather_conditions
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            # Get observer location for timezone formatting
+            location = get_observer_location()
 
             # Get space weather conditions
             conditions = get_space_weather_conditions()
@@ -360,7 +361,7 @@ class SpaceWeatherInfoDialog(QDialog):
 
             # Last updated
             if conditions.last_updated:
-                last_updated_str = conditions.last_updated.strftime("%Y-%m-%d %H:%M:%S UTC")
+                last_updated_str = format_local_time(conditions.last_updated, location.latitude, location.longitude)
                 html_content.append(f"<p style='color: {colors['text_dim']};'>Last updated: {last_updated_str}</p>")
 
             self.info_text.setHtml("\n".join(html_content))

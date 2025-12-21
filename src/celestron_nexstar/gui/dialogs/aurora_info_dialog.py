@@ -45,11 +45,7 @@ class AuroraInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Store font family for later use
         self._font_family = font_family
@@ -92,7 +88,7 @@ class AuroraInfoDialog(QDialog):
         return {
             "text": "#ffffff" if is_dark else "#000000",
             "text_dim": "#9e9e9e" if is_dark else "#666666",
-            "header": "#00bcd4" if is_dark else "#00838f",  # Cyan for aurora
+            "header": "#ff9800" if is_dark else "#e65100",  # Orange
             "cyan": "#00bcd4" if is_dark else "#00838f",
             "green": "#4caf50" if is_dark else "#2e7d32",
             "bright_green": "#81c784" if is_dark else "#66bb6a",

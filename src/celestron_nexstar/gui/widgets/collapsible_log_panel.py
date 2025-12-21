@@ -132,11 +132,7 @@ class CollapsibleLogPanel(QWidget):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Detect theme for log panel styling
         is_dark = False

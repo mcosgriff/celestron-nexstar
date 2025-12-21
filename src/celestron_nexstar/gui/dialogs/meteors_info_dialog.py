@@ -47,11 +47,7 @@ class MeteorsInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        self._font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        self._font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Create tabs
         self._create_next_tab()
@@ -139,7 +135,7 @@ class MeteorsInfoDialog(QDialog):
         return {
             "text": "#ffffff" if is_dark else "#000000",
             "text_dim": "#9e9e9e" if is_dark else "#666666",
-            "header": "#00bcd4" if is_dark else "#00838f",  # Cyan
+            "header": "#ff9800" if is_dark else "#e65100",  # Orange
             "cyan": "#00bcd4" if is_dark else "#00838f",
             "green": "#4caf50" if is_dark else "#2e7d32",
             "bright_green": "#81c784" if is_dark else "#66bb6a",
@@ -244,7 +240,7 @@ class MeteorsInfoDialog(QDialog):
                 pred.shower, location.latitude, location.longitude, pred.date
             )
             direction = azimuth_to_compass_8point(radiant_az)
-            altitude_desc = self._format_altitude_user_friendly(radiant_alt)
+            altitude_desc = f"{radiant_alt:.0f}°"
             where_to_look = f"{direction}, {altitude_desc}"
 
             # Format quality with color
@@ -297,7 +293,7 @@ class MeteorsInfoDialog(QDialog):
                 pred.shower, location.latitude, location.longitude, pred.date
             )
             direction = azimuth_to_compass_8point(radiant_az)
-            altitude_desc = self._format_altitude_user_friendly(radiant_alt)
+            altitude_desc = f"{radiant_alt:.0f}°"
 
             html_content.append(f"<p><b style='color: {colors['header']};'>{pred.shower.name}</b> - {date_display}</p>")
             html_content.append(

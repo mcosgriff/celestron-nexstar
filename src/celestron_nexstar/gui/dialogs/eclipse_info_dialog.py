@@ -47,11 +47,7 @@ class EclipseInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        self._font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        self._font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Create tabs
         self._create_lunar_tab()
@@ -167,7 +163,7 @@ class EclipseInfoDialog(QDialog):
         return {
             "text": "#ffffff" if is_dark else "#000000",
             "text_dim": "#9e9e9e" if is_dark else "#666666",
-            "header": "#00bcd4" if is_dark else "#00838f",  # Cyan
+            "header": "#ff9800" if is_dark else "#e65100",  # Orange
             "cyan": "#00bcd4" if is_dark else "#00838f",
             "green": "#4caf50" if is_dark else "#2e7d32",
             "bright_green": "#81c784" if is_dark else "#66bb6a",
@@ -295,7 +291,7 @@ class EclipseInfoDialog(QDialog):
                 visible_color = colors["text_dim"]
 
             # Format altitude with user-friendly description
-            alt_str = self._format_altitude_user_friendly(eclipse.altitude_at_maximum)
+            alt_str = f"{eclipse.altitude_at_maximum:.0f}°"
 
             # Format magnitude with explanation
             mag_str = f"{eclipse.magnitude:.2f}"
@@ -355,7 +351,7 @@ class EclipseInfoDialog(QDialog):
 
                 type_color, type_label = self._format_eclipse_type(eclipse.eclipse_type, colors)
 
-                alt_desc = self._format_altitude_user_friendly(eclipse.altitude_at_maximum)
+                alt_desc = f"{eclipse.altitude_at_maximum:.0f}°"
                 mag_explanation = self._explain_magnitude(eclipse.magnitude)
                 html_content.append(f"<p><b style='color: {type_color};'>{type_label}</b> - {date_display}</p>")
                 html_content.append(

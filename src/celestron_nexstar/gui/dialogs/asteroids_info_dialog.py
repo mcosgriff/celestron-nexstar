@@ -46,11 +46,8 @@ class AsteroidsInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        # Use the loaded font directly without fallback to avoid Qt font lookup warnings
+        font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         self._font_family = font_family
 
@@ -99,243 +96,289 @@ class AsteroidsInfoDialog(QDialog):
             "red": "#f44336" if is_dark else "#c62828",
             "orange": "#ff9800" if is_dark else "#e65100",
             "purple": "#9c27b0" if is_dark else "#7b1fa2",
-            "bg": "#1e1e1e" if is_dark else "#ffffff",
-            "table_header_bg": "#2d2d2d" if is_dark else "#f5f5f5",
-            "table_row_bg": "#252525" if is_dark else "#ffffff",
-            "table_row_alt_bg": "#2a2a2a" if is_dark else "#fafafa",
-            "border": "#444444" if is_dark else "#e0e0e0",
+            "error": "#f44336" if is_dark else "#c62828",
         }
 
+    def _format_local_time(self, dt: datetime, lat: float, lon: float) -> str:
+        """Format datetime in local timezone."""
+        from celestron_nexstar.api.core.utils import format_local_time
+
+        return format_local_time(dt, lat, lon)
+
+    def _explain_magnitude(self, magnitude: float) -> str:
+        """Provide brief explanation of magnitude value."""
+        if magnitude < 1:
+            return "very bright"
+        elif magnitude < 3:
+            return "bright"
+        elif magnitude < 5:
+            return "visible to naked eye"
+        elif magnitude < 6:
+            return "visible under dark skies"
+        elif magnitude < 8:
+            return "binoculars needed"
+        else:
+            return "telescope required"
+
     def _load_asteroids_info(self) -> None:
-        """Load and display asteroid visibility information."""
+        """Load asteroid visibility information from the API and format it for display."""
+        colors = self._get_theme_colors()
+
+        # Update stylesheet with theme-aware colors
+        self.info_text.setStyleSheet(
+            f"""
+            QTextEdit {{
+                font-family: {self._font_family};
+                background-color: transparent;
+                border: none;
+            }}
+            h2 {{
+                color: {colors["header"]};
+                margin-top: 1em;
+                margin-bottom: 0.5em;
+            }}
+        """
+        )
+
         try:
             from celestron_nexstar.api.astronomy.asteroids import get_visible_asteroids
             from celestron_nexstar.api.database.models import get_db_session
             from celestron_nexstar.api.location.observer import get_observer_location
 
+            # Get location
             location = get_observer_location()
+            if not location:
+                self.info_text.setHtml(
+                    f"<p><span style='color: {colors['error']};'><b>Error:</b> No observer location set. Use 'nexstar location set' to configure your location.</span></p>"
+                )
+                return
+
+            lat, lon = location.latitude, location.longitude
             location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
-            with get_db_session() as db_session:
-                visible = get_visible_asteroids(db_session, location, max_magnitude=12.0, min_altitude=-5.0)
-
-            colors = self._get_theme_colors()
-            now = datetime.now(UTC)
+            # Default parameters
+            max_magnitude = 12.0
+            min_altitude = -5.0
 
             # Build HTML content
-            html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{
-                        font-family: {self._font_family};
-                        color: {colors["text"]};
-                        margin: 8px;
-                    }}
-                    h2 {{
-                        color: {colors["header"]};
-                        margin-bottom: 5px;
-                    }}
-                    h3 {{
-                        color: {colors["cyan"]};
-                        margin-top: 15px;
-                        margin-bottom: 5px;
-                    }}
-                    .dim {{
-                        color: {colors["text_dim"]};
-                    }}
-                    .green {{
-                        color: {colors["green"]};
-                    }}
-                    .yellow {{
-                        color: {colors["yellow"]};
-                    }}
-                    .orange {{
-                        color: {colors["orange"]};
-                    }}
-                    .red {{
-                        color: {colors["red"]};
-                    }}
-                    table {{
-                        border-collapse: collapse;
-                        width: 100%;
-                        margin-top: 10px;
-                    }}
-                    th {{
-                        background-color: {colors["table_header_bg"]};
-                        padding: 6px 8px;
-                        text-align: left;
-                        border-bottom: 1px solid {colors["border"]};
-                    }}
-                    td {{
-                        padding: 4px 8px;
-                        border-bottom: 1px solid {colors["border"]};
-                    }}
-                    tr:nth-child(even) {{
-                        background-color: {colors["table_row_alt_bg"]};
-                    }}
-                    .type-neo {{
-                        color: {colors["red"]};
-                        font-weight: bold;
-                    }}
-                    .type-dwarf {{
-                        color: {colors["purple"]};
-                    }}
-                    .type-trojan {{
-                        color: {colors["orange"]};
-                    }}
-                    .type-centaur {{
-                        color: {colors["cyan"]};
-                    }}
-                </style>
-            </head>
-            <body>
-                <h2>☄ Asteroid Visibility</h2>
-                <p class="dim">{location_name} • {now.strftime("%Y-%m-%d %H:%M UTC")}</p>
-            """
+            html_content = []
+            html_content.append(
+                f"<style>h2 {{ color: {colors['header']}; margin-top: 1em; margin-bottom: 0.5em; }}</style>"
+            )
 
-            if not visible:
-                html += """
-                <p class="yellow">No bright asteroids currently visible.</p>
-                <p class="dim">Try checking during nighttime or seed more asteroids.</p>
-                """
+            # Header
+            now = datetime.now(UTC)
+            local_time_str = self._format_local_time(now, lat, lon)
+            html_content.append(
+                f"<p style='margin-bottom: 5px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Asteroid Visibility for {location_name}</span></p>"
+            )
+            html_content.append(
+                f"<p style='color: {colors['text_dim']}; margin-bottom: 10px;'>Current time: {local_time_str}</p>"
+            )
+
+            # Load content
+            content_parts = []
+
+            with get_db_session() as db_session:
+                asteroids = get_visible_asteroids(
+                    db_session, location, max_magnitude=max_magnitude, min_altitude=min_altitude
+                )
+
+            if not asteroids:
+                content_parts.append(
+                    f"<p><span style='color: {colors['yellow']};'>No bright asteroids found in current sky.</span></p>"
+                )
+                content_parts.append(
+                    f"<p style='color: {colors['text_dim']};'>Try checking during nighttime or seed more asteroids.</p>"
+                )
             else:
-                # Summary
-                above_horizon = [v for v in visible if v.altitude > 0]
-                bright = [v for v in visible if v.magnitude < 8]
-                html += f"""
-                <p><span class="green">{len(above_horizon)}</span> asteroids above horizon,
-                   <span class="green">{len(bright)}</span> brighter than mag 8</p>
-                """
+                # Display asteroids in a table
+                content_parts.append("<h2>Visible Asteroids</h2>")
+                content_parts.append("<table style='border-collapse: collapse; width: 100%; border: 1px solid #444;'>")
+                content_parts.append(
+                    f"<tr style='background-color: {colors['header']}; color: white;'>"
+                    "<th style='padding: 8px; text-align: left;'>Asteroid</th>"
+                    "<th style='padding: 8px; text-align: left;'>Type</th>"
+                    "<th style='padding: 8px; text-align: right;'>Magnitude</th>"
+                    "<th style='padding: 8px; text-align: center;'>Visible</th>"
+                    "<th style='padding: 8px; text-align: right;'>Altitude</th>"
+                    "<th style='padding: 8px; text-align: right;'>Elongation</th>"
+                    "</tr>"
+                )
 
-                # Table
-                html += """
-                <table>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Mag</th>
-                        <th>Alt</th>
-                        <th>Elong</th>
-                        <th>Status</th>
-                    </tr>
-                """
+                for vis in asteroids[:30]:  # Top 30
+                    # Format asteroid name
+                    asteroid_name = vis.asteroid.name or vis.asteroid.designation
+                    if len(asteroid_name) > 20:
+                        asteroid_name = asteroid_name[:20] + "..."
 
-                for vis in visible[:30]:  # Top 30
-                    name = vis.asteroid.name or vis.asteroid.designation
-                    if len(name) > 15:
-                        name = name[:15] + "..."
-
-                    # Type styling
+                    # Format type with color
                     atype = vis.asteroid.asteroid_type
                     if atype == "neo":
-                        type_html = '<span class="type-neo">NEO</span>'
+                        type_str = "NEO"
+                        type_color = colors["red"]
+                        type_style = f"color: {type_color}; font-weight: bold;"
                     elif atype == "dwarf_planet":
-                        type_html = '<span class="type-dwarf">Dwarf</span>'
+                        type_str = "Dwarf Planet"
+                        type_color = colors["purple"]
+                        type_style = f"color: {type_color};"
                     elif atype == "trojan":
-                        type_html = '<span class="type-trojan">Trojan</span>'
+                        type_str = "Trojan"
+                        type_color = colors["orange"]
+                        type_style = f"color: {type_color};"
                     elif atype == "centaur":
-                        type_html = '<span class="type-centaur">Centaur</span>'
+                        type_str = "Centaur"
+                        type_color = colors["cyan"]
+                        type_style = f"color: {type_color};"
                     elif atype == "tno":
-                        type_html = '<span class="type-centaur">TNO</span>'
+                        type_str = "TNO"
+                        type_color = colors["cyan"]
+                        type_style = f"color: {type_color};"
                     else:
-                        type_html = "Belt"
+                        type_str = "Main Belt"
+                        type_color = colors["text"]
+                        type_style = f"color: {type_color};"
 
-                    # Magnitude styling
-                    if vis.magnitude < 6:
-                        mag_html = f'<span class="green">{vis.magnitude:.1f}</span>'
-                    elif vis.magnitude < 9:
-                        mag_html = f'<span class="yellow">{vis.magnitude:.1f}</span>'
+                    # Format magnitude with color and explanation
+                    if vis.magnitude < 3.0:
+                        mag_color = colors["bright_green"]
+                        mag_style = f"color: {mag_color}; font-weight: bold;"
+                    elif vis.magnitude < 6.0:
+                        mag_color = colors["green"]
+                        mag_style = f"color: {mag_color};"
+                    elif vis.magnitude < 8.0:
+                        mag_color = colors["yellow"]
+                        mag_style = f"color: {mag_color};"
                     else:
-                        mag_html = f'<span class="dim">{vis.magnitude:.1f}</span>'
+                        mag_color = colors["text_dim"]
+                        mag_style = f"color: {mag_color};"
+                    mag_explanation = f" <span style='color: {colors['text_dim']}; font-size: 0.85em;'>({self._explain_magnitude(vis.magnitude)})</span>"
 
-                    # Altitude
-                    alt_html = f"{vis.altitude:.0f}°"
-                    if vis.altitude < 0:
-                        alt_html = f'<span class="dim">{vis.altitude:.0f}°</span>'
+                    # Format visibility
+                    if vis.is_visible:
+                        visible_str = "✓ Yes"
+                        visible_color = colors["green"]
+                    else:
+                        visible_str = "✗ No"
+                        visible_color = colors["text_dim"]
 
-                    # Elongation
+                    # Format altitude
+                    alt_str = f"{vis.altitude:.0f}°"
+
+                    # Format elongation
                     elong = vis.elongation_deg or 0
                     if elong > 150:
-                        elong_html = f'<span class="green">{elong:.0f}°</span>'
+                        elong_str = f"{elong:.0f}°"
+                        elong_color = colors["bright_green"]
+                        elong_note = " <span style='color: {0}; font-size: 0.85em;'>(opposition)</span>".format(
+                            colors["text_dim"]
+                        )
                     elif elong < 30:
-                        elong_html = f'<span class="red">{elong:.0f}°</span>'
+                        elong_str = f"{elong:.0f}°"
+                        elong_color = colors["red"]
+                        elong_note = ""
                     else:
-                        elong_html = f"{elong:.0f}°"
+                        elong_str = f"{elong:.0f}°"
+                        elong_color = colors["text"]
+                        elong_note = ""
 
-                    # Status
-                    if vis.is_visible and elong > 150:
-                        status = '<span class="green">★ Opposition</span>'
-                    elif vis.is_visible:
-                        status = '<span class="green">✓ Visible</span>'
-                    else:
-                        status = '<span class="dim">Below horizon</span>'
+                    content_parts.append(
+                        f"<tr style='border-bottom: 1px solid #444;'>"
+                        f"<td style='padding: 6px; color: {colors['cyan']};'>{asteroid_name}</td>"
+                        f"<td style='padding: 6px; {type_style}'>{type_str}</td>"
+                        f"<td style='padding: 6px; text-align: right; {mag_style}'>{vis.magnitude:.2f}{mag_explanation}</td>"
+                        f"<td style='padding: 6px; text-align: center; color: {visible_color};'>{visible_str}</td>"
+                        f"<td style='padding: 6px; text-align: right; color: {colors['text']}; font-size: 0.9em;'>{alt_str}</td>"
+                        f"<td style='padding: 6px; text-align: right; color: {elong_color}; font-size: 0.9em;'>{elong_str}{elong_note}</td>"
+                        "</tr>"
+                    )
 
-                    html += f"""
-                    <tr>
-                        <td>{name}</td>
-                        <td>{type_html}</td>
-                        <td>{mag_html}</td>
-                        <td>{alt_html}</td>
-                        <td>{elong_html}</td>
-                        <td>{status}</td>
-                    </tr>
-                    """
+                content_parts.append("</table>")
 
-                html += "</table>"
+                # Add helpful tips
+                content_parts.append(
+                    f"<p style='margin-top: 15px; color: {colors['text_dim']}; font-size: 0.9em;'>"
+                    f"💡 <b>Tips:</b> Altitude shows how high the asteroid is in the sky. "
+                    f"Magnitude indicates brightness - lower numbers are brighter. "
+                    f"Elongation shows angular distance from the Sun - asteroids near opposition (>150°) are brightest.</p>"
+                )
 
-                # Details for top 5 visible
-                visible_above = [v for v in visible if v.is_visible][:5]
+                # Show details for top visible asteroids
+                visible_above = [v for v in asteroids if v.is_visible][:10]
                 if visible_above:
-                    html += "<h3>Top Visible Asteroids</h3>"
+                    content_parts.append("<h2>Asteroid Details</h2>")
 
                     for vis in visible_above:
-                        html += f"""
-                        <p>
-                            <b>{vis.asteroid.display_name}</b><br/>
-                            Type: {vis.asteroid.asteroid_type.replace("_", " ").title()}<br/>
-                        """
+                        # Format type
+                        atype_display = vis.asteroid.asteroid_type.replace("_", " ").title()
 
+                        content_parts.append(
+                            f"<p><b style='color: {colors['header']};'>{vis.asteroid.display_name}</b> ({vis.asteroid.designation})</p>"
+                        )
+
+                        mag_explanation = self._explain_magnitude(vis.magnitude)
+                        alt_str = f"{vis.altitude:.0f}°"
+
+                        content_parts.append(
+                            f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+                            f"<li>Type: {atype_display}</li>"
+                            f"<li>Magnitude: {vis.magnitude:.2f} ({mag_explanation})</li>"
+                            f"<li>Altitude: {alt_str}, Azimuth: {vis.azimuth:.0f}°</li>"
+                        )
+
+                        # Show RA/Dec if available
                         if vis.ra_hours is not None and vis.dec_degrees is not None:
                             ra_h = int(vis.ra_hours)
                             ra_m = int((vis.ra_hours - ra_h) * 60)
                             dec_sign = "+" if vis.dec_degrees >= 0 else ""
-                            html += f"Position: RA {ra_h}h {ra_m}m, Dec {dec_sign}{vis.dec_degrees:.1f}°<br/>"
+                            content_parts.append(
+                                f"<li>Position: RA {ra_h}h {ra_m}m, Dec {dec_sign}{vis.dec_degrees:.1f}°</li>"
+                            )
 
-                        html += f"""
-                            Altitude: {vis.altitude:.1f}° &nbsp; Azimuth: {vis.azimuth:.1f}°<br/>
-                            Magnitude: {vis.magnitude:.2f} &nbsp; Elongation: {vis.elongation_deg:.0f}°<br/>
-                        """
+                        # Show elongation
+                        if vis.elongation_deg is not None:
+                            elong_desc = " (near opposition - brightest)" if vis.elongation_deg > 150 else ""
+                            content_parts.append(f"<li>Elongation from Sun: {vis.elongation_deg:.0f}°{elong_desc}</li>")
 
-                        if vis.helio_distance_au and vis.geo_distance_au:
-                            html += f"Distance: {vis.helio_distance_au:.2f} AU from Sun, {vis.geo_distance_au:.2f} AU from Earth<br/>"
+                        # Show distances
+                        if vis.helio_distance_au is not None and vis.geo_distance_au is not None:
+                            content_parts.append(
+                                f"<li>Distance: {vis.helio_distance_au:.2f} AU from Sun, {vis.geo_distance_au:.2f} AU from Earth</li>"
+                            )
 
+                        # Show diameter if available
                         if vis.asteroid.diameter_km:
-                            html += f"Diameter: {vis.asteroid.diameter_km:.1f} km<br/>"
+                            content_parts.append(f"<li>Diameter: {vis.asteroid.diameter_km:.1f} km</li>")
 
+                        # Show notes if available
                         if vis.notes:
-                            html += f'<span class="dim">{vis.notes}</span><br/>'
+                            content_parts.append(f"<li>{vis.notes}</li>")
 
                         if vis.asteroid.notes:
-                            html += f'<span class="dim">{vis.asteroid.notes}</span><br/>'
+                            content_parts.append(f"<li>{vis.asteroid.notes}</li>")
 
-                        html += "</p>"
+                        content_parts.append("</ul>")
 
-            # Tips
-            html += """
-                <h3>Viewing Tips</h3>
-                <ul>
-                    <li class="green">Elongation >150° = near opposition (brightest)</li>
-                    <li class="yellow">Magnitude <8 = visible in binoculars</li>
-                    <li class="dim">Track asteroids over multiple nights to observe motion</li>
-                    <li class="dim">Vesta can reach naked-eye visibility at opposition</li>
-                </ul>
-            </body>
-            </html>
-            """
+            html_content.extend(content_parts)
 
-            self.info_text.setHtml(html)
+            # Viewing tips
+            html_content.append(
+                "<h2>Viewing Tips</h2>"
+                f"<ul style='margin-left: 20px; color: {colors['text']};'>"
+                f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Magnitude < 6.0: Potentially visible to naked eye under dark skies (rare for asteroids)</li>"
+                f"<li style='color: {colors['yellow']}; margin-bottom: 5px;'>Magnitude 6.0-8.0: Visible with binoculars</li>"
+                f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>Magnitude > 8.0: Requires telescope</li>"
+                f"<li style='color: {colors['green']}; margin-bottom: 5px;'>Asteroids near opposition (elongation >150°) are at their brightest</li>"
+                f"<li style='color: {colors['text_dim']}; margin-bottom: 5px;'>Track asteroids over multiple nights to observe their motion against background stars</li>"
+                "</ul>"
+                f"<p style='color: {colors['text_dim']};'>💡 Tip: Vesta is the only asteroid that can occasionally reach naked-eye visibility at opposition!</p>"
+            )
+
+            self.info_text.setHtml("\n".join(html_content))
 
         except Exception as e:
-            logger.error(f"Failed to load asteroid visibility: {e}", exc_info=True)
-            self.info_text.setPlainText(f"Error: Failed to load asteroid visibility information: {e}")
+            logger.error(f"Error loading asteroids info: {e}", exc_info=True)
+            self.info_text.setHtml(
+                f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load asteroid visibility information: {e}</span></p>"
+            )
+

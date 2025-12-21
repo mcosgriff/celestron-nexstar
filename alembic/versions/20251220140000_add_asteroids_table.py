@@ -67,3 +67,4 @@ def downgrade() -> None:
     op.drop_index("idx_asteroid_designation", table_name="asteroids")
     op.drop_table("asteroids")
 
+

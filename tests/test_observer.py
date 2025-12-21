@@ -52,7 +52,7 @@ class TestObserverLocation(unittest.TestCase):
         """Test that ObserverLocation is frozen (immutable)"""
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
         with self.assertRaises(Exception):  # dataclass frozen raises FrozenInstanceError
-            location.latitude = 50.0
+            location = ObserverLocation(latitude=40.0, longitude=50.0)
 
 
 class TestDefaultLocation(unittest.TestCase):

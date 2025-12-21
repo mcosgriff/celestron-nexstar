@@ -58,11 +58,7 @@ class SettingsDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        self._font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        self._font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Create tabs
         self._create_config_tab()
@@ -120,7 +116,7 @@ class SettingsDialog(QDialog):
         return {
             "text": "#ffffff" if is_dark else "#000000",
             "text_dim": "#9e9e9e" if is_dark else "#666666",
-            "header": "#00bcd4" if is_dark else "#00838f",
+            "header": "#ff9800" if is_dark else "#e65100",  # Orange
             "cyan": "#00bcd4" if is_dark else "#00838f",
             "green": "#4caf50" if is_dark else "#2e7d32",
             "yellow": "#ffc107" if is_dark else "#f57c00",
@@ -1452,13 +1448,15 @@ class SettingsDialog(QDialog):
                     "count": comet_count,
                     "seed_exists": comet_seed_exists,
                 },
-                {
-                    "id": "horizons_spk",
-                    "name": "Horizons SPK",
-                    "description": "High-accuracy SPK kernels for comets from JPL Horizons",
-                    "count": spk_count,
-                    "seed_exists": spk_count > 0,
-                },
+                # NOTE: SPK downloads removed - JPL Horizons does not provide downloadable SPK files
+                # for comets or asteroids through their API. Use orbital elements instead.
+                # {
+                #     "id": "horizons_spk",
+                #     "name": "Horizons SPK",
+                #     "description": "High-accuracy SPK kernels for comets from JPL Horizons",
+                #     "count": spk_count,
+                #     "seed_exists": spk_count > 0,
+                # },
                 {
                     "id": "eclipses",
                     "name": "Eclipses Seed",

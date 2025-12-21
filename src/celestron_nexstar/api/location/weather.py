@@ -421,6 +421,8 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             with get_db_session() as session:
                 # Query for forecasts for this location (we'll filter stale ones after)
                 # Get a wider range to check staleness intelligently
+                # Convert to naive UTC for database comparison (SQLite stores as naive)
+                cutoff_time = (now - timedelta(hours=24)).replace(tzinfo=None)
                 stmt = (
                     select(WeatherForecastModel)
                     .where(
@@ -428,7 +430,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                             WeatherForecastModel.latitude == location.latitude,
                             WeatherForecastModel.longitude == location.longitude,
                             # Only consider forecasts that are not too old (max 24 hours fetch age)
-                            WeatherForecastModel.fetched_at >= now - timedelta(hours=24),
+                            WeatherForecastModel.fetched_at >= cutoff_time,
                         )
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp)
@@ -447,15 +449,16 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
             # IndexError: missing array indices
             # SQLAlchemyError: table missing or other DB errors
             logger.warning(f"Error checking database for weather forecasts: {e}")
-        # Always return timezone-aware now; ensure forecast timestamps are aware too
-        safe_forecasts: list[WeatherForecastModel] = []
-        for f in existing_forecasts:
-            ts = f.forecast_timestamp
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=UTC)
-            safe_forecasts.append(f)
 
-        return safe_forecasts, now
+        # Ensure all timestamps are timezone-aware (UTC) for proper comparisons
+        # SQLite returns datetimes as naive even with DateTime(timezone=True)
+        for f in existing_forecasts:
+            if f.forecast_timestamp.tzinfo is None:
+                f.forecast_timestamp = f.forecast_timestamp.replace(tzinfo=UTC)
+            if f.fetched_at.tzinfo is None:
+                f.fetched_at = f.fetched_at.replace(tzinfo=UTC)
+
+        return existing_forecasts, now
 
     cached_fallback: list[WeatherForecastModel] = []
 
@@ -676,13 +679,16 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                     if forecasts_to_store:
                         min_ts = min(f.timestamp for f in forecasts_to_store)
                         max_ts = max(f.timestamp for f in forecasts_to_store)
+                        # Convert to naive UTC for database comparison
+                        min_ts_naive = min_ts.replace(tzinfo=None) if min_ts.tzinfo else min_ts
+                        max_ts_naive = max_ts.replace(tzinfo=None) if max_ts.tzinfo else max_ts
                         session.execute(
                             delete(WeatherForecastModel).where(
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp >= min_ts,
-                                    WeatherForecastModel.forecast_timestamp <= max_ts,
+                                    WeatherForecastModel.forecast_timestamp >= min_ts_naive,
+                                    WeatherForecastModel.forecast_timestamp <= max_ts_naive,
                                 )
                             )
                         )
@@ -699,6 +705,13 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                     result = session.execute(stmt)
                     all_location_forecasts = result.scalars().all()
 
+                    # Ensure timestamps are timezone-aware before staleness check
+                    for f in all_location_forecasts:
+                        if f.forecast_timestamp.tzinfo is None:
+                            f.forecast_timestamp = f.forecast_timestamp.replace(tzinfo=UTC)
+                        if f.fetched_at.tzinfo is None:
+                            f.fetched_at = f.fetched_at.replace(tzinfo=UTC)
+
                     # Collect IDs of stale forecasts for bulk delete
                     stale_ids = [f.id for f in all_location_forecasts if _is_forecast_stale(f, now_db)]
 
@@ -710,13 +723,15 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                     # Insert new forecasts
                     for forecast_item in forecasts_to_store:
                         # Check if forecast already exists for this timestamp
+                        # Convert to naive UTC for database comparison
+                        forecast_ts_naive = forecast_item.timestamp.replace(tzinfo=None) if forecast_item.timestamp.tzinfo else forecast_item.timestamp
                         stmt = (
                             select(WeatherForecastModel)
                             .where(
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp == forecast_item.timestamp,
+                                    WeatherForecastModel.forecast_timestamp == forecast_ts_naive,
                                 )
                             )
                             .limit(1)
@@ -729,6 +744,8 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
 
                         if existing:
                             # Update existing forecast
+                            # Store timestamp as naive UTC
+                            now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                             existing.geohash = location_geohash
                             existing.temperature_f = forecast_item.temperature_f
                             existing.dew_point_f = forecast_item.dew_point_f
@@ -736,21 +753,24 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                             existing.cloud_cover_percent = forecast_item.cloud_cover_percent
                             existing.wind_speed_mph = forecast_item.wind_speed_mph
                             existing.seeing_score = forecast_item.seeing_score
-                            existing.fetched_at = now_db
+                            existing.fetched_at = now_db_naive
                         else:
                             # Insert new forecast
+                            # Store timestamps as naive UTC in the database
+                            forecast_ts_naive = forecast_item.timestamp.replace(tzinfo=None) if forecast_item.timestamp.tzinfo else forecast_item.timestamp
+                            now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                             db_forecast = WeatherForecastModel(
                                 latitude=location.latitude,
                                 longitude=location.longitude,
                                 geohash=location_geohash,
-                                forecast_timestamp=forecast_item.timestamp,
+                                forecast_timestamp=forecast_ts_naive,
                                 temperature_f=forecast_item.temperature_f,
                                 dew_point_f=forecast_item.dew_point_f,
                                 humidity_percent=forecast_item.humidity_percent,
                                 cloud_cover_percent=forecast_item.cloud_cover_percent,
                                 wind_speed_mph=forecast_item.wind_speed_mph,
                                 seeing_score=forecast_item.seeing_score,
-                                fetched_at=now_db,
+                                fetched_at=now_db_naive,
                             )
                             session.add(db_forecast)
 
@@ -843,8 +863,8 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                         and_(
                             WeatherForecastModel.latitude == location.latitude,
                             WeatherForecastModel.longitude == location.longitude,
-                            WeatherForecastModel.forecast_timestamp >= past_start,
-                            WeatherForecastModel.forecast_timestamp <= end_time,
+                            WeatherForecastModel.forecast_timestamp >= past_start.replace(tzinfo=None),
+                            WeatherForecastModel.forecast_timestamp <= end_time.replace(tzinfo=None),
                         )
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp)
@@ -853,6 +873,13 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                 .all()
             )
             db_rows_fallback = list(rows)
+
+            # Ensure timestamps are timezone-aware
+            for row in db_rows_fallback:
+                if row.forecast_timestamp.tzinfo is None:
+                    row.forecast_timestamp = row.forecast_timestamp.replace(tzinfo=UTC)
+                if row.fetched_at.tzinfo is None:
+                    row.fetched_at = row.fetched_at.replace(tzinfo=UTC)
 
             last_fetch = session.execute(
                 select(func.max(WeatherForecastModel.fetched_at)).where(
@@ -1006,6 +1033,9 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                 now_db = datetime.now(UTC)
                 min_ts = forecasts[0].timestamp
                 max_ts = forecasts[-1].timestamp
+                # Convert to naive UTC for database comparison
+                min_ts_naive = min_ts.replace(tzinfo=None) if min_ts.tzinfo else min_ts
+                max_ts_naive = max_ts.replace(tzinfo=None) if max_ts.tzinfo else max_ts
 
                 with get_db_session() as session:
                     # De-dupe the range we're about to insert.
@@ -1014,26 +1044,29 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                             and_(
                                 WeatherForecastModel.latitude == location.latitude,
                                 WeatherForecastModel.longitude == location.longitude,
-                                WeatherForecastModel.forecast_timestamp >= min_ts,
-                                WeatherForecastModel.forecast_timestamp <= max_ts,
+                                WeatherForecastModel.forecast_timestamp >= min_ts_naive,
+                                WeatherForecastModel.forecast_timestamp <= max_ts_naive,
                             )
                         )
                     )
 
+                    # Store timestamps as naive UTC
+                    now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                     for f in forecasts:
+                        forecast_ts_naive = f.timestamp.replace(tzinfo=None) if f.timestamp.tzinfo else f.timestamp
                         session.add(
                             WeatherForecastModel(
                                 latitude=location.latitude,
                                 longitude=location.longitude,
                                 geohash=location_geohash,
-                                forecast_timestamp=f.timestamp,
+                                forecast_timestamp=forecast_ts_naive,
                                 temperature_f=f.temperature_f,
                                 dew_point_f=f.dew_point_f,
                                 humidity_percent=f.humidity_percent,
                                 cloud_cover_percent=f.cloud_cover_percent,
                                 wind_speed_mph=f.wind_speed_mph,
                                 seeing_score=f.seeing_score,
-                                fetched_at=now_db,
+                                fetched_at=now_db_naive,
                             )
                         )
                     session.commit()
@@ -1126,20 +1159,28 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         try:
             with get_db_session() as session:
                 # Look for forecasts for the current hour
+                # Convert to naive UTC for database comparison
                 stmt = (
                     select(WeatherForecastModel)
                     .where(
                         and_(
                             WeatherForecastModel.latitude == location.latitude,
                             WeatherForecastModel.longitude == location.longitude,
-                            WeatherForecastModel.forecast_timestamp >= current_hour_start,
-                            WeatherForecastModel.forecast_timestamp < current_hour_end,
+                            WeatherForecastModel.forecast_timestamp >= current_hour_start.replace(tzinfo=None),
+                            WeatherForecastModel.forecast_timestamp < current_hour_end.replace(tzinfo=None),
                         )
                     )
                     .order_by(WeatherForecastModel.forecast_timestamp.desc())
                 )
                 result = session.execute(stmt)
                 candidates = result.scalars().all()
+
+                # Ensure timestamps are timezone-aware
+                for candidate in candidates:
+                    if candidate.forecast_timestamp.tzinfo is None:
+                        candidate.forecast_timestamp = candidate.forecast_timestamp.replace(tzinfo=UTC)
+                    if candidate.fetched_at.tzinfo is None:
+                        candidate.fetched_at = candidate.fetched_at.replace(tzinfo=UTC)
 
                 # Find the first non-stale forecast
                 for candidate in candidates:
@@ -1312,14 +1353,15 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
 
                     with get_db_session() as session:
                         # Check if forecast already exists for this hour
+                        # Convert to naive UTC for database comparison
                         stmt = (
                             select(WeatherForecastModel)
                             .where(
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp >= current_hour_start_db,
-                                    WeatherForecastModel.forecast_timestamp < current_hour_end_db,
+                                    WeatherForecastModel.forecast_timestamp >= current_hour_start_db.replace(tzinfo=None),
+                                    WeatherForecastModel.forecast_timestamp < current_hour_end_db.replace(tzinfo=None),
                                 )
                             )
                             .limit(1)
@@ -1330,6 +1372,10 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                         # Calculate seeing score
                         seeing_score = calculate_seeing_conditions(weather_to_store)
 
+                        # Store timestamps as naive UTC
+                        current_hour_start_naive = current_hour_start_db.replace(tzinfo=None) if current_hour_start_db.tzinfo else current_hour_start_db
+                        now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
+
                         if existing:
                             # Update existing forecast
                             existing.geohash = location_geohash
@@ -1339,21 +1385,21 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                             existing.cloud_cover_percent = weather_to_store.cloud_cover_percent
                             existing.wind_speed_mph = weather_to_store.wind_speed_ms
                             existing.seeing_score = seeing_score
-                            existing.fetched_at = now_db
+                            existing.fetched_at = now_db_naive
                         else:
                             # Insert new forecast
                             db_forecast = WeatherForecastModel(
                                 latitude=location.latitude,
                                 longitude=location.longitude,
                                 geohash=location_geohash,
-                                forecast_timestamp=current_hour_start_db,
+                                forecast_timestamp=current_hour_start_naive,
                                 temperature_f=weather_to_store.temperature_c,
                                 dew_point_f=weather_to_store.dew_point_f,
                                 humidity_percent=weather_to_store.humidity_percent,
                                 cloud_cover_percent=weather_to_store.cloud_cover_percent,
                                 wind_speed_mph=weather_to_store.wind_speed_ms,
                                 seeing_score=seeing_score,
-                                fetched_at=now_db,
+                                fetched_at=now_db_naive,
                             )
                             session.add(db_forecast)
 

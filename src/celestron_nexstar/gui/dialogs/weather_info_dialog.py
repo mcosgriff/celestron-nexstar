@@ -55,11 +55,7 @@ class WeatherInfoDialog(QDialog):
 
         app = QApplication.instance()
         monospace_font = app.property("monospace_font") if app and app.property("monospace_font") else None
-        font_family = (
-            f"'{monospace_font}', 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-            if monospace_font
-            else "'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace"
-        )
+        font_family = f"'{monospace_font}'" if monospace_font else "'Courier New'"
 
         # Store font family for later use in _load_weather_info
         self._font_family = font_family

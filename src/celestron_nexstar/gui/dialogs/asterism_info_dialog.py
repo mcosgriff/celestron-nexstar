@@ -117,17 +117,16 @@ class LinkClickableTextBrowser(QTextBrowser):
     def _on_anchor_clicked(self, url: QUrl) -> None:
         """Handle anchor clicks."""
         url_str = url.toString()
-        if url_str.startswith("starinfo://") and self._link_click_handler:
+        if url_str.startswith("starinfo://"):
             # Handle star info links ourselves - don't let QTextBrowser navigate
-            self._link_click_handler(url_str)
-            # Don't call setSource for starinfo links to avoid warnings
-        else:
+            if self._link_click_handler is not None:
+                self._link_click_handler(url_str)
+             # Don't call setSource for starinfo links to avoid warnings
+        elif url_str.startswith(("http://", "https://")):
             # For other links (like http/https), use default behavior (open in browser)
-            # Only if it's a valid external URL
-            if url_str.startswith(("http://", "https://")):
-                from PySide6.QtGui import QDesktopServices
+            from PySide6.QtGui import QDesktopServices
 
-                QDesktopServices.openUrl(url)
+            QDesktopServices.openUrl(url)
 
 
 class AsterismInfoDialog(QDialog):
@@ -771,9 +770,9 @@ class AsterismInfoDialog(QDialog):
 
             # Visible stars are computed in background; show placeholder
             html_parts.append(
-                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
                 "Visible Stars in this Asterism:</p>"
-            )
+                        )
             html_parts.append(self._visible_stars_placeholder)
 
             # Wikipedia link
