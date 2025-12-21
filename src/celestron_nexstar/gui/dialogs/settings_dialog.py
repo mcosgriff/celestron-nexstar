@@ -1435,7 +1435,7 @@ class SettingsDialog(QDialog):
                 # Count SPK files
                 from celestron_nexstar.api.database.models import CometSPKModel
 
-                spk_count = int(session.scalar(select(func.count(CometSPKModel.id))) or 0)
+                int(session.scalar(select(func.count(CometSPKModel.id))) or 0)
 
             seed_dir = get_seed_data_path()
             comet_seed_exists = (seed_dir / "comets.json").exists()

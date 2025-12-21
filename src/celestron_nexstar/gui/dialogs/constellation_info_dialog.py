@@ -138,7 +138,7 @@ class MapGenerationWorkerThread(QThread):
             # projection even with a tighter dec_max in the plot window).
             proj_dec_min = float(self.boundaries["dec_min_degrees"])
             proj_dec_max = float(self.boundaries["dec_max_degrees"])
-            if proj_dec_max >= 70.0 or proj_dec_min <= -70.0:
+            if proj_dec_max >= 80.0 or proj_dec_min <= -80.0:
                 padding_dec = 2.0
 
             dec_min = proj_dec_min - padding_dec
@@ -177,10 +177,11 @@ class MapGenerationWorkerThread(QThread):
                             #
                             # Strategy:
                             # - Use *known-magnitude* stars (exclude NULL magnitudes for bounds)
-                            # - Prefer brighter subsets first (2.5, 3.0, 3.5, 4.5), then fall back to 6.5
-                            # - Limit to the brightest 60 to avoid “full constellation population” sprawl
+                            # - Prefer brighter subsets first (3.5, 4.0, 4.5), then fall back to 6.5
+                            # - Limit to the brightest 60 to avoid "full constellation population" sprawl
+                            # - Start with mag 3.5 to include all bright named stars (e.g., Muscida, Talitha in UMa)
                             star_rows: list[tuple[float, float]] = []
-                            for mag_limit in (2.5, 3.0, 3.5, 4.5, 6.5):
+                            for mag_limit in (3.5, 4.0, 4.5, 6.5):
                                 rows = session.execute(
                                     select(StarModel.ra_hours, StarModel.dec_degrees)
                                     .where(
@@ -203,6 +204,10 @@ class MapGenerationWorkerThread(QThread):
                                 # Tight declination window from stars (with padding + clamp)
                                 dec_min = max(-90.0, min(dec_vals) - padding_dec)
                                 dec_max = min(90.0, max(dec_vals) + padding_dec)
+
+                                # Update projection decision variables to use star-based bounds
+                                proj_dec_min = min(dec_vals)
+                                proj_dec_max = max(dec_vals)
 
                                 # RA window: minimal circular interval containing the stars (gap method)
                                 ra_sorted = sorted(ra_vals)
@@ -313,9 +318,9 @@ class MapGenerationWorkerThread(QThread):
             # Starplot's Miller projection effectively behaves like a full-sky projection (it will expand RA to 360°),
             # which is why users see "24h wide" even when we request a narrow RA window. Use LambertAzEqArea for
             # constellation maps so ra_min/ra_max cropping works (matches Starplot examples).
-            if proj_dec_max >= 70.0:
+            if proj_dec_max >= 80.0:
                 projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=90)
-            elif proj_dec_min <= -70.0:
+            elif proj_dec_min <= -80.0:
                 projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=-90)
             else:
                 projection = LambertAzEqArea(center_ra=center_ra_deg, center_dec=center_dec_deg)
@@ -352,6 +357,7 @@ class MapGenerationWorkerThread(QThread):
                 plot.constellations(where=[_.iau_id == iau_id])  # type: ignore[arg-type]
             else:
                 plot.constellations()
+            plot.constellation_borders()
 
             try:
                 constellation_name = str(self.boundaries.get("constellation_name") or "")
@@ -376,39 +382,25 @@ class MapGenerationWorkerThread(QThread):
             except Exception:
                 pass
 
-            # Match Starplot examples:
-            # - Plot stars to mag 9
-            # - Show Bayer + Flamsteed labels (Starplot handles collisions)
-            plot.stars(  # type: ignore[arg-type]
-                where=[_.magnitude < 9],
-                bayer_labels=True,
-                flamsteed_labels=True,
-            )
+            plot.stars(where=[_.magnitude < 8], bayer_labels=True, where_labels=[_.magnitude < 5])
 
-            # Add nebula / open clusters similar to Starplot examples (mag < 8 or unknown)
-            plot.nebula(  # type: ignore[arg-type]
-                where=[(_.magnitude.isnull()) | (_.magnitude < 8)],
-                true_size=True,
-            )
-            plot.open_clusters(  # type: ignore[arg-type]
-                where=[(_.magnitude.isnull()) | (_.magnitude < 8)],
+            plot.open_clusters(
+                where=[_.size < 1, _.magnitude < 9],
+                where_labels=[False],
                 true_size=False,
             )
+            plot.open_clusters(
+                # plot larger clusters as their true apparent size
+                where=[_.size > 1, (_.magnitude < 9) | (_.magnitude.isnull())],
+                where_labels=[False],
+            )
 
-            # Add constellation labels
-            try:
-                plot.constellation_labels()
-            except RuntimeError as e:
-                if "reentrant" not in str(e).lower() and "font" not in str(e).lower():
-                    raise
+            plot.nebula(
+                where=[(_.magnitude < 9) | (_.magnitude.isnull())],
+            )
 
-            # Add Milky Way and ecliptic
-            # Milky way may fail for small RA/Dec ranges, so wrap in try/except
-            try:
-                plot.milky_way()
-            except (ValueError, RuntimeError) as e:
-                # Milky way may fail for small RA/Dec ranges or edge cases
-                logger.debug(f"Could not render milky way: {e}")
+            plot.constellation_labels()
+            plot.milky_way()
             plot.ecliptic()
 
             # Export to PNG in memory

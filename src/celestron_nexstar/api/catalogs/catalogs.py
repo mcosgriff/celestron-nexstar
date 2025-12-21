@@ -346,8 +346,8 @@ def _parse_coordinate_query(query: str) -> tuple[float, float] | None:
             ra_hours = ra_h + ra_m / 60.0 + ra_s_float / 3600.0
             dec_degrees = dec_d + dec_m / 60.0 + dec_s_float / 3600.0
 
-            ra_hours = ra_h + ra_m / 60.0 + ra_s / 3600.0
-            dec_degrees = dec_d + dec_m / 60.0 + dec_s / 3600.0
+            ra_hours = ra_h + ra_m / 60.0 + ra_s_float / 3600.0
+            dec_degrees = dec_d + dec_m / 60.0 + dec_s_float / 3600.0
             if dec_sign == "-":
                 dec_degrees = -dec_degrees
 

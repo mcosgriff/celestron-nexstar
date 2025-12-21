@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -287,9 +286,7 @@ class SPKManagerDialog(QDialog):
             with get_db_session() as session:
                 # Get all asteroids
                 all_asteroids = (
-                    session.execute(select(AsteroidModel).order_by(AsteroidModel.absolute_magnitude_h))
-                    .scalars()
-                    .all()
+                    session.execute(select(AsteroidModel).order_by(AsteroidModel.absolute_magnitude_h)).scalars().all()
                 )
 
                 # Filter to only asteroids that likely have SPK files available from JPL Horizons
@@ -310,7 +307,8 @@ class SPKManagerDialog(QDialog):
                 MAJOR_BODY_ASTEROIDS = {"1", "2", "3", "4", "10"}  # Ceres, Pallas, Juno, Vesta, Hygiea
 
                 asteroids = [
-                    a for a in all_asteroids
+                    a
+                    for a in all_asteroids
                     if a.designation not in MAJOR_BODY_ASTEROIDS  # Already in ephemeris
                     and a.asteroid_type not in ("dwarf_planet", "tno", "centaur", "trojan")  # Exclude distant types
                     and a.semi_major_axis_au < 4.5  # Main belt + NEOs only, exclude Jupiter trojans

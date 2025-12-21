@@ -631,7 +631,7 @@ def download_asteroid_spk_sync(
         logger.debug(f"Horizons response for {designation}: {data}")
 
         if "error" in data:
-            error_msg = data['error']
+            error_msg = data["error"]
             logger.error(f"Horizons API error for asteroid {designation}: {error_msg}")
             # Return None with more detailed error
             return None
@@ -644,7 +644,9 @@ def download_asteroid_spk_sync(
 
         spk_url = data.get("spk_file_id") or data.get("spk")
         if not spk_url:
-            logger.error(f"No SPK URL in Horizons response for asteroid {designation}. Response keys: {list(data.keys())}")
+            logger.error(
+                f"No SPK URL in Horizons response for asteroid {designation}. Response keys: {list(data.keys())}"
+            )
             logger.error(f"Full response: {data}")
             return None
 
@@ -847,10 +849,8 @@ def compute_comet_position_from_elements(
         or None if calculation fails
     """
     try:
-        from skyfield.api import load
         from skyfield.constants import GM_SUN_Pitjeva_2005_km3_s2 as GM_SUN
         from skyfield.data import mpc
-        from skyfield.elementslib import OsculatingElements
 
         from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
         from celestron_nexstar.api.ephemeris.skyfield_utils import (
@@ -889,8 +889,6 @@ def compute_comet_position_from_elements(
         # Create comet from orbital elements
         # Skyfield uses OsculatingElements for computing positions from elements
         # We need to create a position/velocity vector at perihelion and let Skyfield propagate
-        from skyfield.positionlib import Barycentric
-        from skyfield.vectorlib import VectorSum
 
         # Compute semi-major axis from perihelion distance and eccentricity
         # q = a(1-e), so a = q/(1-e)
@@ -902,14 +900,10 @@ def compute_comet_position_from_elements(
 
         # Use Skyfield's mpc.comet_orbit to create orbital elements
         # This returns a function that can compute positions
-        from skyfield.api import Distance, Angle
-        from skyfield.units import Angle as AngleUnit
-
         # Create the comet using orbital elements
         # Skyfield's comet_orbit expects: (semi_major_axis_au, eccentricity, inclination_deg,
         #                                   longitude_of_ascending_node_deg, argument_of_perihelion_deg,
         #                                   mean_anomaly_at_epoch_deg, epoch, GM)
-
         # For a comet at perihelion, mean anomaly = 0
         # But we need to adjust for the current time
         import math
@@ -918,26 +912,28 @@ def compute_comet_position_from_elements(
             # Elliptical orbit - compute mean motion
             # n = sqrt(GM / a^3) in radians/day
             # Period T = 2*pi / n
-            period_days = 2 * math.pi * math.sqrt((semi_major_axis_au ** 3) / (GM_SUN / (149597870.7 ** 3 * 86400 ** 2)))
+            period_days = 2 * math.pi * math.sqrt((semi_major_axis_au**3) / (GM_SUN / (149597870.7**3 * 86400**2)))
 
             # Days since perihelion
-            days_since_perihelion = (t.tt - t_perihelion.tt)
+            days_since_perihelion = t.tt - t_perihelion.tt
 
             # Mean anomaly at observation time
-            mean_anomaly_deg = (360.0 * days_since_perihelion / period_days) % 360.0
+            (360.0 * days_since_perihelion / period_days) % 360.0
         else:
             # Parabolic or hyperbolic - use different approach
             # For now, use a simpler calculation
-            mean_anomaly_deg = 0.0
+            pass
 
         # Use mpc.comet_orbit from Skyfield
-        comet = mpc.comet_orbit(eph,
-                                q_au=perihelion_distance_au,
-                                e=eccentricity,
-                                i_degrees=inclination_deg,
-                                omega_degrees=arg_perihelion_deg,
-                                Omega_degrees=ascending_node_deg,
-                                perihelion_time=t_perihelion)
+        comet = mpc.comet_orbit(
+            eph,
+            q_au=perihelion_distance_au,
+            e=eccentricity,
+            i_degrees=inclination_deg,
+            omega_degrees=arg_perihelion_deg,
+            Omega_degrees=ascending_node_deg,
+            perihelion_time=t_perihelion,
+        )
 
         # Compute comet position from Earth at observation time
         comet_astrometric = earth.at(t).observe(comet)
@@ -1000,7 +996,6 @@ def compute_asteroid_position_from_elements(
         or None if calculation fails
     """
     try:
-        from skyfield.api import load
         from skyfield.constants import GM_SUN_Pitjeva_2005_km3_s2 as GM_SUN
         from skyfield.elementslib import OsculatingElements
 
@@ -1032,10 +1027,7 @@ def compute_asteroid_position_from_elements(
         t = ts.from_datetime(dt)
 
         # Convert epoch to Skyfield time
-        if epoch.tzinfo is None:
-            epoch = epoch.replace(tzinfo=UTC)
-        else:
-            epoch = epoch.astimezone(UTC)
+        epoch = epoch.replace(tzinfo=UTC) if epoch.tzinfo is None else epoch.astimezone(UTC)
         t_epoch = ts.from_datetime(epoch)
 
         # Use OsculatingElements to create asteroid from elements

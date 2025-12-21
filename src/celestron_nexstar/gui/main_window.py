@@ -1569,7 +1569,9 @@ class MainWindow(QMainWindow):
         self.log_toggle_action.triggered.connect(self._on_toggle_log)
 
         # Debug log toggle action
-        debug_icon = self._create_icon("utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"])
+        debug_icon = self._create_icon(
+            "utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"]
+        )
         self.debug_toggle_action = tools_menu.addAction(debug_icon, "Debug Log")
         self.debug_toggle_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
         self.debug_toggle_action.setToolTip("DEBUG LOG")
@@ -1817,7 +1819,11 @@ class MainWindow(QMainWindow):
             self.log_toggle_action.setIcon(self._create_icon("console", ["terminal", "code-tags", "text-box"]))
         # Debug log toggle
         if hasattr(self, "debug_toggle_action"):
-            self.debug_toggle_action.setIcon(self._create_icon("utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"]))
+            self.debug_toggle_action.setIcon(
+                self._create_icon(
+                    "utilities-log-viewer", ["debug-run", "text-x-log", "document-preview", "view-list-details"]
+                )
+            )
         # Catalog button
         if hasattr(self, "catalog_action"):
             self.catalog_action.setIcon(self._create_icon("catalog", ["folder", "folder-open", "folder-documents"]))
@@ -4317,7 +4323,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.aurora_info_dialog import AuroraInfoDialog
 
             self._aurora_dialog = AuroraInfoDialog(self)
-            self._aurora_dialog.finished.connect(lambda: setattr(self, '_aurora_dialog', None))
+            self._aurora_dialog.finished.connect(lambda: setattr(self, "_aurora_dialog", None))
             progress.close()
             self._aurora_dialog.show()
         elif object_name == "iss":
@@ -4334,7 +4340,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.iss_info_dialog import ISSInfoDialog
 
             self._iss_dialog = ISSInfoDialog(self)
-            self._iss_dialog.finished.connect(lambda: setattr(self, '_iss_dialog', None))
+            self._iss_dialog.finished.connect(lambda: setattr(self, "_iss_dialog", None))
             progress.close()
             self._iss_dialog.show()
         elif object_name == "binoculars":
@@ -4351,7 +4357,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.binoculars_info_dialog import BinocularsInfoDialog
 
             self._binoculars_dialog = BinocularsInfoDialog(self)
-            self._binoculars_dialog.finished.connect(lambda: setattr(self, '_binoculars_dialog', None))
+            self._binoculars_dialog.finished.connect(lambda: setattr(self, "_binoculars_dialog", None))
             progress.close()
             self._binoculars_dialog.show()
         elif object_name == "naked_eye":
@@ -4368,7 +4374,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.naked_eye_info_dialog import NakedEyeInfoDialog
 
             self._naked_eye_dialog = NakedEyeInfoDialog(self)
-            self._naked_eye_dialog.finished.connect(lambda: setattr(self, '_naked_eye_dialog', None))
+            self._naked_eye_dialog.finished.connect(lambda: setattr(self, "_naked_eye_dialog", None))
             progress.close()
             self._naked_eye_dialog.show()
         elif object_name == "comets":
@@ -4391,7 +4397,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.comets_info_dialog import CometsInfoDialog
 
             self._comets_dialog = CometsInfoDialog(self)
-            self._comets_dialog.finished.connect(lambda: setattr(self, '_comets_dialog', None))
+            self._comets_dialog.finished.connect(lambda: setattr(self, "_comets_dialog", None))
             progress.close()
             self._comets_dialog.show()
         elif object_name == "asteroids":
@@ -4412,7 +4418,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.asteroids_info_dialog import AsteroidsInfoDialog
 
             self._asteroids_dialog = AsteroidsInfoDialog(self)
-            self._asteroids_dialog.finished.connect(lambda: setattr(self, '_asteroids_dialog', None))
+            self._asteroids_dialog.finished.connect(lambda: setattr(self, "_asteroids_dialog", None))
             progress.close()
             self._asteroids_dialog.show()
         elif object_name == "eclipse":
@@ -4429,7 +4435,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.eclipse_info_dialog import EclipseInfoDialog
 
             self._eclipse_dialog = EclipseInfoDialog(self, progress=progress)
-            self._eclipse_dialog.finished.connect(lambda: setattr(self, '_eclipse_dialog', None))
+            self._eclipse_dialog.finished.connect(lambda: setattr(self, "_eclipse_dialog", None))
             progress.close()
             self._eclipse_dialog.show()
         elif object_name == "planets":
@@ -4446,7 +4452,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.planets_info_dialog import PlanetsInfoDialog
 
             self._planets_dialog = PlanetsInfoDialog(self, progress=progress)
-            self._planets_dialog.finished.connect(lambda: setattr(self, '_planets_dialog', None))
+            self._planets_dialog.finished.connect(lambda: setattr(self, "_planets_dialog", None))
             progress.close()
             self._planets_dialog.show()
         elif object_name == "space_weather":
@@ -4463,7 +4469,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.space_weather_info_dialog import SpaceWeatherInfoDialog
 
             self._space_weather_dialog = SpaceWeatherInfoDialog(self)
-            self._space_weather_dialog.finished.connect(lambda: setattr(self, '_space_weather_dialog', None))
+            self._space_weather_dialog.finished.connect(lambda: setattr(self, "_space_weather_dialog", None))
             progress.close()
             self._space_weather_dialog.show()
         elif object_name == "satellites":
@@ -4480,7 +4486,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.satellites_info_dialog import SatellitesInfoDialog
 
             self._satellites_dialog = SatellitesInfoDialog(self, progress=progress)
-            self._satellites_dialog.finished.connect(lambda: setattr(self, '_satellites_dialog', None))
+            self._satellites_dialog.finished.connect(lambda: setattr(self, "_satellites_dialog", None))
             progress.close()
             self._satellites_dialog.show()
         elif object_name == "meteors":
@@ -4497,7 +4503,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.meteors_info_dialog import MeteorsInfoDialog
 
             self._meteors_dialog = MeteorsInfoDialog(self, progress=progress)
-            self._meteors_dialog.finished.connect(lambda: setattr(self, '_meteors_dialog', None))
+            self._meteors_dialog.finished.connect(lambda: setattr(self, "_meteors_dialog", None))
             progress.close()
             self._meteors_dialog.show()
         elif object_name == "milky_way":
@@ -4513,7 +4519,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.gui.dialogs.milky_way_info_dialog import MilkyWayInfoDialog
 
             self._milky_way_dialog = MilkyWayInfoDialog(self, progress=progress)
-            self._milky_way_dialog.finished.connect(lambda: setattr(self, '_milky_way_dialog', None))
+            self._milky_way_dialog.finished.connect(lambda: setattr(self, "_milky_way_dialog", None))
             progress.close()
             self._milky_way_dialog.show()
         elif object_name == "variables":

@@ -34,9 +34,7 @@ class DebugLogHandler(logging.Handler, QObject):
         logging.Handler.__init__(self)
         QObject.__init__(self)
         # Format: "HH:MM:SS [LEVEL] logger.name: message"
-        self.setFormatter(
-            logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s", datefmt="%H:%M:%S")
-        )
+        self.setFormatter(logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s", datefmt="%H:%M:%S"))
 
     def emit(self, record: logging.LogRecord) -> None:
         """Emit log record via Qt signal (thread-safe)."""

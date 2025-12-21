@@ -121,9 +121,9 @@ class LinkClickableTextBrowser(QTextBrowser):
             # Handle star info links ourselves - don't let QTextBrowser navigate
             if self._link_click_handler is not None:
                 self._link_click_handler(url_str)
-             # Don't call setSource for starinfo links to avoid warnings
+        # Don't call setSource for starinfo links to avoid warnings
         elif url_str.startswith(("http://", "https://")):
-            # For other links (like http/https), use default behavior (open in browser)
+            # For other links (like http/https), use the default behavior (open in browser)
             from PySide6.QtGui import QDesktopServices
 
             QDesktopServices.openUrl(url)
@@ -770,9 +770,9 @@ class AsterismInfoDialog(QDialog):
 
             # Visible stars are computed in background; show placeholder
             html_parts.append(
-                            f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
                 "Visible Stars in this Asterism:</p>"
-                        )
+            )
             html_parts.append(self._visible_stars_placeholder)
 
             # Wikipedia link

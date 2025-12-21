@@ -257,8 +257,29 @@ class WeatherInfoDialog(QDialog):
 
             # Last Updated (cyan label, dim value)
             if weather.last_updated:
+                # Convert UTC timestamp to local time
+                last_updated_str = weather.last_updated
+                if last_updated_str == "now":
+                    last_updated_display = "Just now"
+                else:
+                    try:
+                        # Parse ISO timestamp and convert to local timezone
+                        from celestron_nexstar.api.core.utils import get_local_timezone
+
+                        utc_time = datetime.fromisoformat(last_updated_str.replace("Z", "+00:00"))
+                        if utc_time.tzinfo is None:
+                            utc_time = utc_time.replace(tzinfo=UTC)
+
+                        # Get local timezone
+                        local_tz = get_local_timezone(location.latitude, location.longitude)
+                        local_time = utc_time.astimezone(local_tz)
+                        last_updated_display = local_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+                    except (ValueError, AttributeError):
+                        # Fallback if parsing fails
+                        last_updated_display = last_updated_str
+
                 html_content.append(
-                    f"<p><span style='color: {colors['cyan']};'>Last Updated:</span> <span style='color: {colors['text_dim']};'>{weather.last_updated}</span></p>"
+                    f"<p><span style='color: {colors['cyan']};'>Last Updated:</span> <span style='color: {colors['text_dim']};'>{last_updated_display}</span></p>"
                 )
 
             # Observing Conditions Assessment

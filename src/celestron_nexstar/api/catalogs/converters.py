@@ -39,7 +39,7 @@ class CoordinateConverter:
         Convert Right Ascension from degrees to hours.
 
         Args:
-            ra_degrees: Right Ascension in degrees (0-360)
+            ra_degrees: Right Ascension in degrees (can be negative or > 360)
 
         Returns:
             Right Ascension in hours (0-24)
@@ -47,8 +47,12 @@ class CoordinateConverter:
         Example:
             >>> CoordinateConverter.ra_degrees_to_hours(180.0)
             12.0
+            >>> CoordinateConverter.ra_degrees_to_hours(-180.0)
+            12.0
         """
-        return ra_degrees / DEGREES_PER_HOUR_ANGLE
+        # Normalize to [0, 360) range to handle GeoJSON coordinates that may be in [-180, 180]
+        normalized_degrees = ra_degrees % 360.0
+        return normalized_degrees / DEGREES_PER_HOUR_ANGLE
 
     @staticmethod
     def dec_to_unsigned(dec_degrees: float) -> float:

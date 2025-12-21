@@ -270,7 +270,7 @@ class AsteroidsInfoDialog(QDialog):
                     if elong > 150:
                         elong_str = f"{elong:.0f}°"
                         elong_color = colors["bright_green"]
-                        elong_note = " <span style='color: {0}; font-size: 0.85em;'>(opposition)</span>".format(
+                        elong_note = " <span style='color: {}; font-size: 0.85em;'>(opposition)</span>".format(
                             colors["text_dim"]
                         )
                     elif elong < 30:
@@ -381,4 +381,3 @@ class AsteroidsInfoDialog(QDialog):
             self.info_text.setHtml(
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load asteroid visibility information: {e}</span></p>"
             )
-

@@ -724,7 +724,11 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                     for forecast_item in forecasts_to_store:
                         # Check if forecast already exists for this timestamp
                         # Convert to naive UTC for database comparison
-                        forecast_ts_naive = forecast_item.timestamp.replace(tzinfo=None) if forecast_item.timestamp.tzinfo else forecast_item.timestamp
+                        forecast_ts_naive = (
+                            forecast_item.timestamp.replace(tzinfo=None)
+                            if forecast_item.timestamp.tzinfo
+                            else forecast_item.timestamp
+                        )
                         stmt = (
                             select(WeatherForecastModel)
                             .where(
@@ -757,7 +761,11 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                         else:
                             # Insert new forecast
                             # Store timestamps as naive UTC in the database
-                            forecast_ts_naive = forecast_item.timestamp.replace(tzinfo=None) if forecast_item.timestamp.tzinfo else forecast_item.timestamp
+                            forecast_ts_naive = (
+                                forecast_item.timestamp.replace(tzinfo=None)
+                                if forecast_item.timestamp.tzinfo
+                                else forecast_item.timestamp
+                            )
                             now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                             db_forecast = WeatherForecastModel(
                                 latitude=location.latitude,
@@ -1360,7 +1368,8 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                                 and_(
                                     WeatherForecastModel.latitude == location.latitude,
                                     WeatherForecastModel.longitude == location.longitude,
-                                    WeatherForecastModel.forecast_timestamp >= current_hour_start_db.replace(tzinfo=None),
+                                    WeatherForecastModel.forecast_timestamp
+                                    >= current_hour_start_db.replace(tzinfo=None),
                                     WeatherForecastModel.forecast_timestamp < current_hour_end_db.replace(tzinfo=None),
                                 )
                             )
@@ -1373,7 +1382,11 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                         seeing_score = calculate_seeing_conditions(weather_to_store)
 
                         # Store timestamps as naive UTC
-                        current_hour_start_naive = current_hour_start_db.replace(tzinfo=None) if current_hour_start_db.tzinfo else current_hour_start_db
+                        current_hour_start_naive = (
+                            current_hour_start_db.replace(tzinfo=None)
+                            if current_hour_start_db.tzinfo
+                            else current_hour_start_db
+                        )
                         now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
 
                         if existing:
