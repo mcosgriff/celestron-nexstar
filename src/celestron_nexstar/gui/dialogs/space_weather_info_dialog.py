@@ -342,22 +342,24 @@ class SpaceWeatherInfoDialog(QDialog):
 
             # Information panel
             html_content.append(
-                "<h2>Information</h2>"
-                "<div style='border: 1px solid {border}; padding: 10px; background-color: {bg};'>"
-                "<p style='color: {text}; font-weight: bold; margin-top: 0;'>About NOAA Scales:</p>"
-                "<ul style='margin-left: 20px; color: {text};'>"
-                "<li>R-Scale: Radio blackouts from solar flares (R1-R5)</li>"
-                "<li>S-Scale: Solar radiation storms (S1-S5)</li>"
-                "<li>G-Scale: Geomagnetic storms (G1-G5)</li>"
-                "</ul>"
-                "<p style='color: {text}; font-weight: bold;'>Aurora Visibility:</p>"
-                "<ul style='margin-left: 20px; color: {text};'>"
-                "<li>G3+ storms often produce visible aurora at mid-latitudes</li>"
-                "<li>Negative Bz values enhance aurora activity</li>"
-                "<li>Use 'nexstar aurora tonight' for detailed aurora forecast</li>"
-                "</ul>"
-                "</div>"
-            ).format(border=colors["text_dim"], bg=info_bg, text=colors["text"])
+                (
+                    "<h2>Information</h2>"
+                    "<div style='border: 1px solid {border}; padding: 10px; background-color: {bg};'>"
+                    "<p style='color: {text}; font-weight: bold; margin-top: 0;'>About NOAA Scales:</p>"
+                    "<ul style='margin-left: 20px; color: {text};'>"
+                    "<li>R-Scale: Radio blackouts from solar flares (R1-R5)</li>"
+                    "<li>S-Scale: Solar radiation storms (S1-S5)</li>"
+                    "<li>G-Scale: Geomagnetic storms (G1-G5)</li>"
+                    "</ul>"
+                    "<p style='color: {text}; font-weight: bold;'>Aurora Visibility:</p>"
+                    "<ul style='margin-left: 20px; color: {text};'>"
+                    "<li>G3+ storms often produce visible aurora at mid-latitudes</li>"
+                    "<li>Negative Bz values enhance aurora activity</li>"
+                    "<li>Use 'nexstar aurora tonight' for detailed aurora forecast</li>"
+                    "</ul>"
+                    "</div>"
+                ).format(border=colors["text_dim"], bg=info_bg, text=colors["text"])
+            )
 
             # Last updated
             if conditions.last_updated:

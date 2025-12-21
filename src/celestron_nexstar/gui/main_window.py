@@ -1016,8 +1016,8 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(flags)
 
         self.setMinimumSize(900, 600)  # Increased width by 100px to accommodate all tabs without scrolling
-        # Set initial size wider than minimum to ensure tabs are visible without scrolling
-        self.resize(1000, 700)
+        # Set the initial size wider than a minimum to ensure tabs are visible without scrolling
+        self.resize(1050, 700)
 
         # Telescope connection state
         self.telescope: NexStarTelescope | None = None

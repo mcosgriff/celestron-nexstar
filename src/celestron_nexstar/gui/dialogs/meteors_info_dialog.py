@@ -332,7 +332,6 @@ class MeteorsInfoDialog(QDialog):
             f"<li style='margin-bottom: 5px;'>Don't stare directly at the radiant - meteors appear throughout the sky</li>"
             f"<li style='margin-bottom: 5px;'>Give your eyes 20+ minutes to adapt to darkness</li>"
             "</ul>"
-            f"<p style='color: {colors['text_dim']}; margin-top: 1em;'>💡 Tip: Use 'nexstar meteors best' to find showers with minimal moonlight!</p>"
         )
 
         return html_content
