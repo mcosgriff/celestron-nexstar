@@ -1888,6 +1888,60 @@ class CatalogDatabase:
 
             return [self._model_to_object(model) for model in models]
 
+    def get_messier_objects(
+        self,
+        max_magnitude: float | None = None,
+        limit: int = 110,
+    ) -> list[CelestialObject]:
+        """
+        Get all Messier catalog objects from galaxies, nebulae, and clusters tables.
+
+        Messier objects are distributed across:
+        - GalaxyModel: M31, M33, etc.
+        - NebulaModel: M1, M42, etc.
+        - ClusterModel: M13, M45, etc.
+
+        All have catalog="messier" in their respective tables.
+
+        Args:
+            max_magnitude: Maximum magnitude filter (optional)
+            limit: Maximum number of results (default 110 for all Messier objects)
+
+        Returns:
+            List of Messier objects sorted by Messier number (M1, M2, ..., M110)
+        """
+        with self._get_session() as session:
+            from sqlalchemy import select
+
+            # Query all three tables for catalog="messier"
+            all_models: list[Any] = []
+
+            for model_class in [GalaxyModel, NebulaModel, ClusterModel]:
+                query = select(model_class).where(model_class.catalog == "messier")
+
+                if max_magnitude is not None:
+                    query = query.where(
+                        (model_class.magnitude.is_(None)) | (model_class.magnitude <= max_magnitude)
+                    )
+
+                results = session.execute(query).scalars().all()
+                all_models.extend(results)
+
+            # Sort by Messier number (M1, M2, ..., M110)
+            def messier_sort_key(model: Any) -> int:
+                import re
+
+                match = re.search(r"M(\d+)", model.name)
+                return int(match.group(1)) if match else 999
+
+            all_models.sort(key=messier_sort_key)
+
+            if limit:
+                all_models = all_models[:limit]
+
+            # Convert to CelestialObject
+            return [self._model_to_object(model) for model in all_models]
+
     @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
     def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""

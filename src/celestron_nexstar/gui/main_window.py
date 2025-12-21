@@ -393,6 +393,98 @@ class ObjectsLoaderThread(QThread):
                     # Sort by visibility probability
                     recommended_objects.sort(key=lambda x: -x.visibility_probability)
                     objects = recommended_objects[:100]  # Limit to 100
+            elif obj_type == CelestialObjectType.MESSIER:
+                # Load all Messier catalog objects (from galaxies, nebulae, clusters tables)
+                from celestron_nexstar.api.astronomy.solar_system import get_moon_info
+                from celestron_nexstar.api.core.enums import SkyBrightness
+                from celestron_nexstar.api.core.exceptions import DatabaseError
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+                from celestron_nexstar.api.observation.observation_planner import RecommendedObject
+                from celestron_nexstar.api.observation.optics import get_current_configuration
+                from celestron_nexstar.api.observation.visibility import assess_visibility
+
+                db = get_database()
+                config = get_current_configuration()
+                location = get_observer_location()
+                moon_info = get_moon_info(location.latitude, location.longitude, conditions.timestamp)
+                moon_ra = moon_info.ra_hours if moon_info else None
+                moon_dec = moon_info.dec_degrees if moon_info else None
+
+                with db._get_session() as session:
+                    # Get sky brightness
+                    try:
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                        bortle_to_sky_brightness = {
+                            1: SkyBrightness.EXCELLENT,
+                            2: SkyBrightness.EXCELLENT,
+                            3: SkyBrightness.GOOD,
+                            4: SkyBrightness.FAIR,
+                            5: SkyBrightness.FAIR,
+                            6: SkyBrightness.POOR,
+                            7: SkyBrightness.URBAN,
+                            8: SkyBrightness.URBAN,
+                            9: SkyBrightness.URBAN,
+                        }
+                        sky_brightness = bortle_to_sky_brightness.get(
+                            light_pollution.bortle_class.value, SkyBrightness.FAIR
+                        )
+                    except DatabaseError:
+                        sky_brightness = SkyBrightness.FAIR
+
+                    # Get all Messier objects
+                    messier_objects = db.get_messier_objects(max_magnitude=None, limit=110)
+
+                    # Calculate visibility for each
+                    recommended_objects = []
+                    for obj in messier_objects:
+                        vis_info = assess_visibility(
+                            obj,
+                            config=config,
+                            sky_brightness=sky_brightness,
+                            min_altitude_deg=20.0,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            dt=conditions.timestamp,
+                        )
+
+                        visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
+                        if isinstance(visibility_prob_result, tuple):
+                            visibility_prob = visibility_prob_result[0]
+                        else:
+                            visibility_prob = visibility_prob_result
+
+                        moon_sep = planner._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
+
+                        # Calculate priority based on magnitude and visibility
+                        mag = obj.magnitude or 99.0
+                        if mag < 6.0 and visibility_prob > 0.6:
+                            priority = 1
+                        elif mag < 9.0 and visibility_prob > 0.4:
+                            priority = 2
+                        elif visibility_prob > 0.3:
+                            priority = 3
+                        elif visibility_prob > 0.1:
+                            priority = 4
+                        else:
+                            priority = 5
+
+                        rec_obj = RecommendedObject(
+                            obj=obj,
+                            altitude=vis_info.altitude_deg or 0.0,
+                            azimuth=vis_info.azimuth_deg or 0.0,
+                            best_viewing_time=conditions.timestamp,
+                            visible_duration_hours=8.0,
+                            apparent_magnitude=mag,
+                            observability_score=vis_info.observability_score,
+                            visibility_probability=visibility_prob,
+                            priority=priority,
+                            reason=f"Messier {obj.name}",
+                            viewing_tips=(),
+                            moon_separation_deg=moon_sep,
+                        )
+                        recommended_objects.append(rec_obj)
+
+                    objects = recommended_objects
             elif obj_type == CelestialObjectType.ZODIACAL:
                 # Load zodiacal objects (objects along the ecliptic - in zodiac constellations or near ecliptic)
                 from celestron_nexstar.api.core.enums import SkyBrightness
@@ -2079,6 +2171,23 @@ class MainWindow(QMainWindow):
                     "Favorite",
                 ]
             )
+        elif obj_type == CelestialObjectType.MESSIER:
+            table.setColumnCount(11)
+            table.setHorizontalHeaderLabels(
+                [
+                    "Priority",
+                    "Name",
+                    "Type",
+                    "Mag",
+                    "Alt",
+                    "Visibility",
+                    "Transit",
+                    "Moon Sep",
+                    "Chance",
+                    "Tips",
+                    "Favorite",
+                ]
+            )
         # For variable_star and zodiacal, use standard table format
         elif obj_type in (CelestialObjectType.VARIABLE_STAR, CelestialObjectType.ZODIACAL):
             table.setColumnCount(11)
@@ -2286,6 +2395,7 @@ class MainWindow(QMainWindow):
         is_nebula_tab = obj_type_str == "nebula"
         is_galaxy_tab = obj_type_str == "galaxy"
         is_cluster_tab = obj_type_str == "cluster"
+        is_messier_tab = obj_type_str == "messier"
 
         # Check all favorites in a single batch query (much more efficient)
         from celestron_nexstar.api.favorites import are_favorites
@@ -2351,6 +2461,13 @@ class MainWindow(QMainWindow):
             if is_nebula_tab or is_galaxy_tab or is_cluster_tab:
                 subtype_text = getattr(obj, "object_subtype", None) or "-"
                 table.setItem(row, type_col, QTableWidgetItem(subtype_text))
+            elif is_messier_tab:
+                # For Messier objects, show human-readable type name
+                from celestron_nexstar.api.catalogs.messier_types import get_messier_type_name
+
+                type_code = getattr(obj, "object_subtype", None)
+                type_name = get_messier_type_name(type_code)
+                table.setItem(row, type_col, QTableWidgetItem(type_name))
             elif not is_star_tab:
                 table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))
 

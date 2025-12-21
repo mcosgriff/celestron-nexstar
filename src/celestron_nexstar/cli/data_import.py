@@ -592,6 +592,7 @@ def import_celestial_data_geojson(
                 or properties.get("proper_name")
                 or properties.get("ProperName")
                 or properties.get("name_en")
+                or properties.get("alt")  # Messier objects use "alt" field
             )
 
             # Extract size (in arcminutes)
@@ -641,6 +642,7 @@ def import_celestial_data_geojson(
                 "size_arcmin": size_arcmin,
                 "description": description,
                 "constellation": constellation,
+                "type": type_str,  # Include type string for enhancer functions
             }
 
             # Store geometry dict for DSOs (will be converted after batch insert)
@@ -1767,7 +1769,45 @@ def import_celestial_messier(
     progress_callback: Callable[[str, int, int], None] | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> tuple[int, int]:
-    """Import Messier objects from celestial_data GeoJSON."""
+    """
+    Import Messier objects from celestial_data GeoJSON.
+
+    Note: Uses truncate_catalog=False to avoid deleting non-Messier objects
+    from the galaxies, nebulae, and clusters tables. The deduplication logic
+    will check for existing Messier objects before importing.
+    """
+    # Type mapping for Messier object types (snr, gc, oc, s, e, i, etc.)
+    messier_type_map = {
+        # Galaxy types
+        "s": CelestialObjectType.GALAXY,  # Spiral galaxy
+        "e": CelestialObjectType.GALAXY,  # Elliptical galaxy
+        "i": CelestialObjectType.GALAXY,  # Irregular galaxy
+        "gg": CelestialObjectType.GALAXY,  # Galaxy (generic)
+        # Cluster types
+        "oc": CelestialObjectType.CLUSTER,  # Open cluster
+        "gc": CelestialObjectType.CLUSTER,  # Globular cluster
+        "pos": CelestialObjectType.CLUSTER,  # Asterism / star pattern (treat as cluster, e.g., M45 Pleiades)
+        # Nebula types
+        "bn": CelestialObjectType.NEBULA,  # Bright nebula
+        "pn": CelestialObjectType.NEBULA,  # Planetary nebula
+        "dn": CelestialObjectType.NEBULA,  # Dark nebula
+        "snr": CelestialObjectType.NEBULA,  # Supernova remnant
+        "sfr": CelestialObjectType.NEBULA,  # Star forming region
+        "rn": CelestialObjectType.NEBULA,  # Reflection nebula
+        "en": CelestialObjectType.NEBULA,  # Emission nebula
+        "nb": CelestialObjectType.NEBULA,  # Nebula (generic)
+        "patch": CelestialObjectType.NEBULA,  # Milky Way patch
+    }
+
+    def enhance_messier_object(obj: dict[str, Any]) -> dict[str, Any]:
+        """Enhance Messier object with subtype."""
+        # Save the type code (snr, gc, etc.) to object_subtype for display in UI
+        type_code = obj.get("type")
+        if type_code:
+            obj["object_subtype"] = type_code
+
+        return obj
+
     return import_celestial_data_geojson(
         geojson_path,
         catalog="messier",
@@ -1775,7 +1815,9 @@ def import_celestial_messier(
         verbose=verbose,
         progress_callback=progress_callback,
         status_callback=status_callback,
-        truncate_catalog=True,
+        truncate_catalog=False,
+        object_type_map=messier_type_map,
+        object_enhancer=enhance_messier_object,
     )
 
 

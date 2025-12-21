@@ -42,6 +42,7 @@ class CelestialObjectType(StrEnum):
     CONSTELLATION = "constellation"
     MOON = "moon"
     VARIABLE_STAR = "variable_star"
+    MESSIER = "messier"
     ZODIACAL = "zodiacal"
 
 
