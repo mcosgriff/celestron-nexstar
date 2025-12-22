@@ -999,6 +999,7 @@ class MainWindow(QMainWindow):
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
         self._comets_dialog = None  # Store reference to comets info dialog
         self._asteroids_dialog = None  # Store reference to asteroids info dialog
+        self._telescope_control_window = None  # Store reference to telescope control window
         self.setWindowTitle("Celestron NexStar Telescope Control")
 
         # Explicitly ensure window has decorations (titlebar, borders, etc.)
@@ -1448,21 +1449,14 @@ class MainWindow(QMainWindow):
 
         telescope_menu.addSeparator()
 
-        calibrate_icon = self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
-        self.calibrate_action = telescope_menu.addAction(calibrate_icon, "Calibrate")
-        self.calibrate_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
-        self.calibrate_action.setToolTip("CALIBRATE")
-        self.calibrate_action.setStatusTip("Calibrate telescope")
-        self.calibrate_action.triggered.connect(self._on_calibrate)
-        self.calibrate_action.setEnabled(False)
-
-        align_icon = self._create_icon("my_location", ["edit-find", "system-search", "find-location"])
-        self.align_action = telescope_menu.addAction(align_icon, "Align")
-        self.align_action.setIconVisibleInMenu(True)  # Ensure icon is visible in menu
-        self.align_action.setToolTip("ALIGN")
-        self.align_action.setStatusTip("Align telescope")
-        self.align_action.triggered.connect(self._on_align)
-        self.align_action.setEnabled(False)
+        control_icon = self._create_icon("tune", ["applications-games", "input-gaming", "preferences-desktop"])
+        self.telescope_control_action = telescope_menu.addAction(control_icon, "Telescope Control")
+        self.telescope_control_action.setIconVisibleInMenu(True)
+        self.telescope_control_action.setToolTip("TELESCOPE CONTROL")
+        self.telescope_control_action.setStatusTip(
+            "Open telescope control window with directional pad, calibration, and alignment"
+        )
+        self.telescope_control_action.triggered.connect(self._on_telescope_control)
 
         telescope_menu.addSeparator()
 
@@ -1496,14 +1490,6 @@ class MainWindow(QMainWindow):
         self.catalog_action.setToolTip("CATALOG")
         self.catalog_action.setStatusTip("Open catalog search window")
         self.catalog_action.triggered.connect(self._on_catalog)
-
-        # Goto Queue action
-        queue_icon = self._create_icon("list", ["view-list", "format-list-bulleted", "playlist-play", "list"])
-        self.goto_queue_action = planning_menu.addAction(queue_icon, "Goto Queue / Sequence")
-        self.goto_queue_action.setIconVisibleInMenu(True)
-        self.goto_queue_action.setToolTip("GOTO QUEUE")
-        self.goto_queue_action.setStatusTip("Open goto queue/sequence window")
-        self.goto_queue_action.triggered.connect(self._on_goto_queue)
 
         favorites_icon = self._create_icon("star", ["star", "bookmark", "favorite"])
         self.favorites_action = planning_menu.addAction(favorites_icon, "Favorites")
@@ -1828,10 +1814,6 @@ class MainWindow(QMainWindow):
         self.disconnect_action.setIcon(
             self._create_icon("link_off", ["network-disconnect", "network-offline", "network-error"])
         )
-        self.calibrate_action.setIcon(
-            self._create_icon("crosshairs", ["tools-check-spelling", "preferences-system", "configure"])
-        )
-        self.align_action.setIcon(self._create_icon("my_location", ["edit-find", "system-search", "find-location"]))
         if hasattr(self, "tracking_history_action"):
             self.tracking_history_action.setIcon(self._create_icon("chart", ["chart-line", "graph", "analytics"]))
         # Planning tools
@@ -1922,11 +1904,6 @@ class MainWindow(QMainWindow):
         # Refresh planning button icon
         if hasattr(self, "planning_button"):
             self.planning_button.setIcon(self._create_icon("catalog", ["folder", "folder-open", "database"]))
-        # Goto Queue button
-        if hasattr(self, "goto_queue_action"):
-            self.goto_queue_action.setIcon(
-                self._create_icon("list", ["view-list", "format-list-bulleted", "playlist-play", "list"])
-            )
         # Table toolbar buttons
         if hasattr(self, "refresh_action"):
             self.refresh_action.setIcon(self._create_icon("refresh", ["view-refresh", "reload"]))
@@ -2171,25 +2148,10 @@ class MainWindow(QMainWindow):
                     "Favorite",
                 ]
             )
-        elif obj_type == CelestialObjectType.MESSIER:
-            table.setColumnCount(11)
-            table.setHorizontalHeaderLabels(
-                [
-                    "Priority",
-                    "Name",
-                    "Type",
-                    "Mag",
-                    "Alt",
-                    "Visibility",
-                    "Transit",
-                    "Moon Sep",
-                    "Chance",
-                    "Tips",
-                    "Favorite",
-                ]
-            )
-        # For variable_star and zodiacal, use standard table format
-        elif obj_type in (CelestialObjectType.VARIABLE_STAR, CelestialObjectType.ZODIACAL):
+        elif obj_type == CelestialObjectType.MESSIER or obj_type in (
+            CelestialObjectType.VARIABLE_STAR,
+            CelestialObjectType.ZODIACAL,
+        ):
             table.setColumnCount(11)
             table.setHorizontalHeaderLabels(
                 [
@@ -3895,8 +3857,6 @@ class MainWindow(QMainWindow):
         # For now, just enable/disable buttons
         self.connect_action.setEnabled(False)
         self.disconnect_action.setEnabled(True)
-        self.align_action.setEnabled(True)
-        self.calibrate_action.setEnabled(True)
         if hasattr(self, "tracking_history_action"):
             self.tracking_history_action.setEnabled(True)
 
@@ -3923,24 +3883,8 @@ class MainWindow(QMainWindow):
         self.telescope = None
         self.connect_action.setEnabled(True)
         self.disconnect_action.setEnabled(False)
-        self.align_action.setEnabled(False)
-        self.calibrate_action.setEnabled(False)
         if hasattr(self, "tracking_history_action"):
             self.tracking_history_action.setEnabled(False)
-
-    def _on_align(self) -> None:
-        """Handle align button click."""
-        from celestron_nexstar.gui.dialogs.alignment_assistant_dialog import AlignmentAssistantDialog
-
-        dialog = AlignmentAssistantDialog(self, telescope=self.telescope)
-        dialog.exec()
-
-    def _on_calibrate(self) -> None:
-        """Handle calibrate button click."""
-        from celestron_nexstar.gui.dialogs.calibration_assistant_dialog import CalibrationAssistantDialog
-
-        dialog = CalibrationAssistantDialog(self, telescope=self.telescope)
-        dialog.exec()
 
     def _on_tracking_history(self) -> None:
         """Handle tracking history button click."""
@@ -3982,6 +3926,22 @@ class MainWindow(QMainWindow):
         self._goto_queue_window.show()
         self._goto_queue_window.raise_()
         self._goto_queue_window.activateWindow()
+
+    def _on_telescope_control(self) -> None:
+        """Handle telescope control button - open telescope control window."""
+        from celestron_nexstar.gui.windows.telescope_control_window import TelescopeControlWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_telescope_control_window") or self._telescope_control_window is None:
+            self._telescope_control_window = TelescopeControlWindow(self, telescope=self.telescope)
+            self._telescope_control_window.destroyed.connect(lambda: setattr(self, "_telescope_control_window", None))
+        else:
+            # Update telescope reference if it changed
+            self._telescope_control_window.telescope = self.telescope
+
+        self._telescope_control_window.show()
+        self._telescope_control_window.raise_()
+        self._telescope_control_window.activateWindow()
 
     def _on_sky_map(self) -> None:
         """Handle sky map button click - open sky map window."""

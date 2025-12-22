@@ -149,3 +149,162 @@ class DisconnectThread(QThread):
         except Exception as e:
             logger.error(f"Error disconnecting telescope: {e}", exc_info=True)
             self.error_occurred.emit(str(e))
+
+
+class ConnectTelescopeThread(QThread):
+    """Worker thread to connect to telescope."""
+
+    connection_ready = Signal(bool)  # type: ignore[type-arg,misc]  # Emits success status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope) -> None:
+        """Initialize the connect thread."""
+        super().__init__()
+        self.telescope = telescope
+
+    def run(self) -> None:
+        """Connect to telescope in background thread."""
+        try:
+            success = asyncio.run(self.telescope.connect())
+            self.connection_ready.emit(success)
+        except Exception as e:
+            logger.error(f"Error connecting to telescope: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.connection_ready.emit(False)
+
+
+class GetTrackingModeThread(QThread):
+    """Worker thread to get current tracking mode."""
+
+    mode_ready = Signal(object)  # type: ignore[type-arg,misc]  # Emits TrackingMode
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope) -> None:
+        """Initialize the tracking mode thread."""
+        super().__init__()
+        self.telescope = telescope
+
+    def run(self) -> None:
+        """Get tracking mode in background thread."""
+        try:
+            mode = asyncio.run(self.telescope.get_tracking_mode())
+            self.mode_ready.emit(mode)
+        except Exception as e:
+            logger.error(f"Error getting tracking mode: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+
+
+class SetTrackingModeThread(QThread):
+    """Worker thread to set tracking mode."""
+
+    mode_set = Signal(bool)  # type: ignore[type-arg,misc]  # Emits success status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope, mode: object) -> None:
+        """Initialize the set tracking mode thread."""
+        super().__init__()
+        self.telescope = telescope
+        self.mode = mode
+
+    def run(self) -> None:
+        """Set tracking mode in background thread."""
+        try:
+            success = asyncio.run(self.telescope.set_tracking_mode(self.mode))
+            self.mode_set.emit(success)
+        except Exception as e:
+            logger.error(f"Error setting tracking mode: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.mode_set.emit(False)
+
+
+class MoveFixedThread(QThread):
+    """Worker thread for continuous directional movement."""
+
+    move_started = Signal(bool)  # type: ignore[type-arg,misc]  # Emits success status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope, direction: object, rate: int) -> None:
+        """Initialize the move fixed thread."""
+        super().__init__()
+        self.telescope = telescope
+        self.direction = direction
+        self.rate = rate
+
+    def run(self) -> None:
+        """Start continuous movement in background thread."""
+        try:
+            success = asyncio.run(self.telescope.move_fixed(self.direction, self.rate))
+            self.move_started.emit(success)
+        except Exception as e:
+            logger.error(f"Error moving telescope: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.move_started.emit(False)
+
+
+class MoveStepThread(QThread):
+    """Worker thread for single step movement."""
+
+    step_complete = Signal(bool)  # type: ignore[type-arg,misc]  # Emits success status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope, direction: object, rate: int) -> None:
+        """Initialize the move step thread."""
+        super().__init__()
+        self.telescope = telescope
+        self.direction = direction
+        self.rate = rate
+
+    def run(self) -> None:
+        """Execute step movement in background thread."""
+        try:
+            success = asyncio.run(self.telescope.move_step(self.direction, self.rate))
+            self.step_complete.emit(success)
+        except Exception as e:
+            logger.error(f"Error stepping telescope: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.step_complete.emit(False)
+
+
+class StopMotionThread(QThread):
+    """Worker thread to stop telescope motion."""
+
+    stopped = Signal(bool)  # type: ignore[type-arg,misc]  # Emits success status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope, axis: str = "both") -> None:
+        """Initialize the stop motion thread."""
+        super().__init__()
+        self.telescope = telescope
+        self.axis = axis
+
+    def run(self) -> None:
+        """Stop telescope motion in background thread."""
+        try:
+            success = asyncio.run(self.telescope.stop_motion(self.axis))
+            self.stopped.emit(success)
+        except Exception as e:
+            logger.error(f"Error stopping motion: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.stopped.emit(False)
+
+
+class IsSlewingThread(QThread):
+    """Worker thread to check if telescope is slewing."""
+
+    slewing_status = Signal(bool)  # type: ignore[type-arg,misc]  # Emits slewing status
+    error_occurred = Signal(str)  # type: ignore[type-arg,misc]  # Emits error message
+
+    def __init__(self, telescope: NexStarTelescope) -> None:
+        """Initialize the is slewing thread."""
+        super().__init__()
+        self.telescope = telescope
+
+    def run(self) -> None:
+        """Check slewing status in background thread."""
+        try:
+            is_slewing = asyncio.run(self.telescope.is_slewing())
+            self.slewing_status.emit(is_slewing)
+        except Exception as e:
+            logger.error(f"Error checking slew status: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.slewing_status.emit(False)

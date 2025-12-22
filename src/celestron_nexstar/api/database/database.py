@@ -1920,9 +1920,7 @@ class CatalogDatabase:
                 query = select(model_class).where(model_class.catalog == "messier")
 
                 if max_magnitude is not None:
-                    query = query.where(
-                        (model_class.magnitude.is_(None)) | (model_class.magnitude <= max_magnitude)
-                    )
+                    query = query.where((model_class.magnitude.is_(None)) | (model_class.magnitude <= max_magnitude))
 
                 results = session.execute(query).scalars().all()
                 all_models.extend(results)

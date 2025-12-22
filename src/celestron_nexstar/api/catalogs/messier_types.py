@@ -6,6 +6,7 @@ Maps abbreviated type codes from messier.min.geojson to human-readable names.
 
 from __future__ import annotations
 
+
 __all__ = ["MESSIER_TYPE_MAP", "get_messier_type_name"]
 
 
