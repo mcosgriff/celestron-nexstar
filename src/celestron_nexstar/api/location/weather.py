@@ -26,28 +26,72 @@ logger = logging.getLogger(__name__)
 class WeatherData:
     """Weather information for observing conditions."""
 
-    temperature_c: float | None = None  # In Fahrenheit when units=imperial
+    # EXISTING FIELDS (kept for backward compatibility)
+    temperature_c: float | None = None  # DEPRECATED: Actually Fahrenheit when units=imperial
     dew_point_f: float | None = None  # Dew point in Fahrenheit
     humidity_percent: float | None = None
     cloud_cover_percent: float | None = None
-    wind_speed_ms: float | None = None  # In mph when units=imperial
+    wind_speed_ms: float | None = None  # DEPRECATED: Actually mph when units=imperial
     visibility_km: float | None = None
     condition: str | None = None  # e.g., "Clear", "Cloudy", "Rain"
     last_updated: str | None = None
     error: str | None = None
+
+    # NEW FIELDS - Cloud layers (0-100%)
+    cloud_cover_low: float | None = None  # Low clouds/fog (0-3km altitude)
+    cloud_cover_mid: float | None = None  # Mid-level clouds (3-8km altitude)
+    cloud_cover_high: float | None = None  # High clouds (8km+ altitude)
+
+    # NEW FIELDS - Atmospheric quality
+    visibility_m: float | None = None  # Direct atmospheric clarity (meters)
+    precipitation_probability: float | None = None  # 0-100%
+
+    # NEW FIELDS - Atmospheric stability
+    cape: float | None = None  # Convective Available Potential Energy (J/kg)
+    boundary_layer_height_m: float | None = None  # Atmospheric mixing layer (meters)
+    freezing_level_height_m: float | None = None  # Frost/dew prediction (meters)
+    vapour_pressure_deficit: float | None = None  # Condensation risk (kPa)
+
+    # NEW FIELDS - Upper atmosphere winds
+    wind_speed_80m_mph: float | None = None  # Wind at 80m altitude (mph)
+    wind_speed_120m_mph: float | None = None  # Wind at 120m altitude (mph)
+
+    # NEW FIELDS - Precipitation & pressure
+    precipitation_mm: float | None = None  # Total precipitation (mm)
+    rain_mm: float | None = None  # Rain amount (mm)
+    snowfall_cm: float | None = None  # Snowfall amount (cm)
+    pressure_msl: float | None = None  # Mean sea level pressure (hPa)
 
 
 @dataclass
 class HourlySeeingForecast:
     """Hourly seeing conditions forecast."""
 
+    # EXISTING FIELDS
     timestamp: datetime
-    seeing_score: float  # 0-100
+    seeing_score: float  # 0-100 (old algorithm)
     temperature_f: float | None
     dew_point_f: float | None
     humidity_percent: float | None
     wind_speed_mph: float | None
     cloud_cover_percent: float | None
+
+    # NEW - Parallel algorithm scores
+    seeing_score_v2: float | None = None  # 0-100 (new enhanced algorithm)
+    seeing_components: dict[str, float] | None = None  # Component breakdown for v2
+
+    # NEW - Cloud layers
+    cloud_cover_low: float | None = None
+    cloud_cover_mid: float | None = None
+    cloud_cover_high: float | None = None
+
+    # NEW - Atmospheric metrics
+    visibility_m: float | None = None
+    precipitation_probability: float | None = None
+    cape: float | None = None
+    boundary_layer_height_m: float | None = None
+    wind_speed_80m_mph: float | None = None
+    wind_speed_120m_mph: float | None = None
 
 
 def calculate_dew_point_fahrenheit(temp_f: float, humidity_percent: float) -> float:
@@ -303,6 +347,297 @@ def calculate_seeing_conditions(weather: WeatherData, temperature_change_per_hou
 
     # Ensure score is between 0-100
     return max(0.0, min(100.0, total_score))
+
+
+def calculate_seeing_conditions_v2(
+    weather: WeatherData,
+    temperature_change_per_hour: float = 0.0,
+) -> tuple[float, dict[str, float]]:
+    """
+    Calculate enhanced astronomical seeing conditions score (0-100) with component breakdown.
+
+    Uses advanced atmospheric metrics when available. Returns both total score and
+    individual component scores for transparency and validation.
+
+    Args:
+        weather: Weather data with standard and advanced metrics
+        temperature_change_per_hour: Rate of temperature change (°F/hour)
+
+    Returns:
+        Tuple of (total_score, component_scores_dict)
+
+    Components (0-100 each):
+        - temp_dew_spread: Temperature-dew point separation (20% weight)
+        - wind_quality: Surface wind + shear if available (20% weight)
+        - temp_stability: Temperature change rate (20% weight)
+        - humidity: Relative humidity impact (10% weight)
+        - cloud_quality: Cloud layers weighted by altitude (10% weight)
+        - atm_stability: CAPE, boundary layer, VPD (10% weight)
+        - visibility: Atmospheric clarity (5% weight)
+        - precip_risk: Precipitation probability (5% weight)
+    """
+    if weather.error or weather.temperature_c is None:
+        return 50.0, {}
+
+    components = {}
+
+    # 1. Temperature-Dew Point Spread (20% weight)
+    components['temp_dew_spread'] = _calc_temp_dew_spread_score(weather)
+
+    # 2. Wind Quality (20% weight)
+    components['wind_quality'] = _calc_wind_quality_score(weather)
+
+    # 3. Temperature Stability (20% weight)
+    components['temp_stability'] = _calc_temp_stability_score(temperature_change_per_hour)
+
+    # 4. Humidity Impact (10% weight)
+    components['humidity'] = _calc_humidity_score(weather)
+
+    # 5. Cloud Quality (10% weight)
+    components['cloud_quality'] = _calc_cloud_quality_score(weather)
+
+    # 6. Atmospheric Stability (10% weight)
+    components['atm_stability'] = _calc_atmospheric_stability_score(weather)
+
+    # 7. Visibility (5% weight)
+    components['visibility'] = _calc_visibility_score(weather)
+
+    # 8. Precipitation Risk (5% weight)
+    components['precip_risk'] = _calc_precipitation_risk_score(weather)
+
+    # Calculate weighted total
+    weights = {
+        'temp_dew_spread': 0.20,
+        'wind_quality': 0.20,
+        'temp_stability': 0.20,
+        'humidity': 0.10,
+        'cloud_quality': 0.10,
+        'atm_stability': 0.10,
+        'visibility': 0.05,
+        'precip_risk': 0.05,
+    }
+
+    total_score = sum(components[k] * weights[k] for k in weights)
+
+    # Cloud cover hard cutoff (>80% blocks seeing measurement)
+    if weather.cloud_cover_percent and weather.cloud_cover_percent > 80:
+        return 0.0, components
+
+    return max(0.0, min(100.0, total_score)), components
+
+
+def _calc_temp_dew_spread_score(weather: WeatherData) -> float:
+    """Calculate score from temperature-dew point spread (0-100)."""
+    if weather.temperature_c is None or weather.dew_point_f is None:
+        return 50.0
+
+    temp_spread = weather.temperature_c - weather.dew_point_f
+
+    if temp_spread >= 30 or temp_spread >= 15:
+        return 100.0
+    elif temp_spread >= 10:
+        return 66.7 + (temp_spread - 10) * 6.67
+    elif temp_spread >= 5:
+        return 33.3 + (temp_spread - 5) * 6.67
+    else:
+        return temp_spread * 6.67
+
+
+def _calc_wind_quality_score(weather: WeatherData) -> float:
+    """Calculate wind quality score considering surface wind and shear (0-100)."""
+    if weather.wind_speed_ms is None:
+        return 50.0
+
+    wind_mph = weather.wind_speed_ms  # Actually mph despite field name
+
+    # Surface wind component
+    if 5 <= wind_mph <= 10:
+        surface_score = 100.0
+    elif wind_mph < 5:
+        surface_score = wind_mph * 20.0
+    elif wind_mph <= 15:
+        surface_score = 100.0 - (wind_mph - 10) * 20.0
+    elif wind_mph <= 20:
+        surface_score = 50.0 - (wind_mph - 15) * 10.0
+    else:
+        surface_score = 0.0
+
+    # Wind shear component (if upper level winds available)
+    has_upper_winds = (weather.wind_speed_80m_mph is not None and
+                       weather.wind_speed_120m_mph is not None)
+
+    if has_upper_winds:
+        shear_80_10 = abs(weather.wind_speed_80m_mph - wind_mph)
+        shear_120_80 = abs(weather.wind_speed_120m_mph - weather.wind_speed_80m_mph)
+        avg_shear = (shear_80_10 + shear_120_80) / 2
+
+        # Low shear = stable air
+        if avg_shear < 5:
+            shear_score = 100.0
+        elif avg_shear < 10:
+            shear_score = 80.0
+        elif avg_shear < 15:
+            shear_score = 60.0
+        elif avg_shear < 20:
+            shear_score = 40.0
+        else:
+            shear_score = 20.0
+
+        # Combine: 60% surface, 40% shear
+        return surface_score * 0.6 + shear_score * 0.4
+    else:
+        return surface_score
+
+
+def _calc_temp_stability_score(temp_change_per_hour: float) -> float:
+    """Calculate temperature stability score (0-100)."""
+    temp_change_abs = abs(temp_change_per_hour)
+
+    if temp_change_abs <= 0.5:
+        return 100.0
+    elif temp_change_abs <= 1.0:
+        return 90.0
+    elif temp_change_abs <= 2.0:
+        return 75.0
+    elif temp_change_abs <= 3.0:
+        return 50.0
+    elif temp_change_abs <= 5.0:
+        return 25.0
+    else:
+        return 0.0
+
+
+def _calc_humidity_score(weather: WeatherData) -> float:
+    """Calculate humidity impact score (0-100)."""
+    if weather.humidity_percent is None:
+        return 50.0
+
+    humidity = weather.humidity_percent
+
+    if humidity <= 30:
+        return 100.0
+    elif humidity <= 60:
+        return 100.0 - (humidity - 30) * (16.7 / 30.0)
+    elif humidity <= 80:
+        return 83.3 - (humidity - 60) * (25.0 / 20.0)
+    else:
+        return max(0.0, 58.3 - (humidity - 80) * (58.3 / 20.0))
+
+
+def _calc_cloud_quality_score(weather: WeatherData) -> float:
+    """Calculate cloud quality score with layer weighting (0-100)."""
+    if weather.cloud_cover_percent is None:
+        return 50.0
+
+    # If we have layered cloud data, weight by altitude
+    has_layers = (weather.cloud_cover_low is not None or
+                  weather.cloud_cover_mid is not None or
+                  weather.cloud_cover_high is not None)
+
+    if has_layers:
+        low = weather.cloud_cover_low or 0
+        mid = weather.cloud_cover_mid or 0
+        high = weather.cloud_cover_high or 0
+
+        # Weight: low clouds affect seeing most, high clouds least
+        weighted_clouds = (low * 1.5 + mid * 1.0 + high * 0.5) / 3.0
+        score = 100.0 - weighted_clouds
+    else:
+        # Simple inversion of total cloud cover
+        score = 100.0 - weather.cloud_cover_percent
+
+    return max(0.0, min(100.0, score))
+
+
+def _calc_atmospheric_stability_score(weather: WeatherData) -> float:
+    """Calculate atmospheric stability from CAPE, boundary layer, VPD (0-100)."""
+    scores = []
+    weights = []
+
+    # CAPE component
+    if weather.cape is not None:
+        if weather.cape < 100:
+            cape_score = 100.0
+        elif weather.cape < 500:
+            cape_score = 80.0
+        elif weather.cape < 1000:
+            cape_score = 60.0
+        elif weather.cape < 2000:
+            cape_score = 40.0
+        else:
+            cape_score = 20.0
+        scores.append(cape_score)
+        weights.append(0.4)
+
+    # Boundary layer height component
+    if weather.boundary_layer_height_m is not None:
+        blh = weather.boundary_layer_height_m
+        if blh < 500:
+            blh_score = 100.0
+        elif blh < 1000:
+            blh_score = 80.0
+        elif blh < 1500:
+            blh_score = 60.0
+        elif blh < 2000:
+            blh_score = 40.0
+        else:
+            blh_score = 20.0
+        scores.append(blh_score)
+        weights.append(0.4)
+
+    # Vapour pressure deficit component
+    if weather.vapour_pressure_deficit is not None:
+        vpd = weather.vapour_pressure_deficit
+        if vpd > 1.5:
+            vpd_score = 100.0
+        elif vpd > 1.0:
+            vpd_score = 80.0
+        elif vpd > 0.5:
+            vpd_score = 60.0
+        else:
+            vpd_score = 40.0
+        scores.append(vpd_score)
+        weights.append(0.2)
+
+    if scores:
+        # Normalize weights to sum to 1
+        total_weight = sum(weights)
+        normalized_weights = [w / total_weight for w in weights]
+        return sum(s * w for s, w in zip(scores, normalized_weights))
+    else:
+        return 50.0  # Neutral if no data
+
+
+def _calc_visibility_score(weather: WeatherData) -> float:
+    """Calculate visibility score (0-100)."""
+    if weather.visibility_m is None:
+        return 50.0
+
+    vis_km = weather.visibility_m / 1000.0
+
+    if vis_km >= 20:
+        return 100.0
+    elif vis_km >= 10:
+        return 80.0 + (vis_km - 10) * 2.0
+    elif vis_km >= 5:
+        return 60.0 + (vis_km - 5) * 4.0
+    elif vis_km >= 2:
+        return 40.0 + (vis_km - 2) * 6.67
+    else:
+        return vis_km * 20.0
+
+
+def _calc_precipitation_risk_score(weather: WeatherData) -> float:
+    """Calculate precipitation risk score (0-100, higher is better)."""
+    if weather.precipitation_probability is None:
+        return 50.0
+
+    precip_prob = weather.precipitation_probability
+
+    # Invert: 0% precip = 100 score, 100% precip = 0 score
+    score = 100.0 - precip_prob
+
+    return max(0.0, min(100.0, score))
 
 
 def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
@@ -574,7 +909,34 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
             "longitude": location.longitude,
-            "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
+            "hourly": [
+                # Current metrics
+                "temperature_2m",
+                "dew_point_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+                # Cloud layer breakdown
+                "cloud_cover_low",
+                "cloud_cover_mid",
+                "cloud_cover_high",
+                # Atmospheric quality
+                "visibility",
+                "precipitation_probability",
+                # Atmospheric stability
+                "cape",
+                "boundary_layer_height",
+                "freezing_level_height",
+                "vapour_pressure_deficit",
+                # Upper atmosphere winds
+                "wind_speed_80m",
+                "wind_speed_120m",
+                # Precipitation & pressure
+                "precipitation",
+                "rain",
+                "snowfall",
+                "pressure_msl",
+            ],
             "timezone": "auto",  # Auto-detect timezone
             "forecast_days": forecast_days,
             "wind_speed_unit": "mph",
@@ -590,11 +952,32 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         # Process hourly data from JSON response
         hourly = data.get("hourly", {})
         hourly_time = hourly.get("time", [])
+        # Current metrics
         hourly_temperature_2m = hourly.get("temperature_2m", [])
         hourly_dew_point_2m = hourly.get("dew_point_2m", [])
         hourly_relative_humidity_2m = hourly.get("relative_humidity_2m", [])
         hourly_cloud_cover = hourly.get("cloud_cover", [])
         hourly_wind_speed_10m = hourly.get("wind_speed_10m", [])
+        # Cloud layers
+        hourly_cloud_cover_low = hourly.get("cloud_cover_low", [])
+        hourly_cloud_cover_mid = hourly.get("cloud_cover_mid", [])
+        hourly_cloud_cover_high = hourly.get("cloud_cover_high", [])
+        # Atmospheric quality
+        hourly_visibility = hourly.get("visibility", [])
+        hourly_precip_probability = hourly.get("precipitation_probability", [])
+        # Atmospheric stability
+        hourly_cape = hourly.get("cape", [])
+        hourly_blh = hourly.get("boundary_layer_height", [])
+        hourly_freezing = hourly.get("freezing_level_height", [])
+        hourly_vpd = hourly.get("vapour_pressure_deficit", [])
+        # Upper winds
+        hourly_wind_80m = hourly.get("wind_speed_80m", [])
+        hourly_wind_120m = hourly.get("wind_speed_120m", [])
+        # Precipitation & pressure
+        hourly_precip = hourly.get("precipitation", [])
+        hourly_rain = hourly.get("rain", [])
+        hourly_snow = hourly.get("snowfall", [])
+        hourly_pressure = hourly.get("pressure_msl", [])
 
         def safe_float(value: float | None) -> float | None:
             """Convert value to float, returning None if NaN or None."""
@@ -622,11 +1005,32 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 continue
 
             # Extract weather data (handle NaN values)
+            # Current metrics
             temp_f = safe_float(hourly_temperature_2m[i] if i < len(hourly_temperature_2m) else None)
             dew_point_f = safe_float(hourly_dew_point_2m[i] if i < len(hourly_dew_point_2m) else None)
             humidity = safe_float(hourly_relative_humidity_2m[i] if i < len(hourly_relative_humidity_2m) else None)
             cloud_cover = safe_float(hourly_cloud_cover[i] if i < len(hourly_cloud_cover) else None)
             wind_speed_mph = safe_float(hourly_wind_speed_10m[i] if i < len(hourly_wind_speed_10m) else None)
+            # Cloud layers
+            cloud_low = safe_float(hourly_cloud_cover_low[i] if i < len(hourly_cloud_cover_low) else None)
+            cloud_mid = safe_float(hourly_cloud_cover_mid[i] if i < len(hourly_cloud_cover_mid) else None)
+            cloud_high = safe_float(hourly_cloud_cover_high[i] if i < len(hourly_cloud_cover_high) else None)
+            # Atmospheric quality
+            visibility_m = safe_float(hourly_visibility[i] if i < len(hourly_visibility) else None)
+            precip_prob = safe_float(hourly_precip_probability[i] if i < len(hourly_precip_probability) else None)
+            # Atmospheric stability
+            cape_val = safe_float(hourly_cape[i] if i < len(hourly_cape) else None)
+            blh = safe_float(hourly_blh[i] if i < len(hourly_blh) else None)
+            freezing = safe_float(hourly_freezing[i] if i < len(hourly_freezing) else None)
+            vpd = safe_float(hourly_vpd[i] if i < len(hourly_vpd) else None)
+            # Upper winds
+            wind_80m = safe_float(hourly_wind_80m[i] if i < len(hourly_wind_80m) else None)
+            wind_120m = safe_float(hourly_wind_120m[i] if i < len(hourly_wind_120m) else None)
+            # Precipitation & pressure
+            precip_mm = safe_float(hourly_precip[i] if i < len(hourly_precip) else None)
+            rain_mm = safe_float(hourly_rain[i] if i < len(hourly_rain) else None)
+            snow_cm = safe_float(hourly_snow[i] if i < len(hourly_snow) else None)
+            pressure = safe_float(hourly_pressure[i] if i < len(hourly_pressure) else None)
 
             # Skip if essential data is missing
             if temp_f is None:
@@ -638,28 +1042,58 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 temp_change_per_hour = temp_f - prev_temp
             prev_temp = temp_f
 
-            # Create WeatherData for seeing calculation
+            # Create enhanced WeatherData for seeing calculation
             weather_data = WeatherData(
+                # Current metrics
                 temperature_c=temp_f,
                 dew_point_f=dew_point_f,
                 humidity_percent=humidity,
                 cloud_cover_percent=cloud_cover,
                 wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
                 condition=None,  # Open-Meteo doesn't provide condition strings
+                # New metrics
+                cloud_cover_low=cloud_low,
+                cloud_cover_mid=cloud_mid,
+                cloud_cover_high=cloud_high,
+                visibility_m=visibility_m,
+                precipitation_probability=precip_prob,
+                cape=cape_val,
+                boundary_layer_height_m=blh,
+                freezing_level_height_m=freezing,
+                vapour_pressure_deficit=vpd,
+                wind_speed_80m_mph=wind_80m,
+                wind_speed_120m_mph=wind_120m,
+                precipitation_mm=precip_mm,
+                rain_mm=rain_mm,
+                snowfall_cm=snow_cm,
+                pressure_msl=pressure,
             )
 
-            # Calculate seeing score
-            seeing_score = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+            # Calculate BOTH seeing scores (old and new algorithms)
+            seeing_score_v1 = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+            seeing_score_v2, components = calculate_seeing_conditions_v2(weather_data, temp_change_per_hour)
 
             forecasts.append(
                 HourlySeeingForecast(
                     timestamp=timestamp,
-                    seeing_score=seeing_score,
+                    seeing_score=seeing_score_v1,  # Old algorithm
                     temperature_f=temp_f,
                     dew_point_f=dew_point_f,
                     humidity_percent=humidity,
                     wind_speed_mph=wind_speed_mph,
                     cloud_cover_percent=cloud_cover,
+                    # New fields
+                    seeing_score_v2=seeing_score_v2,
+                    seeing_components=components,
+                    cloud_cover_low=cloud_low,
+                    cloud_cover_mid=cloud_mid,
+                    cloud_cover_high=cloud_high,
+                    visibility_m=visibility_m,
+                    precipitation_probability=precip_prob,
+                    cape=cape_val,
+                    boundary_layer_height_m=blh,
+                    wind_speed_80m_mph=wind_80m,
+                    wind_speed_120m_mph=wind_120m,
                 )
             )
 
@@ -751,12 +1185,29 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                             # Store timestamp as naive UTC
                             now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                             existing.geohash = location_geohash
+                            # Basic metrics
                             existing.temperature_f = forecast_item.temperature_f
                             existing.dew_point_f = forecast_item.dew_point_f
                             existing.humidity_percent = forecast_item.humidity_percent
                             existing.cloud_cover_percent = forecast_item.cloud_cover_percent
                             existing.wind_speed_mph = forecast_item.wind_speed_mph
                             existing.seeing_score = forecast_item.seeing_score
+                            # New advanced metrics
+                            existing.cloud_cover_low_percent = forecast_item.cloud_cover_low
+                            existing.cloud_cover_mid_percent = forecast_item.cloud_cover_mid
+                            existing.cloud_cover_high_percent = forecast_item.cloud_cover_high
+                            existing.visibility_m = forecast_item.visibility_m
+                            existing.precipitation_probability = forecast_item.precipitation_probability
+                            existing.cape = forecast_item.cape
+                            existing.boundary_layer_height_m = forecast_item.boundary_layer_height_m
+                            existing.freezing_level_height_m = getattr(forecast_item, 'freezing_level_height_m', None)
+                            existing.vapour_pressure_deficit = getattr(forecast_item, 'vapour_pressure_deficit', None)
+                            existing.wind_speed_80m_mph = forecast_item.wind_speed_80m_mph
+                            existing.wind_speed_120m_mph = forecast_item.wind_speed_120m_mph
+                            existing.precipitation_mm = getattr(forecast_item, 'precipitation_mm', None)
+                            existing.rain_mm = getattr(forecast_item, 'rain_mm', None)
+                            existing.snowfall_cm = getattr(forecast_item, 'snowfall_cm', None)
+                            existing.pressure_msl = getattr(forecast_item, 'pressure_msl', None)
                             existing.fetched_at = now_db_naive
                         else:
                             # Insert new forecast
@@ -772,12 +1223,29 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                                 longitude=location.longitude,
                                 geohash=location_geohash,
                                 forecast_timestamp=forecast_ts_naive,
+                                # Basic metrics
                                 temperature_f=forecast_item.temperature_f,
                                 dew_point_f=forecast_item.dew_point_f,
                                 humidity_percent=forecast_item.humidity_percent,
                                 cloud_cover_percent=forecast_item.cloud_cover_percent,
                                 wind_speed_mph=forecast_item.wind_speed_mph,
                                 seeing_score=forecast_item.seeing_score,
+                                # New advanced metrics
+                                cloud_cover_low_percent=forecast_item.cloud_cover_low,
+                                cloud_cover_mid_percent=forecast_item.cloud_cover_mid,
+                                cloud_cover_high_percent=forecast_item.cloud_cover_high,
+                                visibility_m=forecast_item.visibility_m,
+                                precipitation_probability=forecast_item.precipitation_probability,
+                                cape=forecast_item.cape,
+                                boundary_layer_height_m=forecast_item.boundary_layer_height_m,
+                                freezing_level_height_m=getattr(forecast_item, 'freezing_level_height_m', None),
+                                vapour_pressure_deficit=getattr(forecast_item, 'vapour_pressure_deficit', None),
+                                wind_speed_80m_mph=forecast_item.wind_speed_80m_mph,
+                                wind_speed_120m_mph=forecast_item.wind_speed_120m_mph,
+                                precipitation_mm=getattr(forecast_item, 'precipitation_mm', None),
+                                rain_mm=getattr(forecast_item, 'rain_mm', None),
+                                snowfall_cm=getattr(forecast_item, 'snowfall_cm', None),
+                                pressure_msl=getattr(forecast_item, 'pressure_msl', None),
                                 fetched_at=now_db_naive,
                             )
                             session.add(db_forecast)
@@ -917,6 +1385,16 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                     humidity_percent=r.humidity_percent,
                     wind_speed_mph=r.wind_speed_mph,
                     cloud_cover_percent=r.cloud_cover_percent,
+                    # New advanced fields from database
+                    cloud_cover_low=r.cloud_cover_low_percent,
+                    cloud_cover_mid=r.cloud_cover_mid_percent,
+                    cloud_cover_high=r.cloud_cover_high_percent,
+                    visibility_m=r.visibility_m,
+                    precipitation_probability=r.precipitation_probability,
+                    cape=r.cape,
+                    boundary_layer_height_m=r.boundary_layer_height_m,
+                    wind_speed_80m_mph=r.wind_speed_80m_mph,
+                    wind_speed_120m_mph=r.wind_speed_120m_mph,
                 )
                 for r in rows
             ]
@@ -931,7 +1409,34 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
         params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
             "longitude": location.longitude,
-            "hourly": "temperature_2m,dew_point_2m,relative_humidity_2m,cloud_cover,wind_speed_10m",
+            "hourly": [
+                # Current metrics
+                "temperature_2m",
+                "dew_point_2m",
+                "relative_humidity_2m",
+                "cloud_cover",
+                "wind_speed_10m",
+                # Cloud layer breakdown
+                "cloud_cover_low",
+                "cloud_cover_mid",
+                "cloud_cover_high",
+                # Atmospheric quality
+                "visibility",
+                "precipitation_probability",
+                # Atmospheric stability
+                "cape",
+                "boundary_layer_height",
+                "freezing_level_height",
+                "vapour_pressure_deficit",
+                # Upper atmosphere winds
+                "wind_speed_80m",
+                "wind_speed_120m",
+                # Precipitation & pressure
+                "precipitation",
+                "rain",
+                "snowfall",
+                "pressure_msl",
+            ],
             "timezone": "auto",
             "forecast_days": forecast_days,
             "past_days": 3,
@@ -949,11 +1454,32 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
         # Process hourly data from JSON response
         hourly = data.get("hourly", {})
         hourly_time = hourly.get("time", [])
+        # Current metrics
         hourly_temperature_2m = hourly.get("temperature_2m", [])
         hourly_dew_point_2m = hourly.get("dew_point_2m", [])
         hourly_relative_humidity_2m = hourly.get("relative_humidity_2m", [])
         hourly_cloud_cover = hourly.get("cloud_cover", [])
         hourly_wind_speed_10m = hourly.get("wind_speed_10m", [])
+        # Cloud layers
+        hourly_cloud_cover_low = hourly.get("cloud_cover_low", [])
+        hourly_cloud_cover_mid = hourly.get("cloud_cover_mid", [])
+        hourly_cloud_cover_high = hourly.get("cloud_cover_high", [])
+        # Atmospheric quality
+        hourly_visibility = hourly.get("visibility", [])
+        hourly_precip_probability = hourly.get("precipitation_probability", [])
+        # Atmospheric stability
+        hourly_cape = hourly.get("cape", [])
+        hourly_blh = hourly.get("boundary_layer_height", [])
+        hourly_freezing = hourly.get("freezing_level_height", [])
+        hourly_vpd = hourly.get("vapour_pressure_deficit", [])
+        # Upper winds
+        hourly_wind_80m = hourly.get("wind_speed_80m", [])
+        hourly_wind_120m = hourly.get("wind_speed_120m", [])
+        # Precipitation & pressure
+        hourly_precip = hourly.get("precipitation", [])
+        hourly_rain = hourly.get("rain", [])
+        hourly_snow = hourly.get("snowfall", [])
+        hourly_pressure = hourly.get("pressure_msl", [])
 
         def safe_float(value: float | None) -> float | None:
             """Convert value to float, returning None if NaN or None."""
@@ -985,11 +1511,32 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                 continue
 
             # Extract weather data (handle NaN values)
+            # Current metrics
             temp_f = safe_float(hourly_temperature_2m[i] if i < len(hourly_temperature_2m) else None)
             dew_point_f = safe_float(hourly_dew_point_2m[i] if i < len(hourly_dew_point_2m) else None)
             humidity = safe_float(hourly_relative_humidity_2m[i] if i < len(hourly_relative_humidity_2m) else None)
             cloud_cover = safe_float(hourly_cloud_cover[i] if i < len(hourly_cloud_cover) else None)
             wind_speed_mph = safe_float(hourly_wind_speed_10m[i] if i < len(hourly_wind_speed_10m) else None)
+            # Cloud layers
+            cloud_low = safe_float(hourly_cloud_cover_low[i] if i < len(hourly_cloud_cover_low) else None)
+            cloud_mid = safe_float(hourly_cloud_cover_mid[i] if i < len(hourly_cloud_cover_mid) else None)
+            cloud_high = safe_float(hourly_cloud_cover_high[i] if i < len(hourly_cloud_cover_high) else None)
+            # Atmospheric quality
+            visibility_m = safe_float(hourly_visibility[i] if i < len(hourly_visibility) else None)
+            precip_prob = safe_float(hourly_precip_probability[i] if i < len(hourly_precip_probability) else None)
+            # Atmospheric stability
+            cape_val = safe_float(hourly_cape[i] if i < len(hourly_cape) else None)
+            blh = safe_float(hourly_blh[i] if i < len(hourly_blh) else None)
+            freezing = safe_float(hourly_freezing[i] if i < len(hourly_freezing) else None)
+            vpd = safe_float(hourly_vpd[i] if i < len(hourly_vpd) else None)
+            # Upper winds
+            wind_80m = safe_float(hourly_wind_80m[i] if i < len(hourly_wind_80m) else None)
+            wind_120m = safe_float(hourly_wind_120m[i] if i < len(hourly_wind_120m) else None)
+            # Precipitation & pressure
+            precip_mm = safe_float(hourly_precip[i] if i < len(hourly_precip) else None)
+            rain_mm = safe_float(hourly_rain[i] if i < len(hourly_rain) else None)
+            snow_cm = safe_float(hourly_snow[i] if i < len(hourly_snow) else None)
+            pressure = safe_float(hourly_pressure[i] if i < len(hourly_pressure) else None)
 
             # Skip if essential data is missing
             if temp_f is None:
@@ -1001,28 +1548,58 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
                 temp_change_per_hour = temp_f - prev_temp
             prev_temp = temp_f
 
-            # Create WeatherData for seeing calculation
+            # Create enhanced WeatherData for seeing calculation
             weather_data = WeatherData(
+                # Current metrics
                 temperature_c=temp_f,
                 dew_point_f=dew_point_f,
                 humidity_percent=humidity,
                 cloud_cover_percent=cloud_cover,
                 wind_speed_ms=wind_speed_mph,  # Field name is misleading, but value is in mph
                 condition=None,
+                # New metrics
+                cloud_cover_low=cloud_low,
+                cloud_cover_mid=cloud_mid,
+                cloud_cover_high=cloud_high,
+                visibility_m=visibility_m,
+                precipitation_probability=precip_prob,
+                cape=cape_val,
+                boundary_layer_height_m=blh,
+                freezing_level_height_m=freezing,
+                vapour_pressure_deficit=vpd,
+                wind_speed_80m_mph=wind_80m,
+                wind_speed_120m_mph=wind_120m,
+                precipitation_mm=precip_mm,
+                rain_mm=rain_mm,
+                snowfall_cm=snow_cm,
+                pressure_msl=pressure,
             )
 
-            # Calculate seeing score
-            seeing_score = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+            # Calculate BOTH seeing scores (old and new algorithms)
+            seeing_score_v1 = calculate_seeing_conditions(weather_data, temp_change_per_hour)
+            seeing_score_v2, components = calculate_seeing_conditions_v2(weather_data, temp_change_per_hour)
 
             forecasts.append(
                 HourlySeeingForecast(
                     timestamp=timestamp,
-                    seeing_score=seeing_score,
+                    seeing_score=seeing_score_v1,  # Old algorithm
                     temperature_f=temp_f,
                     dew_point_f=dew_point_f,
                     humidity_percent=humidity,
                     wind_speed_mph=wind_speed_mph,
                     cloud_cover_percent=cloud_cover,
+                    # New fields
+                    seeing_score_v2=seeing_score_v2,
+                    seeing_components=components,
+                    cloud_cover_low=cloud_low,
+                    cloud_cover_mid=cloud_mid,
+                    cloud_cover_high=cloud_high,
+                    visibility_m=visibility_m,
+                    precipitation_probability=precip_prob,
+                    cape=cape_val,
+                    boundary_layer_height_m=blh,
+                    wind_speed_80m_mph=wind_80m,
+                    wind_speed_120m_mph=wind_120m,
                 )
             )
 

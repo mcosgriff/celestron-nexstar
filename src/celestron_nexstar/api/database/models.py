@@ -638,13 +638,38 @@ class WeatherForecastModel(Base):
     # Forecast timestamp (when this forecast is for)
     forecast_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
 
-    # Weather data
+    # Weather data (basic)
     temperature_f: Mapped[float | None] = mapped_column(Float, nullable=True)
     dew_point_f: Mapped[float | None] = mapped_column(Float, nullable=True)
     humidity_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     cloud_cover_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     wind_speed_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
     seeing_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Cloud layer breakdown (advanced)
+    cloud_cover_low_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cloud_cover_mid_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cloud_cover_high_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Atmospheric quality (advanced)
+    visibility_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    precipitation_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Atmospheric stability (advanced)
+    cape: Mapped[float | None] = mapped_column(Float, nullable=True)
+    boundary_layer_height_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    freezing_level_height_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vapour_pressure_deficit: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Upper atmosphere winds (advanced)
+    wind_speed_80m_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
+    wind_speed_120m_mph: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Precipitation & pressure (advanced)
+    precipitation_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rain_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    snowfall_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pressure_msl: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # When this data was fetched/updated
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

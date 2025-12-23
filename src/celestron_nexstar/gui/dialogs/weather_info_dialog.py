@@ -73,6 +73,25 @@ class WeatherInfoDialog(QDialog):
         current_layout.addWidget(self.info_text)
         self.tab_widget.addTab(current_tab, "Current")
 
+        # Create "Advanced" tab with advanced atmospheric metrics
+        advanced_tab = QWidget()
+        advanced_layout = QVBoxLayout(advanced_tab)
+
+        self.advanced_text = QTextEdit()
+        self.advanced_text.setReadOnly(True)
+        self.advanced_text.setAcceptRichText(True)
+        self.advanced_text.setStyleSheet(
+            f"""
+            QTextEdit {{
+                font-family: {font_family};
+                background-color: transparent;
+                border: none;
+            }}
+        """
+        )
+        advanced_layout.addWidget(self.advanced_text)
+        self.tab_widget.addTab(advanced_tab, "Advanced")
+
         # Create "Charts" tab
         charts_tab = QWidget()
         charts_layout = QVBoxLayout(charts_tab)
@@ -90,6 +109,7 @@ class WeatherInfoDialog(QDialog):
 
         # Load weather information (this will also update stylesheet with theme colors)
         self._load_weather_info()
+        self._load_advanced_metrics()
         self._load_weather_charts()
 
     def _is_dark_theme(self) -> bool:
@@ -338,6 +358,133 @@ class WeatherInfoDialog(QDialog):
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load weather information: {e}</span></p>"
             )
 
+    def _load_advanced_metrics(self) -> None:
+        """Load advanced atmospheric metrics in the Advanced tab."""
+        colors = self._get_theme_colors()
+
+        try:
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.location.weather import (
+                calculate_seeing_conditions,
+                calculate_seeing_conditions_v2,
+                fetch_weather,
+            )
+
+            location = get_observer_location()
+            if not location:
+                self.advanced_text.setHtml(
+                    f"<p style='color: {colors['error']};'><b>Error:</b> No observer location configured.</p>"
+                )
+                return
+
+            weather = fetch_weather(location)
+
+            if weather.error:
+                self.advanced_text.setHtml(
+                    f"<p style='color: {colors['error']};'><b>Error:</b> {weather.error}</p>"
+                )
+                return
+
+            html = []
+
+            # Header
+            html.append(f"<h1 style='color: {colors['header']};'>Advanced Atmospheric Metrics</h1>")
+
+            # Cloud Layer Analysis
+            html.append(f"<h2 style='color: {colors['header']};'>Cloud Layer Distribution</h2>")
+            if weather.cloud_cover_low is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Low Clouds (0-3km):</span> {weather.cloud_cover_low:.0f}%</p>")
+            if weather.cloud_cover_mid is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Mid Clouds (3-8km):</span> {weather.cloud_cover_mid:.0f}%</p>")
+            if weather.cloud_cover_high is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>High Clouds (8km+):</span> {weather.cloud_cover_high:.0f}%</p>")
+
+            # Atmospheric Stability
+            html.append(f"<h2 style='color: {colors['header']};'>Atmospheric Stability</h2>")
+
+            if weather.cape is not None:
+                cape_color = colors['green'] if weather.cape < 500 else colors['yellow'] if weather.cape < 1500 else colors['red']
+                cape_desc = "Stable" if weather.cape < 500 else "Moderate" if weather.cape < 1500 else "Unstable"
+                html.append(f"<p><span style='color: {colors['cyan']};'>CAPE:</span> <span style='color: {cape_color};'>{weather.cape:.0f} J/kg ({cape_desc})</span></p>")
+
+            if weather.boundary_layer_height_m is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Boundary Layer Height:</span> {weather.boundary_layer_height_m:.0f}m</p>")
+
+            if weather.vapour_pressure_deficit is not None:
+                vpd_color = colors['green'] if weather.vapour_pressure_deficit > 1.0 else colors['yellow'] if weather.vapour_pressure_deficit > 0.5 else colors['red']
+                html.append(f"<p><span style='color: {colors['cyan']};'>Vapour Pressure Deficit:</span> <span style='color: {vpd_color};'>{weather.vapour_pressure_deficit:.2f} kPa</span></p>")
+
+            if weather.freezing_level_height_m is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Freezing Level:</span> {weather.freezing_level_height_m:.0f}m</p>")
+
+            # Wind Profile
+            html.append(f"<h2 style='color: {colors['header']};'>Wind Profile</h2>")
+
+            if weather.wind_speed_ms is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Surface Wind (10m):</span> {weather.wind_speed_ms:.1f} mph</p>")
+
+            if weather.wind_speed_80m_mph is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Wind @ 80m:</span> {weather.wind_speed_80m_mph:.1f} mph</p>")
+
+            if weather.wind_speed_120m_mph is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Wind @ 120m:</span> {weather.wind_speed_120m_mph:.1f} mph</p>")
+
+            # Wind shear calculation
+            if all([weather.wind_speed_ms, weather.wind_speed_120m_mph]):
+                shear = abs(weather.wind_speed_120m_mph - weather.wind_speed_ms)
+                shear_color = colors['green'] if shear < 10 else colors['yellow'] if shear < 20 else colors['red']
+                shear_desc = "Low" if shear < 10 else "Moderate" if shear < 20 else "High"
+                html.append(f"<p><span style='color: {colors['cyan']};'>Wind Shear (10-120m):</span> <span style='color: {shear_color};'>{shear:.1f} mph ({shear_desc})</span></p>")
+
+            # Visibility & Precipitation
+            html.append(f"<h2 style='color: {colors['header']};'>Visibility & Precipitation</h2>")
+
+            if weather.visibility_m is not None:
+                vis_km = weather.visibility_m / 1000.0
+                vis_color = colors['green'] if vis_km > 10 else colors['yellow'] if vis_km > 5 else colors['red']
+                html.append(f"<p><span style='color: {colors['cyan']};'>Visibility:</span> <span style='color: {vis_color};'>{vis_km:.1f} km</span></p>")
+
+            if weather.precipitation_probability is not None:
+                precip_color = colors['green'] if weather.precipitation_probability < 20 else colors['yellow'] if weather.precipitation_probability < 50 else colors['red']
+                html.append(f"<p><span style='color: {colors['cyan']};'>Precipitation Probability:</span> <span style='color: {precip_color};'>{weather.precipitation_probability:.0f}%</span></p>")
+
+            if weather.precipitation_mm is not None and weather.precipitation_mm > 0:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Precipitation:</span> {weather.precipitation_mm:.1f} mm</p>")
+
+            if weather.pressure_msl is not None:
+                html.append(f"<p><span style='color: {colors['cyan']};'>Pressure (MSL):</span> {weather.pressure_msl:.1f} hPa</p>")
+
+            # Seeing Score Comparison
+            html.append(f"<h2 style='color: {colors['header']};'>Seeing Score Comparison</h2>")
+            html.append("<p><em>Compare old and new seeing algorithms:</em></p>")
+
+            # Calculate both scores
+            old_score = calculate_seeing_conditions(weather)
+            new_score, components = calculate_seeing_conditions_v2(weather)
+
+            html.append(f"<p><span style='color: {colors['cyan']};'>Old Algorithm:</span> {old_score:.0f}/100</p>")
+            html.append(f"<p><span style='color: {colors['cyan']};'>New Algorithm:</span> {new_score:.0f}/100</p>")
+            diff = new_score - old_score
+            diff_color = colors['green'] if diff > 0 else colors['red'] if diff < 0 else colors['yellow']
+            html.append(f"<p><span style='color: {colors['cyan']};'>Difference:</span> <span style='color: {diff_color};'>{diff:+.0f} points</span></p>")
+
+            # Component breakdown
+            if components:
+                html.append(f"<h3 style='color: {colors['header']};'>Component Scores (New Algorithm):</h3>")
+                html.append("<ul>")
+                for name, score in components.items():
+                    formatted_name = name.replace('_', ' ').title()
+                    html.append(f"<li>{formatted_name}: {score:.0f}/100</li>")
+                html.append("</ul>")
+
+            self.advanced_text.setHtml("\n".join(html))
+
+        except Exception as e:
+            logger.exception("Error loading advanced metrics")
+            self.advanced_text.setHtml(
+                f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load advanced metrics: {e}</p>"
+            )
+
     def _load_weather_charts(self) -> None:
         """Load weather charts showing current day from 12 AM to now."""
         try:
@@ -398,8 +545,8 @@ class WeatherInfoDialog(QDialog):
                         if widget:
                             widget.setParent(None)
 
-            # Create figure with subplots
-            fig = Figure(figsize=(12, 10))
+            # Create figure with 6 subplots (expanded from 4)
+            fig = Figure(figsize=(12, 16))
             canvas = FigureCanvas(fig)
             # Improves hover responsiveness for interactive tooltips.
             canvas.setMouseTracking(True)
@@ -426,6 +573,30 @@ class WeatherInfoDialog(QDialog):
             humidity = [f.humidity_percent for f in forecasts]
             wind_speed = [f.wind_speed_mph for f in forecasts]
 
+            # New advanced metrics
+            cloud_low = [f.cloud_cover_low if f.cloud_cover_low is not None else 0 for f in forecasts]
+            cloud_mid = [f.cloud_cover_mid if f.cloud_cover_mid is not None else 0 for f in forecasts]
+            cloud_high = [f.cloud_cover_high if f.cloud_cover_high is not None else 0 for f in forecasts]
+            wind_80m = [f.wind_speed_80m_mph if f.wind_speed_80m_mph is not None else float("nan") for f in forecasts]
+            wind_120m = [f.wind_speed_120m_mph if f.wind_speed_120m_mph is not None else float("nan") for f in forecasts]
+
+            # Check if we have layered cloud data
+            has_cloud_layers = any(f.cloud_cover_low is not None for f in forecasts)
+            has_upper_winds = any(f.wind_speed_80m_mph is not None for f in forecasts)
+
+            # Calculate atmospheric stability scores for each forecast
+            from celestron_nexstar.api.location.weather import WeatherData, _calc_atmospheric_stability_score
+
+            stability_scores = []
+            for f in forecasts:
+                weather_data = WeatherData(
+                    cape=f.cape,
+                    boundary_layer_height_m=f.boundary_layer_height_m,
+                    vapour_pressure_deficit=getattr(f, 'vapour_pressure_deficit', None),
+                )
+                score = _calc_atmospheric_stability_score(weather_data)
+                stability_scores.append(score)
+
             # Convert datetime to matplotlib date numbers for axvline and x-limits
             import matplotlib.dates as mdates
 
@@ -433,12 +604,14 @@ class WeatherInfoDialog(QDialog):
             start_time_mpl = mdates.date2num(window_start_local)
             end_time_mpl = mdates.date2num(window_end_local)
 
-            # Create subplots
-            ax1 = fig.add_subplot(4, 1, 1)  # Temperature
-            ax2 = fig.add_subplot(4, 1, 2)  # Cloud Cover
-            ax3 = fig.add_subplot(4, 1, 3)  # Humidity
-            ax4 = fig.add_subplot(4, 1, 4)  # Wind Speed
-            for ax in (ax1, ax2, ax3, ax4):
+            # Create 6 subplots
+            ax1 = fig.add_subplot(6, 1, 1)  # Temperature
+            ax2 = fig.add_subplot(6, 1, 2)  # Cloud Cover (enhanced with layers)
+            ax3 = fig.add_subplot(6, 1, 3)  # Humidity
+            ax4 = fig.add_subplot(6, 1, 4)  # Wind Speed
+            ax5 = fig.add_subplot(6, 1, 5)  # Atmospheric Stability (NEW)
+            ax6 = fig.add_subplot(6, 1, 6)  # Wind Profile (NEW)
+            for ax in (ax1, ax2, ax3, ax4, ax5, ax6):
                 ax.set_facecolor(axes_facecolor)
 
             # Plot Temperature
@@ -453,10 +626,23 @@ class WeatherInfoDialog(QDialog):
             ax1.set_title("Temperature", color=text_color, fontweight="bold")
             ax1.set_xlim(start_time_mpl, end_time_mpl)
 
-            # Plot Cloud Cover
-            ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
-            # Use a non-legend label so the filled region remains the legend entry.
-            (cloud_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
+            # Plot Cloud Cover (enhanced with layers if available)
+            if has_cloud_layers:
+                # Stacked area chart showing cloud layers
+                ax2.fill_between(timestamps, cloud_low, 0, color="#ff6b6b", alpha=0.4, label="Low (0-3km)")
+                # Stack mid on top of low
+                cloud_low_mid = [l + m for l, m in zip(cloud_low, cloud_mid)]
+                ax2.fill_between(timestamps, cloud_low_mid, cloud_low, color="#ffa500", alpha=0.4, label="Mid (3-8km)")
+                # Stack high on top of low+mid
+                cloud_total = [l + m + h for l, m, h in zip(cloud_low, cloud_mid, cloud_high)]
+                ax2.fill_between(timestamps, cloud_total, cloud_low_mid, color="#4a90e2", alpha=0.4, label="High (8km+)")
+                ax2.legend(loc="upper right", fontsize=8, framealpha=0.7)
+                (cloud_line,) = ax2.plot(timestamps, cloud_total, color="#4a90e2", linewidth=1, alpha=0.6, label="_nolegend_")
+            else:
+                # Simple cloud cover
+                ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
+                (cloud_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
+
             ax2.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax2.set_ylabel("Cloud Cover (%)", color=text_color)
             ax2.set_ylim(0, 100)
@@ -479,14 +665,38 @@ class WeatherInfoDialog(QDialog):
             (wind_line,) = ax4.plot(timestamps, wind_speed, color="#ffa500", linewidth=2, label="_nolegend_")
             ax4.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax4.set_ylabel("Wind Speed (mph)", color=text_color)
-            ax4.set_xlabel("Time", color=text_color)
             ax4.tick_params(colors=text_color)
             ax4.grid(True, color=grid_color, alpha=0.3)
             ax4.set_title("Wind Speed", color=text_color, fontweight="bold")
             ax4.set_xlim(start_time_mpl, end_time_mpl)
 
+            # Plot Atmospheric Stability (NEW)
+            (stability_line,) = ax5.plot(timestamps, stability_scores, color="#9b59b6", linewidth=2, label="_nolegend_")
+            ax5.fill_between(timestamps, stability_scores, 0, color="#9b59b6", alpha=0.2)
+            ax5.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
+            ax5.set_ylabel("Stability Score", color=text_color)
+            ax5.set_ylim(0, 100)
+            ax5.tick_params(colors=text_color)
+            ax5.grid(True, color=grid_color, alpha=0.3)
+            ax5.set_title("Atmospheric Stability (CAPE, BLH, VPD)", color=text_color, fontweight="bold")
+            ax5.set_xlim(start_time_mpl, end_time_mpl)
+
+            # Plot Wind Profile (NEW)
+            (wind_10m_line,) = ax6.plot(timestamps, wind_speed, color="#3498db", linewidth=2.5, label="10m (Surface)")
+            if has_upper_winds:
+                (wind_80m_line,) = ax6.plot(timestamps, wind_80m, color="#2ecc71", linewidth=1.8, linestyle="--", label="80m")
+                (wind_120m_line,) = ax6.plot(timestamps, wind_120m, color="#f39c12", linewidth=1.8, linestyle=":", label="120m")
+                ax6.legend(loc="upper right", fontsize=8, framealpha=0.7)
+            ax6.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
+            ax6.set_ylabel("Wind Speed (mph)", color=text_color)
+            ax6.set_xlabel("Time", color=text_color)
+            ax6.tick_params(colors=text_color)
+            ax6.grid(True, color=grid_color, alpha=0.3)
+            ax6.set_title("Wind Profile", color=text_color, fontweight="bold")
+            ax6.set_xlim(start_time_mpl, end_time_mpl)
+
             # Format x-axis dates - show time (HH) on all charts within 12h window
-            for ax in [ax1, ax2, ax3, ax4]:
+            for ax in [ax1, ax2, ax3, ax4, ax5, ax6]:
                 ax.tick_params(axis="x", rotation=0)  # No rotation needed for time-only
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%H", tz=local_tz))  # 24-hour local hour
                 ax.xaxis.set_major_locator(
