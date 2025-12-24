@@ -294,10 +294,10 @@ Add interactive map showing eclipse paths.
 
 #### New Files
 
-| File | Description |
-|------|-------------|
+| File                                | Description          |
+|-------------------------------------|----------------------|
 | `gui/widgets/eclipse_map_widget.py` | Map widget component |
-| Update `eclipse_info_dialog.py` | Add map tab/panel |
+| Update `eclipse_info_dialog.py`     | Add map tab/panel    |
 
 #### Features
 
@@ -444,14 +444,14 @@ def compute_local_eclipse_magnitude(
 
 ## Implementation Priority
 
-| Phase | Feature | Effort | Impact | Priority |
-|-------|---------|--------|--------|----------|
-| 3.1 | Asteroid Visibility | High | High | ⭐⭐⭐ |
-| 3.2 | Eclipse Map | Medium | High | ⭐⭐⭐ |
-| 3.3 | SPK Auto-Refresh | Low | Medium | ⭐⭐ |
-| 3.4 | SPK Queue | Medium | Low | ⭐ |
-| 3.5 | Enhanced Eclipse Paths | Medium | Medium | ⭐⭐ |
-| 3.6 | Besselian Elements | High | Medium | ⭐ |
+| Phase | Feature                | Effort | Impact | Priority |
+|-------|------------------------|--------|--------|----------|
+| 3.1   | Asteroid Visibility    | High   | High   | ⭐⭐⭐      |
+| 3.2   | Eclipse Map            | Medium | High   | ⭐⭐⭐      |
+| 3.3   | SPK Auto-Refresh       | Low    | Medium | ⭐⭐       |
+| 3.4   | SPK Queue              | Medium | Low    | ⭐        |
+| 3.5   | Enhanced Eclipse Paths | Medium | Medium | ⭐⭐       |
+| 3.6   | Besselian Elements     | High   | Medium | ⭐        |
 
 **Recommended Order**: 3.1 → 3.2 → 3.3 → 3.5 → 3.4 → 3.6
 

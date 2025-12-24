@@ -98,7 +98,7 @@ class LiveDashboardDialog(QDialog):
         self.space_weather_group.setLayout(self.space_weather_layout)
         grid_layout.addWidget(self.space_weather_group, 1, 1)
 
-        # Add grid to main layout
+        # Add grid to the main layout
         grid_widget = QWidget()
         grid_widget.setLayout(grid_layout)
         layout.addWidget(grid_widget)
