@@ -69,6 +69,58 @@ PLANET_NAMES = {
 }
 
 
+# Absolute magnitudes (H) for moons where V = H + 5*log10(r*delta)
+# r = distance from Sun, delta = distance from Earth
+MOON_ABS_MAGS = {
+    "io": -1.68,
+    "europa": -1.41,
+    "ganymede": -2.09,
+    "callisto": -1.05,
+    "titan": -1.28,
+    "rhea": 0.2,
+    "iapetus": 1.7,
+    "dione": 0.4,
+    "tethys": 0.3,
+    "enceladus": 1.2,
+    "mimas": 2.7,
+    "hyperion": 4.8,
+    "titania": 1.0,
+    "oberon": 1.3,
+    "ariel": 1.4,
+    "umbriel": 2.1,
+    "miranda": 3.5,
+    "triton": -1.2,
+    "phobos": 11.8,
+    "deimos": 12.9,
+    "pluto": -0.7,
+}
+
+# Mapping of moons to their parent planets for distance calculations
+MOON_PARENTS = {
+    "io": "jupiter barycenter",
+    "europa": "jupiter barycenter",
+    "ganymede": "jupiter barycenter",
+    "callisto": "jupiter barycenter",
+    "titan": "saturn barycenter",
+    "rhea": "saturn barycenter",
+    "iapetus": "saturn barycenter",
+    "dione": "saturn barycenter",
+    "tethys": "saturn barycenter",
+    "enceladus": "saturn barycenter",
+    "mimas": "saturn barycenter",
+    "hyperion": "saturn barycenter",
+    "titania": "uranus barycenter",
+    "oberon": "uranus barycenter",
+    "ariel": "uranus barycenter",
+    "umbriel": "uranus barycenter",
+    "miranda": "uranus barycenter",
+    "triton": "neptune barycenter",
+    "phobos": "mars",
+    "deimos": "mars",
+    "pluto": "pluto barycenter",
+}
+
+
 # Cache for loaded ephemeris files
 _ephemeris_cache: dict[str, SpiceKernel] = {}
 
@@ -232,7 +284,10 @@ def is_dynamic_object(object_name: str) -> bool:
     return str(object_name).lower() in PLANET_NAMES
 
 
-@deal.pre(lambda planet_name: planet_name.lower() in PLANET_NAMES, message="Planet name must be valid")  # type: ignore[misc,arg-type]
+@deal.pre(
+    lambda planet_name, *args, **kwargs: planet_name.lower() in PLANET_NAMES,
+    message="Planet name must be valid",
+)  # type: ignore[misc,arg-type]
 @deal.post(
     lambda result: result is None or (isinstance(result, float) and -30 <= result <= 30),
     message="Magnitude must be None or reasonable range",
@@ -328,6 +383,41 @@ def get_planet_magnitude(planet_name: str, dt: datetime | None = None) -> float 
             return float(mag)
         except Exception as e:
             logger.warning(f"Failed to calculate dynamic magnitude for Moon: {e}")
+            # Fall through to hardcoded values
+
+    # Other moons - dynamic calculation using absolute magnitude and distances
+    if planet_name_lower in MOON_ABS_MAGS:
+        try:
+            import math
+
+            # Use de421.bsp for planetary positions (sufficient for distance)
+            eph = _get_ephemeris("de421.bsp")
+            ts = get_skyfield_timescale()
+
+            if dt is None:
+                dt = datetime.now(UTC)
+            elif dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+
+            t = ts.from_datetime(dt)
+            earth = eph["earth"]
+            sun = eph["sun"]
+            parent_planet = eph[MOON_PARENTS[planet_name_lower]]
+
+            # Distance from Sun to planet (r)
+            sun_pos = sun.at(t).observe(parent_planet).position.au
+            r = math.sqrt(sum(p**2 for p in sun_pos))
+
+            # Distance from Earth to planet (delta)
+            earth_pos = earth.at(t).observe(parent_planet).position.au
+            delta = math.sqrt(sum(p**2 for p in earth_pos))
+
+            # V = H + 5 * log10(r * delta)
+            h = MOON_ABS_MAGS[planet_name_lower]
+            mag = h + 5 * math.log10(r * delta)
+            return float(mag)
+        except Exception as e:
+            logger.warning(f"Failed to calculate dynamic magnitude for {planet_name}: {e}")
             # Fall through to hardcoded values
 
     # Approximate typical magnitudes
