@@ -49,7 +49,11 @@ from celestron_nexstar.api.database.models import (
     StarModel,
     VariableStarModel,
 )
-from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
+from celestron_nexstar.api.ephemeris.ephemeris import (
+    get_planet_magnitude,
+    get_planetary_position,
+    is_dynamic_object,
+)
 
 
 # Type variable for model classes that have CelestialObjectMixin
@@ -2176,12 +2180,13 @@ class CatalogDatabase:
 
         if is_dynamic and ephemeris_name and is_dynamic_object(ephemeris_name):
             try:
-                # Convert to lowercase for get_planetary_position (it expects lowercase planet names)
+                # Convert to lowercase for ephemeris functions (they expect lowercase planet names)
                 planet_name = ephemeris_name.lower()
                 ra, dec = get_planetary_position(planet_name)
+                magnitude = get_planet_magnitude(planet_name)
                 from dataclasses import replace
 
-                obj = replace(obj, ra_hours=ra, dec_degrees=dec)
+                obj = replace(obj, ra_hours=ra, dec_degrees=dec, magnitude=magnitude)
             except (ValueError, KeyError, FileNotFoundError) as e:
                 # Log the error but use stored coordinates as fallback
                 logger.debug(f"Could not calculate position for {ephemeris_name}: {e}")

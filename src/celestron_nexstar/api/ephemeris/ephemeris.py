@@ -12,6 +12,7 @@ from functools import lru_cache
 
 import deal
 from skyfield.jpllib import SpiceKernel
+from skyfield.magnitudelib import planetary_magnitude
 
 from celestron_nexstar.api.core.exceptions import EphemerisFileNotFoundError, UnknownEphemerisObjectError
 from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader, get_skyfield_timescale
@@ -233,26 +234,106 @@ def is_dynamic_object(object_name: str) -> bool:
 
 @deal.pre(lambda planet_name: planet_name.lower() in PLANET_NAMES, message="Planet name must be valid")  # type: ignore[misc,arg-type]
 @deal.post(
-    lambda result: result is None or (isinstance(result, float) and -5 <= result <= 30),
+    lambda result: result is None or (isinstance(result, float) and -30 <= result <= 30),
     message="Magnitude must be None or reasonable range",
 )
-def get_planet_magnitude(planet_name: str) -> float | None:
+def get_planet_magnitude(planet_name: str, dt: datetime | None = None) -> float | None:
     """
-    Get approximate magnitude for a planet.
+    Get approximate magnitude for a planet or moon.
 
-    Note: Actual magnitude varies with distance and phase.
-    These are typical/average values.
+    For major planets and the Moon, calculates dynamic magnitude using Skyfield.
+    For other objects (moons), returns typical/average values.
 
     Args:
-        planet_name: Name of the planet
+        planet_name: Name of the planet or moon
+        dt: Optional datetime for calculation (defaults to now)
 
     Returns:
-        Approximate magnitude or None if not available
+        Calculated or typical magnitude, or None if not available
     """
+    planet_name_lower = planet_name.lower()
+
+    # Major planets supported by skyfield.magnitudelib.planetary_magnitude
+    major_planets = {
+        "mercury": "mercury",
+        "venus": "venus",
+        "mars": "mars",
+        "jupiter": "jupiter barycenter",
+        "saturn": "saturn barycenter",
+        "uranus": "uranus barycenter",
+        "neptune": "neptune barycenter",
+    }
+
+    if planet_name_lower in major_planets:
+        try:
+            spice_target = major_planets[planet_name_lower]
+            # Use de421.bsp for magnitude as it's smaller and sufficient
+            # or use de440s.bsp if already loaded
+            eph = _get_ephemeris("de421.bsp")
+            ts = get_skyfield_timescale()
+
+            if dt is None:
+                dt = datetime.now(UTC)
+            elif dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+
+            t = ts.from_datetime(dt)
+            earth = eph["earth"]
+            target = eph[spice_target]
+
+            astrometric = earth.at(t).observe(target)
+            mag = planetary_magnitude(astrometric)
+            return float(mag)
+        except Exception as e:
+            logger.warning(f"Failed to calculate dynamic magnitude for {planet_name}: {e}")
+            # Fall through to hardcoded values
+
+    # Earth's Moon - special handling as Skyfield doesn't support it in planetary_magnitude
+    if planet_name_lower in ["moon", "luna"]:
+        try:
+            import math
+
+            eph = _get_ephemeris("de421.bsp")
+            ts = get_skyfield_timescale()
+
+            if dt is None:
+                dt = datetime.now(UTC)
+            elif dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+
+            t = ts.from_datetime(dt)
+            earth = eph["earth"]
+            moon = eph["moon"]
+            sun = eph["sun"]
+
+            # Calculate illumination (same logic as in solar_system.py)
+            sun_astrometric = earth.at(t).observe(sun)
+            moon_astrometric = earth.at(t).observe(moon)
+
+            sun_pos = sun_astrometric.position.au
+            moon_pos = moon_astrometric.position.au
+
+            dot = sum(sun_pos[i] * moon_pos[i] for i in range(3))
+            sun_dist = math.sqrt(sum(sun_pos[i] ** 2 for i in range(3)))
+            moon_dist = math.sqrt(sum(moon_pos[i] ** 2 for i in range(3)))
+            cos_angle = dot / (sun_dist * moon_dist)
+            phase_angle = math.acos(max(-1.0, min(1.0, cos_angle)))
+            illumination = (1.0 - math.cos(phase_angle)) / 2.0
+
+            # Formula for Moon magnitude: V = -12.74 + 2.39 * alpha + 0.19 * alpha^4
+            # where alpha is 0 at full moon, pi at new moon.
+            # alpha = acos(2 * illumination - 1)
+            alpha = math.acos(max(-1.0, min(1.0, 2.0 * illumination - 1.0)))
+            mag = -12.74 + 2.39 * alpha + 0.19 * (alpha**4)
+            return float(mag)
+        except Exception as e:
+            logger.warning(f"Failed to calculate dynamic magnitude for Moon: {e}")
+            # Fall through to hardcoded values
+
     # Approximate typical magnitudes
     # Source: NASA JPL Horizons and various astronomical databases
     magnitudes = {
-        # Planets
+        # Planets (fallbacks)
         "mercury": -0.4,
         "venus": -4.4,
         "mars": -2.0,
@@ -261,6 +342,7 @@ def get_planet_magnitude(planet_name: str) -> float | None:
         "uranus": 5.7,
         "neptune": 7.8,
         "moon": -12.6,
+        "pluto": 14.4,
         # Jupiter moons (Galilean satellites - easily visible with 6SE)
         "io": 5.0,
         "europa": 5.3,
@@ -288,4 +370,4 @@ def get_planet_magnitude(planet_name: str) -> float | None:
         "deimos": 12.9,  # Even more challenging
     }
 
-    return magnitudes.get(planet_name.lower())
+    return magnitudes.get(planet_name_lower)

@@ -164,7 +164,7 @@ def get_bright_objects_for_skyalign(
     for planet_name in SKYALIGN_PLANETS:
         try:
             # Get planet magnitude
-            mag = get_planet_magnitude(planet_name)
+            mag = get_planet_magnitude(planet_name, dt=dt)
             if (mag is None or mag > SKYALIGN_MAX_MAGNITUDE) and planet_name != "moon":
                 # Moon is always included regardless of magnitude
                 continue

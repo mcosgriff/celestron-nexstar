@@ -21,7 +21,11 @@ from cachetools import TTLCache, cached
 
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.exceptions import CatalogNotFoundError
-from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
+from celestron_nexstar.api.ephemeris.ephemeris import (
+    get_planet_magnitude,
+    get_planetary_position,
+    is_dynamic_object,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -86,7 +90,10 @@ class CelestialObject:
 
         try:
             ra_hours, dec_degrees = get_planetary_position(self.name, dt=dt)
-            return replace(self, ra_hours=ra_hours, dec_degrees=dec_degrees)
+            magnitude = get_planet_magnitude(self.name, dt=dt)
+            return replace(
+                self, ra_hours=ra_hours, dec_degrees=dec_degrees, magnitude=magnitude
+            )
         except (ValueError, KeyError):
             # If ephemeris calculation fails, return original
             return self

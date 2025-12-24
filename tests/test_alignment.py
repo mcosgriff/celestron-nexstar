@@ -452,7 +452,7 @@ class TestGetBrightObjectsForSkyalign(unittest.TestCase):
             object_type=CelestialObjectType.STAR,
             catalog="star",
         )
-        mock_db.filter_objects = AsyncMock(return_value=[star])
+        mock_db.filter_objects.return_value = [star]
 
         # Mock visibility
         vis = VisibilityInfo(
@@ -487,7 +487,7 @@ class TestGetBrightObjectsForSkyalign(unittest.TestCase):
         with patch("celestron_nexstar.api.telescope.alignment.get_database") as mock_get_db:
             mock_db = MagicMock()
             mock_get_db.return_value = mock_db
-            mock_db.filter_objects = AsyncMock(return_value=[])
+            mock_db.filter_objects.return_value = []
 
             result = get_bright_objects_for_skyalign()
 
