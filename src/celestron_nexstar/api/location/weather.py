@@ -1799,6 +1799,22 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                 visibility_km=None,
                 condition=None,
                 last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
+                # Advanced metrics
+                cloud_cover_low=existing.cloud_cover_low_percent,
+                cloud_cover_mid=existing.cloud_cover_mid_percent,
+                cloud_cover_high=existing.cloud_cover_high_percent,
+                visibility_m=existing.visibility_m,
+                precipitation_probability=existing.precipitation_probability,
+                cape=existing.cape,
+                boundary_layer_height_m=existing.boundary_layer_height_m,
+                freezing_level_height_m=existing.freezing_level_height_m,
+                vapour_pressure_deficit=existing.vapour_pressure_deficit,
+                wind_speed_80m_mph=existing.wind_speed_80m_mph,
+                wind_speed_120m_mph=existing.wind_speed_120m_mph,
+                precipitation_mm=existing.precipitation_mm,
+                rain_mm=existing.rain_mm,
+                snowfall_cm=existing.snowfall_cm,
+                pressure_msl=existing.pressure_msl,
             )
     except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as e:
         # AttributeError: missing database/model attributes
@@ -1824,11 +1840,32 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                 "weather_code",
             ],
             "hourly": [
+                # Current metrics
                 "temperature_2m",
                 "dew_point_2m",
                 "relative_humidity_2m",
                 "cloud_cover",
                 "wind_speed_10m",
+                # Cloud layer breakdown
+                "cloud_cover_low",
+                "cloud_cover_mid",
+                "cloud_cover_high",
+                # Atmospheric quality
+                "visibility",
+                "precipitation_probability",
+                # Atmospheric stability
+                "cape",
+                "boundary_layer_height",
+                "freezing_level_height",
+                "vapour_pressure_deficit",
+                # Upper atmosphere winds
+                "wind_speed_80m",
+                "wind_speed_120m",
+                # Precipitation & pressure
+                "precipitation",
+                "rain",
+                "snowfall",
+                "pressure_msl",
             ],
             "timezone": "auto",
             "wind_speed_unit": "mph",
@@ -1873,6 +1910,27 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         if dew_point_f is None and temp_f is not None and humidity is not None:
             dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
 
+        # Extract advanced metrics from hourly data (first hour)
+        cloud_low = safe_float(hourly.get("cloud_cover_low", [])[0] if hourly.get("cloud_cover_low") else None)
+        cloud_mid = safe_float(hourly.get("cloud_cover_mid", [])[0] if hourly.get("cloud_cover_mid") else None)
+        cloud_high = safe_float(hourly.get("cloud_cover_high", [])[0] if hourly.get("cloud_cover_high") else None)
+
+        visibility_m = safe_float(hourly.get("visibility", [])[0] if hourly.get("visibility") else None)
+        precip_prob = safe_float(hourly.get("precipitation_probability", [])[0] if hourly.get("precipitation_probability") else None)
+
+        cape_val = safe_float(hourly.get("cape", [])[0] if hourly.get("cape") else None)
+        blh = safe_float(hourly.get("boundary_layer_height", [])[0] if hourly.get("boundary_layer_height") else None)
+        freezing = safe_float(hourly.get("freezing_level_height", [])[0] if hourly.get("freezing_level_height") else None)
+        vpd = safe_float(hourly.get("vapour_pressure_deficit", [])[0] if hourly.get("vapour_pressure_deficit") else None)
+
+        wind_80m = safe_float(hourly.get("wind_speed_80m", [])[0] if hourly.get("wind_speed_80m") else None)
+        wind_120m = safe_float(hourly.get("wind_speed_120m", [])[0] if hourly.get("wind_speed_120m") else None)
+
+        precip_mm = safe_float(hourly.get("precipitation", [])[0] if hourly.get("precipitation") else None)
+        rain_mm = safe_float(hourly.get("rain", [])[0] if hourly.get("rain") else None)
+        snow_cm = safe_float(hourly.get("snowfall", [])[0] if hourly.get("snowfall") else None)
+        pressure = safe_float(hourly.get("pressure_msl", [])[0] if hourly.get("pressure_msl") else None)
+
         # Map weather code to condition string
         condition = None
         if weather_code is not None:
@@ -1908,6 +1966,22 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
             visibility_km=None,
             condition=condition,
             last_updated="now",
+            # Advanced metrics
+            cloud_cover_low=cloud_low,
+            cloud_cover_mid=cloud_mid,
+            cloud_cover_high=cloud_high,
+            visibility_m=visibility_m,
+            precipitation_probability=precip_prob,
+            cape=cape_val,
+            boundary_layer_height_m=blh,
+            freezing_level_height_m=freezing,
+            vapour_pressure_deficit=vpd,
+            wind_speed_80m_mph=wind_80m,
+            wind_speed_120m_mph=wind_120m,
+            precipitation_mm=precip_mm,
+            rain_mm=rain_mm,
+            snowfall_cm=snow_cm,
+            pressure_msl=pressure,
         )
 
         # Store in database for future use
@@ -1976,6 +2050,22 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                             existing.wind_speed_mph = weather_to_store.wind_speed_ms
                             existing.seeing_score = seeing_score
                             existing.fetched_at = now_db_naive
+                            # Advanced metrics
+                            existing.cloud_cover_low_percent = weather_to_store.cloud_cover_low
+                            existing.cloud_cover_mid_percent = weather_to_store.cloud_cover_mid
+                            existing.cloud_cover_high_percent = weather_to_store.cloud_cover_high
+                            existing.visibility_m = weather_to_store.visibility_m
+                            existing.precipitation_probability = weather_to_store.precipitation_probability
+                            existing.cape = weather_to_store.cape
+                            existing.boundary_layer_height_m = weather_to_store.boundary_layer_height_m
+                            existing.freezing_level_height_m = weather_to_store.freezing_level_height_m
+                            existing.vapour_pressure_deficit = weather_to_store.vapour_pressure_deficit
+                            existing.wind_speed_80m_mph = weather_to_store.wind_speed_80m_mph
+                            existing.wind_speed_120m_mph = weather_to_store.wind_speed_120m_mph
+                            existing.precipitation_mm = weather_to_store.precipitation_mm
+                            existing.rain_mm = weather_to_store.rain_mm
+                            existing.snowfall_cm = weather_to_store.snowfall_cm
+                            existing.pressure_msl = weather_to_store.pressure_msl
                         else:
                             # Insert new forecast
                             db_forecast = WeatherForecastModel(
@@ -1990,6 +2080,22 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                                 wind_speed_mph=weather_to_store.wind_speed_ms,
                                 seeing_score=seeing_score,
                                 fetched_at=now_db_naive,
+                                # Advanced metrics
+                                cloud_cover_low_percent=weather_to_store.cloud_cover_low,
+                                cloud_cover_mid_percent=weather_to_store.cloud_cover_mid,
+                                cloud_cover_high_percent=weather_to_store.cloud_cover_high,
+                                visibility_m=weather_to_store.visibility_m,
+                                precipitation_probability=weather_to_store.precipitation_probability,
+                                cape=weather_to_store.cape,
+                                boundary_layer_height_m=weather_to_store.boundary_layer_height_m,
+                                freezing_level_height_m=weather_to_store.freezing_level_height_m,
+                                vapour_pressure_deficit=weather_to_store.vapour_pressure_deficit,
+                                wind_speed_80m_mph=weather_to_store.wind_speed_80m_mph,
+                                wind_speed_120m_mph=weather_to_store.wind_speed_120m_mph,
+                                precipitation_mm=weather_to_store.precipitation_mm,
+                                rain_mm=weather_to_store.rain_mm,
+                                snowfall_cm=weather_to_store.snowfall_cm,
+                                pressure_msl=weather_to_store.pressure_msl,
                             )
                             session.add(db_forecast)
 

@@ -42,8 +42,9 @@ GLOSSARY_TERMS: dict[str, dict[str, str]] = {
         "Messier Object": (
             "A catalog of 110 bright deep sky objects compiled by French astronomer Charles Messier "
             "in the 18th century. Messier created this list to help comet hunters avoid confusing "
-            "these objects with comets. The catalog includes galaxies, nebulae, and star clusters, "
-            "and many are popular targets for amateur astronomers."
+            "these objects with comets. The catalog includes 40 galaxies, 29 globular clusters, "
+            "27 open clusters, 11 diffuse nebulae, 4 planetary nebulae, and 1 supernova remnant. "
+            "Many are the brightest and most popular deep sky targets for amateur astronomers."
         ),
         "NGC Object": (
             "An object from the New General Catalogue of Nebulae and Clusters of Stars (NGC), "
@@ -67,6 +68,43 @@ GLOSSARY_TERMS: dict[str, dict[str, str]] = {
         ),
     },
     "Galaxies": {
+        "Spiral Galaxy": (
+            "A galaxy with a flat, rotating disk containing stars, gas, and dust, with a central "
+            "bulge surrounded by spiral arms. Spiral galaxies like the Milky Way and Andromeda (M31) "
+            "are actively forming stars in their arms. Examples include M51 (Whirlpool Galaxy) and "
+            "M81. Classified as Sa, Sb, or Sc based on how tightly wound the spiral arms are."
+        ),
+        "Barred Spiral Galaxy": (
+            "A spiral galaxy with a central bar-shaped structure composed of stars. The spiral arms "
+            "appear to emerge from the ends of the bar rather than the nucleus. About two-thirds of "
+            "spiral galaxies are barred, including the Milky Way. Examples include M91, M95, and NGC 1300. "
+            "Classified as SBa, SBb, or SBc."
+        ),
+        "Elliptical Galaxy": (
+            "A galaxy with an ellipsoidal shape and a smooth, nearly featureless brightness profile. "
+            "Elliptical galaxies contain older stars and have little gas and dust, so they form few "
+            "new stars. They range from nearly spherical (E0) to highly elongated (E7). Examples "
+            "include M49, M59, M60, M87, and M89. The largest galaxies in the universe are giant "
+            "ellipticals."
+        ),
+        "Lenticular Galaxy": (
+            "A galaxy type between elliptical and spiral galaxies. Lenticular galaxies have a central "
+            "bulge and disk like spiral galaxies, but lack prominent spiral arms. They have depleted "
+            "their interstellar matter and thus form few new stars. Classified as S0. Examples include "
+            "NGC 2787 and the Spindle Galaxy (NGC 5866)."
+        ),
+        "Irregular Galaxy": (
+            "A galaxy that lacks a distinct regular shape - neither spiral nor elliptical. Irregular "
+            "galaxies often have chaotic appearances due to gravitational disturbances from nearby "
+            "galaxies. They contain significant amounts of gas and dust and are actively forming stars. "
+            "Examples include the Large and Small Magellanic Clouds, M82 (Cigar Galaxy), and NGC 4449."
+        ),
+        "Dwarf Galaxy": (
+            "A small galaxy composed of up to several billion stars, much smaller than the Milky Way. "
+            "Dwarf galaxies are the most common type of galaxy in the universe. Many orbit larger "
+            "galaxies as satellites, such as the Large and Small Magellanic Clouds that orbit the "
+            "Milky Way. Types include dwarf elliptical, dwarf spheroidal, and dwarf irregular."
+        ),
         "Local Group": (
             "A gravitationally bound group of more than 50 galaxies that includes the Milky Way, "
             "Andromeda Galaxy (M31), Triangulum Galaxy (M33), and many dwarf galaxies. The Local "
@@ -77,53 +115,72 @@ GLOSSARY_TERMS: dict[str, dict[str, str]] = {
             "dwarf galaxies, and dark matter. The halo extends far beyond the visible disk of the "
             "galaxy and contains some of the oldest stars in the Milky Way."
         ),
-        "Globular Cluster": (
-            "A tightly bound, spherical collection of hundreds of thousands to millions of old stars "
-            "that orbit a galactic core. Globular clusters are found in the halos of galaxies and "
-            "are among the oldest objects in the universe, with ages typically over 10 billion years."
-        ),
-        "Dwarf Galaxy": (
-            "A small galaxy composed of up to several billion stars, much smaller than the Milky Way. "
-            "Dwarf galaxies are the most common type of galaxy in the universe. Many orbit larger "
-            "galaxies as satellites, such as the Large and Small Magellanic Clouds that orbit the "
-            "Milky Way."
-        ),
     },
     "Nebulae": {
-        "Emission Nebula": (
-            "A cloud of ionized gas that emits light of various colors. These nebulae are often "
-            "associated with star-forming regions where young, hot stars ionize surrounding "
-            "hydrogen gas. Examples include the Orion Nebula (M42) and the Lagoon Nebula (M8)."
+        "Emission Nebula (HII Region)": (
+            "A cloud of ionized hydrogen gas that emits light of various colors, primarily red "
+            "from hydrogen-alpha emission. These nebulae are often associated with star-forming "
+            "regions where young, hot O and B stars ionize surrounding gas. Examples include the "
+            "Orion Nebula (M42), Lagoon Nebula (M8), Eagle Nebula (M16), and Omega Nebula (M17). "
+            "Also called HII regions because the hydrogen is ionized."
         ),
         "Reflection Nebula": (
             "A cloud of interstellar dust that reflects the light of nearby stars. Unlike emission "
             "nebulae, reflection nebulae do not emit their own light but scatter starlight, "
-            "typically appearing blue due to the same scattering effect that makes the sky blue."
+            "typically appearing blue due to the same scattering effect that makes the sky blue. "
+            "Examples include the nebulosity around the Pleiades (M45) and NGC 7023 (Iris Nebula). "
+            "Often found mixed with emission nebulae."
+        ),
+        "Dark Nebula": (
+            "A dense cloud of interstellar dust and gas that blocks light from objects behind it, "
+            "appearing as a dark patch against the background stars or nebulae. Dark nebulae are "
+            "often sites of future star formation. Famous examples include the Horsehead Nebula, "
+            "Coal Sack, and Barnard 68. They are best seen silhouetted against bright emission "
+            "nebulae or star fields."
         ),
         "Planetary Nebula": (
-            "A shell of ionized gas ejected from red giant stars late in their evolution. Despite "
-            "the name, planetary nebulae have nothing to do with planets; early astronomers "
-            "thought they resembled planetary disks. Examples include the Ring Nebula (M57) and "
-            "the Helix Nebula (NGC 7293)."
+            "A shell of ionized gas ejected from low to intermediate mass stars (like the Sun) late "
+            "in their evolution. Despite the name, planetary nebulae have nothing to do with planets; "
+            "early astronomers thought they resembled planetary disks. The central star is a hot "
+            "white dwarf. Examples include the Ring Nebula (M57), Dumbbell Nebula (M27), Owl Nebula "
+            "(M97), and Helix Nebula (NGC 7293). Messier catalog contains 4 planetary nebulae."
         ),
-        "Supernova Remnant": (
+        "Supernova Remnant (SNR)": (
             "The expanding shell of gas and dust left behind after a massive star explodes as a "
             "supernova. These remnants can be visible for thousands of years and are important "
-            "sources of cosmic rays and heavy elements. Examples include the Crab Nebula (M1) "
-            "and the Veil Nebula."
+            "sources of cosmic rays and heavy elements. They often appear as complex, filamentary "
+            "structures. Examples include the Crab Nebula (M1), Veil Nebula (NGC 6960/6992), and "
+            "the Cygnus Loop. The Crab Nebula is the only supernova remnant in the Messier catalog."
+        ),
+        "Diffuse Nebula": (
+            "A general term for emission and reflection nebulae that appear as diffuse, cloud-like "
+            "objects rather than having sharp boundaries. These are large, extended nebulae often "
+            "visible to the naked eye or binoculars. The term distinguishes them from planetary "
+            "nebulae which appear more compact and disk-like."
         ),
     },
     "Star Clusters": {
-        "Open Cluster": (
+        "Open Cluster (Galactic Cluster)": (
             "A loosely bound group of stars that formed from the same molecular cloud. Open clusters "
             "typically contain hundreds to thousands of stars and are found in the spiral arms of "
             "galaxies. They are relatively young (millions to hundreds of millions of years old) "
-            "and will eventually disperse. Examples include the Pleiades (M45) and the Hyades."
+            "and will eventually disperse over time. All member stars have similar ages and chemical "
+            "composition. Examples include the Pleiades (M45), Beehive Cluster (M44), Wild Duck "
+            "Cluster (M11), and the Hyades. The Messier catalog contains 27 open clusters."
+        ),
+        "Globular Cluster": (
+            "A tightly bound, spherical collection of hundreds of thousands to millions of old stars "
+            "that orbit a galactic core. Globular clusters are found in the halos of galaxies and "
+            "are among the oldest objects in the universe, with ages typically 10-13 billion years. "
+            "They contain Population II stars (metal-poor, old stars). Examples include M13 (Hercules "
+            "Cluster), M22, M3, M5, and M15. The Messier catalog contains 29 globular clusters, making "
+            "them the second most common Messier object type."
         ),
         "Star Association": (
             "A loose grouping of stars that share a common origin but are not gravitationally bound. "
             "These stars are moving away from each other and will eventually disperse. Star "
-            "associations are typically very young and contain massive, hot stars."
+            "associations are typically very young (a few million years) and contain massive, hot "
+            "OB-type stars. They are found in star-forming regions and indicate recent star formation."
         ),
     },
     "Stars": {

@@ -5,6 +5,7 @@ Dialog to display astronomical glossary terms organized by category.
 import logging
 from typing import TYPE_CHECKING
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -32,6 +33,9 @@ class GlossaryDialog(QDialog):
         self.setMinimumWidth(700)
         self.setMinimumHeight(500)
         self.resize(900, 700)
+
+        # Make dialog non-modal so it doesn't block the main window
+        self.setWindowModality(Qt.WindowModality.NonModal)
 
         # Create layout
         layout = QVBoxLayout(self)

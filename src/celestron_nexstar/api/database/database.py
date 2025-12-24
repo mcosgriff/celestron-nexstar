@@ -373,21 +373,19 @@ class CatalogDatabase:
 
                 # Initialize SpatiaLite metadata if loaded
                 if spatialite_loaded:
-                    import contextlib
-                    import os
-
-                    # Suppress stderr to hide "table spatial_ref_sys already exists" message
-                    # This is harmless - it just means metadata is already initialized
-                    with open(os.devnull, "w") as devnull, contextlib.redirect_stderr(devnull):
+                    # Check if spatial metadata is already initialized by looking for spatial_ref_sys table
+                    try:
+                        cursor.execute("SELECT 1 FROM spatial_ref_sys LIMIT 1")
+                        # Table exists, metadata is already initialized
+                        logger.debug("SpatiaLite metadata already initialized")
+                    except Exception:
+                        # Table doesn't exist, initialize metadata
                         try:
                             cursor.execute("SELECT InitSpatialMetadata(1)")
                             logger.debug("SpatiaLite metadata initialized")
                         except Exception as e:
-                            # Suppress the "table spatial_ref_sys already exists" error - it's harmless
-                            error_msg = str(e).lower()
-                            if "already exists" not in error_msg and "spatial_ref_sys" not in error_msg:
-                                logger.debug(f"SpatiaLite metadata initialization error: {e}")
-                                # Otherwise silently ignore - metadata is already initialized
+                            # Log any unexpected errors during initialization
+                            logger.debug(f"SpatiaLite metadata initialization error: {e}")
 
                 # Disable extension loading for security
                 dbapi_conn.enable_load_extension(False)

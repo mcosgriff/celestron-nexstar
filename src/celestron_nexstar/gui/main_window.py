@@ -4334,8 +4334,16 @@ class MainWindow(QMainWindow):
         """Handle glossary button click."""
         from celestron_nexstar.gui.dialogs.glossary_dialog import GlossaryDialog
 
-        dialog = GlossaryDialog(self)
-        dialog.exec()
+        # Check if glossary is already open
+        if hasattr(self, '_glossary_dialog') and self._glossary_dialog and self._glossary_dialog.isVisible():
+            # Bring existing dialog to front
+            self._glossary_dialog.raise_()
+            self._glossary_dialog.activateWindow()
+            return
+
+        # Create and show non-modal dialog
+        self._glossary_dialog = GlossaryDialog(self)
+        self._glossary_dialog.show()
 
     def _on_compare_objects(self) -> None:
         """Handle compare objects button click."""

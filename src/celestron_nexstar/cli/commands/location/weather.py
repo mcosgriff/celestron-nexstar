@@ -19,6 +19,7 @@ from celestron_nexstar.api.location.weather import (
     WeatherData,
     assess_observing_conditions,
     calculate_seeing_conditions,
+    calculate_seeing_conditions_v2,
     fetch_historical_weather_climatology,
     fetch_hourly_weather_forecast,
     fetch_weather,
@@ -62,6 +63,7 @@ def _get_current_weather_with_cache(location: ObserverLocation) -> WeatherData:
 @app.command("current", rich_help_panel="Weather Information")
 def show_current_weather(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    advanced: bool = typer.Option(False, "--advanced", "-a", help="Show advanced atmospheric metrics"),
 ) -> None:
     """
     Display current weather conditions for the observer location.
@@ -72,6 +74,7 @@ def show_current_weather(
     Examples:
         nexstar weather current
         nexstar weather current --json
+        nexstar weather current --advanced
     """
     try:
         location = get_observer_location()
@@ -217,6 +220,139 @@ def show_current_weather(
 
         console.print(f"[bold]Seeing Conditions:[/bold] {seeing_text} ({seeing_score:.0f}/100)")
         console.print("[dim]Atmospheric steadiness for image sharpness[/dim]")
+
+        # Advanced atmospheric metrics (if requested)
+        if advanced:
+            from rich import box
+
+            console.print()
+            console.print("[bold cyan]Advanced Atmospheric Metrics[/bold cyan]")
+            console.print()
+
+            # Cloud Layer Distribution
+            if any([weather.cloud_cover_low, weather.cloud_cover_mid, weather.cloud_cover_high]):
+                cloud_table = Table(title="Cloud Layer Distribution", show_header=True, box=box.ROUNDED)
+                cloud_table.add_column("Altitude", style="cyan")
+                cloud_table.add_column("Coverage", justify="right")
+
+                if weather.cloud_cover_low is not None:
+                    cloud_table.add_row("Low (0-3km)", f"{weather.cloud_cover_low:.0f}%")
+                if weather.cloud_cover_mid is not None:
+                    cloud_table.add_row("Mid (3-8km)", f"{weather.cloud_cover_mid:.0f}%")
+                if weather.cloud_cover_high is not None:
+                    cloud_table.add_row("High (8km+)", f"{weather.cloud_cover_high:.0f}%")
+
+                console.print(cloud_table)
+                console.print()
+
+            # Atmospheric Stability
+            stability_metrics = []
+            if weather.cape is not None:
+                cape_color = "green" if weather.cape < 500 else "yellow" if weather.cape < 1500 else "red"
+                cape_desc = "Stable" if weather.cape < 500 else "Moderate" if weather.cape < 1500 else "Unstable"
+                stability_metrics.append(("CAPE", f"[{cape_color}]{weather.cape:.0f} J/kg ({cape_desc})[/{cape_color}]"))
+            if weather.boundary_layer_height_m is not None:
+                stability_metrics.append(("Boundary Layer Height", f"{weather.boundary_layer_height_m:.0f}m"))
+            if weather.vapour_pressure_deficit is not None:
+                vpd_color = "green" if weather.vapour_pressure_deficit > 1.0 else "yellow" if weather.vapour_pressure_deficit > 0.5 else "red"
+                stability_metrics.append(("Vapour Pressure Deficit", f"[{vpd_color}]{weather.vapour_pressure_deficit:.2f} kPa[/{vpd_color}]"))
+            if weather.freezing_level_height_m is not None:
+                stability_metrics.append(("Freezing Level", f"{weather.freezing_level_height_m:.0f}m"))
+
+            if stability_metrics:
+                stability_table = Table(title="Atmospheric Stability", show_header=True, box=box.ROUNDED)
+                stability_table.add_column("Metric", style="cyan")
+                stability_table.add_column("Value", justify="right")
+
+                for metric, value in stability_metrics:
+                    stability_table.add_row(metric, value)
+
+                console.print(stability_table)
+                console.print()
+
+            # Wind Profile
+            wind_metrics = []
+            if weather.wind_speed_ms is not None:
+                wind_metrics.append(("Surface (10m)", f"{weather.wind_speed_ms:.1f} mph"))
+            if weather.wind_speed_80m_mph is not None:
+                wind_metrics.append(("80m altitude", f"{weather.wind_speed_80m_mph:.1f} mph"))
+            if weather.wind_speed_120m_mph is not None:
+                wind_metrics.append(("120m altitude", f"{weather.wind_speed_120m_mph:.1f} mph"))
+
+            if len(wind_metrics) > 1:
+                wind_table = Table(title="Wind Profile", show_header=True, box=box.ROUNDED)
+                wind_table.add_column("Altitude", style="cyan")
+                wind_table.add_column("Speed", justify="right")
+
+                for altitude, speed in wind_metrics:
+                    wind_table.add_row(altitude, speed)
+
+                # Add shear if we have multiple levels
+                if weather.wind_speed_ms and weather.wind_speed_120m_mph:
+                    shear = abs(weather.wind_speed_120m_mph - weather.wind_speed_ms)
+                    shear_color = "green" if shear < 10 else "yellow" if shear < 20 else "red"
+                    shear_desc = "Low" if shear < 10 else "Moderate" if shear < 20 else "High"
+                    wind_table.add_row("", "")  # Spacer
+                    wind_table.add_row("Wind Shear (10-120m)", f"[{shear_color}]{shear:.1f} mph ({shear_desc})[/{shear_color}]")
+
+                console.print(wind_table)
+                console.print()
+
+            # Visibility & Precipitation
+            vis_precip_metrics = []
+            if weather.visibility_m is not None:
+                vis_km = weather.visibility_m / 1000.0
+                vis_color = "green" if vis_km > 10 else "yellow" if vis_km > 5 else "red"
+                vis_precip_metrics.append(("Visibility", f"[{vis_color}]{vis_km:.1f} km[/{vis_color}]"))
+            if weather.precipitation_probability is not None:
+                precip_color = "green" if weather.precipitation_probability < 20 else "yellow" if weather.precipitation_probability < 50 else "red"
+                vis_precip_metrics.append(("Precipitation Probability", f"[{precip_color}]{weather.precipitation_probability:.0f}%[/{precip_color}]"))
+            if weather.precipitation_mm is not None and weather.precipitation_mm > 0:
+                vis_precip_metrics.append(("Precipitation", f"{weather.precipitation_mm:.1f} mm"))
+            if weather.pressure_msl is not None:
+                vis_precip_metrics.append(("Pressure (MSL)", f"{weather.pressure_msl:.1f} hPa"))
+
+            if vis_precip_metrics:
+                vis_precip_table = Table(title="Visibility & Precipitation", show_header=True, box=box.ROUNDED)
+                vis_precip_table.add_column("Metric", style="cyan")
+                vis_precip_table.add_column("Value", justify="right")
+
+                for metric, value in vis_precip_metrics:
+                    vis_precip_table.add_row(metric, value)
+
+                console.print(vis_precip_table)
+                console.print()
+
+            # Seeing Score Comparison
+            new_score, components = calculate_seeing_conditions_v2(weather)
+
+            compare_table = Table(title="Seeing Score Comparison", show_header=True, box=box.ROUNDED)
+            compare_table.add_column("Algorithm", style="cyan")
+            compare_table.add_column("Score", justify="right")
+            compare_table.add_column("Difference", justify="right")
+
+            diff = new_score - seeing_score
+            diff_color = "green" if diff > 5 else "red" if diff < -5 else "yellow"
+
+            compare_table.add_row("Old (v1)", f"{seeing_score:.0f}/100", "")
+            compare_table.add_row("New (v2)", f"{new_score:.0f}/100", f"[{diff_color}]{diff:+.0f}[/{diff_color}]")
+
+            console.print(compare_table)
+
+            # Component breakdown
+            if components:
+                console.print()
+                console.print("[bold]Component Scores (New Algorithm):[/bold]")
+                component_table = Table(show_header=True, box=box.SIMPLE)
+                component_table.add_column("Component", style="cyan")
+                component_table.add_column("Score", justify="right")
+
+                for name, score in components.items():
+                    formatted_name = name.replace('_', ' ').title()
+                    score_color = "green" if score >= 75 else "yellow" if score >= 50 else "red"
+                    component_table.add_row(formatted_name, f"[{score_color}]{score:.0f}/100[/{score_color}]")
+
+                console.print(component_table)
 
         console.print()
 

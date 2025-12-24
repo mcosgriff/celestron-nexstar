@@ -6,6 +6,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from PySide6.QtCore import QEvent, QObject
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,6 +22,27 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+class WheelEventFilter(QObject):
+    """Event filter to redirect wheel events from matplotlib canvas to scroll area."""
+
+    def __init__(self, scroll_area: Any) -> None:
+        """Initialize with target scroll area."""
+        super().__init__()
+        self.scroll_area = scroll_area
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Filter wheel events and redirect to scroll area."""
+        if event.type() == QEvent.Type.Wheel:
+            # Forward wheel event to scroll area
+            from PySide6.QtGui import QWheelEvent
+            from PySide6.QtCore import QCoreApplication
+
+            wheel_event = QWheelEvent(event)  # type: ignore[arg-type]
+            QCoreApplication.sendEvent(self.scroll_area, wheel_event)
+            return True
+        return False
 
 
 class WeatherInfoDialog(QDialog):
@@ -92,14 +114,27 @@ class WeatherInfoDialog(QDialog):
         advanced_layout.addWidget(self.advanced_text)
         self.tab_widget.addTab(advanced_tab, "Advanced")
 
-        # Create "Charts" tab
+        # Create "Charts" tab with scroll area
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QScrollArea
+
         charts_tab = QWidget()
         charts_layout = QVBoxLayout(charts_tab)
         charts_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area for charts
+        self.charts_scroll_area = QScrollArea()
+        self.charts_scroll_area.setWidgetResizable(True)
+        self.charts_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.charts_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.charts_scroll_area.setFocusPolicy(Qt.FocusPolicy.WheelFocus)  # Enable mouse wheel scrolling
+
         self.charts_widget = QWidget()
         charts_widget_layout = QVBoxLayout(self.charts_widget)
         charts_widget_layout.setContentsMargins(0, 0, 0, 0)
-        charts_layout.addWidget(self.charts_widget)
+
+        self.charts_scroll_area.setWidget(self.charts_widget)
+        charts_layout.addWidget(self.charts_scroll_area)
         self.tab_widget.addTab(charts_tab, "Charts")
 
         # Add button box
@@ -546,8 +581,12 @@ class WeatherInfoDialog(QDialog):
                             widget.setParent(None)
 
             # Create figure with 6 subplots (expanded from 4)
-            fig = Figure(figsize=(12, 16))
+            # Increased height to give each chart more vertical space
+            # Height of 40 ensures scroll bar appears and charts are well-spaced
+            fig = Figure(figsize=(12, 40), dpi=100)
             canvas = FigureCanvas(fig)
+            # Set fixed minimum size to force scrolling (40 inches * 100 dpi = 4000 pixels)
+            canvas.setMinimumHeight(1000)
             # Improves hover responsiveness for interactive tooltips.
             canvas.setMouseTracking(True)
 
@@ -628,20 +667,13 @@ class WeatherInfoDialog(QDialog):
 
             # Plot Cloud Cover (enhanced with layers if available)
             if has_cloud_layers:
-                # Stacked area chart showing cloud layers
-                ax2.fill_between(timestamps, cloud_low, 0, color="#ff6b6b", alpha=0.4, label="Low (0-3km)")
-                # Stack mid on top of low
-                cloud_low_mid = [l + m for l, m in zip(cloud_low, cloud_mid)]
-                ax2.fill_between(timestamps, cloud_low_mid, cloud_low, color="#ffa500", alpha=0.4, label="Mid (3-8km)")
-                # Stack high on top of low+mid
-                cloud_total = [l + m + h for l, m, h in zip(cloud_low, cloud_mid, cloud_high)]
-                ax2.fill_between(timestamps, cloud_total, cloud_low_mid, color="#4a90e2", alpha=0.4, label="High (8km+)")
-                ax2.legend(loc="upper right", fontsize=8, framealpha=0.7)
-                (cloud_line,) = ax2.plot(timestamps, cloud_total, color="#4a90e2", linewidth=1, alpha=0.6, label="_nolegend_")
+                # Three separate lines for cloud layers (like wind profile)
+                (cloud_low_line,) = ax2.plot(timestamps, cloud_low, color="#ff6b6b", linewidth=2.5, label="_nolegend_")
+                (cloud_mid_line,) = ax2.plot(timestamps, cloud_mid, color="#ffa500", linewidth=1.8, linestyle="--", label="_nolegend_")
+                (cloud_high_line,) = ax2.plot(timestamps, cloud_high, color="#4a90e2", linewidth=1.8, linestyle=":", label="_nolegend_")
             else:
                 # Simple cloud cover
-                ax2.fill_between(timestamps, cloud_cover, 0, color="#4a90e2", alpha=0.3, label="Cloud Cover")
-                (cloud_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
+                (cloud_low_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
 
             ax2.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax2.set_ylabel("Cloud Cover (%)", color=text_color)
@@ -682,11 +714,10 @@ class WeatherInfoDialog(QDialog):
             ax5.set_xlim(start_time_mpl, end_time_mpl)
 
             # Plot Wind Profile (NEW)
-            (wind_10m_line,) = ax6.plot(timestamps, wind_speed, color="#3498db", linewidth=2.5, label="10m (Surface)")
+            (wind_10m_line,) = ax6.plot(timestamps, wind_speed, color="#3498db", linewidth=2.5, label="_nolegend_")
             if has_upper_winds:
-                (wind_80m_line,) = ax6.plot(timestamps, wind_80m, color="#2ecc71", linewidth=1.8, linestyle="--", label="80m")
-                (wind_120m_line,) = ax6.plot(timestamps, wind_120m, color="#f39c12", linewidth=1.8, linestyle=":", label="120m")
-                ax6.legend(loc="upper right", fontsize=8, framealpha=0.7)
+                (wind_80m_line,) = ax6.plot(timestamps, wind_80m, color="#2ecc71", linewidth=1.8, linestyle="--", label="_nolegend_")
+                (wind_120m_line,) = ax6.plot(timestamps, wind_120m, color="#f39c12", linewidth=1.8, linestyle=":", label="_nolegend_")
             ax6.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax6.set_ylabel("Wind Speed (mph)", color=text_color)
             ax6.set_xlabel("Time", color=text_color)
@@ -703,12 +734,12 @@ class WeatherInfoDialog(QDialog):
                     mdates.HourLocator(interval=2, tz=local_tz)
                 )  # Every 2 hours for a 12h window
                 # Add padding to top, bottom, and left (y-axis) of each chart
-                ax.margins(y=0.15, x=0.0)  # 15% margin on top/bottom, no extra x-margin since window fixed
+                ax.margins(y=0.30, x=0.0)  # 30% margin on top/bottom for better readability
 
-            # Adjust layout with more spacing between subplots
+            # Adjust layout with explicit spacing (no tight_layout to avoid override)
             # Add extra left padding to prevent y-axis labels from being cut off
-            fig.tight_layout(pad=2.0)  # Padding around the figure
-            fig.subplots_adjust(hspace=0.7, left=0.12)  # More vertical spacing and left margin for y-axis labels
+            # Balanced hspace for clear separation without excessive whitespace
+            fig.subplots_adjust(hspace=1.2, left=0.12, right=0.95, top=0.98, bottom=0.02)
 
             # Optional: interactive hover tooltips (like NWS graphical forecast).
             # This is best-effort; if mplcursors isn't installed, charts still render normally.
@@ -718,19 +749,51 @@ class WeatherInfoDialog(QDialog):
                 line_units: dict[int, str] = {
                     id(temp_line): "°F",
                     id(dew_line): "°F",
-                    id(cloud_line): "%",
                     id(humidity_line): "%",
                     id(wind_line): "mph",
+                    id(stability_line): "/100",
+                    id(wind_10m_line): "mph",
+                    id(cloud_low_line): "%",
                 }
                 line_names: dict[int, str] = {
                     id(temp_line): "Temperature",
                     id(dew_line): "Dew Point",
-                    id(cloud_line): "Cloud Cover",
                     id(humidity_line): "Humidity",
                     id(wind_line): "Wind Speed",
+                    id(stability_line): "Stability Score",
+                    id(wind_10m_line): "Wind (10m)",
+                    id(cloud_low_line): "Cloud Low (0-3km)" if has_cloud_layers else "Cloud Cover",
                 }
 
-                cursor = mplcursors.cursor([temp_line, dew_line, cloud_line, humidity_line, wind_line], hover=True)
+                # Build cursor lines list - only include lines that exist
+                cursor_lines = [temp_line, dew_line, cloud_low_line, humidity_line, wind_line, stability_line, wind_10m_line]
+
+                # Add cloud layer lines if available
+                if has_cloud_layers:
+                    try:
+                        line_units[id(cloud_mid_line)] = "%"
+                        line_units[id(cloud_high_line)] = "%"
+                        line_names[id(cloud_mid_line)] = "Cloud Mid (3-8km)"
+                        line_names[id(cloud_high_line)] = "Cloud High (8km+)"
+                        cursor_lines.extend([cloud_mid_line, cloud_high_line])
+                    except NameError:
+                        # Cloud layer lines weren't created, skip them
+                        pass
+
+                # Add upper wind lines if available
+                if has_upper_winds:
+                    # These variables only exist if has_upper_winds is True
+                    try:
+                        line_units[id(wind_80m_line)] = "mph"
+                        line_units[id(wind_120m_line)] = "mph"
+                        line_names[id(wind_80m_line)] = "Wind (80m)"
+                        line_names[id(wind_120m_line)] = "Wind (120m)"
+                        cursor_lines.extend([wind_80m_line, wind_120m_line])
+                    except NameError:
+                        # Upper wind lines weren't created, skip them
+                        pass
+
+                cursor = mplcursors.cursor(cursor_lines, hover=True)
 
                 @cursor.connect("add")  # type: ignore[misc]
                 def _on_add(sel: Any) -> None:
@@ -762,6 +825,12 @@ class WeatherInfoDialog(QDialog):
             except Exception:
                 # Hover is optional; ignore if missing or unsupported backend.
                 pass
+
+            # Install event filter to redirect wheel events to scroll area
+            wheel_filter = WheelEventFilter(self.charts_scroll_area)
+            canvas.installEventFilter(wheel_filter)
+            # Keep a reference to prevent garbage collection
+            canvas._wheel_filter = wheel_filter  # type: ignore[attr-defined]
 
             # Add canvas to widget
             layout = self.charts_widget.layout()
