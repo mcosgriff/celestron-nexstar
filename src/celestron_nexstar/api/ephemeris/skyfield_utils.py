@@ -54,8 +54,8 @@ def get_skyfield_loader() -> Loader:
 
         skyfield_dir = get_skyfield_directory()
         skyfield_dir.mkdir(parents=True, exist_ok=True)
-        # Force the loader to only look in the specified directory
-        _loader = Loader(str(skyfield_dir.resolve()), load=False, download=True)
+        # Create loader for the specified directory
+        _loader = Loader(str(skyfield_dir.resolve()))
     return _loader
 
 

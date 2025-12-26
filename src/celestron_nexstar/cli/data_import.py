@@ -801,12 +801,13 @@ def import_celestial_data_geojson(
                         batch_names = [obj["name"] for obj in batch]
 
                         # Update galaxies
+                        # Note: We no longer require geometry.isnot(None) because _find_spatial_relationships
+                        # can now use bounding box fallback for objects without geometry
                         galaxies_to_update = (
                             db_session.execute(
                                 select(GalaxyModel).where(
                                     GalaxyModel.name.in_(batch_names),
-                                    GalaxyModel.geometry.isnot(None),
-                                    (GalaxyModel.constellation_id.is_(None)) | (GalaxyModel.asterism_id.is_(None)),
+                                    GalaxyModel.constellation_id.is_(None),
                                 )
                             )
                             .scalars()
@@ -816,6 +817,9 @@ def import_celestial_data_geojson(
                             constellation_id, asterism_id = _find_spatial_relationships(galaxy, db_session)
                             if constellation_id is not None:
                                 galaxy.constellation_id = constellation_id
+                                # Also populate the string field from the relationship
+                                if hasattr(galaxy, 'constellation_rel') and galaxy.constellation_rel:
+                                    galaxy.constellation = galaxy.constellation_rel.name
                             if asterism_id is not None:
                                 galaxy.asterism_id = asterism_id
 
@@ -824,8 +828,7 @@ def import_celestial_data_geojson(
                             db_session.execute(
                                 select(NebulaModel).where(
                                     NebulaModel.name.in_(batch_names),
-                                    NebulaModel.geometry.isnot(None),
-                                    (NebulaModel.constellation_id.is_(None)) | (NebulaModel.asterism_id.is_(None)),
+                                    NebulaModel.constellation_id.is_(None),
                                 )
                             )
                             .scalars()
@@ -835,6 +838,9 @@ def import_celestial_data_geojson(
                             constellation_id, asterism_id = _find_spatial_relationships(nebula, db_session)
                             if constellation_id is not None:
                                 nebula.constellation_id = constellation_id
+                                # Also populate the string field from the relationship
+                                if hasattr(nebula, 'constellation_rel') and nebula.constellation_rel:
+                                    nebula.constellation = nebula.constellation_rel.name
                             if asterism_id is not None:
                                 nebula.asterism_id = asterism_id
 
@@ -843,8 +849,7 @@ def import_celestial_data_geojson(
                             db_session.execute(
                                 select(ClusterModel).where(
                                     ClusterModel.name.in_(batch_names),
-                                    ClusterModel.geometry.isnot(None),
-                                    (ClusterModel.constellation_id.is_(None)) | (ClusterModel.asterism_id.is_(None)),
+                                    ClusterModel.constellation_id.is_(None),
                                 )
                             )
                             .scalars()
@@ -854,6 +859,9 @@ def import_celestial_data_geojson(
                             constellation_id, asterism_id = _find_spatial_relationships(cluster, db_session)
                             if constellation_id is not None:
                                 cluster.constellation_id = constellation_id
+                                # Also populate the string field from the relationship
+                                if hasattr(cluster, 'constellation_rel') and cluster.constellation_rel:
+                                    cluster.constellation = cluster.constellation_rel.name
                             if asterism_id is not None:
                                 cluster.asterism_id = asterism_id
 
@@ -1106,75 +1114,89 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
     constellation_id = None
     asterism_id = None
 
-    # Need geometry to do spatial queries
-    if not hasattr(model_obj, "geometry") or model_obj.geometry is None:
-        return None, None
-
-    try:
-        # Find constellation using ST_Contains (point within polygon)
-        stmt_const = (
-            select(ConstellationModel.id)
-            .where(
-                ConstellationModel.geometry.isnot(None),
-                functions.ST_Contains(ConstellationModel.geometry, model_obj.geometry),
+    # Try spatial queries if geometry exists
+    if hasattr(model_obj, "geometry") and model_obj.geometry is not None:
+        try:
+            # Find constellation using ST_Contains (point within polygon)
+            stmt_const = (
+                select(ConstellationModel.id)
+                .where(
+                    ConstellationModel.geometry.isnot(None),
+                    functions.ST_Contains(ConstellationModel.geometry, model_obj.geometry),
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
-        result_const = db_session.execute(stmt_const)
-        constellation_id = result_const.scalar_one_or_none()
+            result_const = db_session.execute(stmt_const)
+            constellation_id = result_const.scalar_one_or_none()
 
-        # Polar-cap fix: our constellation bounds geometries intentionally stop at about ±88.6639°,
-        # leaving the immediate polar caps uncovered (no polygon contains those points). That means
-        # stars like Polaris (Dec ~ +89.26°) end up with NULL constellation_id.
-        #
-        # If spatial lookup fails, assign objects beyond the boundary extrema to:
-        # - North polar cap: Ursa Minor (UMi)
-        # - South polar cap: Octans (Oct)
-        if constellation_id is None and hasattr(model_obj, "dec_degrees") and model_obj.dec_degrees is not None:
-            from sqlalchemy import func
-
-            max_dec = db_session.execute(select(func.max(ConstellationModel.dec_max_degrees))).scalar_one_or_none()
-            min_dec = db_session.execute(select(func.min(ConstellationModel.dec_min_degrees))).scalar_one_or_none()
-
-            if max_dec is not None and float(model_obj.dec_degrees) > float(max_dec):
-                constellation_id = db_session.execute(
-                    select(ConstellationModel.id).where(ConstellationModel.abbreviation == "UMi").limit(1)
-                ).scalar_one_or_none()
-            elif min_dec is not None and float(model_obj.dec_degrees) < float(min_dec):
-                constellation_id = db_session.execute(
-                    select(ConstellationModel.id).where(ConstellationModel.abbreviation == "Oct").limit(1)
-                ).scalar_one_or_none()
-
-        # Find asterism using ST_Distance (point near MultiLineString)
-        # MultiLineString geometries represent asterism patterns, so we check if the point
-        # is within a reasonable distance (2 degrees) of any line segment
-        # We need to calculate distance for all asterisms and find the closest one within tolerance
-        stmt_asterism = (
-            select(
-                AsterismModel.id,
-                functions.ST_Distance(AsterismModel.geometry, model_obj.geometry).label("distance"),
+            # Find asterism using ST_Distance (point near MultiLineString)
+            # MultiLineString geometries represent asterism patterns, so we check if the point
+            # is within a reasonable distance (2 degrees) of any line segment
+            # We need to calculate distance for all asterisms and find the closest one within tolerance
+            stmt_asterism = (
+                select(
+                    AsterismModel.id,
+                    functions.ST_Distance(AsterismModel.geometry, model_obj.geometry).label("distance"),
+                )
+                .where(AsterismModel.geometry.isnot(None))
+                .order_by("distance")
             )
-            .where(AsterismModel.geometry.isnot(None))
-            .order_by("distance")
-        )
-        result_asterism = db_session.execute(stmt_asterism)
-        asterism_row = result_asterism.first()
-        if asterism_row:
-            asterism_id_candidate, distance_raw = asterism_row
-            # Convert distance to float if it's not None
-            distance: float | None = None
-            if distance_raw is not None:
-                try:
-                    distance = float(distance_raw)
-                except (TypeError, ValueError):
-                    distance = None
-            # Use 2 degrees tolerance for line-based asterisms
-            if distance is not None and distance <= 2.0:
-                asterism_id = asterism_id_candidate
+            result_asterism = db_session.execute(stmt_asterism)
+            asterism_row = result_asterism.first()
+            if asterism_row:
+                asterism_id_candidate, distance_raw = asterism_row
+                # Convert distance to float if it's not None
+                distance: float | None = None
+                if distance_raw is not None:
+                    try:
+                        distance = float(distance_raw)
+                    except (TypeError, ValueError):
+                        distance = None
+                # Use 2 degrees tolerance for line-based asterisms
+                if distance is not None and distance <= 2.0:
+                    asterism_id = asterism_id_candidate
 
-    except Exception:
-        # If spatial query fails, return None
-        pass
+        except Exception:
+            # If spatial query fails, constellation_id stays None and we'll try fallbacks
+            pass
+
+    # Polar-cap fix: our constellation bounds geometries intentionally stop at about ±88.6639°,
+    # leaving the immediate polar caps uncovered (no polygon contains those points). That means
+    # stars like Polaris (Dec ~ +89.26°) end up with NULL constellation_id.
+    #
+    # If spatial lookup fails, assign objects beyond the boundary extrema to:
+    # - North polar cap: Ursa Minor (UMi)
+    # - South polar cap: Octans (Oct)
+    if constellation_id is None and hasattr(model_obj, "dec_degrees") and model_obj.dec_degrees is not None:
+        from sqlalchemy import func
+
+        max_dec = db_session.execute(select(func.max(ConstellationModel.dec_max_degrees))).scalar_one_or_none()
+        min_dec = db_session.execute(select(func.min(ConstellationModel.dec_min_degrees))).scalar_one_or_none()
+
+        if max_dec is not None and float(model_obj.dec_degrees) > float(max_dec):
+            constellation_id = db_session.execute(
+                select(ConstellationModel.id).where(ConstellationModel.abbreviation == "UMi").limit(1)
+            ).scalar_one_or_none()
+        elif min_dec is not None and float(model_obj.dec_degrees) < float(min_dec):
+            constellation_id = db_session.execute(
+                select(ConstellationModel.id).where(ConstellationModel.abbreviation == "Oct").limit(1)
+            ).scalar_one_or_none()
+
+    # Bounding box fallback: if spatial query still failed (or no geometry), use ra/dec bounding boxes
+    # This handles cases where constellation boundaries have small gaps, coordinate precision issues,
+    # or objects without geometry (like Messier objects)
+    if constellation_id is None and hasattr(model_obj, "ra_hours") and hasattr(model_obj, "dec_degrees"):
+        if model_obj.ra_hours is not None and model_obj.dec_degrees is not None:
+            constellation_id = db_session.execute(
+                select(ConstellationModel.id)
+                .where(
+                    ConstellationModel.ra_min_hours <= model_obj.ra_hours,
+                    ConstellationModel.ra_max_hours >= model_obj.ra_hours,
+                    ConstellationModel.dec_min_degrees <= model_obj.dec_degrees,
+                    ConstellationModel.dec_max_degrees >= model_obj.dec_degrees,
+                )
+                .limit(1)
+            ).scalar_one_or_none()
 
     return constellation_id, asterism_id
 

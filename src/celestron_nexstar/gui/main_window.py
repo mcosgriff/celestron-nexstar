@@ -2152,12 +2152,13 @@ class MainWindow(QMainWindow):
             CelestialObjectType.VARIABLE_STAR,
             CelestialObjectType.ZODIACAL,
         ):
-            table.setColumnCount(11)
+            table.setColumnCount(12)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
                     "Name",
                     "Type",
+                    "Constellation",
                     "Mag",
                     "Alt",
                     "Visibility",
@@ -2408,6 +2409,17 @@ class MainWindow(QMainWindow):
                 prob_col = 9
                 tips_col = 10
                 fav_col = 11
+            elif is_messier_tab:
+                type_col = 2
+                constellation_col = 3
+                mag_col = 4
+                alt_col = 5
+                vis_col = 6
+                transit_col = 7
+                moonsep_col = 8
+                prob_col = 9
+                tips_col = 10
+                fav_col = 11
             else:
                 type_col = 2
                 mag_col = 3
@@ -2438,12 +2450,16 @@ class MainWindow(QMainWindow):
                 planet_text = obj.parent_planet or "-"
                 table.setItem(row, 2, QTableWidgetItem(planet_text))
 
-            # Constellation (only for star tab)
+            # Constellation (for star tab and Messier tab)
             if is_star_tab:
                 constellation_text = obj.constellation or "-"
                 table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
                 asterism_text = obj.asterism or "-"
                 table.setItem(row, asterism_col, QTableWidgetItem(asterism_text))
+            elif is_messier_tab:
+                # For Messier objects, use constellation_name property or fall back to constellation field
+                constellation_text = getattr(obj, "constellation_name", None) or obj.constellation or "-"
+                table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
 
             # Magnitude
             mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"

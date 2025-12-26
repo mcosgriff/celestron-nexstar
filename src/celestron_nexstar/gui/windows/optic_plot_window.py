@@ -233,6 +233,7 @@ class _PlotGenerationThread(QThread):
     """Background thread for generating optic plot images."""
 
     image_ready = Signal(bytes)
+    error_message = Signal(str)
 
     def __init__(
         self,
@@ -329,6 +330,36 @@ class _PlotGenerationThread(QThread):
             ra_deg = self.ra_hours * 15.0
 
             logger.info(f"Creating optic plot for {self.object_name} at RA={ra_deg:.2f}°, Dec={self.dec_degrees:.2f}°")
+
+            # Check if object is above the horizon before creating plot
+            from skyfield.api import Star, wgs84
+
+            # Create skyfield time and observer
+            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+
+            sf_loader = get_skyfield_loader()
+            ts = sf_loader.timescale()
+            t = ts.now()
+
+            # Create observer location
+            sf_observer = wgs84.latlon(location.latitude, location.longitude)
+
+            # Create a Star object at the target's coordinates
+            target_star = Star(ra_hours=self.ra_hours, dec_degrees=self.dec_degrees)
+
+            # Calculate altitude from observer's perspective
+            observer_at_time = sf_observer.at(t)
+            target_astrometric = observer_at_time.observe(target_star)
+            alt, az, _ = target_astrometric.apparent().altaz()
+
+            if alt.degrees < 0:
+                logger.warning(
+                    f"Object {self.object_name} is below horizon (altitude={alt.degrees:.1f}°), cannot generate optic plot"
+                )
+                # Emit empty data with specific error message
+                # The receiving end will handle this by showing "Failed to generate optic plot"
+                self.image_ready.emit(b"")
+                return
 
             # Create optic plot
             plot = OpticPlot(

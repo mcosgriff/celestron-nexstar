@@ -301,13 +301,31 @@ class GalaxyModel(Base, CelestialObjectMixin):
         Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
+    # Relationships (using string references since models are defined later)
+    constellation_rel: Mapped[ConstellationModel | None] = relationship(
+        "ConstellationModel", foreign_keys=[constellation_id], lazy="select"
+    )
+    asterism_rel: Mapped[AsterismModel | None] = relationship(
+        "AsterismModel", foreign_keys=[asterism_id], lazy="select"
+    )
+
+    @property
+    def constellation_name(self) -> str | None:
+        """Get constellation name from relationship."""
+        return self.constellation_rel.name if self.constellation_rel else None
+
+    @property
+    def asterism_name(self) -> str | None:
+        """Get asterism name from relationship."""
+        return self.asterism_rel.name if self.asterism_rel else None
+
     # Composite indexes
     __table_args__ = (
         Index("idx_galaxy_catalog_number", "catalog", "catalog_number"),
         Index("idx_galaxy_magnitude", "magnitude"),
         Index("idx_galaxy_position", "ra_hours", "dec_degrees"),
         Index(
-            "idx_galaxy_constellation_magnitude", "constellation", "magnitude"
+            "idx_galaxy_constellation_id_magnitude", "constellation_id", "magnitude"
         ),  # For filtering by constellation and sorting by magnitude
     )
 
@@ -329,13 +347,31 @@ class NebulaModel(Base, CelestialObjectMixin):
         Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
+    # Relationships (using string references since models are defined later)
+    constellation_rel: Mapped[ConstellationModel | None] = relationship(
+        "ConstellationModel", foreign_keys=[constellation_id], lazy="select"
+    )
+    asterism_rel: Mapped[AsterismModel | None] = relationship(
+        "AsterismModel", foreign_keys=[asterism_id], lazy="select"
+    )
+
+    @property
+    def constellation_name(self) -> str | None:
+        """Get constellation name from relationship."""
+        return self.constellation_rel.name if self.constellation_rel else None
+
+    @property
+    def asterism_name(self) -> str | None:
+        """Get asterism name from relationship."""
+        return self.asterism_rel.name if self.asterism_rel else None
+
     # Composite indexes
     __table_args__ = (
         Index("idx_nebula_catalog_number", "catalog", "catalog_number"),
         Index("idx_nebula_magnitude", "magnitude"),
         Index("idx_nebula_position", "ra_hours", "dec_degrees"),
         Index(
-            "idx_nebula_constellation_magnitude", "constellation", "magnitude"
+            "idx_nebula_constellation_id_magnitude", "constellation_id", "magnitude"
         ),  # For filtering by constellation and sorting by magnitude
     )
 
@@ -357,13 +393,31 @@ class ClusterModel(Base, CelestialObjectMixin):
         Integer, ForeignKey("asterisms.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
+    # Relationships (using string references since models are defined later)
+    constellation_rel: Mapped[ConstellationModel | None] = relationship(
+        "ConstellationModel", foreign_keys=[constellation_id], lazy="select"
+    )
+    asterism_rel: Mapped[AsterismModel | None] = relationship(
+        "AsterismModel", foreign_keys=[asterism_id], lazy="select"
+    )
+
+    @property
+    def constellation_name(self) -> str | None:
+        """Get constellation name from relationship."""
+        return self.constellation_rel.name if self.constellation_rel else None
+
+    @property
+    def asterism_name(self) -> str | None:
+        """Get asterism name from relationship."""
+        return self.asterism_rel.name if self.asterism_rel else None
+
     # Composite indexes
     __table_args__ = (
         Index("idx_cluster_catalog_number", "catalog", "catalog_number"),
         Index("idx_cluster_magnitude", "magnitude"),
         Index("idx_cluster_position", "ra_hours", "dec_degrees"),
         Index(
-            "idx_cluster_constellation_magnitude", "constellation", "magnitude"
+            "idx_cluster_constellation_id_magnitude", "constellation_id", "magnitude"
         ),  # For filtering by constellation and sorting by magnitude
     )
 
