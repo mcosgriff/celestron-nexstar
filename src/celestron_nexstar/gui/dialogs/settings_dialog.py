@@ -357,6 +357,27 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(header_layout)
 
+        # Button toolbar
+        toolbar_layout = QHBoxLayout()
+
+        # Import All button
+        import_all_btn = QPushButton("Import All Data")
+        import_all_btn.setToolTip(
+            "Import all celestial data in the correct order:\n"
+            "1. Constellations\n"
+            "2. Asterisms\n"
+            "3. DSOs\n"
+            "4. Local Group\n"
+            "5. Stars\n"
+            "6. Messier Objects"
+        )
+        import_all_btn.clicked.connect(self._on_import_all_celestial_data)
+        self.import_all_celestial_btn = import_all_btn
+        toolbar_layout.addWidget(import_all_btn)
+
+        toolbar_layout.addStretch()
+        layout.addLayout(toolbar_layout)
+
         # Table for celestial data sources
         table = QTableWidget()
         table.setColumnCount(7)
@@ -2516,8 +2537,96 @@ class SettingsDialog(QDialog):
             logger.error(f"Error truncating celestial data for {source_id}: {e}", exc_info=True)
             raise
 
-    def _on_import_celestial_data(self, source_id: str) -> None:
-        """Handle celestial data import button click."""
+    def _on_import_all_celestial_data(self) -> None:
+        """Import all celestial data sources in the correct order."""
+        # Define import order (dependencies first)
+        self._import_all_queue = [
+            "celestial_constellations",
+            "celestial_asterisms",
+            "celestial_dsos_20",
+            "celestial_local_group",
+            "celestial_stars_14",
+            "celestial_messier",
+        ]
+        self._import_all_in_progress = True
+        self._import_all_total = len(self._import_all_queue)
+        self._import_all_completed = 0
+
+        # Disable the import all button during the process
+        if hasattr(self, "import_all_celestial_btn"):
+            self.import_all_celestial_btn.setEnabled(False)
+
+        # Start the first import
+        self._import_next_celestial_source()
+
+    def _import_next_celestial_source(self) -> None:
+        """Import the next source in the import all queue."""
+        if not self._import_all_queue:
+            # All imports complete
+            self._import_all_in_progress = False
+            self._import_all_completed = 0
+            if hasattr(self, "import_all_celestial_btn"):
+                self.import_all_celestial_btn.setEnabled(True)
+            self.celestial_data_progress.setVisible(False)
+            self.celestial_data_status_label.setText("✓ All celestial data imported successfully")
+            self._show_toast(
+                f"Successfully imported all {self._import_all_total} celestial data sources",
+                duration_ms=4000,
+                preset="success",
+            )
+            # Reload the table to update all counts
+            self._load_celestial_data_info()
+            return
+
+        # Get next source
+        source_id = self._import_all_queue.pop(0)
+        self._import_all_completed += 1
+
+        # Update status to show progress
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+        self.celestial_data_status_label.setText(
+            f"Importing {self._import_all_completed}/{self._import_all_total}: {source_name}..."
+        )
+
+        # Start import with custom completion handler
+        self._start_celestial_import_with_callback(source_id, self._on_import_all_source_complete)
+
+    def _on_import_all_source_complete(
+        self, source_id: str, success: bool, message: str, imported: int, skipped: int
+    ) -> None:
+        """Handle completion of a single source during import all."""
+        from celestron_nexstar.cli.data_import import DATA_SOURCES
+
+        source = DATA_SOURCES.get(source_id)
+        source_name = source.name.replace("Celestial Data - ", "") if source else source_id
+
+        if success:
+            logger.info(f"Import all: {source_name} complete - {imported:,} imported, {skipped:,} skipped")
+            # Continue to next source
+            self._import_next_celestial_source()
+        else:
+            # Import failed - stop the sequence
+            self._import_all_queue.clear()
+            self._import_all_in_progress = False
+            self._import_all_completed = 0
+            if hasattr(self, "import_all_celestial_btn"):
+                self.import_all_celestial_btn.setEnabled(True)
+            self.celestial_data_progress.setVisible(False)
+            self.celestial_data_status_label.setText(f"✗ Import failed at {source_name}: {message}")
+            self._show_toast(
+                f"Import all stopped: {source_name} failed - {message}",
+                duration_ms=5000,
+                preset="error",
+            )
+            logger.error(f"Import all stopped at {source_name}: {message}")
+
+    def _start_celestial_import_with_callback(
+        self, source_id: str, completion_callback: callable = None
+    ) -> None:
+        """Start a celestial data import with an optional custom completion callback."""
         from celestron_nexstar.gui.workers.download_workers import ImportCelestialDataThread
 
         # Check if already importing
@@ -2525,7 +2634,7 @@ class SettingsDialog(QDialog):
         if worker_key in self._download_workers:
             return
 
-        # Get source name for display (remove "Celestial Data - " prefix if present)
+        # Get source name for display
         from celestron_nexstar.cli.data_import import DATA_SOURCES
 
         source = DATA_SOURCES.get(source_id)
@@ -2533,7 +2642,9 @@ class SettingsDialog(QDialog):
 
         # Truncate existing data before importing (clean import)
         try:
-            self.celestial_data_status_label.setText(f"Truncating existing {source_name} data...")
+            if not self._import_all_in_progress:
+                # Only show truncate message if not in import all mode
+                self.celestial_data_status_label.setText(f"Truncating existing {source_name} data...")
             deleted_count = self._truncate_celestial_data(source_id)
             if deleted_count > 0:
                 logger.info(f"Truncated {deleted_count:,} existing records for {source_name}")
@@ -2550,7 +2661,6 @@ class SettingsDialog(QDialog):
         self.celestial_data_progress.setVisible(True)
         self.celestial_data_progress.setRange(0, 100)
         self.celestial_data_progress.setValue(0)
-        self.celestial_data_status_label.setText(f"Importing {source_name}...")
 
         # Create and start worker
         worker = ImportCelestialDataThread(source_id, mag_limit=15.0)
@@ -2562,9 +2672,15 @@ class SettingsDialog(QDialog):
             self._on_celestial_import_status_message(message)
 
         def on_complete(worker_source_id: str, success: bool, message: str, imported: int, skipped: int) -> None:
-            self._on_celestial_import_complete(worker_source_id, success, message, imported, skipped)
+            # Call custom callback if provided, otherwise use default handler
+            if completion_callback:
+                completion_callback(worker_source_id, success, message, imported, skipped)
+            else:
+                self._on_celestial_import_complete(worker_source_id, success, message, imported, skipped)
             self._download_workers.pop(worker_key, None)
-            self.celestial_data_progress.setVisible(False)
+            if not self._import_all_in_progress:
+                # Only hide progress if not in import all mode (import all manages progress bar)
+                self.celestial_data_progress.setVisible(False)
 
         def on_error(worker_source_id: str, error: str) -> None:
             self._on_celestial_import_error(worker_source_id, error)
@@ -2577,6 +2693,11 @@ class SettingsDialog(QDialog):
 
         self._download_workers[worker_key] = worker
         worker.start()
+
+    def _on_import_celestial_data(self, source_id: str) -> None:
+        """Handle celestial data import button click."""
+        # Use the helper method with default completion handler
+        self._start_celestial_import_with_callback(source_id, completion_callback=None)
 
     def _on_delete_celestial_data(self, source_id: str) -> None:
         """Handle celestial data delete button click."""

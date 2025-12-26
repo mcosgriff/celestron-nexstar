@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QDateTime
 from PySide6.QtWidgets import (
+    QComboBox,
     QDateTimeEdit,
     QDialog,
     QDialogButtonBox,
@@ -187,13 +188,19 @@ class ObservationEditDialog(QDialog):
         equipment_label.setStyleSheet("font-weight: bold;")
         form_layout.addRow(equipment_label)
 
-        self.telescope_edit = QLineEdit()
-        self.telescope_edit.setPlaceholderText("Telescope used (optional)")
-        form_layout.addRow("Telescope:", self.telescope_edit)
+        # Telescope dropdown
+        self.telescope_combo = QComboBox()
+        self.telescope_combo.setEditable(True)  # Allow custom entries
+        self.telescope_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._populate_telescope_dropdown()
+        form_layout.addRow("Telescope:", self.telescope_combo)
 
-        self.eyepiece_edit = QLineEdit()
-        self.eyepiece_edit.setPlaceholderText("Eyepiece used (optional)")
-        form_layout.addRow("Eyepiece:", self.eyepiece_edit)
+        # Eyepiece dropdown
+        self.eyepiece_combo = QComboBox()
+        self.eyepiece_combo.setEditable(True)  # Allow custom entries
+        self.eyepiece_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._populate_eyepiece_dropdown()
+        form_layout.addRow("Eyepiece:", self.eyepiece_combo)
 
         # Prepopulate with configured telescope (only for new observations)
         if not observation_id:
@@ -233,6 +240,40 @@ class ObservationEditDialog(QDialog):
             # For new observations, try to use current location
             self._on_use_current_location()
 
+    def _populate_telescope_dropdown(self) -> None:
+        """Populate telescope dropdown with available telescopes."""
+        try:
+            from celestron_nexstar.api.observation.optics import TELESCOPE_SPECS, TelescopeModel
+
+            # Add empty option for "not specified"
+            self.telescope_combo.addItem("(Not specified)", None)
+
+            # Add all available telescope models
+            for model in TelescopeModel:
+                specs = TELESCOPE_SPECS[model]
+                self.telescope_combo.addItem(specs.display_name, model.value)
+
+        except Exception as e:
+            logger.debug(f"Could not populate telescope dropdown: {e}")
+
+    def _populate_eyepiece_dropdown(self) -> None:
+        """Populate eyepiece dropdown with common eyepieces."""
+        try:
+            from celestron_nexstar.api.observation.optics import COMMON_EYEPIECES
+
+            # Add empty option for "not specified"
+            self.eyepiece_combo.addItem("(Not specified)", None)
+
+            # Add all common eyepieces
+            # Sort by focal length for better organization
+            eyepieces = sorted(COMMON_EYEPIECES.items(), key=lambda x: x[1].focal_length_mm, reverse=True)
+            for key, specs in eyepieces:
+                display_name = specs.name or f"{specs.focal_length_mm}mm"
+                self.eyepiece_combo.addItem(display_name, key)
+
+        except Exception as e:
+            logger.debug(f"Could not populate eyepiece dropdown: {e}")
+
     def _load_observation(self) -> None:
         """Load existing observation data."""
         if self.observation_id is None:
@@ -270,9 +311,19 @@ class ObservationEditDialog(QDialog):
 
             # Equipment
             if obs.telescope:
-                self.telescope_edit.setText(obs.telescope)
+                # Try to find matching item in dropdown, otherwise use as custom text
+                index = self.telescope_combo.findText(obs.telescope)
+                if index >= 0:
+                    self.telescope_combo.setCurrentIndex(index)
+                else:
+                    self.telescope_combo.setCurrentText(obs.telescope)
             if obs.eyepiece:
-                self.eyepiece_edit.setText(obs.eyepiece)
+                # Try to find matching item in dropdown, otherwise use as custom text
+                index = self.eyepiece_combo.findText(obs.eyepiece)
+                if index >= 0:
+                    self.eyepiece_combo.setCurrentIndex(index)
+                else:
+                    self.eyepiece_combo.setCurrentText(obs.eyepiece)
             if obs.filters:
                 self.filters_edit.setText(obs.filters)
 
@@ -292,11 +343,17 @@ class ObservationEditDialog(QDialog):
 
             config = get_current_configuration()
             if config:
-                if not self.telescope_edit.text().strip():
-                    self.telescope_edit.setText(config.telescope.display_name)
-                if not self.eyepiece_edit.text().strip():
-                    eyepiece_name = config.eyepiece.name or f"{config.eyepiece.focal_length_mm}mm"
-                    self.eyepiece_edit.setText(eyepiece_name)
+                # Find and select the matching telescope
+                telescope_display_name = config.telescope.display_name
+                index = self.telescope_combo.findText(telescope_display_name)
+                if index >= 0:
+                    self.telescope_combo.setCurrentIndex(index)
+
+                # Find and select the matching eyepiece
+                eyepiece_name = config.eyepiece.name or f"{config.eyepiece.focal_length_mm}mm"
+                index = self.eyepiece_combo.findText(eyepiece_name)
+                if index >= 0:
+                    self.eyepiece_combo.setCurrentIndex(index)
         except Exception as e:
             logger.debug(f"Could not prepopulate equipment: {e}")
 
@@ -403,9 +460,13 @@ class ObservationEditDialog(QDialog):
                 sky_brightness = self.sky_brightness_spin.value()
             weather_notes = self.weather_notes_edit.toPlainText().strip() or None
 
-            # Get equipment
-            telescope = self.telescope_edit.text().strip() or None
-            eyepiece = self.eyepiece_edit.text().strip() or None
+            # Get equipment from combo boxes
+            telescope_text = self.telescope_combo.currentText().strip()
+            telescope = None if telescope_text == "(Not specified)" else (telescope_text or None)
+
+            eyepiece_text = self.eyepiece_combo.currentText().strip()
+            eyepiece = None if eyepiece_text == "(Not specified)" else (eyepiece_text or None)
+
             filters = self.filters_edit.text().strip() or None
 
             # Get details

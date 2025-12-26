@@ -868,6 +868,10 @@ class CatalogDatabase:
 
         with self._get_session() as session:
             from sqlalchemy import select
+            from celestron_nexstar.cli.data_import import TypeCache
+
+            # Create TypeCache for normalizing object types
+            type_cache = TypeCache(session)
 
             # Pre-fetch existing names for each model type to avoid duplicates
             existing_names_by_type: dict[type, set[str]] = {}
@@ -918,6 +922,32 @@ class CatalogDatabase:
                     # We'll create geometries in batch after creating all models
                     geometry_wkt = point_wkt
 
+                    # Get object type for type normalization
+                    object_type = obj.get("object_type")
+                    if isinstance(object_type, str):
+                        object_type_enum = CelestialObjectType(object_type)
+                    elif isinstance(object_type, CelestialObjectType):
+                        object_type_enum = object_type
+                    else:
+                        continue
+
+                    # Process object_subtype with type normalization
+                    raw_subtype = obj.get("object_subtype")
+                    normalized_subtype = raw_subtype
+                    object_subtype_id = None
+
+                    if raw_subtype:
+                        # Expand galaxy subtypes (e.g., "s" -> "Spiral Galaxy")
+                        if object_type_enum == CelestialObjectType.GALAXY:
+                            normalized_subtype = type_cache.expand_galaxy_subtype(raw_subtype)
+
+                        # Get or create type in object_types table
+                        object_subtype_id = type_cache.get_or_create(
+                            name=normalized_subtype,
+                            category=f"{object_type_enum.value}_subtype",
+                            description=f"{object_type_enum.value.replace('_', ' ').title()} subtype"
+                        )
+
                     # Create model instance with common fields
                     model_kwargs = {
                         "name": obj_name,
@@ -927,21 +957,13 @@ class CatalogDatabase:
                         "ra_hours": obj["ra_hours"],
                         "dec_degrees": obj["dec_degrees"],
                         "magnitude": obj.get("magnitude"),
-                        "object_subtype": obj.get("object_subtype"),
+                        "object_subtype": normalized_subtype,  # Keep VARCHAR for backwards compatibility
+                        "object_subtype_id": object_subtype_id,  # Add foreign key to object_types
                         "size_arcmin": obj.get("size_arcmin"),
                         "description": obj.get("description"),
                         "aliases": obj.get("aliases"),
                         "constellation": obj.get("constellation"),
                     }
-
-                    # Get object type for dynamic fields
-                    object_type = obj.get("object_type")
-                    if isinstance(object_type, str):
-                        object_type_enum = CelestialObjectType(object_type)
-                    elif isinstance(object_type, CelestialObjectType):
-                        object_type_enum = object_type
-                    else:
-                        continue
 
                     # Add dynamic fields for planets and moons
                     if object_type_enum in (CelestialObjectType.PLANET, CelestialObjectType.MOON):

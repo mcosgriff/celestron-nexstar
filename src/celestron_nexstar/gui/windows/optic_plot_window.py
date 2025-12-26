@@ -335,14 +335,21 @@ class _PlotGenerationThread(QThread):
             from skyfield.api import Star, wgs84
 
             # Create skyfield time and observer
-            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_loader
+            from celestron_nexstar.api.ephemeris.skyfield_utils import (
+                get_skyfield_ephemeris,
+                get_skyfield_loader,
+            )
 
             sf_loader = get_skyfield_loader()
             ts = sf_loader.timescale()
             t = ts.now()
 
             # Create observer location
-            sf_observer = wgs84.latlon(location.latitude, location.longitude)
+            # To observe stars, we need a position relative to the solar system barycenter (ICRS),
+            # so we combine the Earth's position from the ephemeris with the observer's location on Earth.
+            planets = get_skyfield_ephemeris(ephemeris_file)
+            earth = planets["earth"]
+            sf_observer = earth + wgs84.latlon(location.latitude, location.longitude)
 
             # Create a Star object at the target's coordinates
             target_star = Star(ra_hours=self.ra_hours, dec_degrees=self.dec_degrees)
@@ -350,7 +357,7 @@ class _PlotGenerationThread(QThread):
             # Calculate altitude from observer's perspective
             observer_at_time = sf_observer.at(t)
             target_astrometric = observer_at_time.observe(target_star)
-            alt, az, _ = target_astrometric.apparent().altaz()
+            alt, az, distance = target_astrometric.apparent().altaz()
 
             if alt.degrees < 0:
                 logger.warning(

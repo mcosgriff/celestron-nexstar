@@ -31,6 +31,35 @@ class Base(DeclarativeBase):
     pass
 
 
+class ObjectTypeModel(Base):
+    """
+    SQLAlchemy model for object types (normalized type/subtype values).
+
+    This model stores all possible object types, subtypes, and categories
+    used throughout the database. It serves as a lookup table to normalize
+    type values and reduce data redundancy.
+    """
+
+    __tablename__ = "object_types"
+
+    # Primary key
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Type information
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Timestamp
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    def __repr__(self) -> str:
+        """Return string representation of object type."""
+        return f"<ObjectType(id={self.id}, name='{self.name}', category='{self.category}')>"
+
+
 # Protocol to describe the interface of models with CelestialObjectMixin
 # This helps mypy understand the attributes available on these models
 class CelestialObjectModelProtocol(Protocol):

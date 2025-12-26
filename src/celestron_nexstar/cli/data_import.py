@@ -36,6 +36,109 @@ console = Console()
 T = TypeVar("T")
 
 
+# Mapping from single-letter galaxy subtypes to full names
+GALAXY_SUBTYPE_EXPANSION = {
+    "s": "Spiral Galaxy",
+    "e": "Elliptical Galaxy",
+    "i": "Irregular Galaxy",
+    "g": "Galaxy",
+    "s0": "Lenticular Galaxy",
+    "sd": "S0/a Galaxy",
+    "gg": "Giant Galaxy",
+    "sb": "Barred Spiral Galaxy",
+    "dsph": "Dwarf Spheroidal",
+    "de": "Dwarf Elliptical",
+    "di": "Dwarf Irregular",
+    "ufd": "Ultra-Faint Dwarf",
+}
+
+
+class TypeCache:
+    """
+    Cache for object types to avoid repeated database lookups.
+
+    Provides get_or_create functionality for object types with
+    in-memory caching for performance during imports.
+    """
+
+    def __init__(self, db_session: Any):
+        """Initialize type cache with database session."""
+        self.db_session = db_session
+        self._cache: dict[str, int] = {}  # name -> id mapping
+        self._load_existing_types()
+
+    def _load_existing_types(self) -> None:
+        """Load all existing object types from database into cache."""
+        from sqlalchemy import select
+        from celestron_nexstar.api.database.models import ObjectTypeModel
+
+        result = self.db_session.execute(select(ObjectTypeModel))
+        for obj_type in result.scalars():
+            self._cache[obj_type.name] = obj_type.id
+
+    def get_or_create(self, name: str | None, category: str, description: str | None = None) -> int | None:
+        """
+        Get or create an object type by name.
+
+        Args:
+            name: Type name (e.g., "Spiral Galaxy", "Open Cluster")
+            category: Type category (e.g., "galaxy_subtype", "cluster_subtype")
+            description: Optional description
+
+        Returns:
+            Object type ID, or None if name is None/empty
+        """
+        if not name:
+            return None
+
+        # Check cache first
+        if name in self._cache:
+            return self._cache[name]
+
+        # Not in cache - check database
+        from sqlalchemy import select
+        from celestron_nexstar.api.database.models import ObjectTypeModel
+
+        result = self.db_session.execute(
+            select(ObjectTypeModel).where(ObjectTypeModel.name == name).limit(1)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Found in database - cache it
+            self._cache[name] = existing.id
+            return existing.id
+
+        # Doesn't exist - create it
+        new_type = ObjectTypeModel(
+            name=name,
+            category=category,
+            description=description or f"{category.replace('_', ' ').title()}"
+        )
+        self.db_session.add(new_type)
+        self.db_session.flush()  # Get the ID without committing
+
+        # Cache the new type
+        self._cache[name] = new_type.id
+        return new_type.id
+
+    def expand_galaxy_subtype(self, subtype: str | None) -> str | None:
+        """
+        Expand single-letter galaxy subtype to full name.
+
+        Args:
+            subtype: Short subtype code (e.g., "s", "e", "i")
+
+        Returns:
+            Full subtype name (e.g., "Spiral Galaxy"), or original if not found
+        """
+        if not subtype:
+            return None
+
+        subtype_lower = subtype.lower().strip()
+        return GALAXY_SUBTYPE_EXPANSION.get(subtype_lower, subtype)
+
+
 # _run_async_safe removed - all database functions are now synchronous
 
 
@@ -2375,7 +2478,152 @@ def import_celestial_constellations(
                     # Still advance progress even on error
                     progress.advance(task)
 
+    # Post-process: Fill constellation boundary gaps to ensure 100% coverage
+    console.print("[dim]Post-processing constellation boundaries to fill gaps...[/dim]")
+    _fill_constellation_boundary_gaps(verbose=verbose)
+
     return imported, skipped
+
+
+def _fill_constellation_boundary_gaps(verbose: bool = False) -> None:
+    """
+    Fill gaps in constellation boundaries by extending bounding boxes to ensure complete coverage.
+
+    This post-processing step creates a test grid across the celestial sphere and identifies
+    any points that don't fall within any constellation's bounding box. For each gap, it extends
+    the nearest constellation's bounding box to cover it.
+
+    This ensures that all celestial objects will be assigned to a constellation using the
+    bounding box fallback in _find_spatial_relationships.
+
+    Args:
+        verbose: Show detailed progress
+    """
+    from sqlalchemy import select
+
+    from celestron_nexstar.api.database.models import ConstellationModel, get_db_session
+
+    with get_db_session() as db_session:
+        # Get all constellations
+        constellations = db_session.execute(select(ConstellationModel)).scalars().all()
+
+        if not constellations:
+            if verbose:
+                console.print("[yellow]No constellations found, skipping gap filling[/yellow]")
+            return
+
+        # Create a test grid across the celestial sphere to find gaps
+        # Use 0.1-hour RA steps (6 minutes) and 5-degree Dec steps for thorough coverage
+        test_points = []
+        ra_step = 0.1  # 6 minutes of RA
+        dec_step = 5   # 5 degrees of Dec
+
+        ra = 0.0
+        while ra < 24.0:
+            dec = -90.0
+            while dec <= 90.0:
+                test_points.append((ra, dec))
+                dec += dec_step
+            ra += ra_step
+
+        # Find gaps (points not covered by any constellation bounding box)
+        gaps = []
+        for ra, dec in test_points:
+            # Check if this point is within any constellation's bounding box
+            covered = False
+            for const in constellations:
+                # Handle RA wrap-around if needed
+                if const.ra_min_hours <= const.ra_max_hours:
+                    # Normal case (no wrap)
+                    in_ra_range = const.ra_min_hours <= ra <= const.ra_max_hours
+                else:
+                    # Wrap-around case (crosses 0h)
+                    in_ra_range = ra >= const.ra_min_hours or ra <= const.ra_max_hours
+
+                in_dec_range = const.dec_min_degrees <= dec <= const.dec_max_degrees
+
+                if in_ra_range and in_dec_range:
+                    covered = True
+                    break
+
+            if not covered:
+                gaps.append((ra, dec))
+
+        if not gaps:
+            console.print("[green]✓ No gaps found in constellation boundaries[/green]")
+            return
+
+        if verbose:
+            console.print(f"[yellow]Found {len(gaps)} gap(s) in constellation boundaries[/yellow]")
+
+        # For each gap, extend the nearest constellation's bounding box
+        import math
+
+        const_extensions = {}  # const_id -> {ra_min, ra_max, dec_min, dec_max}
+
+        for gap_ra, gap_dec in gaps:
+            # Find nearest constellation by angular distance to center
+            min_distance = float('inf')
+            nearest_const = None
+
+            for const in constellations:
+                # Calculate angular distance to constellation center
+                dra = (gap_ra - const.ra_hours) * 15  # Convert RA to degrees
+                ddec = gap_dec - const.dec_degrees
+
+                # Simple approximation of angular distance
+                # More accurate would use haversine, but this is sufficient for finding nearest
+                distance = math.sqrt(dra**2 + ddec**2)
+
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_const = const
+
+            if nearest_const:
+                # Track extensions needed for this constellation
+                if nearest_const.id not in const_extensions:
+                    const_extensions[nearest_const.id] = {
+                        'const': nearest_const,
+                        'ra_min': nearest_const.ra_min_hours,
+                        'ra_max': nearest_const.ra_max_hours,
+                        'dec_min': nearest_const.dec_min_degrees,
+                        'dec_max': nearest_const.dec_max_degrees,
+                    }
+
+                # Extend bounds to include this gap point
+                ext = const_extensions[nearest_const.id]
+                ext['ra_min'] = min(ext['ra_min'], gap_ra)
+                ext['ra_max'] = max(ext['ra_max'], gap_ra)
+                ext['dec_min'] = min(ext['dec_min'], gap_dec)
+                ext['dec_max'] = max(ext['dec_max'], gap_dec)
+
+        # Apply the extensions
+        if const_extensions:
+            console.print(f"[dim]Extending {len(const_extensions)} constellation(s) to fill gaps...[/dim]")
+
+            for const_id, ext in const_extensions.items():
+                const = ext['const']
+
+                # Only update if bounds actually changed
+                if (ext['ra_min'] != const.ra_min_hours or
+                    ext['ra_max'] != const.ra_max_hours or
+                    ext['dec_min'] != const.dec_min_degrees or
+                    ext['dec_max'] != const.dec_max_degrees):
+
+                    const.ra_min_hours = ext['ra_min']
+                    const.ra_max_hours = ext['ra_max']
+                    const.dec_min_degrees = ext['dec_min']
+                    const.dec_max_degrees = ext['dec_max']
+
+                    if verbose:
+                        console.print(
+                            f"[dim]  Extended {const.name}: "
+                            f"RA [{ext['ra_min']:.2f}-{ext['ra_max']:.2f}h], "
+                            f"Dec [{ext['dec_min']:.2f}-{ext['dec_max']:.2f}°][/dim]"
+                        )
+
+            db_session.commit()
+            console.print(f"[green]✓ Filled {len(gaps)} gap(s) by extending constellation boundaries[/green]")
 
 
 def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verbose: bool = False) -> tuple[int, int]:
