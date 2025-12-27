@@ -250,12 +250,22 @@ def show_current_weather(
             if weather.cape is not None:
                 cape_color = "green" if weather.cape < 500 else "yellow" if weather.cape < 1500 else "red"
                 cape_desc = "Stable" if weather.cape < 500 else "Moderate" if weather.cape < 1500 else "Unstable"
-                stability_metrics.append(("CAPE", f"[{cape_color}]{weather.cape:.0f} J/kg ({cape_desc})[/{cape_color}]"))
+                stability_metrics.append(
+                    ("CAPE", f"[{cape_color}]{weather.cape:.0f} J/kg ({cape_desc})[/{cape_color}]")
+                )
             if weather.boundary_layer_height_m is not None:
                 stability_metrics.append(("Boundary Layer Height", f"{weather.boundary_layer_height_m:.0f}m"))
             if weather.vapour_pressure_deficit is not None:
-                vpd_color = "green" if weather.vapour_pressure_deficit > 1.0 else "yellow" if weather.vapour_pressure_deficit > 0.5 else "red"
-                stability_metrics.append(("Vapour Pressure Deficit", f"[{vpd_color}]{weather.vapour_pressure_deficit:.2f} kPa[/{vpd_color}]"))
+                vpd_color = (
+                    "green"
+                    if weather.vapour_pressure_deficit > 1.0
+                    else "yellow"
+                    if weather.vapour_pressure_deficit > 0.5
+                    else "red"
+                )
+                stability_metrics.append(
+                    ("Vapour Pressure Deficit", f"[{vpd_color}]{weather.vapour_pressure_deficit:.2f} kPa[/{vpd_color}]")
+                )
             if weather.freezing_level_height_m is not None:
                 stability_metrics.append(("Freezing Level", f"{weather.freezing_level_height_m:.0f}m"))
 
@@ -293,7 +303,9 @@ def show_current_weather(
                     shear_color = "green" if shear < 10 else "yellow" if shear < 20 else "red"
                     shear_desc = "Low" if shear < 10 else "Moderate" if shear < 20 else "High"
                     wind_table.add_row("", "")  # Spacer
-                    wind_table.add_row("Wind Shear (10-120m)", f"[{shear_color}]{shear:.1f} mph ({shear_desc})[/{shear_color}]")
+                    wind_table.add_row(
+                        "Wind Shear (10-120m)", f"[{shear_color}]{shear:.1f} mph ({shear_desc})[/{shear_color}]"
+                    )
 
                 console.print(wind_table)
                 console.print()
@@ -305,8 +317,19 @@ def show_current_weather(
                 vis_color = "green" if vis_km > 10 else "yellow" if vis_km > 5 else "red"
                 vis_precip_metrics.append(("Visibility", f"[{vis_color}]{vis_km:.1f} km[/{vis_color}]"))
             if weather.precipitation_probability is not None:
-                precip_color = "green" if weather.precipitation_probability < 20 else "yellow" if weather.precipitation_probability < 50 else "red"
-                vis_precip_metrics.append(("Precipitation Probability", f"[{precip_color}]{weather.precipitation_probability:.0f}%[/{precip_color}]"))
+                precip_color = (
+                    "green"
+                    if weather.precipitation_probability < 20
+                    else "yellow"
+                    if weather.precipitation_probability < 50
+                    else "red"
+                )
+                vis_precip_metrics.append(
+                    (
+                        "Precipitation Probability",
+                        f"[{precip_color}]{weather.precipitation_probability:.0f}%[/{precip_color}]",
+                    )
+                )
             if weather.precipitation_mm is not None and weather.precipitation_mm > 0:
                 vis_precip_metrics.append(("Precipitation", f"{weather.precipitation_mm:.1f} mm"))
             if weather.pressure_msl is not None:
@@ -348,7 +371,7 @@ def show_current_weather(
                 component_table.add_column("Score", justify="right")
 
                 for name, score in components.items():
-                    formatted_name = name.replace('_', ' ').title()
+                    formatted_name = name.replace("_", " ").title()
                     score_color = "green" if score >= 75 else "yellow" if score >= 50 else "red"
                     component_table.add_row(formatted_name, f"[{score_color}]{score:.0f}/100[/{score_color}]")
 

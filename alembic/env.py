@@ -1,12 +1,28 @@
 from logging.config import fileConfig
 from pathlib import Path
+import os
+import platform
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, event
 
 from alembic import context
 
 # Import models for autogenerate support
 from celestron_nexstar.api.database.models import Base
+
+# Configure SpatiaLite
+system = platform.system()
+if system == "Darwin":
+    paths = ["/opt/homebrew/lib/mod_spatialite.dylib", "/usr/local/lib/mod_spatialite.dylib"]
+elif system == "Linux":
+    paths = ["/usr/lib/x86_64-linux-gnu/mod_spatialite.so", "/usr/local/lib/mod_spatialite.so"]
+else:
+    paths = []
+
+for path in paths:
+    if os.path.exists(path):
+        os.environ["SPATIALITE_LIBRARY_PATH"] = path
+        break
 
 
 # this is the Alembic Config object, which provides
@@ -42,6 +58,37 @@ def get_database_url() -> str:
 # ... etc.
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """Filter function to exclude SpatiaLite system tables from migrations."""
+    # Exclude SpatiaLite metadata tables
+    if type_ == "table" and name in (
+        "spatial_ref_sys",
+        "geometry_columns",
+        "geometry_columns_auth",
+        "geometry_columns_field_infos",
+        "geometry_columns_statistics",
+        "geometry_columns_time",
+        "views_geometry_columns",
+        "views_geometry_columns_auth",
+        "views_geometry_columns_field_infos",
+        "views_geometry_columns_statistics",
+        "virts_geometry_columns",
+        "virts_geometry_columns_auth",
+        "virts_geometry_columns_field_infos",
+        "virts_geometry_columns_statistics",
+        "spatialite_history",
+        "sql_statements_log",
+        "data_licenses",
+        "SpatialIndex",
+        "ElementaryGeometries",
+        "KNN",
+        "KNN2",
+        "spatial_ref_sys_aux",
+    ):
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -61,6 +108,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,  # Required for SQLite ALTER TABLE support
+        include_object=include_object,  # Filter out SpatiaLite tables
     )
 
     with context.begin_transaction():
@@ -84,11 +132,20 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
+    # Load SpatiaLite extension for each connection
+    @event.listens_for(connectable, "connect")
+    def load_spatialite(dbapi_conn, connection_record):
+        dbapi_conn.enable_load_extension(True)
+        if os.environ.get("SPATIALITE_LIBRARY_PATH"):
+            dbapi_conn.load_extension(os.environ["SPATIALITE_LIBRARY_PATH"])
+        dbapi_conn.enable_load_extension(False)
+
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,  # Required for SQLite ALTER TABLE support
+            include_object=include_object,  # Filter out SpatiaLite tables
         )
 
         with context.begin_transaction():

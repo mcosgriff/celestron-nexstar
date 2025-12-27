@@ -75,7 +75,7 @@ class ObservingConditions:
     is_weather_suitable: bool
 
     # Light pollution
-    light_pollution: LightPollutionData
+    light_pollution: LightPollutionData | None
 
     # Telescope
     limiting_magnitude: float
@@ -340,7 +340,11 @@ class ObservationPlanner:
             8: SkyBrightness.URBAN,
             9: SkyBrightness.URBAN,
         }
-        sky_brightness = bortle_to_sky_brightness.get(lp_data.bortle_class.value, SkyBrightness.FAIR)
+        # Default to FAIR (Bortle 5) if no light pollution data available
+        if lp_data is not None:
+            sky_brightness = bortle_to_sky_brightness.get(lp_data.bortle_class.value, SkyBrightness.FAIR)
+        else:
+            sky_brightness = SkyBrightness.FAIR
 
         if config:
             limiting_mag = calculate_limiting_magnitude(
@@ -349,7 +353,8 @@ class ObservationPlanner:
             )
             aperture = config.telescope.effective_aperture_mm
         else:
-            limiting_mag = lp_data.naked_eye_limiting_magnitude
+            # Use naked eye limiting magnitude from light pollution data, or default to 5.5 (Bortle 5)
+            limiting_mag = lp_data.naked_eye_limiting_magnitude if lp_data is not None else 5.5
             aperture = 0.0
 
         # Calculate moon position and illumination
@@ -654,7 +659,11 @@ class ObservationPlanner:
             8: SkyBrightness.URBAN,
             9: SkyBrightness.URBAN,
         }
-        sky_brightness = bortle_to_sky_brightness.get(conditions.light_pollution.bortle_class.value, SkyBrightness.FAIR)
+        # Default to FAIR if no light pollution data available
+        if conditions.light_pollution is not None:
+            sky_brightness = bortle_to_sky_brightness.get(conditions.light_pollution.bortle_class.value, SkyBrightness.FAIR)
+        else:
+            sky_brightness = SkyBrightness.FAIR
 
         for moon_obj in moon_objects:
             vis_info = assess_visibility(
@@ -962,7 +971,7 @@ class ObservationPlanner:
     def _calculate_quality_score(
         self,
         weather: WeatherData,
-        lp_data: LightPollutionData,
+        lp_data: LightPollutionData | None,
         moon_illum: float,
         weather_status: str,
     ) -> float:
@@ -979,12 +988,16 @@ class ObservationPlanner:
 
         # Light pollution component (0.0-0.3 of total)
         # Bortle 1-3 = excellent (0.3), Bortle 4-6 = fair (0.15), Bortle 7-9 = poor (0.0)
-        if lp_data.bortle_class.value <= 3:
-            lp_score = 0.3
-        elif lp_data.bortle_class.value <= 6:
-            lp_score = 0.15
+        # Default to Bortle 5 (fair) if no data available
+        if lp_data is not None:
+            if lp_data.bortle_class.value <= 3:
+                lp_score = 0.3
+            elif lp_data.bortle_class.value <= 6:
+                lp_score = 0.15
+            else:
+                lp_score = 0.0
         else:
-            lp_score = 0.0
+            lp_score = 0.15  # Default to fair (Bortle 5)
 
         # Moon component (0.0-0.2 of total)
         # New moon = excellent (0.2), Full moon = poor (0.0)
@@ -995,7 +1008,7 @@ class ObservationPlanner:
     def _generate_recommendations(
         self,
         weather: WeatherData,
-        lp_data: LightPollutionData,
+        lp_data: LightPollutionData | None,
         moon_illum: float,
         quality_score: float,
         weather_status: str,
@@ -1022,10 +1035,11 @@ class ObservationPlanner:
             warnings.append(weather_warning)
 
         # Light pollution
-        if lp_data.bortle_class.value <= 3:
-            recommendations.append("Dark skies excellent for faint objects")
-        elif lp_data.bortle_class.value >= 7:
-            recommendations.append("Focus on bright objects (planets, Moon, bright clusters)")
+        if lp_data is not None:
+            if lp_data.bortle_class.value <= 3:
+                recommendations.append("Dark skies excellent for faint objects")
+            elif lp_data.bortle_class.value >= 7:
+                recommendations.append("Focus on bright objects (planets, Moon, bright clusters)")
 
         # Moon
         if moon_illum > 0.8:
@@ -1121,7 +1135,8 @@ class ObservationPlanner:
             if obj.object_type.value == "double_star":
                 return 1
             if (
-                conditions.light_pollution.bortle_class.value <= 3
+                conditions.light_pollution is not None
+                and conditions.light_pollution.bortle_class.value <= 3
                 and obj.magnitude
                 and obj.magnitude < 8
                 and obj.object_type.value != "star"
@@ -1197,7 +1212,7 @@ class ObservationPlanner:
             tips.append("Consider UHC or OIII filter to reduce moon glare")
 
         # Light pollution
-        if conditions.light_pollution.bortle_class.value >= 6:
+        if conditions.light_pollution is not None and conditions.light_pollution.bortle_class.value >= 6:
             tips.append("Light pollution will reduce contrast")
 
         return tuple(tips)

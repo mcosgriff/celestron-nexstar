@@ -91,9 +91,7 @@ class CelestialObject:
         try:
             ra_hours, dec_degrees = get_planetary_position(self.name, dt=dt)
             magnitude = get_planet_magnitude(self.name, dt=dt)
-            return replace(
-                self, ra_hours=ra_hours, dec_degrees=dec_degrees, magnitude=magnitude
-            )
+            return replace(self, ra_hours=ra_hours, dec_degrees=dec_degrees, magnitude=magnitude)
         except (ValueError, KeyError):
             # If ephemeris calculation fails, return original
             return self

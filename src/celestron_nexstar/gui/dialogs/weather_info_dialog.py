@@ -36,8 +36,8 @@ class WheelEventFilter(QObject):
         """Filter wheel events and redirect to scroll area."""
         if event.type() == QEvent.Type.Wheel:
             # Forward wheel event to scroll area
-            from PySide6.QtGui import QWheelEvent
             from PySide6.QtCore import QCoreApplication
+            from PySide6.QtGui import QWheelEvent
 
             wheel_event = QWheelEvent(event)  # type: ignore[arg-type]
             QCoreApplication.sendEvent(self.scroll_area, wheel_event)
@@ -415,9 +415,7 @@ class WeatherInfoDialog(QDialog):
             weather = fetch_weather(location)
 
             if weather.error:
-                self.advanced_text.setHtml(
-                    f"<p style='color: {colors['error']};'><b>Error:</b> {weather.error}</p>"
-                )
+                self.advanced_text.setHtml(f"<p style='color: {colors['error']};'><b>Error:</b> {weather.error}</p>")
                 return
 
             html = []
@@ -428,66 +426,114 @@ class WeatherInfoDialog(QDialog):
             # Cloud Layer Analysis
             html.append(f"<h2 style='color: {colors['header']};'>Cloud Layer Distribution</h2>")
             if weather.cloud_cover_low is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Low Clouds (0-3km):</span> {weather.cloud_cover_low:.0f}%</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Low Clouds (0-3km):</span> {weather.cloud_cover_low:.0f}%</p>"
+                )
             if weather.cloud_cover_mid is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Mid Clouds (3-8km):</span> {weather.cloud_cover_mid:.0f}%</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Mid Clouds (3-8km):</span> {weather.cloud_cover_mid:.0f}%</p>"
+                )
             if weather.cloud_cover_high is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>High Clouds (8km+):</span> {weather.cloud_cover_high:.0f}%</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>High Clouds (8km+):</span> {weather.cloud_cover_high:.0f}%</p>"
+                )
 
             # Atmospheric Stability
             html.append(f"<h2 style='color: {colors['header']};'>Atmospheric Stability</h2>")
 
             if weather.cape is not None:
-                cape_color = colors['green'] if weather.cape < 500 else colors['yellow'] if weather.cape < 1500 else colors['red']
+                cape_color = (
+                    colors["green"]
+                    if weather.cape < 500
+                    else colors["yellow"]
+                    if weather.cape < 1500
+                    else colors["red"]
+                )
                 cape_desc = "Stable" if weather.cape < 500 else "Moderate" if weather.cape < 1500 else "Unstable"
-                html.append(f"<p><span style='color: {colors['cyan']};'>CAPE:</span> <span style='color: {cape_color};'>{weather.cape:.0f} J/kg ({cape_desc})</span></p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>CAPE:</span> <span style='color: {cape_color};'>{weather.cape:.0f} J/kg ({cape_desc})</span></p>"
+                )
 
             if weather.boundary_layer_height_m is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Boundary Layer Height:</span> {weather.boundary_layer_height_m:.0f}m</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Boundary Layer Height:</span> {weather.boundary_layer_height_m:.0f}m</p>"
+                )
 
             if weather.vapour_pressure_deficit is not None:
-                vpd_color = colors['green'] if weather.vapour_pressure_deficit > 1.0 else colors['yellow'] if weather.vapour_pressure_deficit > 0.5 else colors['red']
-                html.append(f"<p><span style='color: {colors['cyan']};'>Vapour Pressure Deficit:</span> <span style='color: {vpd_color};'>{weather.vapour_pressure_deficit:.2f} kPa</span></p>")
+                vpd_color = (
+                    colors["green"]
+                    if weather.vapour_pressure_deficit > 1.0
+                    else colors["yellow"]
+                    if weather.vapour_pressure_deficit > 0.5
+                    else colors["red"]
+                )
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Vapour Pressure Deficit:</span> <span style='color: {vpd_color};'>{weather.vapour_pressure_deficit:.2f} kPa</span></p>"
+                )
 
             if weather.freezing_level_height_m is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Freezing Level:</span> {weather.freezing_level_height_m:.0f}m</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Freezing Level:</span> {weather.freezing_level_height_m:.0f}m</p>"
+                )
 
             # Wind Profile
             html.append(f"<h2 style='color: {colors['header']};'>Wind Profile</h2>")
 
             if weather.wind_speed_ms is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Surface Wind (10m):</span> {weather.wind_speed_ms:.1f} mph</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Surface Wind (10m):</span> {weather.wind_speed_ms:.1f} mph</p>"
+                )
 
             if weather.wind_speed_80m_mph is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Wind @ 80m:</span> {weather.wind_speed_80m_mph:.1f} mph</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Wind @ 80m:</span> {weather.wind_speed_80m_mph:.1f} mph</p>"
+                )
 
             if weather.wind_speed_120m_mph is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Wind @ 120m:</span> {weather.wind_speed_120m_mph:.1f} mph</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Wind @ 120m:</span> {weather.wind_speed_120m_mph:.1f} mph</p>"
+                )
 
             # Wind shear calculation
             if all([weather.wind_speed_ms, weather.wind_speed_120m_mph]):
                 shear = abs(weather.wind_speed_120m_mph - weather.wind_speed_ms)
-                shear_color = colors['green'] if shear < 10 else colors['yellow'] if shear < 20 else colors['red']
+                shear_color = colors["green"] if shear < 10 else colors["yellow"] if shear < 20 else colors["red"]
                 shear_desc = "Low" if shear < 10 else "Moderate" if shear < 20 else "High"
-                html.append(f"<p><span style='color: {colors['cyan']};'>Wind Shear (10-120m):</span> <span style='color: {shear_color};'>{shear:.1f} mph ({shear_desc})</span></p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Wind Shear (10-120m):</span> <span style='color: {shear_color};'>{shear:.1f} mph ({shear_desc})</span></p>"
+                )
 
             # Visibility & Precipitation
             html.append(f"<h2 style='color: {colors['header']};'>Visibility & Precipitation</h2>")
 
             if weather.visibility_m is not None:
                 vis_km = weather.visibility_m / 1000.0
-                vis_color = colors['green'] if vis_km > 10 else colors['yellow'] if vis_km > 5 else colors['red']
-                html.append(f"<p><span style='color: {colors['cyan']};'>Visibility:</span> <span style='color: {vis_color};'>{vis_km:.1f} km</span></p>")
+                vis_color = colors["green"] if vis_km > 10 else colors["yellow"] if vis_km > 5 else colors["red"]
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Visibility:</span> <span style='color: {vis_color};'>{vis_km:.1f} km</span></p>"
+                )
 
             if weather.precipitation_probability is not None:
-                precip_color = colors['green'] if weather.precipitation_probability < 20 else colors['yellow'] if weather.precipitation_probability < 50 else colors['red']
-                html.append(f"<p><span style='color: {colors['cyan']};'>Precipitation Probability:</span> <span style='color: {precip_color};'>{weather.precipitation_probability:.0f}%</span></p>")
+                precip_color = (
+                    colors["green"]
+                    if weather.precipitation_probability < 20
+                    else colors["yellow"]
+                    if weather.precipitation_probability < 50
+                    else colors["red"]
+                )
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Precipitation Probability:</span> <span style='color: {precip_color};'>{weather.precipitation_probability:.0f}%</span></p>"
+                )
 
             if weather.precipitation_mm is not None and weather.precipitation_mm > 0:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Precipitation:</span> {weather.precipitation_mm:.1f} mm</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Precipitation:</span> {weather.precipitation_mm:.1f} mm</p>"
+                )
 
             if weather.pressure_msl is not None:
-                html.append(f"<p><span style='color: {colors['cyan']};'>Pressure (MSL):</span> {weather.pressure_msl:.1f} hPa</p>")
+                html.append(
+                    f"<p><span style='color: {colors['cyan']};'>Pressure (MSL):</span> {weather.pressure_msl:.1f} hPa</p>"
+                )
 
             # Seeing Score Comparison
             html.append(f"<h2 style='color: {colors['header']};'>Seeing Score Comparison</h2>")
@@ -500,15 +546,17 @@ class WeatherInfoDialog(QDialog):
             html.append(f"<p><span style='color: {colors['cyan']};'>Old Algorithm:</span> {old_score:.0f}/100</p>")
             html.append(f"<p><span style='color: {colors['cyan']};'>New Algorithm:</span> {new_score:.0f}/100</p>")
             diff = new_score - old_score
-            diff_color = colors['green'] if diff > 0 else colors['red'] if diff < 0 else colors['yellow']
-            html.append(f"<p><span style='color: {colors['cyan']};'>Difference:</span> <span style='color: {diff_color};'>{diff:+.0f} points</span></p>")
+            diff_color = colors["green"] if diff > 0 else colors["red"] if diff < 0 else colors["yellow"]
+            html.append(
+                f"<p><span style='color: {colors['cyan']};'>Difference:</span> <span style='color: {diff_color};'>{diff:+.0f} points</span></p>"
+            )
 
             # Component breakdown
             if components:
                 html.append(f"<h3 style='color: {colors['header']};'>Component Scores (New Algorithm):</h3>")
                 html.append("<ul>")
                 for name, score in components.items():
-                    formatted_name = name.replace('_', ' ').title()
+                    formatted_name = name.replace("_", " ").title()
                     html.append(f"<li>{formatted_name}: {score:.0f}/100</li>")
                 html.append("</ul>")
 
@@ -617,7 +665,9 @@ class WeatherInfoDialog(QDialog):
             cloud_mid = [f.cloud_cover_mid if f.cloud_cover_mid is not None else 0 for f in forecasts]
             cloud_high = [f.cloud_cover_high if f.cloud_cover_high is not None else 0 for f in forecasts]
             wind_80m = [f.wind_speed_80m_mph if f.wind_speed_80m_mph is not None else float("nan") for f in forecasts]
-            wind_120m = [f.wind_speed_120m_mph if f.wind_speed_120m_mph is not None else float("nan") for f in forecasts]
+            wind_120m = [
+                f.wind_speed_120m_mph if f.wind_speed_120m_mph is not None else float("nan") for f in forecasts
+            ]
 
             # Check if we have layered cloud data
             has_cloud_layers = any(f.cloud_cover_low is not None for f in forecasts)
@@ -631,7 +681,7 @@ class WeatherInfoDialog(QDialog):
                 weather_data = WeatherData(
                     cape=f.cape,
                     boundary_layer_height_m=f.boundary_layer_height_m,
-                    vapour_pressure_deficit=getattr(f, 'vapour_pressure_deficit', None),
+                    vapour_pressure_deficit=getattr(f, "vapour_pressure_deficit", None),
                 )
                 score = _calc_atmospheric_stability_score(weather_data)
                 stability_scores.append(score)
@@ -669,8 +719,12 @@ class WeatherInfoDialog(QDialog):
             if has_cloud_layers:
                 # Three separate lines for cloud layers (like wind profile)
                 (cloud_low_line,) = ax2.plot(timestamps, cloud_low, color="#ff6b6b", linewidth=2.5, label="_nolegend_")
-                (cloud_mid_line,) = ax2.plot(timestamps, cloud_mid, color="#ffa500", linewidth=1.8, linestyle="--", label="_nolegend_")
-                (cloud_high_line,) = ax2.plot(timestamps, cloud_high, color="#4a90e2", linewidth=1.8, linestyle=":", label="_nolegend_")
+                (cloud_mid_line,) = ax2.plot(
+                    timestamps, cloud_mid, color="#ffa500", linewidth=1.8, linestyle="--", label="_nolegend_"
+                )
+                (cloud_high_line,) = ax2.plot(
+                    timestamps, cloud_high, color="#4a90e2", linewidth=1.8, linestyle=":", label="_nolegend_"
+                )
             else:
                 # Simple cloud cover
                 (cloud_low_line,) = ax2.plot(timestamps, cloud_cover, color="#4a90e2", linewidth=2, label="_nolegend_")
@@ -716,8 +770,12 @@ class WeatherInfoDialog(QDialog):
             # Plot Wind Profile (NEW)
             (wind_10m_line,) = ax6.plot(timestamps, wind_speed, color="#3498db", linewidth=2.5, label="_nolegend_")
             if has_upper_winds:
-                (wind_80m_line,) = ax6.plot(timestamps, wind_80m, color="#2ecc71", linewidth=1.8, linestyle="--", label="_nolegend_")
-                (wind_120m_line,) = ax6.plot(timestamps, wind_120m, color="#f39c12", linewidth=1.8, linestyle=":", label="_nolegend_")
+                (wind_80m_line,) = ax6.plot(
+                    timestamps, wind_80m, color="#2ecc71", linewidth=1.8, linestyle="--", label="_nolegend_"
+                )
+                (wind_120m_line,) = ax6.plot(
+                    timestamps, wind_120m, color="#f39c12", linewidth=1.8, linestyle=":", label="_nolegend_"
+                )
             ax6.axvline(current_time_mpl, color=text_color, linestyle="--", alpha=0.5)
             ax6.set_ylabel("Wind Speed (mph)", color=text_color)
             ax6.set_xlabel("Time", color=text_color)
@@ -766,7 +824,15 @@ class WeatherInfoDialog(QDialog):
                 }
 
                 # Build cursor lines list - only include lines that exist
-                cursor_lines = [temp_line, dew_line, cloud_low_line, humidity_line, wind_line, stability_line, wind_10m_line]
+                cursor_lines = [
+                    temp_line,
+                    dew_line,
+                    cloud_low_line,
+                    humidity_line,
+                    wind_line,
+                    stability_line,
+                    wind_10m_line,
+                ]
 
                 # Add cloud layer lines if available
                 if has_cloud_layers:

@@ -106,9 +106,113 @@ def sqm_to_bortle(sqm: float) -> BortleClass:
         return BortleClass.CLASS_9
 
 
+def _get_default_bortle_characteristics(bortle_class: BortleClass) -> dict[str, Any]:
+    """
+    Get default Bortle class characteristics as fallback when database is not seeded.
+
+    These are hardcoded defaults used when the database hasn't been seeded yet.
+    For full functionality, seed the database with: nexstar data seed
+
+    Args:
+        bortle_class: Bortle class enum value
+
+    Returns:
+        Dictionary with basic Bortle characteristics
+    """
+    # Default characteristics based on Bortle scale definitions
+    defaults = {
+        BortleClass.CLASS_1: {
+            "sqm_range": (21.99, 22.00),
+            "naked_eye_mag": 7.6,
+            "milky_way": True,
+            "airglow": True,
+            "zodiacal_light": True,
+            "description": "Excellent dark-sky site",
+            "recommendations": ["Perfect for all deep-sky objects", "Faintest galaxies and nebulae visible"],
+        },
+        BortleClass.CLASS_2: {
+            "sqm_range": (21.89, 21.99),
+            "naked_eye_mag": 7.1,
+            "milky_way": True,
+            "airglow": True,
+            "zodiacal_light": True,
+            "description": "Typical truly dark site",
+            "recommendations": ["Excellent for deep-sky observing", "Milky Way shows significant detail"],
+        },
+        BortleClass.CLASS_3: {
+            "sqm_range": (21.69, 21.89),
+            "naked_eye_mag": 6.6,
+            "milky_way": True,
+            "airglow": False,
+            "zodiacal_light": True,
+            "description": "Rural sky",
+            "recommendations": ["Good for deep-sky observing", "Some light pollution on horizon"],
+        },
+        BortleClass.CLASS_4: {
+            "sqm_range": (20.49, 21.69),
+            "naked_eye_mag": 6.1,
+            "milky_way": True,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "Rural/suburban transition",
+            "recommendations": ["Fair for deep-sky", "Milky Way still visible"],
+        },
+        BortleClass.CLASS_5: {
+            "sqm_range": (19.50, 20.49),
+            "naked_eye_mag": 5.6,
+            "milky_way": False,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "Suburban sky",
+            "recommendations": ["Focus on brighter Messier objects", "Planets and Moon are excellent"],
+        },
+        BortleClass.CLASS_6: {
+            "sqm_range": (18.94, 19.50),
+            "naked_eye_mag": 5.1,
+            "milky_way": False,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "Bright suburban sky",
+            "recommendations": ["Observe bright objects only", "Planets, Moon, and bright clusters"],
+        },
+        BortleClass.CLASS_7: {
+            "sqm_range": (18.38, 18.94),
+            "naked_eye_mag": 4.6,
+            "milky_way": False,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "Suburban/urban transition",
+            "recommendations": ["Very limited deep-sky observing", "Focus on planets and Moon"],
+        },
+        BortleClass.CLASS_8: {
+            "sqm_range": (17.00, 18.38),
+            "naked_eye_mag": 4.1,
+            "milky_way": False,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "City sky",
+            "recommendations": ["Observe planets and Moon primarily", "Brightest star clusters possible"],
+        },
+        BortleClass.CLASS_9: {
+            "sqm_range": (13.00, 17.00),
+            "naked_eye_mag": 3.0,
+            "milky_way": False,
+            "airglow": False,
+            "zodiacal_light": False,
+            "description": "Inner-city sky",
+            "recommendations": ["Only Moon and bright planets", "Consider traveling to darker sites"],
+        },
+    }
+
+    return defaults.get(bortle_class, defaults[BortleClass.CLASS_5])
+
+
 def _get_bortle_characteristics(db_session: Session, bortle_class: BortleClass) -> dict[str, Any]:
     """
-    Get Bortle class characteristics from database.
+    Get Bortle class characteristics from database, with fallback to defaults.
+
+    First attempts to load from database. If database is not seeded, uses
+    hardcoded default characteristics and logs a warning.
 
     Args:
         db_session: Database session
@@ -116,9 +220,6 @@ def _get_bortle_characteristics(db_session: Session, bortle_class: BortleClass) 
 
     Returns:
         Dictionary with characteristics
-
-    Raises:
-        RuntimeError: If Bortle characteristics not found in database (seed data required)
     """
     import json
 
@@ -129,11 +230,13 @@ def _get_bortle_characteristics(db_session: Session, bortle_class: BortleClass) 
     model = db_session.scalar(
         select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
     )
+
     if model is None:
-        raise DatabaseError(
+        logger.warning(
             f"Bortle class {bortle_class.value} characteristics not found in database. "
-            "Please seed the database by running: nexstar data seed"
+            "Using default values. For full functionality, seed the database by running: nexstar data seed"
         )
+        return _get_default_bortle_characteristics(bortle_class)
 
     return {
         "sqm_range": (model.sqm_min, model.sqm_max),
@@ -311,7 +414,7 @@ def _fetch_sqm(lat: float, lon: float) -> float | None:
 
 def get_light_pollution_data(
     db_session: Session, lat: float, lon: float, force_refresh: bool = False
-) -> LightPollutionData:
+) -> LightPollutionData | None:
     """
     Get light pollution data for a location.
 
@@ -323,10 +426,11 @@ def get_light_pollution_data(
         force_refresh: Force refresh even if cache is valid
 
     Returns:
-        Light pollution data
+        Light pollution data, or None if no data found in database
 
-    Raises:
-        RuntimeError: If no light pollution data found in database for this location
+    Note:
+        To load light pollution data into the database, run:
+          nexstar data download-light-pollution
     """
     cache_key = _get_cache_key(lat, lon)
 
@@ -352,16 +456,12 @@ def get_light_pollution_data(
     sqm = _fetch_sqm(lat, lon)
 
     if sqm is None:
-        # No data in database - raise error with instructions
-        raise DatabaseError(
-            f"No light pollution data found in database for location ({lat:.4f}, {lon:.4f}).\n"
-            "To load light pollution data into the database, run:\n"
-            "  nexstar data download-light-pollution\n"
-            "Or for a specific region:\n"
-            "  nexstar data download-light-pollution --region north_america\n"
-            "  nexstar data download-light-pollution --region europe\n"
-            "Available regions: world, north_america, south_america, europe, africa, asia, australia"
+        # No data in database - log warning and return None
+        logger.warning(
+            f"No light pollution data found in database for location ({lat:.4f}, {lon:.4f}). "
+            "To load light pollution data, run: nexstar data download-light-pollution"
         )
+        return None
 
     # Data came from database (offline source)
     source = "database"

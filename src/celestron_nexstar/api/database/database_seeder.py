@@ -231,47 +231,57 @@ def seed_constellations(db_session: Session, force: bool = False) -> int:
     data = load_seed_json("constellations.json")
 
     added = 0
-    for item in data:
-        name = item["name"]
 
-        # Check if already exists (idempotent)
-        existing = db_session.scalar(select(ConstellationModel).where(ConstellationModel.name == name))
-        if existing:
-            continue
+    # Use no_autoflush to prevent premature flushes during queries
+    with db_session.no_autoflush:
+        for item in data:
+            name = item["name"]
 
-        # Filter out fields that don't exist in the model
-        # ConstellationModel doesn't have magnitude or hemisphere (these are calculated)
-        model_fields = {
-            "name",
-            "abbreviation",
-            "common_name",
-            "ra_hours",
-            "dec_degrees",
-            "ra_min_hours",
-            "ra_max_hours",
-            "dec_min_degrees",
-            "dec_max_degrees",
-            "area_sq_deg",
-            # Note: brightest_star is now a foreign key (brightest_star_id), not a string field
-            "mythology",
-            "season",
-        }
-        filtered_item = {k: v for k, v in item.items() if k in model_fields}
+            # Check if already exists (idempotent)
+            existing = db_session.scalar(select(ConstellationModel).where(ConstellationModel.name == name))
+            if existing:
+                continue
 
-        # If common_name is null but description starts with "The [Name] -", extract it
-        if not filtered_item.get("common_name") and item.get("description"):
-            import re
+            # Filter out fields that don't exist in the model
+            # ConstellationModel doesn't have magnitude or hemisphere (these are calculated)
+            model_fields = {
+                "name",
+                "abbreviation",
+                "common_name",
+                "ra_hours",
+                "dec_degrees",
+                "ra_min_hours",
+                "ra_max_hours",
+                "dec_min_degrees",
+                "dec_max_degrees",
+                "area_sq_deg",
+                # Note: brightest_star is now a foreign key (brightest_star_id), not a string field
+                "mythology",
+                "season",
+            }
+            filtered_item = {k: v for k, v in item.items() if k in model_fields}
 
-            description = item["description"]
-            # Match pattern like "The Hunter -" or "The Great Dog -"
-            match = re.match(r"^(The [^-]+) -", description)
-            if match:
-                filtered_item["common_name"] = match.group(1)
+            # Generate abbreviation if missing (required field)
+            # Use 3-letter IAU code convention: first 3 letters of constellation name
+            if not filtered_item.get("abbreviation"):
+                abbreviation = name[:3].upper() if len(name) >= 3 else name.upper().ljust(3, "X")
+                filtered_item["abbreviation"] = abbreviation
+                logger.debug(f"Generated abbreviation '{abbreviation}' for constellation '{name}'")
 
-        # Create new constellation
-        constellation = ConstellationModel(**filtered_item)
-        db_session.add(constellation)
-        added += 1
+            # If common_name is null but description starts with "The [Name] -", extract it
+            if not filtered_item.get("common_name") and item.get("description"):
+                import re
+
+                description = item["description"]
+                # Match pattern like "The Hunter -" or "The Great Dog -"
+                match = re.match(r"^(The [^-]+) -", description)
+                if match:
+                    filtered_item["common_name"] = match.group(1)
+
+            # Create new constellation
+            constellation = ConstellationModel(**filtered_item)
+            db_session.add(constellation)
+            added += 1
 
     if added > 0:
         db_session.commit()

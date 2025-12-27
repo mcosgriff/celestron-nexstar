@@ -70,6 +70,7 @@ class TypeCache:
     def _load_existing_types(self) -> None:
         """Load all existing object types from database into cache."""
         from sqlalchemy import select
+
         from celestron_nexstar.api.database.models import ObjectTypeModel
 
         result = self.db_session.execute(select(ObjectTypeModel))
@@ -97,11 +98,10 @@ class TypeCache:
 
         # Not in cache - check database
         from sqlalchemy import select
+
         from celestron_nexstar.api.database.models import ObjectTypeModel
 
-        result = self.db_session.execute(
-            select(ObjectTypeModel).where(ObjectTypeModel.name == name).limit(1)
-        )
+        result = self.db_session.execute(select(ObjectTypeModel).where(ObjectTypeModel.name == name).limit(1))
         existing = result.scalar_one_or_none()
 
         if existing:
@@ -111,9 +111,7 @@ class TypeCache:
 
         # Doesn't exist - create it
         new_type = ObjectTypeModel(
-            name=name,
-            category=category,
-            description=description or f"{category.replace('_', ' ').title()}"
+            name=name, category=category, description=description or f"{category.replace('_', ' ').title()}"
         )
         self.db_session.add(new_type)
         self.db_session.flush()  # Get the ID without committing
@@ -921,7 +919,7 @@ def import_celestial_data_geojson(
                             if constellation_id is not None:
                                 galaxy.constellation_id = constellation_id
                                 # Also populate the string field from the relationship
-                                if hasattr(galaxy, 'constellation_rel') and galaxy.constellation_rel:
+                                if hasattr(galaxy, "constellation_rel") and galaxy.constellation_rel:
                                     galaxy.constellation = galaxy.constellation_rel.name
                             if asterism_id is not None:
                                 galaxy.asterism_id = asterism_id
@@ -942,7 +940,7 @@ def import_celestial_data_geojson(
                             if constellation_id is not None:
                                 nebula.constellation_id = constellation_id
                                 # Also populate the string field from the relationship
-                                if hasattr(nebula, 'constellation_rel') and nebula.constellation_rel:
+                                if hasattr(nebula, "constellation_rel") and nebula.constellation_rel:
                                     nebula.constellation = nebula.constellation_rel.name
                             if asterism_id is not None:
                                 nebula.asterism_id = asterism_id
@@ -963,7 +961,7 @@ def import_celestial_data_geojson(
                             if constellation_id is not None:
                                 cluster.constellation_id = constellation_id
                                 # Also populate the string field from the relationship
-                                if hasattr(cluster, 'constellation_rel') and cluster.constellation_rel:
+                                if hasattr(cluster, "constellation_rel") and cluster.constellation_rel:
                                     cluster.constellation = cluster.constellation_rel.name
                             if asterism_id is not None:
                                 cluster.asterism_id = asterism_id
@@ -1436,163 +1434,163 @@ def import_celestial_stars(
         if progress_callback:
             progress_callback(f"Processing celestial_stars (mag ≤ {mag_limit})...", 0, total_features)
 
-        for feature in features:
-            try:
-                properties = feature.get("properties", {})
-                geometry = feature.get("geometry", {})
+    for feature in features:
+        try:
+            properties = feature.get("properties", {})
+            geometry = feature.get("geometry", {})
 
-                # Extract coordinates
-                coords = geometry.get("coordinates", [])
-                if not coords or len(coords) < 2:
-                    skipped += 1
-                    # Update progress
-                    if progress_callback:
-                        processed = len(all_objects) + skipped + errors
-                        progress_callback("Processing celestial_stars...", processed, total_features)
-                    continue
+            # Extract coordinates
+            coords = geometry.get("coordinates", [])
+            if not coords or len(coords) < 2:
+                skipped += 1
+                # Update progress
+                if progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback("Processing celestial_stars...", processed, total_features)
+                continue
 
-                # Convert RA from degrees to hours
-                ra_degrees = float(coords[0])
-                dec_degrees = float(coords[1])
-                ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
+            # Convert RA from degrees to hours
+            ra_degrees = float(coords[0])
+            dec_degrees = float(coords[1])
+            ra_hours = CoordinateConverter.ra_degrees_to_hours(ra_degrees)
 
-                # Extract id for name matching (id in CSV matches id in GeoJSON)
-                star_id: int | None = None
-                for id_field in ["id", "ID"]:
-                    if id_field in properties:
-                        try:
-                            id_val = properties[id_field]
-                            if isinstance(id_val, (int, float)) or (isinstance(id_val, str) and id_val.isdigit()):
-                                star_id = int(id_val)
-                            if star_id is not None:
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Extract id for name matching (id in CSV matches id in GeoJSON)
+            star_id: int | None = None
+            for id_field in ["id", "ID"]:
+                if id_field in properties:
+                    try:
+                        id_val = properties[id_field]
+                        if isinstance(id_val, (int, float)) or (isinstance(id_val, str) and id_val.isdigit()):
+                            star_id = int(id_val)
+                        if star_id is not None:
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-                # Extract HIP number for catalog number (if available)
-                hip_number: int | None = None
-                for hip_field in ["hip", "HIP"]:
-                    if hip_field in properties:
-                        try:
-                            hip_val = properties[hip_field]
-                            if isinstance(hip_val, (int, float)) or (isinstance(hip_val, str) and hip_val.isdigit()):
-                                hip_number = int(hip_val)
-                            if hip_number is not None:
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Extract HIP number for catalog number (if available)
+            hip_number: int | None = None
+            for hip_field in ["hip", "HIP"]:
+                if hip_field in properties:
+                    try:
+                        hip_val = properties[hip_field]
+                        if isinstance(hip_val, (int, float)) or (isinstance(hip_val, str) and hip_val.isdigit()):
+                            hip_number = int(hip_val)
+                        if hip_number is not None:
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
-                # Extract name (will be enhanced with common name if available)
-                name = (
-                    properties.get("name")
-                    or properties.get("designation")
-                    or properties.get("Name")
-                    or (
-                        f"HIP {hip_number}"
-                        if hip_number
-                        else f"celestial_stars_{star_id}"
-                        if star_id
-                        else f"celestial_stars_{imported + skipped + 1}"
-                    )
+            # Extract name (will be enhanced with common name if available)
+            name = (
+                properties.get("name")
+                or properties.get("designation")
+                or properties.get("Name")
+                or (
+                    f"HIP {hip_number}"
+                    if hip_number
+                    else f"celestial_stars_{star_id}"
+                    if star_id
+                    else f"celestial_stars_{imported + skipped + 1}"
+                )
+            )
+
+            # Look up common name from starnames.csv using id
+            common_name = None
+            if star_id and star_id in star_name_map:
+                common_name = star_name_map[star_id]
+                # If the name is just a catalog number or ID, prefer the common name
+                if (
+                    name.startswith("HIP ")
+                    or name.startswith("celestial_stars_")
+                    or (name.isdigit() and int(name) == star_id)
+                ):
+                    name = common_name or name
+
+            # Extract magnitude
+            magnitude = None
+            for mag_field in ["mag", "magnitude", "Mag", "Magnitude", "vmag", "V-Mag"]:
+                if mag_field in properties:
+                    try:
+                        mag_val = properties[mag_field]
+                        if mag_val is not None and mag_val != "":
+                            magnitude = float(mag_val)
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+            # Human-friendly fallback for unnamed stars (e.g., celestial_stars_109492)
+            if name.startswith("celestial_stars_") or (name.isdigit() and star_id and int(name) == star_id):
+                pretty = f"Star {star_id}" if star_id else "Star"
+                if magnitude is not None:
+                    pretty = f"{pretty} (mag {magnitude:.2f})"
+                name = pretty
+
+            # Filter by magnitude
+            if magnitude is not None and magnitude > mag_limit:
+                skipped += 1
+                # Update progress
+                if progress_callback:
+                    processed = len(all_objects) + skipped + errors
+                    progress_callback("Processing celestial_stars...", processed, total_features)
+                continue
+
+            # Extract catalog number (HIP number)
+            catalog_number = hip_number
+
+            # Extract constellation
+            constellation = (
+                properties.get("constellation")
+                or properties.get("Const")
+                or properties.get("const")
+                or properties.get("con")
+            )
+
+            # If not found in properties, determine from coordinates
+            if not constellation and constellations:
+                # Use sync wrapper since we're in a sync context
+                constellation = _find_constellation_by_coordinates_async(
+                    ra_hours, dec_degrees, constellations, name
                 )
 
-                # Look up common name from starnames.csv using id
-                common_name = None
-                if star_id and star_id in star_name_map:
-                    common_name = star_name_map[star_id]
-                    # If the name is just a catalog number or ID, prefer the common name
-                    if (
-                        name.startswith("HIP ")
-                        or name.startswith("celestial_stars_")
-                        or (name.isdigit() and int(name) == star_id)
-                    ):
-                        name = common_name or name
+            # Build description
+            description_parts = []
+            # Add Bayer designation if available
+            bayer = properties.get("bayer") or properties.get("Bayer")
+            if bayer:
+                description_parts.append(f"Bayer: {bayer}")
+            # Add Flamsteed number if available
+            flam = properties.get("flam") or properties.get("Flam")
+            if flam:
+                description_parts.append(f"Flamsteed: {flam}")
+            description = "; ".join(description_parts) if description_parts else None
 
-                # Extract magnitude
-                magnitude = None
-                for mag_field in ["mag", "magnitude", "Mag", "Magnitude", "vmag", "V-Mag"]:
-                    if mag_field in properties:
-                        try:
-                            mag_val = properties[mag_field]
-                            if mag_val is not None and mag_val != "":
-                                magnitude = float(mag_val)
-                                break
-                        except (ValueError, TypeError):
-                            pass
+            # Add to collection (will deduplicate once at the end)
+            # Note: constellation string field is not included - we use constellation_id foreign key instead
+            all_objects.append(
+                {
+                    "name": name,
+                    "catalog": "celestial_stars",
+                    "ra_hours": ra_hours,
+                    "dec_degrees": dec_degrees,
+                    "object_type": CelestialObjectType.STAR,
+                    "magnitude": magnitude,
+                    "common_name": common_name,
+                    "catalog_number": catalog_number,
+                    "size_arcmin": None,
+                    "description": description,
+                    # constellation field removed - using constellation_id foreign key instead
+                }
+            )
 
-                # Human-friendly fallback for unnamed stars (e.g., celestial_stars_109492)
-                if name.startswith("celestial_stars_") or (name.isdigit() and star_id and int(name) == star_id):
-                    pretty = f"Star {star_id}" if star_id else "Star"
-                    if magnitude is not None:
-                        pretty = f"{pretty} (mag {magnitude:.2f})"
-                    name = pretty
+        except Exception as e:
+            errors += 1
+            if verbose:
+                console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
 
-                # Filter by magnitude
-                if magnitude is not None and magnitude > mag_limit:
-                    skipped += 1
-                    # Update progress
-                    if progress_callback:
-                        processed = len(all_objects) + skipped + errors
-                        progress_callback("Processing celestial_stars...", processed, total_features)
-                    continue
-
-                # Extract catalog number (HIP number)
-                catalog_number = hip_number
-
-                # Extract constellation
-                constellation = (
-                    properties.get("constellation")
-                    or properties.get("Const")
-                    or properties.get("const")
-                    or properties.get("con")
-                )
-
-                # If not found in properties, determine from coordinates
-                if not constellation and constellations:
-                    # Use sync wrapper since we're in a sync context
-                    constellation = _find_constellation_by_coordinates_async(
-                        ra_hours, dec_degrees, constellations, name
-                    )
-
-                # Build description
-                description_parts = []
-                # Add Bayer designation if available
-                bayer = properties.get("bayer") or properties.get("Bayer")
-                if bayer:
-                    description_parts.append(f"Bayer: {bayer}")
-                # Add Flamsteed number if available
-                flam = properties.get("flam") or properties.get("Flam")
-                if flam:
-                    description_parts.append(f"Flamsteed: {flam}")
-                description = "; ".join(description_parts) if description_parts else None
-
-                # Add to collection (will deduplicate once at the end)
-                # Note: constellation string field is not included - we use constellation_id foreign key instead
-                all_objects.append(
-                    {
-                        "name": name,
-                        "catalog": "celestial_stars",
-                        "ra_hours": ra_hours,
-                        "dec_degrees": dec_degrees,
-                        "object_type": CelestialObjectType.STAR,
-                        "magnitude": magnitude,
-                        "common_name": common_name,
-                        "catalog_number": catalog_number,
-                        "size_arcmin": None,
-                        "description": description,
-                        # constellation field removed - using constellation_id foreign key instead
-                    }
-                )
-
-            except Exception as e:
-                errors += 1
-                if verbose:
-                    console.print(f"[yellow]Warning: Error processing feature: {e}[/yellow]")
-
-            # Update progress
-            if progress_callback:
-                processed = len(all_objects) + skipped + errors
-                progress_callback("Processing celestial_stars...", processed, total_features)
+        # Update progress
+        if progress_callback:
+            processed = len(all_objects) + skipped + errors
+            progress_callback("Processing celestial_stars...", processed, total_features)
 
     # Close processing progress if using Rich
     if use_rich_progress and progress_obj is not None:
@@ -2516,7 +2514,7 @@ def _fill_constellation_boundary_gaps(verbose: bool = False) -> None:
         # Use 0.1-hour RA steps (6 minutes) and 5-degree Dec steps for thorough coverage
         test_points = []
         ra_step = 0.1  # 6 minutes of RA
-        dec_step = 5   # 5 degrees of Dec
+        dec_step = 5  # 5 degrees of Dec
 
         ra = 0.0
         while ra < 24.0:
@@ -2563,7 +2561,7 @@ def _fill_constellation_boundary_gaps(verbose: bool = False) -> None:
 
         for gap_ra, gap_dec in gaps:
             # Find nearest constellation by angular distance to center
-            min_distance = float('inf')
+            min_distance = float("inf")
             nearest_const = None
 
             for const in constellations:
@@ -2583,37 +2581,38 @@ def _fill_constellation_boundary_gaps(verbose: bool = False) -> None:
                 # Track extensions needed for this constellation
                 if nearest_const.id not in const_extensions:
                     const_extensions[nearest_const.id] = {
-                        'const': nearest_const,
-                        'ra_min': nearest_const.ra_min_hours,
-                        'ra_max': nearest_const.ra_max_hours,
-                        'dec_min': nearest_const.dec_min_degrees,
-                        'dec_max': nearest_const.dec_max_degrees,
+                        "const": nearest_const,
+                        "ra_min": nearest_const.ra_min_hours,
+                        "ra_max": nearest_const.ra_max_hours,
+                        "dec_min": nearest_const.dec_min_degrees,
+                        "dec_max": nearest_const.dec_max_degrees,
                     }
 
                 # Extend bounds to include this gap point
                 ext = const_extensions[nearest_const.id]
-                ext['ra_min'] = min(ext['ra_min'], gap_ra)
-                ext['ra_max'] = max(ext['ra_max'], gap_ra)
-                ext['dec_min'] = min(ext['dec_min'], gap_dec)
-                ext['dec_max'] = max(ext['dec_max'], gap_dec)
+                ext["ra_min"] = min(ext["ra_min"], gap_ra)
+                ext["ra_max"] = max(ext["ra_max"], gap_ra)
+                ext["dec_min"] = min(ext["dec_min"], gap_dec)
+                ext["dec_max"] = max(ext["dec_max"], gap_dec)
 
         # Apply the extensions
         if const_extensions:
             console.print(f"[dim]Extending {len(const_extensions)} constellation(s) to fill gaps...[/dim]")
 
-            for const_id, ext in const_extensions.items():
-                const = ext['const']
+            for _const_id, ext in const_extensions.items():
+                const = ext["const"]
 
                 # Only update if bounds actually changed
-                if (ext['ra_min'] != const.ra_min_hours or
-                    ext['ra_max'] != const.ra_max_hours or
-                    ext['dec_min'] != const.dec_min_degrees or
-                    ext['dec_max'] != const.dec_max_degrees):
-
-                    const.ra_min_hours = ext['ra_min']
-                    const.ra_max_hours = ext['ra_max']
-                    const.dec_min_degrees = ext['dec_min']
-                    const.dec_max_degrees = ext['dec_max']
+                if (
+                    ext["ra_min"] != const.ra_min_hours
+                    or ext["ra_max"] != const.ra_max_hours
+                    or ext["dec_min"] != const.dec_min_degrees
+                    or ext["dec_max"] != const.dec_max_degrees
+                ):
+                    const.ra_min_hours = ext["ra_min"]
+                    const.ra_max_hours = ext["ra_max"]
+                    const.dec_min_degrees = ext["dec_min"]
+                    const.dec_max_degrees = ext["dec_max"]
 
                     if verbose:
                         console.print(

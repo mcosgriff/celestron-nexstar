@@ -1,0 +1,306 @@
+# Comprehensive Object Types Seed Data
+# This file contains all astronomical object types and their abbreviations
+# Used to populate the object_types table
+
+object_types:
+  # ============================================================================
+  # STAR TYPES AND SUBTYPES
+  # ============================================================================
+  - name: "Star"
+    category: "star"
+    description: "A luminous sphere of plasma held together by gravity"
+
+  - name: "Double Star"
+    category: "star"
+    description: "Two stars that appear close together in the sky"
+
+  - name: "Binary Star"
+    category: "star"
+    description: "Two stars orbiting a common center of mass"
+
+  - name: "Multiple Star"
+    category: "star"
+    description: "Three or more stars that appear close together"
+
+  - name: "Variable Star"
+    category: "star"
+    description: "A star whose brightness as seen from Earth varies over time"
+
+  - name: "Red Giant"
+    category: "star"
+    description: "A large, luminous star in a late phase of stellar evolution"
+
+  - name: "White Dwarf"
+    category: "star"
+    description: "The remnant core of a dead star"
+
+  - name: "Neutron Star"
+    category: "star"
+    description: "The collapsed core of a massive supergiant star"
+
+  - name: "Pulsar"
+    category: "star"
+    description: "A highly magnetized rotating neutron star"
+
+  # ============================================================================
+  # CLUSTER TYPES AND SUBTYPES
+  # ============================================================================
+  - name: "Cluster"
+    category: "cluster"
+    description: "A group of stars held together by mutual gravitational attraction"
+
+  - name: "Open Cluster"
+    category: "cluster_subtype"
+    description: "A loose grouping of young stars formed from the same molecular cloud"
+
+  - name: "oc"
+    category: "cluster_subtype"
+    description: "Open Cluster (abbreviation)"
+
+  - name: "Globular Cluster"
+    category: "cluster_subtype"
+    description: "A spherical collection of ancient stars tightly bound by gravity"
+
+  - name: "gc"
+    category: "cluster_subtype"
+    description: "Globular Cluster (abbreviation)"
+
+  - name: "Stellar Association"
+    category: "cluster_subtype"
+    description: "A very loose cluster of young stars"
+
+  - name: "Moving Group"
+    category: "cluster_subtype"
+    description: "A group of stars moving together through space"
+
+  - name: "pos"
+    category: "cluster_subtype"
+    description: "Part of Star / Possible Cluster"
+
+  # ============================================================================
+  # NEBULA TYPES AND SUBTYPES
+  # ============================================================================
+  - name: "Nebula"
+    category: "nebula"
+    description: "An interstellar cloud of dust, hydrogen, helium and other ionized gases"
+
+  - name: "Emission Nebula"
+    category: "nebula_subtype"
+    description: "A nebula that emits light by ionization of the gas"
+
+  - name: "en"
+    category: "nebula_subtype"
+    description: "Emission Nebula (abbreviation)"
+
+  - name: "Reflection Nebula"
+    category: "nebula_subtype"
+    description: "A nebula that reflects light from nearby stars"
+
+  - name: "rn"
+    category: "nebula_subtype"
+    description: "Reflection Nebula (abbreviation)"
+
+  - name: "Dark Nebula"
+    category: "nebula_subtype"
+    description: "An interstellar cloud so dense it obscures light from objects behind it"
+
+  - name: "dn"
+    category: "nebula_subtype"
+    description: "Dark Nebula (abbreviation)"
+
+  - name: "Planetary Nebula"
+    category: "nebula_subtype"
+    description: "An emission nebula consisting of an expanding shell of ionized gas ejected from a dying star"
+
+  - name: "pn"
+    category: "nebula_subtype"
+    description: "Planetary Nebula (abbreviation)"
+
+  - name: "Supernova Remnant"
+    category: "nebula_subtype"
+    description: "The structure resulting from the explosion of a star"
+
+  - name: "snr"
+    category: "nebula_subtype"
+    description: "Supernova Remnant (abbreviation)"
+
+  - name: "Star Forming Region"
+    category: "nebula_subtype"
+    description: "A region where active star formation is occurring"
+
+  - name: "sfr"
+    category: "nebula_subtype"
+    description: "Star Forming Region (abbreviation)"
+
+  - name: "HII Region"
+    category: "nebula_subtype"
+    description: "A region of ionized hydrogen (emission nebula)"
+
+  - name: "Bright Nebula"
+    category: "nebula_subtype"
+    description: "A nebula visible due to emission or reflection of light"
+
+  - name: "Molecular Cloud"
+    category: "nebula_subtype"
+    description: "A dense interstellar cloud containing molecules"
+
+  # ============================================================================
+  # GALAXY TYPES AND SUBTYPES
+  # ============================================================================
+  - name: "Galaxy"
+    category: "galaxy"
+    description: "A gravitationally bound system of stars, stellar remnants, interstellar gas, dust, and dark matter"
+
+  - name: "g"
+    category: "galaxy_subtype"
+    description: "Galaxy (abbreviation)"
+
+  - name: "Spiral Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy with spiral arms extending from a central bulge"
+
+  - name: "s"
+    category: "galaxy_subtype"
+    description: "Spiral Galaxy (abbreviation)"
+
+  - name: "Barred Spiral Galaxy"
+    category: "galaxy_subtype"
+    description: "A spiral galaxy with a bar-shaped structure at its center"
+
+  - name: "sb"
+    category: "galaxy_subtype"
+    description: "Barred Spiral Galaxy (abbreviation)"
+
+  - name: "Elliptical Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy with an ellipsoidal shape and smooth, nearly featureless brightness profile"
+
+  - name: "e"
+    category: "galaxy_subtype"
+    description: "Elliptical Galaxy (abbreviation)"
+
+  - name: "Irregular Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy that does not have a distinct regular shape"
+
+  - name: "i"
+    category: "galaxy_subtype"
+    description: "Irregular Galaxy (abbreviation)"
+
+  - name: "Lenticular Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy intermediate between an elliptical and a spiral galaxy (S0)"
+
+  - name: "s0"
+    category: "galaxy_subtype"
+    description: "Lenticular Galaxy (abbreviation)"
+
+  - name: "S0/a Galaxy"
+    category: "galaxy_subtype"
+    description: "A lenticular galaxy with some spiral structure"
+
+  - name: "sd"
+    category: "galaxy_subtype"
+    description: "S0/a Galaxy (abbreviation)"
+
+  - name: "Giant Galaxy"
+    category: "galaxy_subtype"
+    description: "An exceptionally large galaxy"
+
+  - name: "gg"
+    category: "galaxy_subtype"
+    description: "Giant Galaxy (abbreviation)"
+
+  - name: "Dwarf Galaxy"
+    category: "galaxy_subtype"
+    description: "A small galaxy composed of a few billion stars"
+
+  - name: "Dwarf Spheroidal"
+    category: "galaxy_subtype"
+    description: "A faint galaxy composed of old stars with a spheroidal shape"
+
+  - name: "dsph"
+    category: "galaxy_subtype"
+    description: "Dwarf Spheroidal (abbreviation)"
+
+  - name: "Dwarf Elliptical"
+    category: "galaxy_subtype"
+    description: "A small elliptical galaxy"
+
+  - name: "de"
+    category: "galaxy_subtype"
+    description: "Dwarf Elliptical (abbreviation)"
+
+  - name: "Dwarf Irregular"
+    category: "galaxy_subtype"
+    description: "A small irregular galaxy"
+
+  - name: "di"
+    category: "galaxy_subtype"
+    description: "Dwarf Irregular (abbreviation)"
+
+  - name: "Ultra-Faint Dwarf"
+    category: "galaxy_subtype"
+    description: "An extremely faint dwarf galaxy"
+
+  - name: "ufd"
+    category: "galaxy_subtype"
+    description: "Ultra-Faint Dwarf (abbreviation)"
+
+  - name: "Seyfert Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy with a very luminous active galactic nucleus"
+
+  - name: "Quasar"
+    category: "galaxy_subtype"
+    description: "An extremely luminous active galactic nucleus powered by a supermassive black hole"
+
+  - name: "Radio Galaxy"
+    category: "galaxy_subtype"
+    description: "A galaxy with giant regions of radio emission extending beyond visible structure"
+
+  # ============================================================================
+  # PLANETARY AND SOLAR SYSTEM OBJECTS
+  # ============================================================================
+  - name: "Planet"
+    category: "planet"
+    description: "A celestial body orbiting a star, massive enough to be rounded by its own gravity"
+
+  - name: "Dwarf Planet"
+    category: "planet_subtype"
+    description: "A planetary-mass object that has not cleared the neighborhood around its orbit"
+
+  - name: "Moon"
+    category: "moon"
+    description: "A natural satellite orbiting a planet"
+
+  - name: "Asteroid"
+    category: "asteroid"
+    description: "A small rocky body orbiting the Sun"
+
+  - name: "Comet"
+    category: "comet"
+    description: "An icy small Solar System body that develops a coma and tail when near the Sun"
+
+  # ============================================================================
+  # OTHER OBJECTS
+  # ============================================================================
+  - name: "Asterism"
+    category: "asterism"
+    description: "A pattern of stars recognized in Earth's night sky that is not an official constellation"
+
+  - name: "Constellation"
+    category: "constellation"
+    description: "An officially recognized region of the celestial sphere"
+
+  - name: "Black Hole"
+    category: "exotic"
+    description: "A region of spacetime where gravity is so strong that nothing can escape"
+
+  - name: "Active Galactic Nucleus"
+    category: "exotic"
+    description: "A compact region at the center of a galaxy with much higher than normal luminosity"
+
+  - name: "agn"
+    category: "exotic"
+    description: "Active Galactic Nucleus (abbreviation)"

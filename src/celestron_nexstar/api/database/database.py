@@ -868,6 +868,7 @@ class CatalogDatabase:
 
         with self._get_session() as session:
             from sqlalchemy import select
+
             from celestron_nexstar.cli.data_import import TypeCache
 
             # Create TypeCache for normalizing object types
@@ -945,7 +946,7 @@ class CatalogDatabase:
                         object_subtype_id = type_cache.get_or_create(
                             name=normalized_subtype,
                             category=f"{object_type_enum.value}_subtype",
-                            description=f"{object_type_enum.value.replace('_', ' ').title()} subtype"
+                            description=f"{object_type_enum.value.replace('_', ' ').title()} subtype",
                         )
 
                     # Create model instance with common fields
@@ -962,8 +963,13 @@ class CatalogDatabase:
                         "size_arcmin": obj.get("size_arcmin"),
                         "description": obj.get("description"),
                         "aliases": obj.get("aliases"),
-                        "constellation": obj.get("constellation"),
                     }
+
+                    # Check if model class excludes the constellation property
+                    # Some models (like DoubleStars) exclude it and use constellation_id instead
+                    excluded_props = getattr(model_class, "__mapper_args__", {}).get("exclude_properties", [])
+                    if "constellation" not in excluded_props:
+                        model_kwargs["constellation"] = obj.get("constellation")
 
                     # Add dynamic fields for planets and moons
                     if object_type_enum in (CelestialObjectType.PLANET, CelestialObjectType.MOON):

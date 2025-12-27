@@ -357,7 +357,7 @@ class _PlotGenerationThread(QThread):
             # Calculate altitude from observer's perspective
             observer_at_time = sf_observer.at(t)
             target_astrometric = observer_at_time.observe(target_star)
-            alt, az, distance = target_astrometric.apparent().altaz()
+            alt, _az, _distance = target_astrometric.apparent().altaz()
 
             if alt.degrees < 0:
                 logger.warning(

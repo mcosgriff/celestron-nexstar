@@ -4,7 +4,7 @@ Dialog to display and manage application settings.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.api.database.database_seeder import seed_asteroids
 from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
 
 
@@ -77,6 +78,12 @@ class SettingsDialog(QDialog):
 
         # Track active download workers
         self._download_workers: dict[str, object] = {}
+
+        # Track import all progress
+        self._import_all_queue: list[str] = []
+        self._import_all_in_progress = False
+        self._import_all_total = 0
+        self._import_all_completed = 0
 
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
@@ -2624,7 +2631,7 @@ class SettingsDialog(QDialog):
             logger.error(f"Import all stopped at {source_name}: {message}")
 
     def _start_celestial_import_with_callback(
-        self, source_id: str, completion_callback: callable = None
+        self, source_id: str, completion_callback: Callable | None = None
     ) -> None:
         """Start a celestial data import with an optional custom completion callback."""
         from celestron_nexstar.gui.workers.download_workers import ImportCelestialDataThread
@@ -2794,6 +2801,7 @@ class SettingsDialog(QDialog):
             "variable_stars": (seed_variable_stars, "Variable Stars"),
             "comets": (seed_comets, "Comets"),
             "eclipses": (seed_eclipses, "Eclipses"),
+            "asteroids": (seed_asteroids, "Asteroids"),
         }
 
         if seed_id not in seed_map:

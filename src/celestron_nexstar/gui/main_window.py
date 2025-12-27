@@ -2299,7 +2299,8 @@ class MainWindow(QMainWindow):
             del self._loading_threads[obj_type_str]
 
         if objects is None:
-            # Error occurred, already logged in thread
+            # Error occurred (likely missing data), show import message
+            self._show_import_data_message(table, obj_type_str)
             return
 
         # Populate table (must be done on main thread)
@@ -2593,6 +2594,67 @@ class MainWindow(QMainWindow):
 
         # Set row height to accommodate message (with word wrapping)
         table.setRowHeight(0, 120)
+
+        # Re-enable sorting (though it won't do much with one row)
+        table.setSortingEnabled(True)
+
+    def _show_import_data_message(self, table: QTableWidget, obj_type_str: str) -> None:
+        """Show a message when data needs to be imported."""
+        # Temporarily disable sorting
+        table.setSortingEnabled(False)
+
+        # Get human-readable type name
+        type_name = obj_type_str.replace("_", " ").title()
+
+        # Get original column count (preserve table structure)
+        original_cols = table.columnCount()
+        if original_cols == 0:
+            # If no columns, set to 1 for the message
+            table.setColumnCount(1)
+            original_cols = 1
+
+        # Set table to show one row with message
+        table.setRowCount(1)
+
+        # Create a message item
+        message = f"No {type_name} data found in the database.\n\n"
+        message += "To import data:\n"
+        message += "1. Open Settings (Tools → Settings)\n"
+        message += "2. Go to the 'Data Import' tab\n"
+        message += "3. Download and import the required catalog data\n\n"
+        message += "Alternatively, you can run:\n"
+        message += "  nexstar data download celestial\n"
+        message += f"  nexstar data import celestial_{obj_type_str}s"
+
+        message_item = QTableWidgetItem(message)
+        message_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
+        table.setItem(0, 0, message_item)
+
+        # Center align the message
+        item = table.item(0, 0)
+        if item:
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        # Make the message row span all columns
+        if original_cols > 1:
+            table.setSpan(0, 0, 1, original_cols)
+
+        # Set column widths to prevent horizontal scrolling
+        # Make columns stretch to fill available space without exceeding table width
+        header = table.horizontalHeader()
+        if original_cols > 1:
+            # Set all columns to stretch mode so they fill the table width
+            for col in range(original_cols):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
+        else:
+            # Single column - make it stretch
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        # Enable word wrapping for the table to handle long messages
+        table.setWordWrap(True)
+
+        # Set row height to accommodate message (with word wrapping)
+        table.setRowHeight(0, 180)
 
         # Re-enable sorting (though it won't do much with one row)
         table.setSortingEnabled(True)
@@ -4351,7 +4413,7 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.gui.dialogs.glossary_dialog import GlossaryDialog
 
         # Check if glossary is already open
-        if hasattr(self, '_glossary_dialog') and self._glossary_dialog and self._glossary_dialog.isVisible():
+        if hasattr(self, "_glossary_dialog") and self._glossary_dialog and self._glossary_dialog.isVisible():
             # Bring existing dialog to front
             self._glossary_dialog.raise_()
             self._glossary_dialog.activateWindow()

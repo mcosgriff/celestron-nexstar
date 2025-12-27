@@ -182,12 +182,15 @@ class MeteorsInfoDialog(QDialog):
         from celestron_nexstar.api.astronomy.meteor_showers import get_radiant_position
         from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
-        html_content = [f"<style>"
-                        f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
-                        f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
-                        f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
-                        f"</style>", f"<h1>{title} for {location_name}</h1>",
-                        f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>"]
+        html_content = [
+            f"<style>"
+            f"h1 {{ color: {colors['header']}; font-size: 16pt; font-weight: bold; margin-top: 0; margin-bottom: 0.5em; }}"
+            f"h2 {{ color: {colors['header']}; margin-top: 1.5em; margin-bottom: 0.5em; }}"
+            f"p {{ margin-top: 0.5em; margin-bottom: 0.5em; }}"
+            f"</style>",
+            f"<h1>{title} for {location_name}</h1>",
+            f"<p style='color: {colors['text_dim']};'>Searching next {months} months</p>",
+        ]
 
         # Header
 

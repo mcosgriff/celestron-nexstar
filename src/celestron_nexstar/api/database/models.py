@@ -171,7 +171,15 @@ class CelestialObjectMixin:
 
     # Physical properties
     magnitude: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+
+    # Object type/subtype - normalized foreign key reference
+    object_subtype_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("object_types.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # Legacy VARCHAR column kept for backwards compatibility
     object_subtype: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
     size_arcmin: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Metadata
