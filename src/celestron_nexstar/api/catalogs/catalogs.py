@@ -439,8 +439,9 @@ def search_objects(
     If the query is a coordinate (e.g., "02246+1541" or "02:24:36 +15:41:00"), searches for objects
     near those coordinates. Otherwise, searches by name, common name, or description.
 
-    If an exact match is found (case-insensitive), only that match is returned.
-    Otherwise, returns matches sorted by match quality.
+    Returns exact matches first, followed by partial matches (substring), sorted by match quality.
+    This allows searching for "Andromeda" to return both exact matches (Andromeda constellation, M31)
+    and partial matches (Andromeda I, Andromeda XXI, etc.).
 
     Args:
         query: Search query string (name, description, or coordinates)
@@ -490,7 +491,7 @@ def search_objects(
             # Fall through to regular search if coordinate search fails
 
     all_results: list[tuple[int, CelestialObject, str]] = []  # (score, object, match_type)
-    exact_match = None
+    seen_names = set()  # Deduplicate by name (case-insensitive)
 
     try:
         db = get_database()
@@ -521,9 +522,7 @@ def search_objects(
                 cast(type[CelestialObjectModelProtocol], MoonModel),
             ]
 
-            # First, try exact match (case-insensitive) - all filtering in database
-            exact_results = []
-            seen_names = set()  # Deduplicate by name (case-insensitive)
+            # First, search for exact matches (case-insensitive) - score: -1 (highest priority)
             for model_class in all_model_classes:
                 exact_query = select(model_class).where(
                     (model_class.name.ilike(query)) | (model_class.common_name.ilike(query))
@@ -542,9 +541,9 @@ def search_objects(
                     obj_name_lower = str(exact_obj.name).lower() if exact_obj.name else ""
                     if obj_name_lower and obj_name_lower not in seen_names:
                         seen_names.add(obj_name_lower)
-                        exact_results.append((exact_obj, "exact"))
+                        all_results.append((-1, exact_obj, "exact"))
 
-            # Search constellations and asterisms for exact matches (same priority as other exact matches)
+            # Search constellations and asterisms for exact matches - score: -1 (same priority as other exact matches)
             from celestron_nexstar.api.core.enums import CelestialObjectType
             from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel
 
@@ -574,7 +573,7 @@ def search_objects(
                 obj_name_lower = str(constellation_obj.name).lower()
                 if obj_name_lower not in seen_names:
                     seen_names.add(obj_name_lower)
-                    exact_results.append((constellation_obj, "exact"))
+                    all_results.append((-1, constellation_obj, "exact"))
 
             # Search asterisms for exact matches
             asterism_exact_query = select(AsterismModel).where(AsterismModel.name.ilike(query))
@@ -603,10 +602,7 @@ def search_objects(
                 obj_name_lower = str(asterism_obj.name).lower()
                 if obj_name_lower not in seen_names:
                     seen_names.add(obj_name_lower)
-                    exact_results.append((asterism_obj, "exact"))
-
-            if exact_results:
-                return exact_results
+                    all_results.append((-1, asterism_obj, "exact"))
 
             # Search for substring matches in name (score: 0) - all filtering in database
             for model_class in all_model_classes:
@@ -620,22 +616,13 @@ def search_objects(
                     obj = db._model_to_object(model)
                     if update_positions:
                         obj = obj.with_current_position()
-                    # Check if it's an exact match (shouldn't happen, but just in case)
-                    if obj and obj.name and str(obj.name).lower() == query_lower:
-                        exact_match = (obj, "exact")
-                        break
-                    all_results.append((0, obj, "name"))
-
-            # If exact match found, return it
-            if exact_match:
-                return [exact_match]
+                    # Skip if already added as exact match
+                    obj_name_lower = str(obj.name).lower() if obj and obj.name else ""
+                    if obj_name_lower and obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        all_results.append((0, obj, "name"))
 
             # Search for substring matches in common_name (score: 1) - all filtering in database
-            seen_names = {
-                str(obj.name).lower()
-                for _, obj, _ in all_results
-                if obj and hasattr(obj, "name") and obj.name is not None
-            }
             for model_class in all_model_classes:
                 common_query = select(model_class).where(
                     model_class.common_name.isnot(None),
@@ -652,16 +639,9 @@ def search_objects(
                         obj_name_lower = str(obj.name).lower()
                         if obj_name_lower not in seen_names:
                             seen_names.add(obj_name_lower)
-                        if update_positions:
-                            obj = obj.with_current_position()
-                        if obj.common_name and str(obj.common_name).lower() == query_lower:
-                            exact_match = (obj, "exact")
-                            break
-                        all_results.append((1, obj, "alias"))
-
-            # If exact match found, return it
-            if exact_match:
-                return [exact_match]
+                            if update_positions:
+                                obj = obj.with_current_position()
+                            all_results.append((1, obj, "alias"))
 
             # Search in description across all type-specific tables (score: 2)
             # Note: FTS5 is no longer available after splitting objects table,
@@ -684,21 +664,11 @@ def search_objects(
                             seen_names.add(obj_name_lower)
                             if update_positions:
                                 obj = obj.with_current_position()
-                            # Check if it matches name or common_name (should have been caught above)
-                            if str(obj.name).lower() == query_lower or (
-                                obj.common_name and str(obj.common_name).lower() == query_lower
-                            ):
-                                exact_match = (obj, "exact")
-                                break
                             # Only add if it's a description match (not already matched above)
                             if query_lower not in str(obj.name).lower() and (
                                 not obj.common_name or query_lower not in str(obj.common_name).lower()
                             ):
                                 all_results.append((2, obj, "description"))
-
-            # If exact match found, return it
-            if exact_match:
-                return [exact_match]
 
             # Search constellations by name, abbreviation, or common_name (substring match) - score: 0
             # Update seen_names to include results from name search above
