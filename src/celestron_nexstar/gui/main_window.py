@@ -9,6 +9,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
+from threading import Semaphore
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
@@ -56,6 +57,59 @@ if TYPE_CHECKING:
     from celestron_nexstar.api.observation.observation_planner import RecommendedObject
 
 logger = logging.getLogger(__name__)
+
+
+# Mapping of object type abbreviations to verbose names
+OBJECT_TYPE_VERBOSE_NAMES = {
+    # Cluster types
+    "oc": "Open Cluster",
+    "gc": "Globular Cluster",
+    "pos": "Part of Star",
+    # Nebula types
+    "pn": "Planetary Nebula",
+    "en": "Emission Nebula",
+    "rn": "Reflection Nebula",
+    "dn": "Dark Nebula",
+    "snr": "Supernova Remnant",
+    "sfr": "Star Forming Region",
+    # Galaxy types
+    "g": "Galaxy",
+    "s": "Spiral Galaxy",
+    "sb": "Barred Spiral Galaxy",
+    "e": "Elliptical Galaxy",
+    "i": "Irregular Galaxy",
+    "s0": "Lenticular Galaxy",
+    "sd": "S0/a Galaxy",
+    "gg": "Giant Galaxy",
+    "dsph": "Dwarf Spheroidal",
+    "de": "Dwarf Elliptical",
+    "di": "Dwarf Irregular",
+    "ufd": "Ultra-Faint Dwarf",
+    # Other
+    "agn": "Active Galactic Nucleus",
+}
+
+
+def _get_verbose_type_name(object_subtype: str | None) -> str:
+    """
+    Get the verbose type name for a given object subtype.
+
+    Args:
+        object_subtype: The object subtype string (may be an abbreviation)
+
+    Returns:
+        Verbose type name (e.g., "Open Cluster" instead of "oc")
+    """
+    if not object_subtype:
+        return "-"
+
+    # Check if it's an abbreviation we know
+    subtype_lower = object_subtype.lower().strip()
+    if subtype_lower in OBJECT_TYPE_VERBOSE_NAMES:
+        return OBJECT_TYPE_VERBOSE_NAMES[subtype_lower]
+
+    # Otherwise return the subtype as-is (might already be verbose)
+    return object_subtype
 
 
 class VisibilityCountThread(QThread):
@@ -124,8 +178,14 @@ class VisibilityCountThread(QThread):
                     logger.warning("Light pollution data not available, using default sky brightness")
                     sky_brightness = SkyBrightness.FAIR
 
+                # Limit concurrent database operations to prevent blocking other GUI operations
+                # SQLite can handle concurrent reads, but too many simultaneous operations can cause blocking
+                # Using a semaphore to limit to 2 concurrent DB operations at a time
+                db_semaphore = Semaphore(2)
+                
                 # Use a small pool to avoid starving other UI/DB work
-                max_workers = max(2, min(4, (os.cpu_count() or 4)))
+                # Reduced max_workers to 2 to match semaphore limit and reduce DB contention
+                max_workers = 2
 
                 if self.is_asterism:
 
@@ -137,7 +197,9 @@ class VisibilityCountThread(QThread):
                             return name, 0
                         visible_count = 0
                         for star_name in asterism.member_stars:
-                            star = db.get_by_name(star_name.strip())
+                            # Limit concurrent database operations
+                            with db_semaphore:
+                                star = db.get_by_name(star_name.strip())
                             if not star:
                                 continue
                             try:
@@ -179,7 +241,9 @@ class VisibilityCountThread(QThread):
                     def _count_constellation(name: str) -> tuple[str, int]:
                         if self.isInterruptionRequested():
                             return name, 0
-                        stars = db.filter_objects(object_type="star", constellation=name, limit=50)
+                        # Limit concurrent database operations
+                        with db_semaphore:
+                            stars = db.filter_objects(object_type="star", constellation=name, limit=50)
                         visible_count = 0
                         for star in stars:
                             try:
@@ -337,11 +401,66 @@ class ObjectsLoaderThread(QThread):
                         logger.warning("Light pollution data not available, using default sky brightness")
                         sky_brightness = SkyBrightness.FAIR
 
+                    # Get all constellations for lookup
+                    from celestron_nexstar.api.database.models import ConstellationModel
+                    from sqlalchemy import select
+
+                    constellations_stmt = select(ConstellationModel)
+                    constellations_result = session.execute(constellations_stmt)
+                    all_constellations = [c for c in constellations_result.scalars()]
+
+                    def find_constellation_by_coords(ra_hours: float, dec_degrees: float) -> str | None:
+                        """Find constellation for coordinates using boundaries or nearest center."""
+                        # First, try to find a constellation whose boundaries contain this star
+                        for const in all_constellations:
+                            has_boundaries = (
+                                const.ra_min_hours is not None
+                                and const.ra_max_hours is not None
+                                and const.dec_min_degrees is not None
+                                and const.dec_max_degrees is not None
+                                and (const.ra_max_hours != const.ra_min_hours or const.dec_max_degrees != const.dec_min_degrees)
+                            )
+
+                            if has_boundaries:
+                                ra_min = const.ra_min_hours
+                                ra_max = const.ra_max_hours
+                                if ra_min > ra_max:
+                                    in_ra = ra_hours >= ra_min or ra_hours <= ra_max
+                                else:
+                                    in_ra = ra_min <= ra_hours <= ra_max
+                                in_dec = const.dec_min_degrees <= dec_degrees <= const.dec_max_degrees
+                                if in_ra and in_dec:
+                                    return const.name
+
+                        # If no boundary match, find nearest constellation center
+                        min_distance = float("inf")
+                        nearest_const = None
+                        for const in all_constellations:
+                            ra_diff = abs(ra_hours - const.ra_hours)
+                            if ra_diff > 12:
+                                ra_diff = 24 - ra_diff
+                            dec_diff = abs(dec_degrees - const.dec_degrees)
+                            ra_diff_deg = ra_diff * 15
+                            cos_dec = abs(dec_degrees / 90.0) if abs(dec_degrees) < 90 else 0.1
+                            distance = (ra_diff_deg * cos_dec) ** 2 + dec_diff**2
+                            if distance < min_distance:
+                                min_distance = distance
+                                nearest_const = const
+
+                        max_distance = 2025  # ~45 degrees squared
+                        if nearest_const and min_distance < max_distance:
+                            return nearest_const.name
+                        return None
+
                     # Convert to RecommendedObject format
                     recommended_objects = []
                     for var_star in variable_stars:
                         # Use average magnitude for display
                         avg_mag = (var_star.magnitude_min + var_star.magnitude_max) / 2.0
+                        
+                        # Look up constellation from coordinates
+                        constellation_name = find_constellation_by_coords(var_star.ra_hours, var_star.dec_degrees)
+                        
                         obj = CelestialObject(
                             name=var_star.name,
                             common_name=var_star.designation,
@@ -351,7 +470,7 @@ class ObjectsLoaderThread(QThread):
                             magnitude=avg_mag,
                             object_type=CelestialObjectType.VARIABLE_STAR,
                             description=f"{var_star.variable_type} - Mag {var_star.magnitude_min:.1f} to {var_star.magnitude_max:.1f}, Period: {var_star.period_days:.1f} days. {var_star.notes}",
-                            constellation=None,
+                            constellation=constellation_name,
                         )
 
                         # Calculate visibility
@@ -373,12 +492,22 @@ class ObjectsLoaderThread(QThread):
 
                         moon_sep = planner._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
 
+                        # Calculate transit time and altitude/azimuth at transit
+                        from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+                        best_time = planner._calculate_best_viewing_time(
+                            obj, location.latitude, location.longitude, conditions.timestamp
+                        )
+                        transit_alt, transit_az = get_object_altitude_azimuth(
+                            obj, location.latitude, location.longitude, best_time
+                        )
+
                         # Create RecommendedObject
                         rec_obj = RecommendedObject(
                             obj=obj,
-                            altitude=vis_info.altitude_deg or 0.0,
-                            azimuth=vis_info.azimuth_deg or 0.0,
-                            best_viewing_time=conditions.timestamp,
+                            altitude=transit_alt,  # Use altitude at transit time
+                            azimuth=transit_az,  # Use azimuth at transit time
+                            best_viewing_time=best_time,  # Use transit time
                             visible_duration_hours=8.0,
                             apparent_magnitude=avg_mag,
                             observability_score=vis_info.observability_score,
@@ -455,6 +584,16 @@ class ObjectsLoaderThread(QThread):
 
                         moon_sep = planner._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
 
+                        # Calculate transit time and altitude/azimuth at transit
+                        from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+                        best_time = planner._calculate_best_viewing_time(
+                            obj, location.latitude, location.longitude, conditions.timestamp
+                        )
+                        transit_alt, transit_az = get_object_altitude_azimuth(
+                            obj, location.latitude, location.longitude, best_time
+                        )
+
                         # Calculate priority based on magnitude and visibility
                         mag = obj.magnitude or 99.0
                         if mag < 6.0 and visibility_prob > 0.6:
@@ -470,9 +609,9 @@ class ObjectsLoaderThread(QThread):
 
                         rec_obj = RecommendedObject(
                             obj=obj,
-                            altitude=vis_info.altitude_deg or 0.0,
-                            azimuth=vis_info.azimuth_deg or 0.0,
-                            best_viewing_time=conditions.timestamp,
+                            altitude=transit_alt,  # Use altitude at transit time
+                            azimuth=transit_az,  # Use azimuth at transit time
+                            best_viewing_time=best_time,  # Use transit time
                             visible_duration_hours=8.0,
                             apparent_magnitude=mag,
                             observability_score=vis_info.observability_score,
@@ -573,12 +712,22 @@ class ObjectsLoaderThread(QThread):
                         else:
                             visibility_prob = visibility_prob_result
 
+                        # Calculate transit time and altitude/azimuth at transit
+                        from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+                        best_time = planner._calculate_best_viewing_time(
+                            obj, location.latitude, location.longitude, conditions.timestamp
+                        )
+                        transit_alt, transit_az = get_object_altitude_azimuth(
+                            obj, location.latitude, location.longitude, best_time
+                        )
+
                         # Create RecommendedObject
                         rec_obj = RecommendedObject(
                             obj=obj,
-                            altitude=vis_info.altitude_deg or 0.0,
-                            azimuth=vis_info.azimuth_deg or 0.0,
-                            best_viewing_time=conditions.timestamp,
+                            altitude=transit_alt,  # Use altitude at transit time
+                            azimuth=transit_az,  # Use azimuth at transit time
+                            best_viewing_time=best_time,  # Use transit time
                             visible_duration_hours=8.0,
                             apparent_magnitude=obj.magnitude or 0.0,
                             observability_score=vis_info.observability_score,
@@ -637,11 +786,15 @@ class ObjectsLoaderThread(QThread):
                             if rec.obj.common_name:
                                 existing_names.add(rec.obj.common_name.lower())
 
-                        extra_objects = db.filter_objects(
+                        # Get extra objects, excluding Messier catalog (Messier has its own tab)
+                        # This prevents duplicates like M31 appearing in both Galaxy and Messier tabs
+                        all_extra = db.filter_objects(
                             object_type=obj_type,
                             max_magnitude=18.0,
                             limit=800,
                         )
+                        # Filter out Messier catalog objects
+                        extra_objects = [obj for obj in all_extra if obj.catalog != "messier"]
 
                         augmented: list[RecommendedObject] = list(objects)
                         for obj in extra_objects:
@@ -673,12 +826,22 @@ class ObjectsLoaderThread(QThread):
                             )
                             reason = " / ".join(vis_info.reasons) if vis_info.reasons else "Not currently visible"
 
+                            # Calculate transit time and altitude/azimuth at transit
+                            from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+                            best_time = planner._calculate_best_viewing_time(
+                                obj, location.latitude, location.longitude, conditions.timestamp
+                            )
+                            transit_alt, transit_az = get_object_altitude_azimuth(
+                                obj, location.latitude, location.longitude, best_time
+                            )
+
                             augmented.append(
                                 RecommendedObject(
                                     obj=obj,
-                                    altitude=vis_info.altitude_deg or 0.0,
-                                    azimuth=vis_info.azimuth_deg or 0.0,
-                                    best_viewing_time=conditions.timestamp,
+                                    altitude=transit_alt,  # Use altitude at transit time
+                                    azimuth=transit_az,  # Use azimuth at transit time
+                                    best_viewing_time=best_time,  # Use transit time
                                     visible_duration_hours=0.0,
                                     apparent_magnitude=obj.magnitude or 0.0,
                                     observability_score=vis_info.observability_score,
@@ -1074,13 +1237,20 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.control_panel)
 
         # Create collapsible log panel at bottom (header will be hidden, controlled by toolbar button)
-        self.log_panel = CollapsibleLogPanel()
-        self.log_panel.header.hide()  # Hide the header since we'll use a toolbar button
-        # Ensure log panel starts collapsed (hidden)
-        self.log_panel.log_text.hide()
-        self.log_panel.setMaximumHeight(0)  # Start with no height
-        self.log_panel.setMinimumHeight(0)
-        main_layout.addWidget(self.log_panel)
+        # Only create if user config allows it
+        from celestron_nexstar.api.config.user_config import load_user_config
+
+        user_config = load_user_config()
+        if user_config.protocol_log_location in ("main", "both"):
+            self.log_panel = CollapsibleLogPanel()
+            self.log_panel.header.hide()  # Hide the header since we'll use a toolbar button
+            # Ensure log panel starts collapsed (hidden)
+            self.log_panel.log_text.hide()
+            self.log_panel.setMaximumHeight(0)  # Start with no height
+            self.log_panel.setMinimumHeight(0)
+            main_layout.addWidget(self.log_panel)
+        else:
+            self.log_panel = None
 
         # Create debug log panel at bottom (header will be hidden, controlled by toolbar button)
         self.debug_panel = DebugLogPanel()
@@ -1091,6 +1261,11 @@ class MainWindow(QMainWindow):
         self.debug_panel.setMaximumHeight(0)  # Start with no height
         self.debug_panel.setMinimumHeight(0)
         main_layout.addWidget(self.debug_panel)
+
+        # Hide/disable communication log toggle if log panel is not available
+        if self.log_panel is None and hasattr(self, "log_toggle_action"):
+            self.log_toggle_action.setVisible(False)
+            self.log_toggle_action.setEnabled(False)
 
         # Create status bar at bottom
         self._create_status_bar()
@@ -2360,6 +2535,7 @@ class MainWindow(QMainWindow):
         is_galaxy_tab = obj_type_str == "galaxy"
         is_cluster_tab = obj_type_str == "cluster"
         is_messier_tab = obj_type_str == "messier"
+        is_variable_star_tab = obj_type_str == "variable_star"
 
         # Check all favorites in a single batch query (much more efficient)
         from celestron_nexstar.api.favorites import are_favorites
@@ -2410,7 +2586,7 @@ class MainWindow(QMainWindow):
                 prob_col = 9
                 tips_col = 10
                 fav_col = 11
-            elif is_messier_tab:
+            elif is_messier_tab or is_variable_star_tab:
                 type_col = 2
                 constellation_col = 3
                 mag_col = 4
@@ -2434,15 +2610,19 @@ class MainWindow(QMainWindow):
 
             # Type
             if is_nebula_tab or is_galaxy_tab or is_cluster_tab:
-                subtype_text = getattr(obj, "object_subtype", None) or "-"
+                subtype_text = _get_verbose_type_name(getattr(obj, "object_subtype", None))
                 table.setItem(row, type_col, QTableWidgetItem(subtype_text))
             elif is_messier_tab:
-                # For Messier objects, show human-readable type name
-                from celestron_nexstar.api.catalogs.messier_types import get_messier_type_name
-
-                type_code = getattr(obj, "object_subtype", None)
-                type_name = get_messier_type_name(type_code)
+                # For Messier objects, show verbose type names instead of abbreviations
+                type_name = _get_verbose_type_name(getattr(obj, "object_subtype", None))
                 table.setItem(row, type_col, QTableWidgetItem(type_name))
+            elif is_variable_star_tab:
+                # For variable stars, show the variable type from description
+                # Description format: "{variable_type} - Mag {min} to {max}, Period: {period} days. {notes}"
+                var_type = "Variable Star"  # Default
+                if obj.description:
+                    var_type = obj.description.split(" - ")[0] if " - " in obj.description else obj.description.split(",")[0]
+                table.setItem(row, type_col, QTableWidgetItem(var_type))
             elif not is_star_tab:
                 table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))
 
@@ -2451,7 +2631,7 @@ class MainWindow(QMainWindow):
                 planet_text = obj.parent_planet or "-"
                 table.setItem(row, 2, QTableWidgetItem(planet_text))
 
-            # Constellation (for star tab and Messier tab)
+            # Constellation (for star tab, Messier tab, and variable star tab)
             if is_star_tab:
                 constellation_text = obj.constellation or "-"
                 table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
@@ -2460,6 +2640,10 @@ class MainWindow(QMainWindow):
             elif is_messier_tab:
                 # For Messier objects, use constellation_name property or fall back to constellation field
                 constellation_text = getattr(obj, "constellation_name", None) or obj.constellation or "-"
+                table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
+            elif obj_type_str == "variable_star":
+                # For variable stars, use constellation field
+                constellation_text = obj.constellation or "-"
                 table.setItem(row, constellation_col, QTableWidgetItem(constellation_text))
 
             # Magnitude
@@ -4705,6 +4889,9 @@ class MainWindow(QMainWindow):
 
     def _on_toggle_log(self, checked: bool) -> None:
         """Handle communication log toggle button click."""
+        if not self.log_panel:
+            return  # Log panel not available in this configuration
+
         if checked:
             # Show log panel
             self.log_panel.log_text.show()

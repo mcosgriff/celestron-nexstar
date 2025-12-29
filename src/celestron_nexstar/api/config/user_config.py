@@ -30,6 +30,12 @@ class UserConfig:
     # Takes effect on restart (initialization of the DB singleton).
     use_memory_db: bool = False
 
+    # Protocol log location:
+    # Where to display the telescope protocol log (commands/responses).
+    # Options: "main" (main window only), "telescope" (telescope window only), "both" (both windows)
+    # Takes effect on restart.
+    protocol_log_location: str = "both"
+
 
 def get_user_config_path() -> Path:
     """Return the path to the user config JSON file, ensuring its directory exists."""
@@ -51,7 +57,13 @@ def load_user_config() -> UserConfig:
             return UserConfig()
 
         use_memory_db = bool(raw.get("use_memory_db", False))
-        return UserConfig(use_memory_db=use_memory_db)
+        protocol_log_location = str(raw.get("protocol_log_location", "both"))
+
+        # Validate protocol_log_location
+        if protocol_log_location not in ("main", "telescope", "both"):
+            protocol_log_location = "both"
+
+        return UserConfig(use_memory_db=use_memory_db, protocol_log_location=protocol_log_location)
     except Exception as e:
         logger.warning(f"Failed to load user config from {path}: {e}")
         return UserConfig()

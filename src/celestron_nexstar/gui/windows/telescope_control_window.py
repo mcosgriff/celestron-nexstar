@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -94,10 +96,15 @@ class TelescopeControlWindow(QMainWindow):
         super().__init__(parent)
 
         self.setWindowTitle("Telescope Control")
-        self.setMinimumSize(1100, 750)
+        self.setMinimumSize(1100, 900)  # Increased height for 3-panel layout
 
         # Telescope reference
         self.telescope = telescope
+
+        # Command tracking for debugging and history
+        from celestron_nexstar.api.telescope.command_tracker import CommandTracker
+
+        self.command_tracker = CommandTracker(max_history=100)
 
         # State variables
         self._is_connected = False
@@ -156,6 +163,9 @@ class TelescopeControlWindow(QMainWindow):
         # Setup UI
         self._setup_ui()
 
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+
         # Check if telescope is already connected
         if self.telescope and hasattr(self.telescope, "is_open") and self.telescope.is_open():
             self._on_connected(True)
@@ -171,19 +181,25 @@ class TelescopeControlWindow(QMainWindow):
         # Connection control bar
         main_layout.addWidget(self._create_connection_bar())
 
-        # Create splitter for main content
+        # Command queue widget (shows pending telescope commands)
+        from celestron_nexstar.gui.widgets.command_queue_widget import CommandQueueWidget
+
+        self.command_queue = CommandQueueWidget()
+        main_layout.addWidget(self.command_queue)
+
+        # Create splitter for main content (2 panels)
         splitter = QSplitter(Qt.Orientation.Vertical)
 
         # Top panel: Control and status
         top_panel = self._create_top_panel()
         splitter.addWidget(top_panel)
 
-        # Bottom panel: Visible objects
-        bottom_panel = self._create_visible_objects_panel()
+        # Bottom panel: Tabs with Visible Objects and Communication Log
+        bottom_panel = self._create_bottom_tabs_panel()
         splitter.addWidget(bottom_panel)
 
-        # Set initial splitter sizes
-        splitter.setSizes([400, 300])
+        # Set initial splitter sizes (2 sections)
+        splitter.setSizes([400, 350])
 
         main_layout.addWidget(splitter)
 
@@ -214,6 +230,54 @@ class TelescopeControlWindow(QMainWindow):
         layout.addWidget(self.disconnect_button)
 
         return bar
+
+    def _setup_shortcuts(self) -> None:
+        """Setup keyboard shortcuts for telescope control."""
+        # Rate preset shortcuts
+        # G = Guide rate (2x)
+        guide_shortcut = QShortcut(QKeySequence("G"), self)
+        guide_shortcut.activated.connect(lambda: self._on_shortcut_preset(self.rate_presets.GUIDE_RATE))
+
+        # C = Center rate (32x)
+        center_shortcut = QShortcut(QKeySequence("C"), self)
+        center_shortcut.activated.connect(lambda: self._on_shortcut_preset(self.rate_presets.CENTER_RATE))
+
+        # F = Find rate (3°/s)
+        find_shortcut = QShortcut(QKeySequence("F"), self)
+        find_shortcut.activated.connect(lambda: self._on_shortcut_preset(self.rate_presets.FIND_RATE))
+
+        # Ctrl+H = Command history dialog
+        history_shortcut = QShortcut(QKeySequence("Ctrl+H"), self)
+        history_shortcut.activated.connect(self._on_history_shortcut)
+
+    def _on_shortcut_preset(self, rate: int) -> None:
+        """
+        Handle rate preset keyboard shortcut.
+
+        Args:
+            rate: Rate value to set (2, 5, or 8)
+        """
+        if not self._is_connected:
+            return  # Ignore if not connected
+
+        # Trigger the preset button click (which will emit rate_changed signal)
+        if rate == self.rate_presets.GUIDE_RATE:
+            self.rate_presets.guide_button.click()
+        elif rate == self.rate_presets.CENTER_RATE:
+            self.rate_presets.center_button.click()
+        elif rate == self.rate_presets.FIND_RATE:
+            self.rate_presets.find_button.click()
+
+    def _on_history_shortcut(self) -> None:
+        """Handle command history keyboard shortcut (Ctrl+H)."""
+        if not self.command_tracker:
+            return  # No command tracker available
+
+        from celestron_nexstar.gui.dialogs.command_history_dialog import CommandHistoryDialog
+
+        # Open history dialog
+        dialog = CommandHistoryDialog(self.command_tracker, self)
+        dialog.exec()
 
     def _create_top_panel(self) -> QWidget:
         """Create the top panel with controls and status."""
@@ -246,6 +310,20 @@ class TelescopeControlWindow(QMainWindow):
         self.directional_pad.stop_pressed.connect(self._on_stop_pressed)
         self.directional_pad.set_enabled(False)  # Disabled until connected
         layout.addWidget(self.directional_pad, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        # Rate presets (Guide, Center, Find)
+        from celestron_nexstar.gui.widgets.slew_rate_presets_widget import SlewRatePresetsWidget
+
+        presets_layout = QVBoxLayout()
+        presets_header = QLabel("Rate Presets:")
+        presets_header.setStyleSheet("font-weight: bold;")
+        presets_layout.addWidget(presets_header)
+
+        self.rate_presets = SlewRatePresetsWidget()
+        self.rate_presets.rate_changed.connect(self._on_preset_rate_selected)
+        presets_layout.addWidget(self.rate_presets, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addLayout(presets_layout)
 
         # Slew rate control
         rate_layout = QVBoxLayout()
@@ -366,6 +444,13 @@ class TelescopeControlWindow(QMainWindow):
 
         layout.addWidget(slew_group)
 
+        # Slew progress widget (shows during goto operations)
+        from celestron_nexstar.gui.widgets.slew_progress_widget import SlewProgressWidget
+
+        self.slew_progress_widget = SlewProgressWidget()
+        self.slew_progress_widget.hide()  # Hidden until goto starts
+        layout.addWidget(self.slew_progress_widget)
+
         # Telescope tools buttons
         tools_group = QGroupBox("Telescope Tools")
         tools_layout = QVBoxLayout(tools_group)
@@ -464,6 +549,35 @@ class TelescopeControlWindow(QMainWindow):
 
         return group
 
+    def _create_bottom_tabs_panel(self) -> QWidget:
+        """Create the bottom panel with tabs for Visible Objects and Communication Log."""
+        tabs = QTabWidget()
+
+        # Tab 1: Visible Objects
+        visible_objects_tab = self._create_visible_objects_panel()
+        tabs.addTab(visible_objects_tab, "Visible Objects")
+
+        # Tab 2: Communication Log
+        log_tab = self._create_communication_log_panel()
+        tabs.addTab(log_tab, "Communication Log")
+
+        return tabs
+
+    def _create_communication_log_panel(self) -> QWidget:
+        """Create the communication log panel."""
+        from celestron_nexstar.gui.widgets.telescope_command_log_panel import TelescopeCommandLogPanel
+
+        # Create log panel with command tracker (no longer collapsible, always expanded in tab)
+        self.command_log_panel = TelescopeCommandLogPanel(command_tracker=self.command_tracker, parent=self)
+
+        # Expand by default since it's in a tab
+        self.command_log_panel.is_expanded = True
+        # Trigger the toggle to show the log
+        if hasattr(self.command_log_panel, "_toggle"):
+            self.command_log_panel._toggle()
+
+        return self.command_log_panel
+
     # Connection methods
     def _on_connect_clicked(self) -> None:
         """Handle connect button click."""
@@ -505,6 +619,10 @@ class TelescopeControlWindow(QMainWindow):
             return
 
         self._is_connected = True
+
+        # Connect command tracker to protocol for debugging/history
+        if self.telescope and hasattr(self.telescope, "protocol") and self.telescope.protocol:
+            self.telescope.protocol.set_command_tracker(self.command_tracker)
 
         # Update UI
         if self.connection_status_label:
@@ -729,6 +847,31 @@ class TelescopeControlWindow(QMainWindow):
         if self.rate_label:
             self.rate_label.setText(f"Rate {value}: {SLEW_RATE_DESCRIPTIONS[value]}")
 
+        # Deselect preset if slider value doesn't match any preset
+        if hasattr(self, "rate_presets") and self.rate_presets:
+            from celestron_nexstar.gui.widgets.slew_rate_presets_widget import SlewRatePresetsWidget
+
+            preset_rates = [
+                SlewRatePresetsWidget.GUIDE_RATE,
+                SlewRatePresetsWidget.CENTER_RATE,
+                SlewRatePresetsWidget.FIND_RATE,
+            ]
+            if value not in preset_rates:
+                self.rate_presets.deselect_all()
+            else:
+                self.rate_presets.set_active_rate(value)
+
+    def _on_preset_rate_selected(self, rate: int) -> None:
+        """
+        Handle rate preset button click.
+
+        Args:
+            rate: Preset rate value (2, 5, or 8)
+        """
+        # Update slider (which will trigger _on_rate_changed)
+        if self.rate_slider:
+            self.rate_slider.setValue(rate)
+
     def _on_movement_mode_changed(self) -> None:
         """Handle movement mode change."""
         if self.step_radio and self.step_radio.isChecked():
@@ -767,6 +910,10 @@ class TelescopeControlWindow(QMainWindow):
 
             # Reset error count on successful update
             self._position_error_count = 0
+
+            # Update slew progress widget if active
+            if hasattr(self, "slew_progress_widget") and self.slew_progress_widget.is_active():
+                self.slew_progress_widget.update_progress(coords.ra_hours, coords.dec_degrees)
 
         except Exception as e:
             logger.error(f"Error formatting position: {e}")

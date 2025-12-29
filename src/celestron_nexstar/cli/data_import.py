@@ -1548,9 +1548,7 @@ def import_celestial_stars(
             # If not found in properties, determine from coordinates
             if not constellation and constellations:
                 # Use sync wrapper since we're in a sync context
-                constellation = _find_constellation_by_coordinates_async(
-                    ra_hours, dec_degrees, constellations, name
-                )
+                constellation = _find_constellation_by_coordinates_async(ra_hours, dec_degrees, constellations, name)
 
             # Build description
             description_parts = []

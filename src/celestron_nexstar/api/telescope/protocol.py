@@ -37,6 +37,8 @@ if TYPE_CHECKING:
 
     from serial_asyncio import SerialTransport
 
+    from celestron_nexstar.api.telescope.command_tracker import CommandTracker
+
 
 __all__ = ["NexStarProtocol"]
 
@@ -103,6 +105,22 @@ class NexStarProtocol:
 
         # Lock for concurrent command handling
         self._command_lock = asyncio.Lock()
+
+        # Optional command tracker for debugging/history (off by default)
+        self._command_tracker: CommandTracker | None = None
+
+    def set_command_tracker(self, tracker: CommandTracker | None) -> None:
+        """
+        Set command tracker for recording command history.
+
+        Args:
+            tracker: CommandTracker instance or None to disable tracking
+        """
+        self._command_tracker = tracker
+        if tracker:
+            logger.info("CommandTracker enabled for protocol")
+        else:
+            logger.info("CommandTracker disabled for protocol")
 
     async def open(self) -> bool:
         """
@@ -227,12 +245,29 @@ class NexStarProtocol:
                 logger.error(f"Reconnection failed: {e}")
                 raise NotConnectedError("Connection not open and reconnection failed") from e
 
+        # Record command start (if tracker enabled)
+        if self._command_tracker:
+            self._command_tracker.start_command(command)
+
         # Use lock to prevent concurrent commands
-        async with self._command_lock:
-            if self.connection_type == "tcp":
-                return await self._send_command_tcp(command)
-            else:
-                return await self._send_command_serial(command)
+        try:
+            async with self._command_lock:
+                if self.connection_type == "tcp":
+                    response = await self._send_command_tcp(command)
+                else:
+                    response = await self._send_command_serial(command)
+
+            # Record successful command (if tracker enabled)
+            if self._command_tracker:
+                self._command_tracker.record_command(command=command, response=response, success=True)
+
+            return response
+
+        except Exception as e:
+            # Record failed command (if tracker enabled)
+            if self._command_tracker:
+                self._command_tracker.record_command(command=command, response=None, success=False, error=str(e))
+            raise
 
     async def _send_command_serial(self, command: str) -> str:
         """Send command over async serial connection."""

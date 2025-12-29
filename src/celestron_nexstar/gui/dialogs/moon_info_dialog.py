@@ -18,6 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.api.core.utils import get_local_timezone
+from celestron_nexstar.api.location.observer import FEET_TO_METERS
+
 
 try:
     import shiboken6  # type: ignore[import-untyped]
@@ -65,7 +68,7 @@ class MoonPlotWorkerThread(QThread):
             # Get observer location and time
             logger.debug("Getting observer location...")
             location = get_observer_location()
-            now = datetime.now(UTC)
+            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
 
             # Get ephemeris file path
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
@@ -149,7 +152,7 @@ class MoonPlotWorkerThread(QThread):
                 # 4096 is beautiful but slow; 2048 is much faster and still crisp for an in-dialog plot.
                 resolution=2048,
                 scale=1.0,
-                autoscale=True,
+                # autoscale=True,
             )
             logger.debug("Horizon plot created successfully")
 
@@ -158,14 +161,15 @@ class MoonPlotWorkerThread(QThread):
             # Stars are the expensive part; use a modest magnitude cutoff and disable labels.
             from starplot import _  # type: ignore[import-untyped]
 
-            plot.stars(where=[_.magnitude < 6.5], where_labels=[False])  # type: ignore[arg-type]
+            # plot.stars(where=[_.magnitude < 6.5], where_labels=[False])  # type: ignore[arg-type]
+            plot.stars(where=[_.magnitude < 5], bayer_labels=True, where_labels=[_.magnitude < 3])
             logger.debug("Stars added successfully")
 
             # Plot the moon
             logger.debug("Adding moon...")
             # Use Starplot's HorizonPlot.moon kwargs for better visuals.
             # See: https://starplot.dev/reference-horizonplot/#starplot.HorizonPlot.moon
-            plot.moon(true_size=True, show_phase=True, label="Moon", legend_label="Moon")  # type: ignore[no-untyped-call]
+            plot.moon(true_size=False, show_phase=True, label="Moon", legend_label="Moon")  # type: ignore[no-untyped-call]
             logger.debug("Moon added successfully")
 
             # Plot horizon
@@ -268,13 +272,7 @@ class MoonDiskWorkerThread(QThread):
             sun = eph["sun"]
             moon = eph["moon"]
 
-            elev_m = 0.0
-            try:
-                from celestron_nexstar.api.location.observer import FEET_TO_METERS
-
-                elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
-            except Exception:
-                elev_m = 0.0
+            elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
             observer = earth + Topos(
                 latitude_degrees=location.latitude, longitude_degrees=location.longitude, elevation_m=elev_m
             )

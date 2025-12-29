@@ -3,12 +3,14 @@ Dialog to display and manage application settings.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -150,6 +152,15 @@ class SettingsDialog(QDialog):
         use_memory = QCheckBox("Use in-memory database (faster reads, uses more RAM)")
         self.user_config_use_memory_db = use_memory
         form.addRow("Database:", use_memory)
+
+        # Protocol log location
+        protocol_log_combo = QComboBox()
+        protocol_log_combo.addItem("Main Window Only", "main")
+        protocol_log_combo.addItem("Telescope Window Only", "telescope")
+        protocol_log_combo.addItem("Both Windows", "both")
+        protocol_log_combo.setToolTip("Choose where to display telescope protocol commands/responses")
+        self.user_config_protocol_log_location = protocol_log_combo
+        form.addRow("Protocol Log:", protocol_log_combo)
 
         layout.addLayout(form)
 
@@ -853,6 +864,13 @@ class SettingsDialog(QDialog):
             cfg = load_user_config()
             self.user_config_use_memory_db.setChecked(cfg.use_memory_db)
 
+            # Set protocol log location
+            combo = self.user_config_protocol_log_location
+            for i in range(combo.count()):
+                if combo.itemData(i) == cfg.protocol_log_location:
+                    combo.setCurrentIndex(i)
+                    break
+
             # Communicate effective value (env var overrides)
             env_val = os.getenv("CELESTRON_USE_MEMORY_DB")
             if env_val is not None:
@@ -879,7 +897,11 @@ class SettingsDialog(QDialog):
         try:
             from celestron_nexstar.api.config.user_config import UserConfig, get_user_config_path, save_user_config
 
-            cfg = UserConfig(use_memory_db=bool(self.user_config_use_memory_db.isChecked()))
+            protocol_log_location = self.user_config_protocol_log_location.currentData()
+            cfg = UserConfig(
+                use_memory_db=bool(self.user_config_use_memory_db.isChecked()),
+                protocol_log_location=protocol_log_location,
+            )
             save_user_config(cfg)
             self.user_config_status_label.setText(
                 f"<span style='color: {colors['green']};'>✓ Saved</span> "

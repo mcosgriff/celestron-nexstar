@@ -661,7 +661,9 @@ class ObservationPlanner:
         }
         # Default to FAIR if no light pollution data available
         if conditions.light_pollution is not None:
-            sky_brightness = bortle_to_sky_brightness.get(conditions.light_pollution.bortle_class.value, SkyBrightness.FAIR)
+            sky_brightness = bortle_to_sky_brightness.get(
+                conditions.light_pollution.bortle_class.value, SkyBrightness.FAIR
+            )
         else:
             sky_brightness = SkyBrightness.FAIR
 
@@ -1073,6 +1075,13 @@ class ObservationPlanner:
             obj, conditions.latitude, conditions.longitude, conditions.timestamp
         )
 
+        # Calculate altitude and azimuth at transit time (when object is highest)
+        from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+
+        transit_alt, transit_az = get_object_altitude_azimuth(
+            obj, conditions.latitude, conditions.longitude, best_time
+        )
+
         # Calculate moon separation (using cached moon position)
         moon_separation = self._calculate_moon_separation_fast(obj, moon_ra, moon_dec)
 
@@ -1086,15 +1095,15 @@ class ObservationPlanner:
 
         return RecommendedObject(
             obj=obj,
-            altitude=vis_info.altitude_deg or 0.0,
-            azimuth=vis_info.azimuth_deg or 0.0,
+            altitude=transit_alt,  # Use altitude at transit time, not current time
+            azimuth=transit_az,  # Use azimuth at transit time
             best_viewing_time=best_time,
             visible_duration_hours=8.0,  # Simplified
             apparent_magnitude=obj.magnitude or 0.0,
             observability_score=vis_info.observability_score,
             visibility_probability=visibility_prob,
             priority=priority,
-            reason=f"Well positioned at {vis_info.altitude_deg:.0f}° altitude" if vis_info.altitude_deg else "Visible",
+            reason=f"Well positioned at {transit_alt:.0f}° altitude" if transit_alt else "Visible",
             viewing_tips=tips,
             moon_separation_deg=moon_separation,
         )
@@ -1224,36 +1233,29 @@ class ObservationPlanner:
         lon: float,
         start_time: datetime,
     ) -> datetime:
-        """Calculate when object is highest in sky (transit)."""
+        """Calculate when object is highest in sky (transit - next meridian crossing)."""
         # Calculate Local Sidereal Time
         lst_hours = calculate_lst(lon, start_time)
 
         # Object's RA in hours
         obj_ra = obj.ra_hours
 
-        # Hour angle at transit is 0 (object is on meridian)
-        # LST = RA at transit
+        # Transit occurs when LST = RA (hour angle = 0)
         # Calculate time difference needed to reach transit
-        ha_hours = lst_hours - obj_ra
+        # Find the difference in LST needed to reach RA
+        lst_diff_hours = obj_ra - lst_hours
 
-        # Normalize hour angle to -12 to +12 hours
-        if ha_hours > 12:
-            ha_hours -= 24
-        elif ha_hours < -12:
-            ha_hours += 24
+        # Normalize to 0-24 range (always find the NEXT transit)
+        while lst_diff_hours < 0:
+            lst_diff_hours += 24.0
+        while lst_diff_hours >= 24.0:
+            lst_diff_hours -= 24.0
 
-        # Convert hour angle to time difference
-        # 1 hour angle = 1 hour of sidereal time ≈ 0.9973 hours of solar time
-        time_diff_hours = ha_hours * 0.9973
+        # Convert sidereal hours to solar hours
+        # Sidereal day is 23.9345 hours, so 1 sidereal hour = 23.9345/24 = 0.9973 solar hours
+        time_diff_hours = lst_diff_hours * (23.9345 / 24.0)
 
         transit_time = start_time + timedelta(hours=time_diff_hours)
-
-        # If transit is more than 12 hours away, use next transit
-        if abs(time_diff_hours) > 12:
-            if time_diff_hours > 0:
-                transit_time -= timedelta(hours=24)
-            else:
-                transit_time += timedelta(hours=24)
 
         return transit_time
 

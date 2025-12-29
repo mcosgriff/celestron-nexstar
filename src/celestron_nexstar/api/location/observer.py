@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_LOCATION",
+    "FEET_TO_METERS",
+    "METERS_TO_FEET",
     "ObserverLocation",
     "clear_observer_location",
     "detect_location_automatically",

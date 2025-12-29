@@ -19,8 +19,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from celestron_nexstar.api.core.exceptions import DatabaseError
-
 
 logger = logging.getLogger(__name__)
 

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -43,6 +44,61 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+# Mapping of object type abbreviations to verbose names
+OBJECT_TYPE_VERBOSE_NAMES = {
+    # Cluster types
+    "oc": "Open Cluster",
+    "gc": "Globular Cluster",
+    "pos": "Part of Star",
+    # Nebula types
+    "pn": "Planetary Nebula",
+    "en": "Emission Nebula",
+    "rn": "Reflection Nebula",
+    "dn": "Dark Nebula",
+    "snr": "Supernova Remnant",
+    "sfr": "Star Forming Region",
+    # Galaxy types
+    "g": "Galaxy",
+    "s": "Spiral Galaxy",
+    "sb": "Barred Spiral Galaxy",
+    "e": "Elliptical Galaxy",
+    "i": "Irregular Galaxy",
+    "s0": "Lenticular Galaxy",
+    "sd": "S0/a Galaxy",
+    "gg": "Giant Galaxy",
+    "dsph": "Dwarf Spheroidal",
+    "de": "Dwarf Elliptical",
+    "di": "Dwarf Irregular",
+    "ufd": "Ultra-Faint Dwarf",
+    # Other
+    "agn": "Active Galactic Nucleus",
+}
+
+
+def _get_verbose_object_type(obj: CelestialObject) -> str:
+    """
+    Get the verbose object type name for display.
+
+    Args:
+        obj: CelestialObject instance
+
+    Returns:
+        Verbose type name (e.g., "Open Cluster" instead of "oc")
+    """
+    # First try to get the subtype (more specific)
+    if obj.object_subtype:
+        subtype_lower = obj.object_subtype.lower().strip()
+        # Check if it's an abbreviation we know
+        if subtype_lower in OBJECT_TYPE_VERBOSE_NAMES:
+            return OBJECT_TYPE_VERBOSE_NAMES[subtype_lower]
+        # Otherwise return the subtype as-is (might already be verbose)
+        return obj.object_subtype
+
+    # Fall back to object_type enum
+    type_str = obj.object_type.value if hasattr(obj.object_type, "value") else str(obj.object_type)
+    return type_str
 
 
 @dataclass
@@ -253,6 +309,9 @@ class CatalogSearchWindow(QMainWindow):
         self.results_table.setSortingEnabled(True)  # Enable sorting
         self.results_table.itemSelectionChanged.connect(self._on_selection_changed)
         self.results_table.itemDoubleClicked.connect(self._on_item_double_clicked)
+        # Enable context menu
+        self.results_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.results_table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.results_table)
 
         # Store search results
@@ -703,8 +762,8 @@ class CatalogSearchWindow(QMainWindow):
                         # Catalog
                         child_item.setText(1, obj.catalog or "")
 
-                        # Type
-                        type_str = obj.object_type.value if hasattr(obj.object_type, "value") else str(obj.object_type)
+                        # Type - use verbose name instead of abbreviations
+                        type_str = _get_verbose_object_type(obj)
                         child_item.setText(2, type_str)
 
                         # RA
@@ -842,3 +901,63 @@ class CatalogSearchWindow(QMainWindow):
 
         # Hide after duration
         QTimer.singleShot(duration_ms, toast.deleteLater)
+
+    def _on_context_menu(self, position: object) -> None:
+        """Handle context menu request for results table."""
+        # Get the item at the click position
+        item = self.results_table.itemAt(position)  # type: ignore[arg-type]
+        if not item or item.parent() is None:
+            # No item or clicked on a group header
+            return
+
+        # Get the celestial object from the item
+        obj = item.data(0, Qt.ItemDataRole.UserRole)
+        if not obj:
+            return
+
+        # Create context menu
+        menu = QMenu(self)
+        add_to_queue_action = menu.addAction("Add to GoTo Queue")
+
+        # Show menu and get selected action
+        action = menu.exec(self.results_table.viewport().mapToGlobal(position))  # type: ignore[arg-type]
+
+        if action == add_to_queue_action:
+            self._add_to_goto_queue(obj)
+
+    def _add_to_goto_queue(self, obj: CelestialObject) -> None:
+        """Add the selected object to the goto queue."""
+        try:
+            # Get the main window (parent of this window)
+            main_window = self.parent()
+            if not main_window:
+                logger.error("Cannot add to goto queue: no parent window")
+                self._show_toast("Error: Cannot access main window")
+                return
+
+            # Check if goto queue window exists, if not create it
+            if not hasattr(main_window, "_goto_queue_window") or main_window._goto_queue_window is None:
+                from celestron_nexstar.gui.windows.goto_queue_window import GotoQueueWindow
+
+                # Get telescope reference if available
+                telescope = main_window.telescope if hasattr(main_window, "telescope") else None
+                main_window._goto_queue_window = GotoQueueWindow(main_window, telescope=telescope)
+                main_window._goto_queue_window.destroyed.connect(
+                    lambda: setattr(main_window, "_goto_queue_window", None)
+                )
+
+            # Add object to the queue
+            main_window._goto_queue_window.add_object(obj)
+
+            # Show the goto queue window
+            main_window._goto_queue_window.show()
+            main_window._goto_queue_window.raise_()
+            main_window._goto_queue_window.activateWindow()
+
+            # Show confirmation toast
+            obj_name = obj.common_name if obj.common_name else obj.name
+            self._show_toast(f"Added {obj_name} to GoTo Queue")
+
+        except Exception as e:
+            logger.error(f"Error adding object to goto queue: {e}", exc_info=True)
+            self._show_toast(f"Error: {e!s}")
