@@ -89,6 +89,9 @@ class ObservationLogDialog(QDialog):
             observations = get_observations(limit=1000)
             self.table.setRowCount(len(observations))
 
+            # Batch load all object names to avoid N+1 query problem
+            object_names = self._batch_load_object_names(observations)
+
             for row, obs in enumerate(observations):
                 # Date/Time
                 obs_time = obs.observed_at
@@ -103,8 +106,8 @@ class ObservationLogDialog(QDialog):
                 time_item.setData(Qt.ItemDataRole.UserRole, obs.id)  # Store observation ID
                 self.table.setItem(row, 0, time_item)
 
-                # Get object name from database
-                object_name = self._get_object_name(obs.object_type, obs.object_id)
+                # Get object name from pre-loaded dictionary
+                object_name = object_names.get((obs.object_type, obs.object_id), f"{obs.object_type} #{obs.object_id}")
                 name_item = QTableWidgetItem(object_name)
                 self.table.setItem(row, 1, name_item)
 
@@ -161,6 +164,48 @@ class ObservationLogDialog(QDialog):
             autosize_table_columns(self.table, stretch_last=False)
         except Exception as e:
             logger.error(f"Error loading observations: {e}", exc_info=True)
+
+    def _batch_load_object_names(self, observations: list) -> dict[tuple[str, int], str]:
+        """
+        Batch load object names for all observations to avoid N+1 query problem.
+
+        Args:
+            observations: List of ObservationModel instances
+
+        Returns:
+            Dictionary mapping (object_type, object_id) to object name
+        """
+        from collections import defaultdict
+
+        from celestron_nexstar.api.core.enums import CelestialObjectType
+
+        # Group observations by object_type
+        ids_by_type: dict[str, list[int]] = defaultdict(list)
+        for obs in observations:
+            ids_by_type[obs.object_type].append(obs.object_id)
+
+        # Batch load objects for each type
+        object_names: dict[tuple[str, int], str] = {}
+        db = get_database()
+
+        for object_type_str, object_ids in ids_by_type.items():
+            try:
+                object_type = CelestialObjectType(object_type_str)
+                # Use batch loading method
+                objects_dict = db.get_by_ids(object_ids, object_type)
+
+                # Build lookup dictionary
+                for object_id, obj in objects_dict.items():
+                    name = obj.common_name or obj.name
+                    object_names[(object_type_str, object_id)] = name
+            except Exception as e:
+                logger.warning(f"Error batch loading objects of type {object_type_str}: {e}")
+                # Fallback: populate with placeholder names
+                for object_id in object_ids:
+                    if (object_type_str, object_id) not in object_names:
+                        object_names[(object_type_str, object_id)] = f"{object_type_str} #{object_id}"
+
+        return object_names
 
     def _get_object_name(self, object_type: str, object_id: int) -> str:
         """Get object name from database."""

@@ -1078,9 +1078,7 @@ class ObservationPlanner:
         # Calculate altitude and azimuth at transit time (when object is highest)
         from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
 
-        transit_alt, transit_az = get_object_altitude_azimuth(
-            obj, conditions.latitude, conditions.longitude, best_time
-        )
+        transit_alt, transit_az = get_object_altitude_azimuth(obj, conditions.latitude, conditions.longitude, best_time)
 
         # Calculate moon separation (using cached moon position)
         moon_separation = self._calculate_moon_separation_fast(obj, moon_ra, moon_dec)

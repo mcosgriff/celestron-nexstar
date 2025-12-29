@@ -68,8 +68,15 @@ class CometsInfoDialog(QDialog):
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load comets information
-        self._load_comets_info()
+        # Flag to track if content has been loaded (lazy loading)
+        self._content_loaded = False
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Override showEvent to lazy load content on first display."""
+        super().showEvent(event)
+        if not self._content_loaded:
+            self._load_comets_info()
+            self._content_loaded = True
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""

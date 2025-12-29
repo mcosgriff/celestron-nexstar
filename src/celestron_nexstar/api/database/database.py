@@ -1108,6 +1108,43 @@ class CatalogDatabase:
             # No fallback to old model - the objects table no longer exists
             return None
 
+    def get_by_ids(self, object_ids: list[int], object_type: CelestialObjectType | str) -> dict[int, CelestialObject]:
+        """
+        Batch get multiple objects by IDs for a specific object type.
+
+        This is much more efficient than calling get_by_id() in a loop.
+
+        Args:
+            object_ids: List of object IDs to fetch
+            object_type: The object type (must be specified for batch operations)
+
+        Returns:
+            Dictionary mapping object_id to CelestialObject (missing IDs are omitted)
+        """
+        if not object_ids:
+            return {}
+
+        if isinstance(object_type, str):
+            object_type = CelestialObjectType(object_type)
+
+        model_class = self._get_model_class(object_type)
+        result_dict: dict[int, CelestialObject] = {}
+
+        with self._get_session() as session:
+            from sqlalchemy import select
+
+            # Query all objects in a single database call
+            stmt = select(model_class).where(model_class.id.in_(object_ids))
+            models = session.execute(stmt).scalars().all()
+
+            # Convert to CelestialObject and build lookup dictionary
+            for model in models:
+                obj = self._model_to_object(model)
+                if obj:
+                    result_dict[model.id] = obj
+
+        return result_dict
+
     @deal.pre(lambda self, name: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
     @deal.post(
         lambda result: result is None or isinstance(result, CelestialObject),

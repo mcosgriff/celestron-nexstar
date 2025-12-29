@@ -87,25 +87,51 @@ class SettingsDialog(QDialog):
         self._import_all_total = 0
         self._import_all_completed = 0
 
+        # Track which tabs have been loaded (lazy loading)
+        self._loaded_tabs: set[int] = set()
+
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load all tab data
-        self._load_config_info()
-        self._load_ephemeris_info()
-        self._load_celestial_data_info()
-        self._load_seed_data_info()
-        self._load_solar_system_info()
-        self._load_custom_yaml_info()
-        self._load_wds_info()
-        self._load_light_pollution_info()
-        self._load_location_info()
-        self._load_optics_info()
-        self._load_time_info()
-        self._load_data_info()
-        self._load_database_info()
+        # Connect tab change signal for lazy loading
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
+
+        # Load only the first tab immediately
+        self._load_tab_data(0)
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Handle tab change event to lazy load tab data."""
+        if index not in self._loaded_tabs:
+            self._load_tab_data(index)
+            self._loaded_tabs.add(index)
+
+    def _load_tab_data(self, tab_index: int) -> None:
+        """Load data for a specific tab based on its index."""
+        # Map tab index to tab load methods
+        # The order matches the order tabs were added in __init__
+        tab_loaders = [
+            self._load_config_info,  # 0: Config
+            self._load_ephemeris_info,  # 1: Ephemeris
+            self._load_celestial_data_info,  # 2: Celestial Data
+            self._load_seed_data_info,  # 3: Seed Data
+            self._load_solar_system_info,  # 4: Solar System Data
+            self._load_custom_yaml_info,  # 5: Custom YAML
+            self._load_wds_info,  # 6: WDS
+            self._load_light_pollution_info,  # 7: Light Pollution
+            self._load_location_info,  # 8: Location
+            self._load_optics_info,  # 9: Optics
+            self._load_time_info,  # 10: Time
+            self._load_data_info,  # 11: Data
+            self._load_database_info,  # 12: Database
+        ]
+
+        if 0 <= tab_index < len(tab_loaders):
+            try:
+                tab_loaders[tab_index]()
+            except Exception as e:
+                logger.error(f"Error loading tab {tab_index}: {e}", exc_info=True)
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""

@@ -182,7 +182,7 @@ class VisibilityCountThread(QThread):
                 # SQLite can handle concurrent reads, but too many simultaneous operations can cause blocking
                 # Using a semaphore to limit to 2 concurrent DB operations at a time
                 db_semaphore = Semaphore(2)
-                
+
                 # Use a small pool to avoid starving other UI/DB work
                 # Reduced max_workers to 2 to match semaphore limit and reduce DB contention
                 max_workers = 2
@@ -402,12 +402,13 @@ class ObjectsLoaderThread(QThread):
                         sky_brightness = SkyBrightness.FAIR
 
                     # Get all constellations for lookup
-                    from celestron_nexstar.api.database.models import ConstellationModel
                     from sqlalchemy import select
+
+                    from celestron_nexstar.api.database.models import ConstellationModel
 
                     constellations_stmt = select(ConstellationModel)
                     constellations_result = session.execute(constellations_stmt)
-                    all_constellations = [c for c in constellations_result.scalars()]
+                    all_constellations = list(constellations_result.scalars())
 
                     def find_constellation_by_coords(ra_hours: float, dec_degrees: float) -> str | None:
                         """Find constellation for coordinates using boundaries or nearest center."""
@@ -418,7 +419,10 @@ class ObjectsLoaderThread(QThread):
                                 and const.ra_max_hours is not None
                                 and const.dec_min_degrees is not None
                                 and const.dec_max_degrees is not None
-                                and (const.ra_max_hours != const.ra_min_hours or const.dec_max_degrees != const.dec_min_degrees)
+                                and (
+                                    const.ra_max_hours != const.ra_min_hours
+                                    or const.dec_max_degrees != const.dec_min_degrees
+                                )
                             )
 
                             if has_boundaries:
@@ -457,10 +461,10 @@ class ObjectsLoaderThread(QThread):
                     for var_star in variable_stars:
                         # Use average magnitude for display
                         avg_mag = (var_star.magnitude_min + var_star.magnitude_max) / 2.0
-                        
+
                         # Look up constellation from coordinates
                         constellation_name = find_constellation_by_coords(var_star.ra_hours, var_star.dec_degrees)
-                        
+
                         obj = CelestialObject(
                             name=var_star.name,
                             common_name=var_star.designation,
@@ -1479,7 +1483,6 @@ class MainWindow(QMainWindow):
 
         # Force window decorations on Wayland/COSMIC (sometimes needs to be done after show)
         # Check if we're on Wayland by checking environment variable
-        import os
 
         is_wayland = os.environ.get("WAYLAND_DISPLAY") is not None or os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
@@ -2621,7 +2624,9 @@ class MainWindow(QMainWindow):
                 # Description format: "{variable_type} - Mag {min} to {max}, Period: {period} days. {notes}"
                 var_type = "Variable Star"  # Default
                 if obj.description:
-                    var_type = obj.description.split(" - ")[0] if " - " in obj.description else obj.description.split(",")[0]
+                    var_type = (
+                        obj.description.split(" - ")[0] if " - " in obj.description else obj.description.split(",")[0]
+                    )
                 table.setItem(row, type_col, QTableWidgetItem(var_type))
             elif not is_star_tab:
                 table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))

@@ -32,11 +32,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_names_for_completion, search_objects
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_names_for_completion
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import format_dec, format_ra
 from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.gui.utils.table_utils import autosize_table_columns
+from celestron_nexstar.gui.workers.catalog_workers import SearchObjectsWorker
 
 
 if TYPE_CHECKING:
@@ -316,6 +317,9 @@ class CatalogSearchWindow(QMainWindow):
 
         # Store search results
         self.search_results: list[tuple[CelestialObject, str]] = []  # (CelestialObject, match_type)
+
+        # Worker thread for search operations
+        self.search_worker: SearchObjectsWorker | None = None
 
         # Debounce timer for search
         self.search_timer = QTimer()
@@ -647,64 +651,38 @@ class CatalogSearchWindow(QMainWindow):
         if not query:
             return
 
+        # Cancel any existing search worker
+        if self.search_worker and self.search_worker.isRunning():
+            self.search_worker.quit()
+            self.search_worker.wait()
+
+        # Show loading state
+        self.results_table.clear()
+        self.results_table.setEnabled(False)
+
+        # Create and start search worker thread
+        catalog_name = self.current_filters.catalog_name
+        self.search_worker = SearchObjectsWorker(query, catalog_name=catalog_name, update_positions=False)
+        self.search_worker.results_ready.connect(self._on_search_results_ready)
+        self.search_worker.error_occurred.connect(self._on_search_error)
+        self.search_worker.start()
+
+    def _on_search_results_ready(self, results: list[tuple[CelestialObject, str]]) -> None:
+        """Handle search results from worker thread."""
         try:
-            # Show loading state
-            self.results_table.clear()
-            self.results_table.setEnabled(False)
-
-            # Perform search in background
-            # Use update_positions=False to avoid planetary position calculation errors
-            # Apply catalog filter if specified
-            catalog_name = self.current_filters.catalog_name
-            try:
-                results = search_objects(query, catalog_name=catalog_name, update_positions=False)
-                # Apply other filters
-                results = self._apply_filters(results)
-            except Exception as search_error:
-                # Handle search errors gracefully
-                # Check if it's an ephemeris-related error
-                from celestron_nexstar.api.core.exceptions import UnknownEphemerisObjectError
-
-                error_msg = str(search_error)
-                if "UnknownEphemerisObjectError" in str(type(search_error).__name__) or isinstance(
-                    search_error.__cause__, UnknownEphemerisObjectError
-                ):
-                    error_msg = (
-                        "Some objects could not be loaded due to missing ephemeris data. "
-                        "Try searching for specific object names or install ephemeris files."
-                    )
-                elif "RaisesContractError" in str(type(search_error).__name__):
-                    # Deal contract error - check the underlying cause
-                    if search_error.__cause__:
-                        if isinstance(search_error.__cause__, UnknownEphemerisObjectError):
-                            error_msg = (
-                                "Some objects could not be loaded due to missing ephemeris data. "
-                                "Try searching for specific object names or install ephemeris files."
-                            )
-                        else:
-                            error_msg = f"Error: {search_error.__cause__!s}"
-                    else:
-                        error_msg = f"Error: {error_msg}"
-
-                logger.error(f"Error during catalog search: {search_error}", exc_info=True)
-                # Show error message in tree
-                error_item = QTreeWidgetItem(self.results_table)
-                error_item.setText(0, error_msg)
-                error_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
-                # Span across all columns
-                for col in range(1, 7):
-                    error_item.setText(col, "")
-                self.results_table.setEnabled(True)
-                return
+            # Apply other filters
+            results = self._apply_filters(results)
 
             # Store results
             self.search_results = results
 
-            # Save to recent searches (after successful search)
-            try:
-                self._save_recent_search(query)
-            except Exception as e:
-                logger.debug(f"Error saving recent search: {e}")
+            # Save to recent searches
+            query = self.search_input.text().strip()
+            if query:
+                try:
+                    self._save_recent_search(query)
+                except Exception as e:
+                    logger.debug(f"Error saving recent search: {e}")
 
             # Group results by match type
             grouped_results: defaultdict[str, list[tuple[CelestialObject, str]]] = defaultdict(list)
@@ -804,8 +782,30 @@ class CatalogSearchWindow(QMainWindow):
             self.results_table.sortItems(0, Qt.SortOrder.AscendingOrder)
 
         except Exception as e:
-            logger.error(f"Error performing catalog search: {e}", exc_info=True)
+            logger.error(f"Error processing catalog search results: {e}", exc_info=True)
             self.results_table.setEnabled(True)
+
+    def _on_search_error(self, error_msg: str) -> None:
+        """Handle search error from worker thread."""
+
+        # Check if it's an ephemeris-related error and provide user-friendly message
+        if "UnknownEphemerisObjectError" in error_msg or "ephemeris" in error_msg.lower():
+            error_msg = (
+                "Some objects could not be loaded due to missing ephemeris data. "
+                "Try searching for specific object names or install ephemeris files."
+            )
+
+        logger.error(f"Error during catalog search: {error_msg}")
+
+        # Show error message in tree
+        error_item = QTreeWidgetItem(self.results_table)
+        error_item.setText(0, f"Search error: {error_msg}")
+        error_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
+        # Span across all columns
+        for col in range(1, 7):
+            error_item.setText(col, "")
+
+        self.results_table.setEnabled(True)
 
     def _on_clear_clicked(self) -> None:
         """Handle clear button click."""
