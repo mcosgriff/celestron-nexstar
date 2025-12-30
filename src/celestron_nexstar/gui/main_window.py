@@ -2439,7 +2439,7 @@ class MainWindow(QMainWindow):
                     # These are handled separately in _on_tab_changed
                     return
                 self._populate_table(table, objects)  # type: ignore[arg-type]
-            return
+                return  # Only return if we successfully populated the table
 
         # Check if already loading
         if obj_type_str in self._loading_threads:
