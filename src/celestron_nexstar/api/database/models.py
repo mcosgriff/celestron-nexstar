@@ -1530,6 +1530,9 @@ class VariableStarModel(Base):
     variable_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
     )  # "eclipsing_binary", "cepheid", etc.
+    variable_type_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("object_types.id"), nullable=True, index=True
+    )
     period_days: Mapped[float] = mapped_column(Float, nullable=False)
     magnitude_min: Mapped[float] = mapped_column(Float, nullable=False)  # Brightest
     magnitude_max: Mapped[float] = mapped_column(Float, nullable=False)  # Dimmest

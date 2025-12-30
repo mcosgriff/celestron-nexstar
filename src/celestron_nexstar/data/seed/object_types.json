@@ -1,0 +1,622 @@
+[
+  {
+    "name": "Star",
+    "category": "star",
+    "description": "A luminous sphere of plasma held together by gravity"
+  },
+  {
+    "name": "Double Star",
+    "category": "star",
+    "description": "Two stars that appear close together in the sky"
+  },
+  {
+    "name": "Binary Star",
+    "category": "star",
+    "description": "Two stars orbiting a common center of mass"
+  },
+  {
+    "name": "Multiple Star",
+    "category": "star",
+    "description": "Three or more stars that appear close together"
+  },
+  {
+    "name": "Variable Star",
+    "category": "star",
+    "description": "A star whose brightness as seen from Earth varies over time"
+  },
+  {
+    "name": "Red Giant",
+    "category": "star",
+    "description": "A large, luminous star in a late phase of stellar evolution"
+  },
+  {
+    "name": "White Dwarf",
+    "category": "star",
+    "description": "The remnant core of a dead star"
+  },
+  {
+    "name": "Neutron Star",
+    "category": "star",
+    "description": "The collapsed core of a massive supergiant star"
+  },
+  {
+    "name": "Pulsar",
+    "category": "star",
+    "description": "A highly magnetized rotating neutron star"
+  },
+  {
+    "name": "Cluster",
+    "category": "cluster",
+    "description": "A group of stars held together by mutual gravitational attraction"
+  },
+  {
+    "name": "Open Cluster",
+    "category": "cluster_subtype",
+    "description": "A loose grouping of young stars formed from the same molecular cloud"
+  },
+  {
+    "name": "oc",
+    "category": "cluster_subtype",
+    "description": "Open Cluster (abbreviation)"
+  },
+  {
+    "name": "Globular Cluster",
+    "category": "cluster_subtype",
+    "description": "A spherical collection of ancient stars tightly bound by gravity"
+  },
+  {
+    "name": "gc",
+    "category": "cluster_subtype",
+    "description": "Globular Cluster (abbreviation)"
+  },
+  {
+    "name": "Stellar Association",
+    "category": "cluster_subtype",
+    "description": "A very loose cluster of young stars"
+  },
+  {
+    "name": "Moving Group",
+    "category": "cluster_subtype",
+    "description": "A group of stars moving together through space"
+  },
+  {
+    "name": "pos",
+    "category": "cluster_subtype",
+    "description": "Part of Star / Possible Cluster"
+  },
+  {
+    "name": "Nebula",
+    "category": "nebula",
+    "description": "An interstellar cloud of dust, hydrogen, helium and other ionized gases"
+  },
+  {
+    "name": "Emission Nebula",
+    "category": "nebula_subtype",
+    "description": "A nebula that emits light by ionization of the gas"
+  },
+  {
+    "name": "en",
+    "category": "nebula_subtype",
+    "description": "Emission Nebula (abbreviation)"
+  },
+  {
+    "name": "Reflection Nebula",
+    "category": "nebula_subtype",
+    "description": "A nebula that reflects light from nearby stars"
+  },
+  {
+    "name": "rn",
+    "category": "nebula_subtype",
+    "description": "Reflection Nebula (abbreviation)"
+  },
+  {
+    "name": "Dark Nebula",
+    "category": "nebula_subtype",
+    "description": "An interstellar cloud so dense it obscures light from objects behind it"
+  },
+  {
+    "name": "dn",
+    "category": "nebula_subtype",
+    "description": "Dark Nebula (abbreviation)"
+  },
+  {
+    "name": "Planetary Nebula",
+    "category": "nebula_subtype",
+    "description": "An emission nebula consisting of an expanding shell of ionized gas ejected from a dying star"
+  },
+  {
+    "name": "pn",
+    "category": "nebula_subtype",
+    "description": "Planetary Nebula (abbreviation)"
+  },
+  {
+    "name": "Supernova Remnant",
+    "category": "nebula_subtype",
+    "description": "The structure resulting from the explosion of a star"
+  },
+  {
+    "name": "snr",
+    "category": "nebula_subtype",
+    "description": "Supernova Remnant (abbreviation)"
+  },
+  {
+    "name": "Star Forming Region",
+    "category": "nebula_subtype",
+    "description": "A region where active star formation is occurring"
+  },
+  {
+    "name": "sfr",
+    "category": "nebula_subtype",
+    "description": "Star Forming Region (abbreviation)"
+  },
+  {
+    "name": "HII Region",
+    "category": "nebula_subtype",
+    "description": "A region of ionized hydrogen (emission nebula)"
+  },
+  {
+    "name": "Bright Nebula",
+    "category": "nebula_subtype",
+    "description": "A nebula visible due to emission or reflection of light"
+  },
+  {
+    "name": "Molecular Cloud",
+    "category": "nebula_subtype",
+    "description": "A dense interstellar cloud containing molecules"
+  },
+  {
+    "name": "Galaxy",
+    "category": "galaxy",
+    "description": "A gravitationally bound system of stars, stellar remnants, interstellar gas, dust, and dark matter"
+  },
+  {
+    "name": "g",
+    "category": "galaxy_subtype",
+    "description": "Galaxy (abbreviation)"
+  },
+  {
+    "name": "Spiral Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy with spiral arms extending from a central bulge"
+  },
+  {
+    "name": "s",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy (abbreviation)"
+  },
+  {
+    "name": "Barred Spiral Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A spiral galaxy with a bar-shaped structure at its center"
+  },
+  {
+    "name": "sb",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy (abbreviation)"
+  },
+  {
+    "name": "Elliptical Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy with an ellipsoidal shape and smooth, nearly featureless brightness profile"
+  },
+  {
+    "name": "e",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy (abbreviation)"
+  },
+  {
+    "name": "Irregular Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy that does not have a distinct regular shape"
+  },
+  {
+    "name": "i",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy (abbreviation)"
+  },
+  {
+    "name": "Lenticular Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy intermediate between an elliptical and a spiral galaxy (S0)"
+  },
+  {
+    "name": "s0",
+    "category": "galaxy_subtype",
+    "description": "Lenticular Galaxy (abbreviation)"
+  },
+  {
+    "name": "S0/a Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A lenticular galaxy with some spiral structure"
+  },
+  {
+    "name": "sd",
+    "category": "galaxy_subtype",
+    "description": "S0/a Galaxy (abbreviation)"
+  },
+  {
+    "name": "Giant Galaxy",
+    "category": "galaxy_subtype",
+    "description": "An exceptionally large galaxy"
+  },
+  {
+    "name": "gg",
+    "category": "galaxy_subtype",
+    "description": "Giant Galaxy (abbreviation)"
+  },
+  {
+    "name": "Dwarf Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A small galaxy composed of a few billion stars"
+  },
+  {
+    "name": "Dwarf Spheroidal",
+    "category": "galaxy_subtype",
+    "description": "A faint galaxy composed of old stars with a spheroidal shape"
+  },
+  {
+    "name": "dsph",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Spheroidal (abbreviation)"
+  },
+  {
+    "name": "Dwarf Elliptical",
+    "category": "galaxy_subtype",
+    "description": "A small elliptical galaxy"
+  },
+  {
+    "name": "de",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Elliptical (abbreviation)"
+  },
+  {
+    "name": "Dwarf Irregular",
+    "category": "galaxy_subtype",
+    "description": "A small irregular galaxy"
+  },
+  {
+    "name": "di",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Irregular (abbreviation)"
+  },
+  {
+    "name": "Ultra-Faint Dwarf",
+    "category": "galaxy_subtype",
+    "description": "An extremely faint dwarf galaxy"
+  },
+  {
+    "name": "ufd",
+    "category": "galaxy_subtype",
+    "description": "Ultra-Faint Dwarf (abbreviation)"
+  },
+  {
+    "name": "dSph",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Spheroidal (Hubble classification)"
+  },
+  {
+    "name": "dSph pec",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Spheroidal peculiar (Hubble classification)"
+  },
+  {
+    "name": "dSph(t)",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Spheroidal transition type (Hubble classification)"
+  },
+  {
+    "name": "dE",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Elliptical (Hubble classification)"
+  },
+  {
+    "name": "dIrr",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Irregular (Hubble classification)"
+  },
+  {
+    "name": "dIrr/dSph",
+    "category": "galaxy_subtype",
+    "description": "Dwarf Irregular/Spheroidal transition (Hubble classification)"
+  },
+  {
+    "name": "UFD",
+    "category": "galaxy_subtype",
+    "description": "Ultra-Faint Dwarf (Hubble classification)"
+  },
+  {
+    "name": "IAm",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type IAm (Hubble classification)"
+  },
+  {
+    "name": "IAm V-VI",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type IAm class V-VI (Hubble classification)"
+  },
+  {
+    "name": "IBm",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type IBm (Hubble classification)"
+  },
+  {
+    "name": "IBm V-VI",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type IBm class V-VI (Hubble classification)"
+  },
+  {
+    "name": "IBm V-VI pec",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type IBm class V-VI peculiar (Hubble classification)"
+  },
+  {
+    "name": "Im",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type Im (Hubble classification)"
+  },
+  {
+    "name": "Im V-VI",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy type Im class V-VI (Hubble classification)"
+  },
+  {
+    "name": "Irr",
+    "category": "galaxy_subtype",
+    "description": "Irregular Galaxy (Hubble classification)"
+  },
+  {
+    "name": "S",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy (Hubble classification)"
+  },
+  {
+    "name": "Sa",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy type Sa (Hubble classification)"
+  },
+  {
+    "name": "Sb",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy type Sb (Hubble classification)"
+  },
+  {
+    "name": "Sc",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy type Sc (Hubble classification)"
+  },
+  {
+    "name": "Sd",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy type Sd (Hubble classification)"
+  },
+  {
+    "name": "SB",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy (Hubble classification)"
+  },
+  {
+    "name": "SBa",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBa (Hubble classification)"
+  },
+  {
+    "name": "SBb",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBb (Hubble classification)"
+  },
+  {
+    "name": "SBc",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBc (Hubble classification)"
+  },
+  {
+    "name": "SBd",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBd (Hubble classification)"
+  },
+  {
+    "name": "SBm",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBm (Hubble classification)"
+  },
+  {
+    "name": "SBm V",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBm class V (Hubble classification)"
+  },
+  {
+    "name": "SBm V pec",
+    "category": "galaxy_subtype",
+    "description": "Barred Spiral Galaxy type SBm class V peculiar (Hubble classification)"
+  },
+  {
+    "name": "SAB",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred (Hubble classification)"
+  },
+  {
+    "name": "SABa",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type a (Hubble classification)"
+  },
+  {
+    "name": "SABb",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type b (Hubble classification)"
+  },
+  {
+    "name": "SABbc",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type bc (Hubble classification)"
+  },
+  {
+    "name": "SABbc I-II",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type bc luminosity class I-II (Hubble classification)"
+  },
+  {
+    "name": "SABc",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type c (Hubble classification)"
+  },
+  {
+    "name": "SABd",
+    "category": "galaxy_subtype",
+    "description": "Spiral Galaxy intermediate barred type d (Hubble classification)"
+  },
+  {
+    "name": "S0",
+    "category": "galaxy_subtype",
+    "description": "Lenticular Galaxy (Hubble classification)"
+  },
+  {
+    "name": "S0/a",
+    "category": "galaxy_subtype",
+    "description": "Lenticular Galaxy with spiral structure (Hubble classification)"
+  },
+  {
+    "name": "E",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy (Hubble classification)"
+  },
+  {
+    "name": "E0",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E0 (Hubble classification)"
+  },
+  {
+    "name": "E1",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E1 (Hubble classification)"
+  },
+  {
+    "name": "E2",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E2 (Hubble classification)"
+  },
+  {
+    "name": "E3",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E3 (Hubble classification)"
+  },
+  {
+    "name": "E4",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E4 (Hubble classification)"
+  },
+  {
+    "name": "E5",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E5 (Hubble classification)"
+  },
+  {
+    "name": "E6",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E6 (Hubble classification)"
+  },
+  {
+    "name": "E7",
+    "category": "galaxy_subtype",
+    "description": "Elliptical Galaxy type E7 (Hubble classification)"
+  },
+  {
+    "name": "Gal",
+    "category": "galaxy_subtype",
+    "description": "Galaxy (generic abbreviation)"
+  },
+  {
+    "name": "gal",
+    "category": "galaxy_subtype",
+    "description": "Galaxy (generic lowercase abbreviation)"
+  },
+  {
+    "name": "Seyfert Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy with a very luminous active galactic nucleus"
+  },
+  {
+    "name": "Quasar",
+    "category": "galaxy_subtype",
+    "description": "An extremely luminous active galactic nucleus powered by a supermassive black hole"
+  },
+  {
+    "name": "Radio Galaxy",
+    "category": "galaxy_subtype",
+    "description": "A galaxy with giant regions of radio emission extending beyond visible structure"
+  },
+  {
+    "name": "Planet",
+    "category": "planet",
+    "description": "A celestial body orbiting a star, massive enough to be rounded by its own gravity"
+  },
+  {
+    "name": "Dwarf Planet",
+    "category": "planet_subtype",
+    "description": "A planetary-mass object that has not cleared the neighborhood around its orbit"
+  },
+  {
+    "name": "Moon",
+    "category": "moon",
+    "description": "A natural satellite orbiting a planet"
+  },
+  {
+    "name": "Asteroid",
+    "category": "asteroid",
+    "description": "A small rocky body orbiting the Sun"
+  },
+  {
+    "name": "Comet",
+    "category": "comet",
+    "description": "An icy small Solar System body that develops a coma and tail when near the Sun"
+  },
+  {
+    "name": "Asterism",
+    "category": "asterism",
+    "description": "A pattern of stars recognized in Earth's night sky that is not an official constellation"
+  },
+  {
+    "name": "Constellation",
+    "category": "constellation",
+    "description": "An officially recognized region of the celestial sphere"
+  },
+  {
+    "name": "Black Hole",
+    "category": "exotic",
+    "description": "A region of spacetime where gravity is so strong that nothing can escape"
+  },
+  {
+    "name": "Active Galactic Nucleus",
+    "category": "exotic",
+    "description": "A compact region at the center of a galaxy with much higher than normal luminosity"
+  },
+  {
+    "name": "agn",
+    "category": "exotic",
+    "description": "Active Galactic Nucleus (abbreviation)"
+  },
+  {
+    "name": "ea/sd",
+    "category": "variable_star_type",
+    "description": "Eclipsing Algol/Semi-Detached Variable"
+  },
+  {
+    "name": "dcep",
+    "category": "variable_star_type",
+    "description": "Delta Cepheid Variable"
+  },
+  {
+    "name": "m",
+    "category": "variable_star_type",
+    "description": "Mira Variable"
+  },
+  {
+    "name": "dpv:/eb",
+    "category": "variable_star_type",
+    "description": "Ellipsoidal/Beta Lyrae Eclipsing Binary"
+  },
+  {
+    "name": "srb",
+    "category": "variable_star_type",
+    "description": "Semi-Regular Variable Type B"
+  }
+]

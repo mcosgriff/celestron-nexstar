@@ -43,27 +43,27 @@ def get_seed_data_path() -> Path:
     Returns:
         Path to seed data directory
     """
-    # Seed data is stored in cli/data/seed relative to the package root
+    # Seed data is stored in data/seed relative to the package root
     # Find the package root by looking for the seed directory in parent directories
     current_file = Path(__file__).resolve()
 
     # Search up the directory tree to find the package root (celestron_nexstar/)
-    # The seed directory should be at: package_root/cli/data/seed
+    # The seed directory should be at: package_root/data/seed
     for parent in current_file.parents:
-        seed_dir = parent / "cli" / "data" / "seed"
+        seed_dir = parent / "data" / "seed"
         if seed_dir.exists() and seed_dir.is_dir():
             return seed_dir
 
     # Fallback: try the expected path structure
-    # api/database/database_seeder.py -> api/database/ -> api/ -> celestron_nexstar/ -> cli/ -> data/ -> seed/
-    seed_dir = current_file.parent.parent.parent / "cli" / "data" / "seed"
+    # api/database/database_seeder.py -> api/database/ -> api/ -> celestron_nexstar/ -> data/ -> seed/
+    seed_dir = current_file.parent.parent.parent / "data" / "seed"
     if seed_dir.exists():
         return seed_dir
 
     # If still not found, raise an error
     raise CatalogNotFoundError(
         f"Could not find seed data directory. Searched from {current_file}. "
-        f"Expected to find cli/data/seed in a parent directory."
+        f"Expected to find data/seed in a parent directory."
     )
 
 
@@ -952,6 +952,62 @@ def seed_moons(db_session: Session, force: bool = False) -> int:
     return added
 
 
+def seed_object_types(db_session: Session, force: bool = False) -> int:
+    """
+    Seed object types into the database.
+
+    Args:
+        db_session: Database session
+        force: If True, update existing types with better descriptions
+
+    Returns:
+        Number of records added or updated
+    """
+    from celestron_nexstar.api.database.models import ObjectTypeModel
+
+    logger.info("Seeding object types...")
+
+    # Load seed data
+    data = load_seed_json("object_types.json")
+
+    added = 0
+    updated = 0
+    for item in data:
+        name = item["name"]
+        category = item["category"]
+        description = item.get("description", "")
+
+        # Check if already exists (idempotent)
+        existing = db_session.scalar(select(ObjectTypeModel).where(ObjectTypeModel.name == name))
+        if existing:
+            # Update description if it's better/longer than existing (if force is True)
+            if force and description and (not existing.description or len(description) > len(existing.description or "")):
+                existing.description = description
+                existing.category = category
+                updated += 1
+            continue
+
+        # Create new object type
+        obj_type = ObjectTypeModel(
+            name=name,
+            category=category,
+            description=description
+        )
+        db_session.add(obj_type)
+        added += 1
+
+    if added > 0 or updated > 0:
+        db_session.commit()
+        if added > 0:
+            logger.info(f"Added {added} object types")
+        if updated > 0:
+            logger.info(f"Updated {updated} object types")
+    else:
+        logger.info("Object types already seeded (no new records)")
+
+    return added + updated
+
+
 def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
     """
     Seed all static reference data into the database.
@@ -964,6 +1020,25 @@ def seed_all(db_session: Session, force: bool = False) -> dict[str, int]:
         Dictionary mapping data type to number of records added
     """
     results: dict[str, int] = {}
+
+    # Seed object types first (needed for object_subtype_id foreign keys)
+    try:
+        results["object_types"] = seed_object_types(db_session, force=force)
+    except FileNotFoundError:
+        logger.warning("Object types seed file not found, skipping")
+        results["object_types"] = 0
+    except (
+        json.JSONDecodeError,
+        PermissionError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        RuntimeError,
+        SQLAlchemyError,
+    ) as e:
+        logger.error(f"Failed to seed object types: {e}")
+        results["object_types"] = 0
 
     try:
         results["star_name_mappings"] = seed_star_name_mappings(db_session, force=force)

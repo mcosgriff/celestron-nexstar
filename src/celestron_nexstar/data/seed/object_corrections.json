@@ -1,0 +1,62 @@
+[
+  {
+    "name": "NGC 185",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Elliptical",
+    "description": "A dwarf elliptical satellite galaxy of Andromeda (M31)"
+  },
+  {
+    "name": "NGC 147",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Elliptical",
+    "description": "A dwarf elliptical satellite galaxy of Andromeda (M31)"
+  },
+  {
+    "name": "IC 10",
+    "catalog": "local_group",
+    "object_subtype": "Irregular Galaxy",
+    "description": "An irregular starburst galaxy in the Local Group"
+  },
+  {
+    "name": "WLM",
+    "catalog": "local_group",
+    "object_subtype": "Irregular Galaxy",
+    "description": "Wolf-Lundmark-Melotte, an isolated irregular dwarf galaxy"
+  },
+  {
+    "name": "Andromeda I",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Spheroidal",
+    "description": "A dwarf spheroidal satellite galaxy of Andromeda (M31)"
+  },
+  {
+    "name": "Andromeda III",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Spheroidal",
+    "description": "A dwarf spheroidal satellite galaxy of Andromeda (M31)"
+  },
+  {
+    "name": "Andromeda XXV",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Spheroidal",
+    "description": "A dwarf spheroidal satellite galaxy of Andromeda (M31)"
+  },
+  {
+    "name": "Tucana IV",
+    "catalog": "local_group",
+    "object_subtype": "Ultra-Faint Dwarf",
+    "description": "An ultra-faint dwarf galaxy discovered in 2015"
+  },
+  {
+    "name": "Cetus I",
+    "catalog": "local_group",
+    "object_subtype": "Ultra-Faint Dwarf",
+    "description": "An ultra-faint dwarf galaxy in the constellation Cetus"
+  },
+  {
+    "name": "Cassiopeia III",
+    "catalog": "local_group",
+    "object_subtype": "Dwarf Irregular",
+    "description": "A dwarf irregular galaxy in the constellation Cassiopeia"
+  }
+]

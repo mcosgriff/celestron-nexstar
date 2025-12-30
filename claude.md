@@ -151,6 +151,35 @@ The "Create DB + Apply Migrations" button in `settings_dialog.py` should:
 
 It should NOT call `Base.metadata.create_all()` or `db.init_schema()`.
 
+## Seed File Location
+
+**IMPORTANT: All seed files MUST be located in `src/celestron_nexstar/data/`**
+
+This directory contains all static data files used to seed the database:
+
+- **`src/celestron_nexstar/data/`** - Root for catalog configuration files:
+  - `catalogs.yaml` - Custom catalog definitions (optional, for YAML-based catalogs)
+  - `catalogs_example.yaml` - Example catalog file showing all available fields
+
+- **`src/celestron_nexstar/data/seed/`** - JSON seed files for all reference data:
+  - `object_types.json` - Object type definitions (galaxies, nebulae, etc.) and abbreviations
+  - `object_corrections.json` - Manual corrections for objects with missing/incorrect data
+  - `constellations.json` - Constellation decoration data
+  - `asterisms.json` - Asterism decoration data
+  - `star_name_mappings.json` - Common star names and Bayer designations
+  - `meteor_showers.json` - Meteor shower data
+  - `dark_sky_sites.json` - Dark sky site locations
+  - `space_events.json` - Notable space events
+  - `variable_stars.json` - Variable star data
+  - `comets.json` - Comet orbital data
+  - `eclipses.json` - Eclipse data
+  - `asteroids.json` - Asteroid orbital data
+  - `bortle_characteristics.json` - Bortle scale characteristics
+  - `sol_planets.json` - Planet seed data
+  - `sol_moons.json` - Moon seed data
+
+**DO NOT** create seed files in any other location. The old locations (`data/` at project root and `src/celestron_nexstar/cli/data/`) are deprecated and should not be used.
+
 ## Database Seeding
 
 ### Object Types
@@ -160,7 +189,7 @@ The `object_types` table contains normalized type and subtype definitions for as
 - Abbreviations (e.g., "oc", "gc", "pn", "rn")
 - Descriptions for each type
 
-**Seed file**: `data/object_types_seed.yaml`
+**Seed file**: `src/celestron_nexstar/data/seed/object_types.json`
 **Seeding script**: `scripts/seed_object_types.py`
 
 To populate or update object types:
@@ -168,9 +197,11 @@ To populate or update object types:
 python scripts/seed_object_types.py
 ```
 
-The script will:
+Or seed all reference data (including object types) from the GUI or CLI using the database seeder.
+
+The seeder will:
 - Insert new object types
-- Update descriptions for existing types if the new description is longer/better
+- Update descriptions for existing types if the new description is longer/better (when force=True)
 - Skip types that already exist with good descriptions
 
 ### Object Subtype Migration

@@ -85,6 +85,12 @@ OBJECT_TYPE_VERBOSE_NAMES = {
     "de": "Dwarf Elliptical",
     "di": "Dwarf Irregular",
     "ufd": "Ultra-Faint Dwarf",
+    # Variable star types
+    "ea/sd": "Eclipsing Algol/Semi-Detached Variable",
+    "dcep": "Delta Cepheid Variable",
+    "m": "Mira Variable",
+    "dpv:/eb": "Ellipsoidal/Beta Lyrae Eclipsing Binary",
+    "srb": "Semi-Regular Variable Type B",
     # Other
     "agn": "Active Galactic Nucleus",
 }
@@ -2627,6 +2633,8 @@ class MainWindow(QMainWindow):
                     var_type = (
                         obj.description.split(" - ")[0] if " - " in obj.description else obj.description.split(",")[0]
                     )
+                # Convert abbreviation to verbose name (e.g., "ea/sd" -> "Eclipsing Algol/Semi-Detached Variable")
+                var_type = _get_verbose_type_name(var_type)
                 table.setItem(row, type_col, QTableWidgetItem(var_type))
             elif not is_star_tab:
                 table.setItem(row, type_col, QTableWidgetItem(obj.object_type.value))

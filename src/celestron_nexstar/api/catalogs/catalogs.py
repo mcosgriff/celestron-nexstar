@@ -106,10 +106,10 @@ def _get_catalogs_path() -> Path:
     """Get the path to the catalogs.yaml file."""
     # Check if running from installed package or development
     # We're in: src/celestron_nexstar/api/
-    # Data is in: src/celestron_nexstar/cli/data/
+    # Data is in: src/celestron_nexstar/data/
     module_path = Path(__file__).parent  # api/
     parent = module_path.parent  # celestron_nexstar/
-    data_path = parent / "cli" / "data" / "catalogs.yaml"
+    data_path = parent / "data" / "catalogs.yaml"
 
     if data_path.exists():
         return data_path
@@ -119,7 +119,7 @@ def _get_catalogs_path() -> Path:
 
     if hasattr(sys, "_MEIPASS"):
         # PyInstaller path
-        data_path = Path(sys._MEIPASS) / "celestron_nexstar" / "cli" / "data" / "catalogs.yaml"
+        data_path = Path(sys._MEIPASS) / "celestron_nexstar" / "data" / "catalogs.yaml"
         if data_path.exists():
             return data_path
 

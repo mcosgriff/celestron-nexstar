@@ -36,6 +36,165 @@ console = Console()
 T = TypeVar("T")
 
 
+def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Load object type abbreviation mappings from the database.
+
+    Returns:
+        Tuple of (abbreviation_to_full_name, abbreviation_to_canonical_name)
+        - abbreviation_to_full_name: Maps abbreviations to their full names (e.g., "dSph" -> "Dwarf Spheroidal")
+        - abbreviation_to_canonical_name: Maps all variants to a canonical form for object_subtype
+    """
+    from sqlalchemy import text
+
+    db = get_database()
+
+    # Canonical type names (the main types we want to use for object_subtype)
+    canonical_types = {
+        "Dwarf Spheroidal",
+        "Dwarf Elliptical",
+        "Dwarf Irregular",
+        "Ultra-Faint Dwarf",
+        "Irregular Galaxy",
+        "Barred Spiral Galaxy",
+        "Spiral Galaxy",
+        "Elliptical Galaxy",
+        "Lenticular Galaxy",
+        "S0/a Galaxy",
+        "Galaxy",
+        "Giant Galaxy",
+        "Open Cluster",
+        "Globular Cluster",
+        "Planetary Nebula",
+        "Emission Nebula",
+        "Reflection Nebula",
+        "Dark Nebula",
+        "Supernova Remnant",
+        "Star Forming Region",
+        "Bright Nebula",
+    }
+
+    # Maps to determine canonical type from abbreviations
+    abbrev_to_canonical = {
+        # Dwarf spheroidal variants all map to "Dwarf Spheroidal"
+        "dSph": "Dwarf Spheroidal",
+        "dSph pec": "Dwarf Spheroidal",
+        "dSph(t)": "Dwarf Spheroidal",
+        "dsph": "Dwarf Spheroidal",
+
+        # Dwarf elliptical
+        "dE": "Dwarf Elliptical",
+        "de": "Dwarf Elliptical",
+
+        # Dwarf irregular
+        "dIrr": "Dwarf Irregular",
+        "dIrr/dSph": "Dwarf Irregular",
+        "di": "Dwarf Irregular",
+
+        # Ultra-faint dwarf
+        "UFD": "Ultra-Faint Dwarf",
+        "ufd": "Ultra-Faint Dwarf",
+
+        # Irregular galaxies (all Magellanic types)
+        "IAm": "Irregular Galaxy",
+        "IAm V-VI": "Irregular Galaxy",
+        "IBm": "Irregular Galaxy",
+        "IBm V-VI": "Irregular Galaxy",
+        "IBm V-VI pec": "Irregular Galaxy",
+        "Im": "Irregular Galaxy",
+        "Im V-VI": "Irregular Galaxy",
+        "Irr": "Irregular Galaxy",
+        "i": "Irregular Galaxy",
+
+        # Barred spirals (all variants)
+        "SB": "Barred Spiral Galaxy",
+        "SBa": "Barred Spiral Galaxy",
+        "SBb": "Barred Spiral Galaxy",
+        "SBc": "Barred Spiral Galaxy",
+        "SBd": "Barred Spiral Galaxy",
+        "SBm": "Barred Spiral Galaxy",
+        "SBm V": "Barred Spiral Galaxy",
+        "SBm V pec": "Barred Spiral Galaxy",
+        "sb": "Barred Spiral Galaxy",
+
+        # Spirals (all variants, including intermediate barred)
+        "S": "Spiral Galaxy",
+        "Sa": "Spiral Galaxy",
+        "Sb": "Spiral Galaxy",
+        "Sc": "Spiral Galaxy",
+        "Sd": "Spiral Galaxy",
+        "SAB": "Spiral Galaxy",
+        "SABa": "Spiral Galaxy",
+        "SABb": "Spiral Galaxy",
+        "SABbc": "Spiral Galaxy",
+        "SABbc I-II": "Spiral Galaxy",
+        "SABc": "Spiral Galaxy",
+        "SABd": "Spiral Galaxy",
+        "s": "Spiral Galaxy",
+
+        # Lenticular
+        "S0": "Lenticular Galaxy",
+        "s0": "Lenticular Galaxy",
+
+        # S0/a
+        "S0/a": "S0/a Galaxy",
+        "sd": "S0/a Galaxy",
+
+        # Elliptical
+        "E": "Elliptical Galaxy",
+        "E0": "Elliptical Galaxy",
+        "E1": "Elliptical Galaxy",
+        "E2": "Elliptical Galaxy",
+        "E3": "Elliptical Galaxy",
+        "E4": "Elliptical Galaxy",
+        "E5": "Elliptical Galaxy",
+        "E6": "Elliptical Galaxy",
+        "E7": "Elliptical Galaxy",
+        "e": "Elliptical Galaxy",
+
+        # Generic galaxy
+        "Gal": "Galaxy",
+        "gal": "Galaxy",
+        "g": "Galaxy",
+
+        # Giant galaxy
+        "gg": "Giant Galaxy",
+
+        # Clusters
+        "oc": "Open Cluster",
+        "gc": "Globular Cluster",
+
+        # Nebulae
+        "pn": "Planetary Nebula",
+        "en": "Emission Nebula",
+        "rn": "Reflection Nebula",
+        "dn": "Dark Nebula",
+        "snr": "Supernova Remnant",
+        "sfr": "Star Forming Region",
+        "bn": "Bright Nebula",
+    }
+
+    # Load all type names from database to get full descriptions
+    abbrev_to_full_name = {}
+
+    with db._get_session() as session:
+        result = session.execute(
+            text("SELECT name, description FROM object_types")
+        ).fetchall()
+
+        for name, description in result:
+            # Add the type name itself as a key
+            abbrev_to_full_name[name] = name
+
+            # For abbreviated forms, use the name (which is the abbreviation)
+            # This handles both "dSph" and "dsph" forms
+            if name not in canonical_types:
+                # This is likely an abbreviation
+                abbrev_to_full_name[name] = name
+
+    return abbrev_to_full_name, abbrev_to_canonical
+
+
 # Mapping from single-letter galaxy subtypes to full names
 GALAXY_SUBTYPE_EXPANSION = {
     "s": "Spiral Galaxy",
@@ -1480,7 +1639,7 @@ def import_celestial_stars(
                     except (ValueError, TypeError):
                         pass
 
-            # Extract name (will be enhanced with common name if available)
+            # Extract name (will be enhanced with a common name if available)
             name = (
                 properties.get("name")
                 or properties.get("designation")
@@ -1775,7 +1934,10 @@ def import_celestial_dsos(
         "en": CelestialObjectType.NEBULA,  # Emission nebula (explicit code)
     }
 
-    # Map abbreviated type codes to descriptive names for display in descriptions
+    # Load type abbreviation mappings from database
+    _abbrev_to_full_name, abbrev_to_canonical = _load_type_abbreviation_mappings()
+
+    # Combine with basic mappings for backward compatibility
     dso_type_descriptions = {
         # Galaxy types
         "g": "Galaxy",
@@ -1797,6 +1959,8 @@ def import_celestial_dsos(
         "rn": "Reflection Nebula",
         "en": "Emission Nebula",
     }
+    # Merge with database-loaded mappings (database mappings override hardcoded ones)
+    dso_type_descriptions.update(abbrev_to_canonical)
 
     # Custom function to enhance DSO objects with proper names and descriptive types
     def enhance_dso_object(obj: dict[str, Any]) -> dict[str, Any]:
@@ -1840,15 +2004,21 @@ def import_celestial_dsos(
             dso_subtype = dso_type_descriptions[source_type_code]
         if description:
             # Check if description contains "Type: <abbreviation>"
+            # Pattern handles complex types like "dSph pec", "SABbc I-II", "IBm V-VI pec", etc.
             import re
 
-            pattern = r"Type:\s*([a-z0-9]+)"
+            pattern = r"Type:\s*([a-zA-Z0-9][a-zA-Z0-9\s\-/\(\):]*[a-zA-Z0-9\)]?)"
             match = re.search(pattern, description, re.IGNORECASE)
             if match:
-                type_code = match.group(1).lower()
+                type_code = match.group(1).strip()
+                # Try exact match first, then try canonical mapping
                 if type_code in dso_type_descriptions:
-                    # Replace the abbreviation with the descriptive name
                     descriptive_name = dso_type_descriptions[type_code]
+                    obj["description"] = description.replace(f"Type: {type_code}", f"Type: {descriptive_name}")
+                    description = obj["description"]
+                    dso_subtype = descriptive_name
+                elif type_code.lower() in dso_type_descriptions:
+                    descriptive_name = dso_type_descriptions[type_code.lower()]
                     obj["description"] = description.replace(f"Type: {type_code}", f"Type: {descriptive_name}")
                     description = obj["description"]
                     dso_subtype = descriptive_name

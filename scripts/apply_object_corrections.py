@@ -2,8 +2,8 @@
 """
 Apply manual corrections to objects with missing or incorrect data.
 
-This script loads corrections from data/object_corrections.yaml and applies
-them to the database, fixing known data quality issues.
+This script loads corrections from src/celestron_nexstar/data/seed/object_corrections.json
+and applies them to the database, fixing known data quality issues.
 
 Usage:
     python scripts/apply_object_corrections.py
@@ -17,7 +17,7 @@ from pathlib import Path
 # Add parent directory to path so we can import from src
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import yaml
+import json
 from rich.console import Console
 from sqlalchemy import text
 
@@ -27,17 +27,17 @@ console = Console()
 
 
 def load_corrections() -> list[dict]:
-    """Load corrections from YAML file."""
-    corrections_file = Path(__file__).parent.parent / "data" / "object_corrections.yaml"
+    """Load corrections from JSON file."""
+    corrections_file = Path(__file__).parent.parent / "src" / "celestron_nexstar" / "data" / "seed" / "object_corrections.json"
 
     if not corrections_file.exists():
         console.print(f"[red]Error: Corrections file not found at {corrections_file}[/red]")
         sys.exit(1)
 
     with open(corrections_file) as f:
-        data = yaml.safe_load(f)
+        data = json.load(f)
 
-    return data.get("corrections", [])
+    return data
 
 
 def get_object_type_id(session, type_name: str) -> int | None:

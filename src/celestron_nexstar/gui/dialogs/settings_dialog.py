@@ -1347,6 +1347,11 @@ class SettingsDialog(QDialog):
             # Define seed data sources
             seed_sources = [
                 {
+                    "id": "object_types",
+                    "name": "Object Types",
+                    "description": "Object type definitions and abbreviations (galaxies, nebulae, clusters, etc.)",
+                },
+                {
                     "id": "star_name_mappings",
                     "name": "Star Name Mappings",
                     "description": "Common names and Bayer designations for stars",
@@ -1412,7 +1417,12 @@ class SettingsDialog(QDialog):
                 """Return how many records are currently in the database for a seed type."""
                 try:
                     with get_db_session() as session:
-                        if seed_id == "star_name_mappings":
+                        if seed_id == "object_types":
+                            from celestron_nexstar.api.database.models import ObjectTypeModel
+
+                            count = session.scalar(select(func.count(ObjectTypeModel.id)))
+                            return int(count or 0)
+                        elif seed_id == "star_name_mappings":
                             count = session.scalar(select(func.count(StarNameMappingModel.hr_number)))
                             return int(count or 0)
                         elif seed_id == "meteor_showers":
@@ -2829,6 +2839,7 @@ class SettingsDialog(QDialog):
             seed_eclipses,
             seed_meteor_showers,
             seed_moons,
+            seed_object_types,
             seed_planets,
             seed_space_events,
             seed_star_name_mappings,
@@ -2838,6 +2849,7 @@ class SettingsDialog(QDialog):
 
         # Map seed IDs to functions and display names
         seed_map = {
+            "object_types": (seed_object_types, "Object Types"),
             "star_name_mappings": (seed_star_name_mappings, "Star Name Mappings"),
             "meteor_showers": (seed_meteor_showers, "Meteor Showers"),
             "constellations": (seed_constellations, "Constellations"),
