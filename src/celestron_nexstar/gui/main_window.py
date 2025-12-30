@@ -826,7 +826,9 @@ class ObjectsLoaderThread(QThread):
                                 if common_key:
                                     existing_names.add(common_key)
 
-                        logger.info(f"{self.obj_type_str}: {len(extra_objects)} extra objects, {len(objects_to_process)} after deduplication")
+                        logger.info(
+                            f"{self.obj_type_str}: {len(extra_objects)} extra objects, {len(objects_to_process)} after deduplication"
+                        )
 
                         if objects_to_process:
                             # Use ProcessPoolExecutor for CPU-intensive visibility calculations
@@ -881,7 +883,10 @@ class ObjectsLoaderThread(QThread):
                             # Use min(cpu_count, len(objects_to_process)) to avoid creating unnecessary processes
                             max_workers = min(cpu_count(), len(objects_to_process), 8)  # Cap at 8 processes
                             import os
-                            logger.info(f"Main process PID: {os.getpid()}, using {max_workers} worker processes to calculate visibility for {len(objects_to_process)} {self.obj_type_str} objects")
+
+                            logger.info(
+                                f"Main process PID: {os.getpid()}, using {max_workers} worker processes to calculate visibility for {len(objects_to_process)} {self.obj_type_str} objects"
+                            )
 
                             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                                 # Submit all tasks
@@ -933,7 +938,9 @@ class ObjectsLoaderThread(QThread):
                                         logger.error(f"Error processing {obj.name}: {e}", exc_info=True)
                                         continue
 
-                            logger.info(f"Completed parallel visibility calculations for {len(objects_to_process)} {self.obj_type_str} objects")
+                            logger.info(
+                                f"Completed parallel visibility calculations for {len(objects_to_process)} {self.obj_type_str} objects"
+                            )
 
                         augmented.sort(
                             key=lambda r: (
@@ -953,10 +960,14 @@ class ObjectsLoaderThread(QThread):
                     objects = planner.get_recommended_objects(
                         conditions, obj_type, max_results=100, best_for_seeing=False
                     )
-                    logger.debug(f"{self.obj_type_str}: Got {len(objects) if objects else 0} recommended objects (else branch)")
+                    logger.debug(
+                        f"{self.obj_type_str}: Got {len(objects) if objects else 0} recommended objects (else branch)"
+                    )
 
             # Emit signal with loaded data
-            logger.debug(f"Emitting data_loaded signal for {self.obj_type_str}, objects count: {len(objects) if isinstance(objects, list) else 'N/A'}")
+            logger.debug(
+                f"Emitting data_loaded signal for {self.obj_type_str}, objects count: {len(objects) if isinstance(objects, list) else 'N/A'}"
+            )
             self.data_loaded.emit(self.obj_type_str, objects)
             logger.debug(f"Signal emitted for {self.obj_type_str}")
 
@@ -2527,6 +2538,7 @@ class MainWindow(QMainWindow):
 
         # Create and start worker thread
         thread = ObjectsLoaderThread(obj_type_str)
+
         # Use a proper closure to capture table and progress - don't use lambda with loop variables
         def on_data_loaded(obj_type: str, objs: object) -> None:
             """Handle data loaded signal - proper closure to capture table and progress."""
@@ -3584,7 +3596,9 @@ class MainWindow(QMainWindow):
         while waited < max_wait:
             # Check how many are loaded
             loaded = sum(1 for obj_type_str in tabs_to_load_types if obj_type_str in self._objects_cache)
-            still_loading = [obj_type_str for obj_type_str in tabs_to_load_types if obj_type_str not in self._objects_cache]
+            still_loading = [
+                obj_type_str for obj_type_str in tabs_to_load_types if obj_type_str not in self._objects_cache
+            ]
 
             # Update progress message
             if still_loading:

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
 # Configure logging for worker processes (each process needs its own setup)
 def _setup_worker_logging() -> None:
     """Set up logging for worker processes."""
@@ -84,7 +85,7 @@ def calculate_object_visibility(
         from celestron_nexstar.api.catalogs.catalogs import CelestialObject
         from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
         from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
-        from celestron_nexstar.api.observation.optics import OpticsConfiguration, Telescope, Eyepiece
+        from celestron_nexstar.api.observation.optics import Eyepiece, OpticsConfiguration, Telescope
         from celestron_nexstar.api.observation.visibility import assess_visibility, get_object_altitude_azimuth
 
         # Reconstruct CelestialObject from dict
