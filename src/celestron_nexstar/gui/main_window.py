@@ -309,6 +309,7 @@ class ObjectsLoaderThread(QThread):
     """Worker thread to load objects data in the background."""
 
     data_loaded = Signal(object, object)  # type: ignore[type-arg,misc]  # Emits (obj_type_str, objects_list)
+    progress_update = Signal(str, int, int)  # type: ignore[type-arg,misc]  # Emits (obj_type_str, processed, total)
 
     def __init__(self, obj_type_str: str) -> None:
         """Initialize the loader thread."""
@@ -317,6 +318,7 @@ class ObjectsLoaderThread(QThread):
 
     def run(self) -> None:
         """Load objects data in background thread."""
+        logger.debug(f"ObjectsLoaderThread.run() started for {self.obj_type_str}")
         try:
             from celestron_nexstar.api.astronomy.constellations import get_visible_asterisms, get_visible_constellations
             from celestron_nexstar.api.core.enums import CelestialObjectType
@@ -324,8 +326,11 @@ class ObjectsLoaderThread(QThread):
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
             obj_type = CelestialObjectType(self.obj_type_str)
+            logger.debug(f"{self.obj_type_str}: Creating ObservationPlanner...")
             planner = ObservationPlanner()
+            logger.debug(f"{self.obj_type_str}: Getting tonight conditions...")
             conditions = planner.get_tonight_conditions()
+            logger.debug(f"{self.obj_type_str}: Got conditions, proceeding with load...")
             # Different object types produce different payload shapes (names vs tuples vs planner objects).
             # The downstream Qt signal accepts `object`, so keep this untyped here.
             objects: object
@@ -798,74 +803,137 @@ class ObjectsLoaderThread(QThread):
 
                         # Get extra objects, excluding Messier catalog (Messier has its own tab)
                         # This prevents duplicates like M31 appearing in both Galaxy and Messier tabs
+                        # Limit reduced to 400 for faster loading (was 800)
                         all_extra = db.filter_objects(
                             object_type=obj_type,
                             max_magnitude=18.0,
-                            limit=800,
+                            limit=400,
                         )
                         # Filter out Messier catalog objects
                         extra_objects = [obj for obj in all_extra if obj.catalog != "messier"]
 
                         augmented: list[RecommendedObject] = list(objects)
+                        total_extra = len(extra_objects)
+
+                        # Filter out objects that already exist
+                        objects_to_process = []
                         for obj in extra_objects:
                             name_key = obj.name.lower()
                             common_key = obj.common_name.lower() if obj.common_name else None
-                            if name_key in existing_names or (common_key and common_key in existing_names):
-                                continue
+                            if name_key not in existing_names and (not common_key or common_key not in existing_names):
+                                objects_to_process.append(obj)
+                                existing_names.add(name_key)
+                                if common_key:
+                                    existing_names.add(common_key)
 
-                            vis_info = assess_visibility(
-                                obj,
-                                config=config,
-                                sky_brightness=sky_brightness,
-                                min_altitude_deg=0.0,  # allow below-horizon objects into the list
-                                observer_lat=location.latitude if location else None,
-                                observer_lon=location.longitude if location else None,
-                                dt=conditions.timestamp,
-                            )
+                        logger.info(f"{self.obj_type_str}: {len(extra_objects)} extra objects, {len(objects_to_process)} after deduplication")
 
-                            visibility_prob_result = planner._calculate_visibility_probability(
-                                obj, conditions, vis_info
-                            )
-                            if isinstance(visibility_prob_result, tuple):
-                                visibility_prob = visibility_prob_result[0]
-                            else:
-                                visibility_prob = visibility_prob_result or 0.0
+                        if objects_to_process:
+                            # Use ProcessPoolExecutor for CPU-intensive visibility calculations
+                            # This bypasses the GIL and provides true parallelism
+                            from concurrent.futures import ProcessPoolExecutor, as_completed
+                            from multiprocessing import cpu_count
 
-                            priority = (
-                                planner._determine_priority(obj, conditions, vis_info) if vis_info.is_visible else 5
-                            )
-                            reason = " / ".join(vis_info.reasons) if vis_info.reasons else "Not currently visible"
+                            from celestron_nexstar.gui.workers.visibility_worker import calculate_object_visibility
 
-                            # Calculate transit time and altitude/azimuth at transit
-                            from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+                            # Prepare serializable data for worker processes
+                            config_data = {
+                                "telescope": {
+                                    "display_name": config.telescope.display_name,
+                                    "aperture_mm": config.telescope.aperture_mm,
+                                    "focal_length_mm": config.telescope.focal_length_mm,
+                                    "central_obstruction_mm": getattr(config.telescope, "central_obstruction_mm", 0.0),
+                                },
+                                "eyepiece": {
+                                    "display_name": config.eyepiece.display_name,
+                                    "focal_length_mm": config.eyepiece.focal_length_mm,
+                                    "apparent_fov_degrees": config.eyepiece.apparent_fov_degrees,
+                                },
+                            }
+                            conditions_data = {
+                                "timestamp": conditions.timestamp.isoformat(),
+                                "latitude": conditions.latitude,
+                                "longitude": conditions.longitude,
+                                "sky_brightness": sky_brightness.value,
+                            }
+                            location_data = {
+                                "latitude": location.latitude,
+                                "longitude": location.longitude,
+                            }
 
-                            best_time = planner._calculate_best_viewing_time(
-                                obj, location.latitude, location.longitude, conditions.timestamp
-                            )
-                            transit_alt, transit_az = get_object_altitude_azimuth(
-                                obj, location.latitude, location.longitude, best_time
-                            )
+                            # Prepare object data
+                            obj_data_list = []
+                            for obj in objects_to_process:
+                                obj_data = {
+                                    "name": obj.name,
+                                    "common_name": obj.common_name,
+                                    "catalog": obj.catalog,
+                                    "ra_hours": obj.ra_hours,
+                                    "dec_degrees": obj.dec_degrees,
+                                    "magnitude": obj.magnitude,
+                                    "object_type": obj.object_type.value,
+                                    "description": obj.description,
+                                    "constellation": obj.constellation,
+                                }
+                                obj_data_list.append((obj, obj_data))
 
-                            augmented.append(
-                                RecommendedObject(
-                                    obj=obj,
-                                    altitude=transit_alt,  # Use altitude at transit time
-                                    azimuth=transit_az,  # Use azimuth at transit time
-                                    best_viewing_time=best_time,  # Use transit time
-                                    visible_duration_hours=0.0,
-                                    apparent_magnitude=obj.magnitude or 0.0,
-                                    observability_score=vis_info.observability_score,
-                                    visibility_probability=visibility_prob,
-                                    priority=priority,
-                                    reason=reason,
-                                    viewing_tips=(),
-                                    moon_separation_deg=None,
-                                )
-                            )
+                            # Use process pool for parallel calculations (bypass GIL)
+                            # Use min(cpu_count, len(objects_to_process)) to avoid creating unnecessary processes
+                            max_workers = min(cpu_count(), len(objects_to_process), 8)  # Cap at 8 processes
+                            import os
+                            logger.info(f"Main process PID: {os.getpid()}, using {max_workers} worker processes to calculate visibility for {len(objects_to_process)} {self.obj_type_str} objects")
 
-                            existing_names.add(name_key)
-                            if common_key:
-                                existing_names.add(common_key)
+                            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                                # Submit all tasks
+                                future_to_obj = {
+                                    executor.submit(
+                                        calculate_object_visibility,
+                                        obj_data,
+                                        conditions_data,
+                                        config_data,
+                                        location_data,
+                                    ): obj
+                                    for obj, obj_data in obj_data_list
+                                }
+
+                                # Collect results as they complete
+                                processed = 0
+                                for future in as_completed(future_to_obj):
+                                    # Emit progress update every 10 objects
+                                    if processed % 10 == 0:
+                                        self.progress_update.emit(self.obj_type_str, processed, total_extra)
+                                    processed += 1
+
+                                    obj = future_to_obj[future]
+                                    try:
+                                        result = future.result()
+                                        if result:
+                                            # Convert result dict back to RecommendedObject
+                                            from datetime import datetime
+
+                                            best_time = datetime.fromisoformat(result["best_viewing_time"])
+
+                                            augmented.append(
+                                                RecommendedObject(
+                                                    obj=obj,
+                                                    altitude=result["altitude"],
+                                                    azimuth=result["azimuth"],
+                                                    best_viewing_time=best_time,
+                                                    visible_duration_hours=0.0,
+                                                    apparent_magnitude=result["apparent_magnitude"],
+                                                    observability_score=result["observability_score"],
+                                                    visibility_probability=result["visibility_probability"],
+                                                    priority=result["priority"],
+                                                    reason=result["reason"],
+                                                    viewing_tips=(),
+                                                    moon_separation_deg=None,
+                                                )
+                                            )
+                                    except Exception as e:
+                                        logger.error(f"Error processing {obj.name}: {e}", exc_info=True)
+                                        continue
+
+                            logger.info(f"Completed parallel visibility calculations for {len(objects_to_process)} {self.obj_type_str} objects")
 
                         augmented.sort(
                             key=lambda r: (
@@ -881,12 +949,16 @@ class ObjectsLoaderThread(QThread):
                         )
                 else:
                     # Get recommended objects for this type
+                    logger.debug(f"{self.obj_type_str}: Getting recommended objects (else branch)...")
                     objects = planner.get_recommended_objects(
                         conditions, obj_type, max_results=100, best_for_seeing=False
                     )
+                    logger.debug(f"{self.obj_type_str}: Got {len(objects) if objects else 0} recommended objects (else branch)")
 
             # Emit signal with loaded data
+            logger.debug(f"Emitting data_loaded signal for {self.obj_type_str}, objects count: {len(objects) if isinstance(objects, list) else 'N/A'}")
             self.data_loaded.emit(self.obj_type_str, objects)
+            logger.debug(f"Signal emitted for {self.obj_type_str}")
 
         except Exception as e:
             # Emit None to indicate error
@@ -1205,6 +1277,8 @@ class MainWindow(QMainWindow):
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
         # Track visibility counting threads to prevent premature destruction
         self._visibility_threads: dict[QTableWidget, VisibilityCountThread] = {}
+        self._loading_all = False  # Flag to track if "load all" is in progress
+        self._deferred_visibility_tables: list[QTableWidget] = []  # Tables that need visibility count after load all
         # Keep references to threads that are shutting down so Python/Qt doesn't destroy them mid-run.
         self._stopping_threads: list[QThread] = []
         # Track telescope worker threads
@@ -2453,7 +2527,18 @@ class MainWindow(QMainWindow):
 
         # Create and start worker thread
         thread = ObjectsLoaderThread(obj_type_str)
-        thread.data_loaded.connect(lambda obj_type, objs: self._on_objects_loaded(obj_type, objs, table, progress))
+        # Use a proper closure to capture table and progress - don't use lambda with loop variables
+        def on_data_loaded(obj_type: str, objs: object) -> None:
+            """Handle data loaded signal - proper closure to capture table and progress."""
+            logger.debug(f"Signal received for {obj_type}, objects type: {type(objs)}, is None: {objs is None}")
+            try:
+                self._on_objects_loaded(obj_type, objs, table, progress)
+                logger.debug(f"Successfully processed signal for {obj_type}")
+            except Exception as e:
+                logger.error(f"Error in _on_objects_loaded for {obj_type}: {e}", exc_info=True)
+
+        # Use QueuedConnection to ensure signal is processed on main thread
+        thread.data_loaded.connect(on_data_loaded, Qt.ConnectionType.QueuedConnection)
 
         # Clean up thread when it finishes
         def cleanup_thread() -> None:
@@ -2464,7 +2549,9 @@ class MainWindow(QMainWindow):
         thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
 
         self._loading_threads[obj_type_str] = thread
+        logger.debug(f"Starting thread for {obj_type_str}, thread object: {thread}")
         thread.start()
+        logger.debug(f"Thread started for {obj_type_str}, isRunning: {thread.isRunning()}")
 
     def _on_objects_loaded(
         self,
@@ -2514,6 +2601,9 @@ class MainWindow(QMainWindow):
                 self._populate_table(table, objects)  # type: ignore[arg-type]
         else:
             # Data was loaded but no objects match criteria - show message
+            # IMPORTANT: Cache the empty list so refresh works properly
+            # Without this, refresh will try to reload but cache check will fail
+            self._objects_cache[obj_type_str] = []
             self._show_no_data_message(table, obj_type_str)
 
     def _populate_table(self, table: QTableWidget, objects: list[RecommendedObject]) -> None:
@@ -3216,7 +3306,13 @@ class MainWindow(QMainWindow):
         table.setSortingEnabled(True)
 
         # Start background thread to count visible stars (non-blocking)
+        # BUT: Defer this during "load all" to prevent blocking other table loads
         if is_constellation_table:
+            if self._loading_all:
+                # Defer visibility count until after "load all" completes
+                if table not in self._deferred_visibility_tables:
+                    self._deferred_visibility_tables.append(table)
+                return
             # Clean up any existing thread for this table
             if table in self._visibility_threads:
                 old_thread = self._visibility_threads[table]
@@ -3434,9 +3530,30 @@ class MainWindow(QMainWindow):
             # All tabs are already loaded or loading
             return
 
+        # Set flag to indicate "load all" is in progress
+        # This prevents visibility count threads from starting and blocking other loads
+        self._loading_all = True
+        self._deferred_visibility_tables.clear()
+
+        # Clean up any existing loading threads first
+        # This prevents hanging threads from previous attempts from interfering
+        logger.info("Cleaning up any existing loading threads...")
+        for obj_type_str, thread in list(self._loading_threads.items()):
+            if thread.isRunning():
+                logger.warning(f"Interrupting existing thread for {obj_type_str}")
+                thread.requestInterruption()
+                if not thread.wait(1000):  # Wait 1 second
+                    logger.warning(f"Terminating hanging thread for {obj_type_str}")
+                    thread.terminate()
+                    thread.wait(1000)
+                if obj_type_str in self._loading_threads:
+                    del self._loading_threads[obj_type_str]
+                thread.deleteLater()
+        logger.info("Cleanup complete")
+
         # Show loading dialog
         progress = self._create_progress_dialog(f"Loading all tabs ({len(tabs_to_load)} tabs)...")
-        progress.setMaximum(len(tabs_to_load))
+        progress.setMaximum(0)  # Indeterminate progress bar for parallel loading
         progress.show()
 
         # Process events to show the dialog immediately
@@ -3444,31 +3561,138 @@ class MainWindow(QMainWindow):
 
         QApplication.processEvents()
 
-        # Load each tab
-        for idx, (_tab_index, table, obj_type_str) in enumerate(tabs_to_load):
-            progress.setValue(idx)
-            progress.setLabelText(
-                f"Loading {obj_type_str.replace('_', ' ').title()} ({idx + 1}/{len(tabs_to_load)})..."
-            )
+        # Start all table loads in parallel
+        # The _loading_all flag prevents constellation visibility counts from blocking
+        logger.info(f"Starting parallel load for {len(tabs_to_load)} tabs...")
+        for _tab_index, table, obj_type_str in tabs_to_load:
+            logger.info(f"Starting load for {obj_type_str}")
+            self._load_objects_table(table, show_progress=False)
+            # Small delay to stagger thread starts
             QApplication.processEvents()
 
-            # Load the table (suppress individual progress dialog)
-            self._load_objects_table(table, show_progress=False)
+        # Wait for all loads to complete (poll with timeout)
+        # Increased timeout for parallel loading - some tables (clusters, galaxies) can take 60+ seconds
+        max_wait = 300000  # 300 seconds (5 minutes) total for parallel loading
+        check_interval = 200  # Check every 200ms
+        waited = 0
+        start_time = datetime.now()
 
-            # Wait for loading to complete (check if thread is done)
-            if obj_type_str in self._loading_threads:
+        logger.info(f"Waiting for all {len(tabs_to_load)} tables to load...")
+
+        tabs_to_load_types = {obj_type_str for _, _, obj_type_str in tabs_to_load}
+
+        while waited < max_wait:
+            # Check how many are loaded
+            loaded = sum(1 for obj_type_str in tabs_to_load_types if obj_type_str in self._objects_cache)
+            still_loading = [obj_type_str for obj_type_str in tabs_to_load_types if obj_type_str not in self._objects_cache]
+
+            # Update progress message
+            if still_loading:
+                progress.setLabelText(f"Loading {len(still_loading)} remaining: {', '.join(still_loading[:3])}...")
+            else:
+                progress.setLabelText("All tables loaded!")
+
+            # All loaded?
+            if loaded == len(tabs_to_load):
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(f"All {len(tabs_to_load)} tables loaded successfully in {elapsed:.1f}s")
+                break
+
+            # Process events to handle signals
+            QApplication.processEvents()
+
+            # Small delay before next check
+            from PySide6.QtCore import QThread
+
+            QThread.msleep(check_interval)
+            QApplication.processEvents()
+            waited += check_interval
+
+            # Log progress every 5 seconds
+            if waited % 5000 < check_interval:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                logger.info(f"Still loading {len(still_loading)} tables... ({elapsed:.1f}s elapsed): {still_loading}")
+
+        # Clean up any hanging threads
+        for obj_type_str in tabs_to_load_types:
+            if obj_type_str not in self._objects_cache and obj_type_str in self._loading_threads:
                 thread = self._loading_threads[obj_type_str]
                 if thread.isRunning():
-                    thread.wait(5000)  # Wait up to 5 seconds for each tab
-                # Thread cleanup is handled by the finished signal connection
+                    logger.warning(f"Thread for {obj_type_str} still running after timeout, terminating...")
+                    thread.requestInterruption()
+                    QApplication.processEvents()
+                    if thread.isRunning():
+                        thread.terminate()
+                    QApplication.processEvents()
+                    if obj_type_str in self._loading_threads:
+                        del self._loading_threads[obj_type_str]
+                    thread.deleteLater()
 
-        progress.setValue(len(tabs_to_load))
         progress.close()
 
         # Process events to allow any pending thread cleanup signals
-        from PySide6.QtWidgets import QApplication
-
         QApplication.processEvents()
+
+        # Clear the "load all" flag
+        self._loading_all = False
+
+        # Now start any deferred visibility count threads for constellation/asterism tables
+        # These were deferred to prevent blocking other table loads
+        for deferred_table in self._deferred_visibility_tables:
+            obj_type_str = deferred_table.property("object_type")
+            if obj_type_str in ("constellation", "asterism"):
+                # Get the constellation/asterism names from the table
+                names = []
+                for row in range(deferred_table.rowCount()):
+                    name_item = deferred_table.item(row, 0)
+                    if name_item:
+                        name = name_item.data(Qt.ItemDataRole.UserRole)
+                        if name:
+                            names.append(name)
+
+                if names:
+                    # Re-populate to trigger visibility count (but skip the initial population)
+                    # We just need to start the visibility thread
+                    is_asterism = obj_type_str == "asterism"
+                    asterism_objects = self._asterism_objects_cache if is_asterism else None
+
+                    visibility_thread = VisibilityCountThread(
+                        names,
+                        is_asterism=is_asterism,
+                        asterism_objects=asterism_objects,
+                    )
+
+                    # Store thread reference
+                    self._visibility_threads[deferred_table] = visibility_thread
+
+                    # Capture deferred_table in closure using default parameter to avoid loop variable binding issue
+                    def update_count(name: str, count: int, table: QTableWidget = deferred_table) -> None:
+                        """Update a single row in the table with visibility count."""
+                        for row in range(table.rowCount()):
+                            name_item = table.item(row, 0)
+                            if name_item:
+                                constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
+                                if constellation_name == name:
+                                    stars_item = table.item(row, 1)
+                                    if stars_item:
+                                        stars_item.setText(str(count))
+                                        stars_item.setData(Qt.ItemDataRole.UserRole, count)
+                                        break
+
+                    # Capture deferred_table in closure using default parameter
+                    def cleanup_thread(table: QTableWidget = deferred_table) -> None:
+                        """Clean up thread reference when finished."""
+                        if table in self._visibility_threads:
+                            thread = self._visibility_threads.pop(table)
+                            thread.deleteLater()
+
+                    visibility_thread.count_ready.connect(update_count, Qt.ConnectionType.QueuedConnection)
+                    visibility_thread.counts_complete.connect(lambda: logger.info("All visibility counts completed"))
+                    visibility_thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
+                    visibility_thread.start()
+
+        # Clear the deferred list
+        self._deferred_visibility_tables.clear()
 
     def _on_filter_changed(self, text: str) -> None:
         """Handle filter text change - filter table rows."""

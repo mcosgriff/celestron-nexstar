@@ -81,20 +81,16 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
         "dSph pec": "Dwarf Spheroidal",
         "dSph(t)": "Dwarf Spheroidal",
         "dsph": "Dwarf Spheroidal",
-
         # Dwarf elliptical
         "dE": "Dwarf Elliptical",
         "de": "Dwarf Elliptical",
-
         # Dwarf irregular
         "dIrr": "Dwarf Irregular",
         "dIrr/dSph": "Dwarf Irregular",
         "di": "Dwarf Irregular",
-
         # Ultra-faint dwarf
         "UFD": "Ultra-Faint Dwarf",
         "ufd": "Ultra-Faint Dwarf",
-
         # Irregular galaxies (all Magellanic types)
         "IAm": "Irregular Galaxy",
         "IAm V-VI": "Irregular Galaxy",
@@ -105,7 +101,6 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
         "Im V-VI": "Irregular Galaxy",
         "Irr": "Irregular Galaxy",
         "i": "Irregular Galaxy",
-
         # Barred spirals (all variants)
         "SB": "Barred Spiral Galaxy",
         "SBa": "Barred Spiral Galaxy",
@@ -116,7 +111,6 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
         "SBm V": "Barred Spiral Galaxy",
         "SBm V pec": "Barred Spiral Galaxy",
         "sb": "Barred Spiral Galaxy",
-
         # Spirals (all variants, including intermediate barred)
         "S": "Spiral Galaxy",
         "Sa": "Spiral Galaxy",
@@ -131,15 +125,12 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
         "SABc": "Spiral Galaxy",
         "SABd": "Spiral Galaxy",
         "s": "Spiral Galaxy",
-
         # Lenticular
         "S0": "Lenticular Galaxy",
         "s0": "Lenticular Galaxy",
-
         # S0/a
         "S0/a": "S0/a Galaxy",
         "sd": "S0/a Galaxy",
-
         # Elliptical
         "E": "Elliptical Galaxy",
         "E0": "Elliptical Galaxy",
@@ -151,19 +142,15 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
         "E6": "Elliptical Galaxy",
         "E7": "Elliptical Galaxy",
         "e": "Elliptical Galaxy",
-
         # Generic galaxy
         "Gal": "Galaxy",
         "gal": "Galaxy",
         "g": "Galaxy",
-
         # Giant galaxy
         "gg": "Giant Galaxy",
-
         # Clusters
         "oc": "Open Cluster",
         "gc": "Globular Cluster",
-
         # Nebulae
         "pn": "Planetary Nebula",
         "en": "Emission Nebula",
@@ -178,11 +165,9 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
     abbrev_to_full_name = {}
 
     with db._get_session() as session:
-        result = session.execute(
-            text("SELECT name, description FROM object_types")
-        ).fetchall()
+        result = session.execute(text("SELECT name, description FROM object_types")).fetchall()
 
-        for name, description in result:
+        for name, _description in result:
             # Add the type name itself as a key
             abbrev_to_full_name[name] = name
 

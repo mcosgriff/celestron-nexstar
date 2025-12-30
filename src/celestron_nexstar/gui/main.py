@@ -42,8 +42,8 @@ def _setup_logging() -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     log_file = config_dir / "nexstar-gui.log"
 
-    # Configure logging format
-    log_format = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
+    # Configure logging format with process and thread IDs
+    log_format = "%(asctime)s [%(levelname)-8s] [PID:%(process)d TID:%(thread)d] %(name)s: %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
 
     # Set up root logger
@@ -63,7 +63,7 @@ def _setup_logging() -> None:
     # Console handler - only show INFO and above to avoid cluttering console
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter("%(levelname)-8s %(name)s: %(message)s")
+    console_formatter = logging.Formatter("%(levelname)-8s [PID:%(process)d TID:%(thread)d] %(name)s: %(message)s")
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
 

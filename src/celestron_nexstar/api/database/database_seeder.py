@@ -981,18 +981,18 @@ def seed_object_types(db_session: Session, force: bool = False) -> int:
         existing = db_session.scalar(select(ObjectTypeModel).where(ObjectTypeModel.name == name))
         if existing:
             # Update description if it's better/longer than existing (if force is True)
-            if force and description and (not existing.description or len(description) > len(existing.description or "")):
+            if (
+                force
+                and description
+                and (not existing.description or len(description) > len(existing.description or ""))
+            ):
                 existing.description = description
                 existing.category = category
                 updated += 1
             continue
 
         # Create new object type
-        obj_type = ObjectTypeModel(
-            name=name,
-            category=category,
-            description=description
-        )
+        obj_type = ObjectTypeModel(name=name, category=category, description=description)
         db_session.add(obj_type)
         added += 1
 
