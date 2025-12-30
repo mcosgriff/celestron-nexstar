@@ -179,13 +179,13 @@ class VisibilityCountThread(QThread):
                     sky_brightness = SkyBrightness.FAIR
 
                 # Limit concurrent database operations to prevent blocking other GUI operations
-                # SQLite can handle concurrent reads, but too many simultaneous operations can cause blocking
-                # Using a semaphore to limit to 2 concurrent DB operations at a time
-                db_semaphore = Semaphore(2)
+                # SQLite can handle concurrent reads well - using more workers for better throughput
+                # Using a semaphore to limit concurrent DB operations
+                db_semaphore = Semaphore(6)
 
-                # Use a small pool to avoid starving other UI/DB work
-                # Reduced max_workers to 2 to match semaphore limit and reduce DB contention
-                max_workers = 2
+                # Use a moderate pool size for faster processing while not overwhelming the system
+                # Increased from 2 to 6 for significantly better throughput
+                max_workers = 6
 
                 if self.is_asterism:
 
