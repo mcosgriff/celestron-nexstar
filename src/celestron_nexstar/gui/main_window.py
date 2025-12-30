@@ -904,6 +904,15 @@ class ObjectsLoaderThread(QThread):
                                 # Collect results as they complete
                                 processed = 0
                                 for future in as_completed(future_to_obj):
+                                    # Check for interruption request (app closing)
+                                    if self.isInterruptionRequested():
+                                        logger.info(f"Interruption requested, cancelling {len(future_to_obj) - processed} pending tasks")
+                                        # Cancel all pending futures
+                                        for f in future_to_obj:
+                                            f.cancel()
+                                        # Exit the loop to allow ProcessPoolExecutor to shutdown cleanly
+                                        break
+
                                     # Emit progress update every 10 objects
                                     if processed % 10 == 0:
                                         self.progress_update.emit(self.obj_type_str, processed, total_extra)
