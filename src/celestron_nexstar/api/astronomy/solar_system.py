@@ -111,37 +111,27 @@ def calculate_moon_phase(illumination: float, moon_ra: float, sun_ra: float) -> 
     elif ra_diff < -12:
         ra_diff += 24
 
-    # At full moon (illumination = 1.0), moon and sun are opposite (ra_diff ≈ ±12h)
-    # After full moon (illumination > 0.5), moon is waning
-    # Before full moon (illumination < 0.5), moon is waxing
-    # Use RA difference to determine direction: positive = moon east of sun (waxing), negative = west (waning)
-    # But near full moon, we need to be careful - use illumination as primary indicator
-    if illumination > 0.5:
-        # Past full moon - moon is waning
-        is_waxing = False
-    elif illumination < 0.5:
-        # Before full moon - moon is waxing
-        is_waxing = True
-    else:
-        # Exactly at 50% - use RA to determine
-        is_waxing = ra_diff > 0
+    # Determine waxing vs waning using RA difference:
+    # - Positive ra_diff (0 to +12h): Moon is east of sun → WAXING (new moon to full moon)
+    # - Negative ra_diff (-12 to 0h): Moon is west of sun → WANING (full moon to new moon)
+    # Note: Cannot use illumination alone - 80% could be waxing or waning!
+    is_waxing = ra_diff > 0
 
+    # Moon phase based on illumination percentage
     if illumination < 0.01:
         return MoonPhase.NEW_MOON
-    elif illumination < 0.25:
+    elif illumination < 0.48:
+        # 1-48%: Crescent phase
         return MoonPhase.WAXING_CRESCENT if is_waxing else MoonPhase.WANING_CRESCENT
-    elif illumination < 0.26:
+    elif illumination < 0.52:
+        # 48-52%: Quarter moon (50%)
         return MoonPhase.FIRST_QUARTER if is_waxing else MoonPhase.LAST_QUARTER
-    elif illumination < 0.49:
+    elif illumination < 0.99:
+        # 52-99%: Gibbous phase
         return MoonPhase.WAXING_GIBBOUS if is_waxing else MoonPhase.WANING_GIBBOUS
-    elif illumination < 0.51:
-        return MoonPhase.FULL_MOON
-    elif illumination < 0.90:
-        return MoonPhase.WANING_GIBBOUS if not is_waxing else MoonPhase.WAXING_GIBBOUS
-    elif illumination < 0.91:
-        return MoonPhase.LAST_QUARTER if not is_waxing else MoonPhase.FIRST_QUARTER
     else:
-        return MoonPhase.WANING_CRESCENT if not is_waxing else MoonPhase.WAXING_CRESCENT
+        # 99-100%: Full moon
+        return MoonPhase.FULL_MOON
 
 
 def get_moon_info(

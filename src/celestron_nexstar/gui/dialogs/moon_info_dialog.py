@@ -302,7 +302,7 @@ class MoonDiskWorkerThread(QThread):
             phase_angle = math.acos(cos_angle)
             illumination = (1.0 - math.cos(phase_angle)) / 2.0
 
-            # Waxing/waning from RA difference + illumination (same logic as calculate_moon_phase)
+            # Waxing/waning from RA difference (same logic as calculate_moon_phase)
             moon_ra_h = float(moon_ra.hours)
             sun_ra_h = float(sun_ra.hours)
             ra_diff = moon_ra_h - sun_ra_h
@@ -310,12 +310,9 @@ class MoonDiskWorkerThread(QThread):
                 ra_diff -= 24
             elif ra_diff < -12:
                 ra_diff += 24
-            if illumination > 0.5:
-                is_waxing = False
-            elif illumination < 0.5:
-                is_waxing = True
-            else:
-                is_waxing = ra_diff > 0
+            # Positive ra_diff: Moon east of sun → WAXING
+            # Negative ra_diff: Moon west of sun → WANING
+            is_waxing = ra_diff > 0
 
             chi_deg = self._compute_bright_limb_pa_deg(moon_ra_rad, moon_dec_rad, sun_ra_rad, sun_dec_rad)
 
