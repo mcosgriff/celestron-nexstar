@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import requests
 
+
 if TYPE_CHECKING:
     from celestron_nexstar.api.location.observer import ObserverLocation
 
@@ -67,7 +68,7 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
 
         # Look for the chart preview image in the HTML
         # Pattern: src=../c/{chart_key}cs0.gif
-        match = re.search(r'src=\.\./c/(.+?)cs0\.gif', html_content)
+        match = re.search(r"src=\.\./c/(.+?)cs0\.gif", html_content)
 
         if not match:
             # Try alternate pattern with full URL

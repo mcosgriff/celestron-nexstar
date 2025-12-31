@@ -2,18 +2,19 @@
 
 import logging
 
-from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
-    QMessageBox,
-    QHBoxLayout,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,11 @@ class ChartFetchWorkerThread(QThread):
     def run(self) -> None:
         """Fetch chart in background thread."""
         try:
-            from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.clear_dark_sky import (
-                find_nearest_chart,
                 fetch_chart_image,
+                find_nearest_chart,
             )
+            from celestron_nexstar.api.location.observer import get_observer_location
 
             # Get observer location
             location = get_observer_location()
@@ -110,8 +111,7 @@ class ClearDarkSkyDialog(QDialog):
         # Info label
         location_name = location.name or f"{location.latitude:.4f}°, {location.longitude:.4f}°"
         self.info_label = QLabel(
-            f"Clear Dark Sky chart for: {location_name}\n\n"
-            "Loading chart... This may take a few seconds."
+            f"Clear Dark Sky chart for: {location_name}\n\nLoading chart... This may take a few seconds."
         )
         self.info_label.setWordWrap(True)
         layout.addWidget(self.info_label)
@@ -190,7 +190,7 @@ class ClearDarkSkyDialog(QDialog):
             location = get_observer_location()
             location_name = location.name or f"{location.latitude:.4f}°, {location.longitude:.4f}°"
             self.info_label.setText(
-                f"Clear Dark Sky chart for: {location_name}\n" f"Chart ID: {chart_key}\n\n" "Charts update hourly."
+                f"Clear Dark Sky chart for: {location_name}\nChart ID: {chart_key}\n\nCharts update hourly."
             )
 
             # Start auto-refresh timer
@@ -205,7 +205,7 @@ class ClearDarkSkyDialog(QDialog):
         logger.warning(f"Clear Dark Sky chart error: {error_msg}")
         self.image_label.setText(f"Error: {error_msg}")
         self.info_label.setText(
-            "Failed to load Clear Dark Sky chart.\n\n" "Please check your internet connection and try again."
+            "Failed to load Clear Dark Sky chart.\n\nPlease check your internet connection and try again."
         )
 
         # Don't start refresh timer on error

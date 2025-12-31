@@ -906,7 +906,9 @@ class ObjectsLoaderThread(QThread):
                                 for future in as_completed(future_to_obj):
                                     # Check for interruption request (app closing)
                                     if self.isInterruptionRequested():
-                                        logger.info(f"Interruption requested, cancelling {len(future_to_obj) - processed} pending tasks")
+                                        logger.info(
+                                            f"Interruption requested, cancelling {len(future_to_obj) - processed} pending tasks"
+                                        )
                                         # Cancel all pending futures
                                         for f in future_to_obj:
                                             f.cancel()
@@ -1830,6 +1832,14 @@ class MainWindow(QMainWindow):
         self.transit_times_action.setToolTip("TRANSIT TIMES")
         self.transit_times_action.setStatusTip("View transit times")
         self.transit_times_action.triggered.connect(self._on_transit_times)
+
+        # Sky Now - Objects Transiting Soon
+        sky_now_icon = self._create_icon("sky_now", ["fa.crosshairs", "fa.dot-circle", "fa.bullseye", "clock"])
+        self.sky_now_action = planning_menu.addAction(sky_now_icon, "Sky Now")
+        self.sky_now_action.setIconVisibleInMenu(True)
+        self.sky_now_action.setToolTip("SKY NOW")
+        self.sky_now_action.setStatusTip("View objects transiting now or soon")
+        self.sky_now_action.triggered.connect(self._on_sky_now)
 
         planning_menu.addSeparator()
 
@@ -4866,6 +4876,17 @@ class MainWindow(QMainWindow):
         dialog = TransitTimesInfoDialog(self)
         progress.close()
         dialog.exec()
+
+    def _on_sky_now(self) -> None:
+        """Handle Sky Now menu action."""
+        try:
+            from celestron_nexstar.gui.dialogs.sky_now_dialog import SkyNowDialog
+
+            dialog = SkyNowDialog(self, main_window=self)
+            dialog.exec()
+        except Exception as e:
+            logger.error(f"Error opening Sky Now dialog: {e}", exc_info=True)
+            QMessageBox.warning(self, "Error", f"Failed to open Sky Now dialog: {e}")
 
     def _on_glossary(self) -> None:
         """Handle glossary button click."""
