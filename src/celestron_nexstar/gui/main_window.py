@@ -1849,6 +1849,14 @@ class MainWindow(QMainWindow):
         self.weather_action.setStatusTip("View current weather conditions")
         self.weather_action.triggered.connect(self._on_weather)
 
+        # Clear Dark Sky Chart
+        cds_icon = self._create_icon("chart", ["chart-line", "chart-areaspline", "weather-cloudy"])
+        self.clear_dark_sky_action = planning_menu.addAction(cds_icon, "Clear Dark Sky")
+        self.clear_dark_sky_action.setIconVisibleInMenu(True)
+        self.clear_dark_sky_action.setToolTip("CLEAR DARK SKY")
+        self.clear_dark_sky_action.setStatusTip("View Clear Dark Sky seeing and transparency forecast")
+        self.clear_dark_sky_action.triggered.connect(self._on_clear_dark_sky)
+
         moon_icon = self._create_icon("moon", ["moon-waxing-crescent", "moon-full", "moon-new", "weather-night"])
         self.moon_info_action = planning_menu.addAction(moon_icon, "Moon Info")
         self.moon_info_action.setIconVisibleInMenu(True)
@@ -4502,6 +4510,13 @@ class MainWindow(QMainWindow):
     def _on_weather(self) -> None:
         """Handle weather button click."""
         dialog = WeatherInfoDialog(self)
+        dialog.exec()
+
+    def _on_clear_dark_sky(self) -> None:
+        """Handle Clear Dark Sky chart menu click."""
+        from celestron_nexstar.gui.dialogs.clear_dark_sky_dialog import ClearDarkSkyDialog
+
+        dialog = ClearDarkSkyDialog(self)
         dialog.exec()
 
     def _on_moon_info(self) -> None:
