@@ -88,50 +88,69 @@ class SkyNowWorkerThread(QThread):
             end_time = now + timedelta(hours=self.end_offset_hours)
 
             # Query ALL objects from database (with reasonable magnitude limits)
+            # Note: We skip the initial visibility filter and only check visibility at transit time
+            # This is much faster than checking visibility twice (now + transit time)
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.observation.visibility import filter_visible_objects
 
             try:
                 db = get_database()
-                # Get all reasonably bright objects (stars < mag 5, DSOs < mag 12, all planets/moons)
-                # Stars
-                stars = db.filter_objects(object_type="star", max_magnitude=5.0, limit=500)
-                # Double stars
-                double_stars = db.filter_objects(object_type="double_star", max_magnitude=8.0, limit=200)
-                # Deep sky objects (galaxies, nebulae, clusters)
-                galaxies = db.filter_objects(object_type="galaxy", max_magnitude=12.0, limit=500)
-                nebulae = db.filter_objects(object_type="nebula", max_magnitude=12.0, limit=500)
-                clusters = db.filter_objects(object_type="cluster", max_magnitude=12.0, limit=500)
-                # Planets and moons (no magnitude filter)
-                planets = db.filter_objects(object_type="planet", limit=50)
-                moons = db.filter_objects(object_type="moon", limit=100)
 
-                # Combine all objects
-                all_objects = stars + double_stars + galaxies + nebulae + clusters + planets + moons
+                # Define all queries to run in parallel
+                query_tasks = [
+                    ("star", {"object_type": "star", "max_magnitude": 5.0, "limit": 500}),
+                    ("double_star", {"object_type": "double_star", "max_magnitude": 8.0, "limit": 200}),
+                    ("galaxy", {"object_type": "galaxy", "max_magnitude": 12.0, "limit": 500}),
+                    ("nebula", {"object_type": "nebula", "max_magnitude": 12.0, "limit": 500}),
+                    ("cluster", {"object_type": "cluster", "max_magnitude": 12.0, "limit": 500}),
+                    ("planet", {"object_type": "planet", "limit": 50}),
+                    ("moon", {"object_type": "moon", "limit": 100}),
+                ]
+
+                # Run all queries in parallel
+                all_objects = []
+                with ThreadPoolExecutor(max_workers=7) as executor:
+                    # Submit all queries
+                    future_to_type = {
+                        executor.submit(db.filter_objects, **kwargs): obj_type
+                        for obj_type, kwargs in query_tasks
+                    }
+
+                    # Collect results as they complete
+                    for future in as_completed(future_to_type):
+                        obj_type = future_to_type[future]
+                        try:
+                            objects = future.result()
+                            all_objects.extend(objects)
+                            logger.debug(f"Sky Now: Got {len(objects)} {obj_type}(s)")
+                        except Exception as e:
+                            logger.warning(f"Failed to query {obj_type}s: {e}")
+
                 logger.debug(f"Sky Now: Got {len(all_objects)} total objects from database")
-
-                # Filter to only visible objects
-                visible_objects = filter_visible_objects(
-                    all_objects,
-                    min_altitude_deg=15.0,  # Lower threshold for Sky Now
-                    min_observability_score=0.2,  # Lower threshold to include more objects
-                    observer_lat=location.latitude,
-                    observer_lon=location.longitude,
-                    dt=now,
-                )
-                logger.debug(f"Sky Now: Filtered to {len(visible_objects)} visible objects")
 
             except Exception as e:
                 logger.error(f"Error querying objects: {e}", exc_info=True)
                 self.error_occurred.emit(f"Database error: {e}", "Error loading objects")
                 return
 
-            # Calculate transit times for visible objects and filter by time range
+            # Get observing conditions for visibility probability calculation
+            from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.planning_utils import get_object_visibility_timeline
+            from celestron_nexstar.api.observation.visibility import assess_visibility
 
+            planner = ObservationPlanner()
+            try:
+                conditions = planner.get_tonight_conditions()
+            except Exception as e:
+                logger.warning(f"Could not get observing conditions, using defaults: {e}")
+                conditions = None
+
+            # Calculate transit times and check visibility at transit time
+            # (We only check visibility once - at the transit time)
             filtered_objects: list[tuple[CelestialObject, datetime]] = []
 
-            for obj, _visibility_info in visible_objects:
+            for obj in all_objects:
                 obj_name = getattr(obj, 'common_name', None) or getattr(obj, 'name', 'Unknown')
 
                 try:
@@ -160,17 +179,52 @@ class SkyNowWorkerThread(QThread):
                             transit_time = transit_time.replace(tzinfo=UTC)
                         transit_time_local = transit_time.astimezone(local_tz)
 
+                        # Check if transit time is in our range
+                        in_time_range = start_time <= transit_time_local <= end_time
+
                         # Debug logging for Rigel specifically
                         if 'rigel' in obj_name.lower():
                             logger.info(
                                 f"Sky Now: Rigel details: transit_local={transit_time_local.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
                                 f"start_time={start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
                                 f"end_time={end_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                                f"in_range={start_time <= transit_time_local <= end_time}"
+                                f"in_range={in_time_range}"
                             )
 
-                        if start_time <= transit_time_local <= end_time:
-                            filtered_objects.append((obj, transit_time_local))
+                        if in_time_range:
+                            # Use the SAME visibility check as main window tables
+                            # Assess visibility at transit time
+                            visibility_at_transit = assess_visibility(
+                                obj,
+                                min_altitude_deg=20.0,  # Match main window threshold
+                                observer_lat=location.latitude,
+                                observer_lon=location.longitude,
+                                dt=transit_time,  # Check visibility at transit time
+                            )
+
+                            # Calculate visibility probability (same as main window)
+                            if conditions:
+                                visibility_prob_result = planner._calculate_visibility_probability(
+                                    obj, conditions, visibility_at_transit
+                                )
+                                # Handle tuple return (probability, explanations) or just probability
+                                if isinstance(visibility_prob_result, tuple):
+                                    visibility_probability = visibility_prob_result[0]
+                                else:
+                                    visibility_probability = visibility_prob_result
+                            else:
+                                # No conditions available, use observability score as proxy
+                                visibility_probability = visibility_at_transit.observability_score
+
+                            # Use same threshold as main window: visibility_probability > 0
+                            # (Main window shows objects with visibility_probability > 0)
+                            if visibility_probability > 0:
+                                filtered_objects.append((obj, transit_time_local))
+                            else:
+                                logger.debug(
+                                    f"Sky Now: Excluding {obj_name} - visibility probability too low "
+                                    f"(prob={visibility_probability:.3f}, alt={visibility_at_transit.altitude_deg:.1f}°)"
+                                )
 
                 except Exception as e:
                     # Skip objects that fail transit calculation
@@ -309,7 +363,7 @@ class SkyNowDialog(QDialog):
         footer_layout.addStretch()
 
         self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.reject)
+        self.close_button.clicked.connect(self.close)
         footer_layout.addWidget(self.close_button)
 
         layout.addLayout(footer_layout)
@@ -691,34 +745,35 @@ class SkyNowDialog(QDialog):
             QMessageBox.information(self, "No Objects", "No objects to add to queue.")
             return
 
-        # Validate main window and goto queue
-        if not self.main_window or not hasattr(self.main_window, "goto_queue_window"):
-            QMessageBox.warning(self, "Queue Unavailable", "Goto queue is not available.")
+        # Validate main window
+        if not self.main_window:
+            QMessageBox.warning(self, "Queue Unavailable", "Main window reference not available.")
             return
 
         # Ensure queue window exists
-        if not self.main_window.goto_queue_window:
+        if not hasattr(self.main_window, "_goto_queue_window") or self.main_window._goto_queue_window is None:
             self.main_window._on_goto_queue()
 
         # Add objects to queue
         try:
-            self.main_window.goto_queue_window.add_objects(objects_to_add, notes="Added from Sky Now")
+            if self.main_window._goto_queue_window:
+                self.main_window._goto_queue_window.add_objects(objects_to_add, notes="Added from Sky Now")
 
-            # Show confirmation
-            reply = QMessageBox.information(
-                self,
-                "Added to Queue",
-                f"Added {len(objects_to_add)} object{'s' if len(objects_to_add) != 1 else ''} to goto queue in transit-time order.\n\n"
-                "Would you like to view the queue?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
+                # Show confirmation
+                reply = QMessageBox.information(
+                    self,
+                    "Added to Queue",
+                    f"Added {len(objects_to_add)} object{'s' if len(objects_to_add) != 1 else ''} to goto queue in transit-time order.\n\n"
+                    "Would you like to view the queue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                # Show and raise queue window
-                self.main_window.goto_queue_window.show()
-                self.main_window.goto_queue_window.raise_()
-                self.main_window.goto_queue_window.activateWindow()
+                if reply == QMessageBox.StandardButton.Yes:
+                    # Show and raise queue window
+                    self.main_window._goto_queue_window.show()
+                    self.main_window._goto_queue_window.raise_()
+                    self.main_window._goto_queue_window.activateWindow()
 
         except Exception as e:
             logger.error(f"Error adding objects to queue: {e}", exc_info=True)

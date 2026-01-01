@@ -178,8 +178,8 @@ class TelescopeConfig:
         auto_connect: Automatically connect on initialization
         verbose: Enable verbose logging
         connection_type: Type of connection - 'serial' or 'tcp' (default: 'serial')
-        host: TCP/IP host address (default: '192.168.4.1' for SkyPortal WiFi Adapter)
-        tcp_port: TCP/IP port number (default: 4030 for SkyPortal WiFi Adapter)
+        host: TCP/IP host address (default: '1.2.3.4' for SkyPortal WiFi Adapter)
+        tcp_port: TCP/IP port number (default: 2000 for SkyPortal WiFi Adapter)
     """
 
     port: str = "/dev/ttyUSB0"
@@ -188,5 +188,5 @@ class TelescopeConfig:
     auto_connect: bool = False
     verbose: bool = False
     connection_type: Literal["serial", "tcp"] = "serial"
-    host: str = "192.168.4.1"
-    tcp_port: int = 4030
+    host: str = "1.2.3.4"
+    tcp_port: int = 2000

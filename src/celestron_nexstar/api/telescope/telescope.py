@@ -163,15 +163,36 @@ class NexStarTelescope:
             # serial_conn is no longer used (async serial), but keep for backward compatibility
             self.serial_conn = None
 
-            # Test connection with echo command
-            if await self.protocol.echo():
-                logger.info(f"Successfully connected to telescope on {self.config.port}")
-                return True
+            # Test connection - use different verification for TCP vs serial
+            # WiFi adapters (like SkyPortal) sometimes don't support the echo command
+            if self.config.connection_type == "tcp":
+                logger.info("TCP connection - testing with get_version instead of echo")
+                try:
+                    version = await self.protocol.get_version()
+                    logger.info(f"Successfully connected to telescope via TCP, version: {version}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Version check failed on TCP connection: {e}")
+                    # Try echo as fallback
+                    logger.info("Trying echo test as fallback...")
+                    if await self.protocol.echo():
+                        logger.info(f"Successfully connected to telescope on {self.config.host}:{self.config.tcp_port}")
+                        return True
+                    else:
+                        logger.error("Both version and echo tests failed")
+                        await self.protocol.close()
+                        self.serial_conn = None
+                        raise TelescopeConnectionError("Connection test failed - telescope not responding") from None
             else:
-                logger.error("Echo test failed - telescope not responding properly")
-                await self.protocol.close()
-                self.serial_conn = None
-                raise TelescopeConnectionError("Echo test failed") from None
+                # Serial connection - use echo test
+                if await self.protocol.echo():
+                    logger.info(f"Successfully connected to telescope on {self.config.port}")
+                    return True
+                else:
+                    logger.error("Echo test failed - telescope not responding properly")
+                    await self.protocol.close()
+                    self.serial_conn = None
+                    raise TelescopeConnectionError("Echo test failed") from None
 
         except Exception as e:
             logger.error(f"Connection failed: {e}")

@@ -180,7 +180,7 @@ class TelescopeConnectionDialog(QDialog):
         self.tcp_port_spinbox = QSpinBox()
         self.tcp_port_spinbox.setMinimum(1)
         self.tcp_port_spinbox.setMaximum(65535)
-        self.tcp_port_spinbox.setValue(4030)
+        self.tcp_port_spinbox.setValue(2000)  # SkyPortal WiFi uses port 2000
         layout.addRow("Port:", self.tcp_port_spinbox)
 
         return page

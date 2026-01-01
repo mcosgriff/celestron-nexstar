@@ -404,11 +404,11 @@ Control your telescope wirelessly using the Celestron SkyPortal WiFi Adapter:
 4. **Connect via TCP/IP**:
 
 ```bash
-# Default settings (192.168.4.1:4030)
+# Default settings (1.2.3.4:2000)
 nexstar connect --tcp
 
 # Custom host/port
-nexstar connect --tcp --host 192.168.4.1 --tcp-port 4030
+nexstar connect --tcp --host 1.2.3.4 --tcp-port 2000
 
 # Test connection
 nexstar test --tcp

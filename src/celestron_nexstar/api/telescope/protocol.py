@@ -7,7 +7,7 @@ command formatting, response parsing, and coordinate encoding/decoding.
 
 Protocol Specification (based on NexStar 6/8SE manual):
 - Serial: Baud Rate 9600, 8 data bits, no parity, 1 stop bit
-- TCP/IP: Default port 4030 (SkyPortal WiFi Adapter)
+- TCP/IP: Default port 2000 (SkyPortal WiFi Adapter)
 - Terminator: '#' character
 - Coordinate Format: 32-bit hexadecimal (0x00000000 to 0xFFFFFFFF = 0° to 360°)
 - Motor Resolution: 0.26 arc seconds
@@ -64,8 +64,8 @@ class NexStarProtocol:
     TERMINATOR = "#"
     DEFAULT_BAUDRATE = 9600
     DEFAULT_TIMEOUT = 2.0
-    DEFAULT_TCP_PORT = 4030
-    DEFAULT_TCP_HOST = "192.168.4.1"
+    DEFAULT_TCP_PORT = 2000  # SkyPortal WiFi uses port 2000
+    DEFAULT_TCP_HOST = "1.2.3.4"
 
     def __init__(
         self,
@@ -84,8 +84,8 @@ class NexStarProtocol:
             baudrate: Communication speed (default 9600, only used for serial)
             timeout: Connection timeout in seconds
             connection_type: 'serial' or 'tcp' (default: 'serial')
-            host: TCP/IP host address (default: '192.168.4.1' for SkyPortal WiFi Adapter)
-            tcp_port: TCP/IP port number (default: 4030 for SkyPortal WiFi Adapter)
+            host: TCP/IP host address (default: '1.2.3.4' for SkyPortal WiFi Adapter)
+            tcp_port: TCP/IP port number (default: 2000 for SkyPortal WiFi Adapter)
         """
         self.connection_type = connection_type
         self.port = port or "/dev/ttyUSB0"
@@ -320,31 +320,38 @@ class NexStarProtocol:
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
-        logger.debug(f"Sending command: {command!r}")
-        self.tcp_writer.write(full_command.encode("ascii"))
+        full_command_bytes = full_command.encode("ascii")
+        logger.info(f"TCP: Sending command: {command!r} -> bytes: {full_command_bytes!r}")
+        self.tcp_writer.write(full_command_bytes)
         await self.tcp_writer.drain()
+        logger.info("TCP: Command sent and drained")
 
         # Read response until terminator (async, non-blocking)
         response = b""
         terminator_bytes = self.TERMINATOR.encode("ascii")
 
         try:
+            start_time = asyncio.get_event_loop().time()
             while True:
                 # Read one byte at a time until we get the terminator
                 byte = await asyncio.wait_for(self.tcp_reader.read(1), timeout=self.timeout)
                 if not byte:
                     # Connection closed
+                    elapsed = asyncio.get_event_loop().time() - start_time
+                    logger.error(f"TCP/IP connection closed by remote host after {elapsed:.2f}s, received so far: {response!r}")
                     raise TelescopeConnectionError("TCP/IP connection closed by remote host") from None
                 response += byte
                 if byte == terminator_bytes:
                     break
         except TimeoutError:
-            logger.error(f"Timeout waiting for response to command: {command!r}")
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.error(f"TCP: Timeout after {elapsed:.2f}s waiting for response to {command!r}")
+            logger.error(f"TCP: Received so far: {response!r} ({len(response)} bytes)")
             raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
         # Decode and remove terminator
         response_str = response.decode("ascii").rstrip(self.TERMINATOR)
-        logger.debug(f"Received response: {response_str!r}")
+        logger.info(f"TCP: Received response: {response_str!r} (raw: {response!r})")
         return response_str
 
     # ========== Coordinate Encoding/Decoding ==========
@@ -474,7 +481,6 @@ class NexStarProtocol:
 
     # ========== Specific Protocol Commands ==========
 
-    @deal.pre(lambda self, char: len(char) == 1)  # type: ignore[misc,arg-type]
     async def echo(self, char: str = "x") -> bool:
         """
         Test connection with echo command.
@@ -486,14 +492,26 @@ class NexStarProtocol:
 
         Returns:
             True if echo successful
+
+        Raises:
+            ValueError: If char is not a single character
         """
+        if len(char) != 1:
+            raise ValueError(f"Echo character must be a single character, got: {char!r}")
+
         try:
+            logger.debug(f"Sending echo command with char: {char!r}")
             response = await self.send_command(f"K{char}")
-            return response == char
-        except (NotConnectedError, TelescopeTimeoutError, TelescopeConnectionError):
+            logger.debug(f"Echo response: {response!r} (expected: {char!r})")
+            result = response == char
+            if not result:
+                logger.warning(f"Echo test failed: sent {char!r}, received {response!r}")
+            return result
+        except (NotConnectedError, TelescopeTimeoutError, TelescopeConnectionError) as e:
+            logger.error(f"Echo test connection error: {e}")
             return False
-        except Exception:
-            # Handle other exceptions
+        except Exception as e:
+            logger.error(f"Echo test unexpected error: {e}", exc_info=True)
             return False
 
     async def get_version(self) -> tuple[int, int]:

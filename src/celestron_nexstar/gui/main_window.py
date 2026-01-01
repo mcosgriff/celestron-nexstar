@@ -1263,6 +1263,7 @@ class MainWindow(QMainWindow):
         self._catalog_window = None  # Store reference to catalog window
         self._goto_queue_window = None  # Store reference to goto queue window
         self._sky_map_window = None  # Store reference to sky map window
+        self._sky_now_window = None  # Store reference to sky now window
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
         self._comets_dialog = None  # Store reference to comets info dialog
         self._asteroids_dialog = None  # Store reference to asteroids info dialog
@@ -4878,15 +4879,17 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_sky_now(self) -> None:
-        """Handle Sky Now menu action."""
-        try:
-            from celestron_nexstar.gui.dialogs.sky_now_dialog import SkyNowDialog
+        """Handle Sky Now menu action - open Sky Now window."""
+        from celestron_nexstar.gui.dialogs.sky_now_dialog import SkyNowDialog
 
-            dialog = SkyNowDialog(self, main_window=self)
-            dialog.exec()
-        except Exception as e:
-            logger.error(f"Error opening Sky Now dialog: {e}", exc_info=True)
-            QMessageBox.warning(self, "Error", f"Failed to open Sky Now dialog: {e}")
+        # Check if window already exists
+        if not hasattr(self, "_sky_now_window") or self._sky_now_window is None:
+            self._sky_now_window = SkyNowDialog(self, main_window=self)
+            self._sky_now_window.destroyed.connect(lambda: setattr(self, "_sky_now_window", None))
+
+        self._sky_now_window.show()
+        self._sky_now_window.raise_()
+        self._sky_now_window.activateWindow()
 
     def _on_glossary(self) -> None:
         """Handle glossary button click."""

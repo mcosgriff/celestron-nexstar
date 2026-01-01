@@ -32,13 +32,13 @@ console = Console()
 @app.command(rich_help_panel="Connection")
 def connect(
     port: str | None = typer.Argument(
-        None, help="Serial port (e.g., /dev/ttyUSB0, COM3) or TCP address (e.g., 192.168.4.1:4030)"
+        None, help="Serial port (e.g., /dev/ttyUSB0, COM3) or TCP address (e.g., 1.2.3.4:2000)"
     ),
     baudrate: int = typer.Option(9600, help="Baud rate (serial only)"),
     timeout: float = typer.Option(2.0, help="Connection timeout in seconds"),
     tcp: bool = typer.Option(False, "--tcp", help="Use TCP/IP connection (SkyPortal WiFi Adapter)"),
-    host: str = typer.Option("192.168.4.1", "--host", help="TCP/IP host address (default: 192.168.4.1)"),
-    tcp_port: int = typer.Option(4030, "--tcp-port", help="TCP/IP port (default: 4030)"),
+    host: str = typer.Option("1.2.3.4", "--host", help="TCP/IP host address (default: 1.2.3.4)"),
+    tcp_port: int = typer.Option(2000, "--tcp-port", help="TCP/IP port (default: 2000)"),
 ) -> None:
     """
     Connect to the telescope and verify communication.
@@ -52,7 +52,7 @@ def connect(
 
         # TCP/IP connection (SkyPortal WiFi Adapter)
         nexstar connect --tcp
-        nexstar connect --tcp --host 192.168.4.1 --tcp-port 4030
+        nexstar connect --tcp --host 1.2.3.4 --tcp-port 2000
     """
     try:
         # Determine connection type
@@ -120,8 +120,8 @@ def test(
     port: str | None = typer.Argument(None, help="Serial port to test (not used with --tcp)"),
     char: str = typer.Option("x", help="Character for echo test (single char)"),
     tcp: bool = typer.Option(False, "--tcp", help="Use TCP/IP connection (SkyPortal WiFi Adapter)"),
-    host: str = typer.Option("192.168.4.1", "--host", help="TCP/IP host address (default: 192.168.4.1)"),
-    tcp_port: int = typer.Option(4030, "--tcp-port", help="TCP/IP port (default: 4030)"),
+    host: str = typer.Option("1.2.3.4", "--host", help="TCP/IP host address (default: 1.2.3.4)"),
+    tcp_port: int = typer.Option(2000, "--tcp-port", help="TCP/IP port (default: 2000)"),
 ) -> None:
     """
     Test connection with echo command.
@@ -136,7 +136,7 @@ def test(
 
         # TCP/IP connection
         nexstar test --tcp
-        nexstar test --tcp --host 192.168.4.1 --tcp-port 4030
+        nexstar test --tcp --host 1.2.3.4 --tcp-port 2000
     """
     if len(char) != 1:
         print_error("Echo character must be a single character")
@@ -180,8 +180,8 @@ def info(
     port: str | None = typer.Option(None, "--port", "-p", help="Serial port (if not already connected)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     tcp: bool = typer.Option(False, "--tcp", help="Use TCP/IP connection (SkyPortal WiFi Adapter)"),
-    host: str = typer.Option("192.168.4.1", "--host", help="TCP/IP host address (default: 192.168.4.1)"),
-    tcp_port: int = typer.Option(4030, "--tcp-port", help="TCP/IP port (default: 4030)"),
+    host: str = typer.Option("1.2.3.4", "--host", help="TCP/IP host address (default: 1.2.3.4)"),
+    tcp_port: int = typer.Option(2000, "--tcp-port", help="TCP/IP port (default: 2000)"),
 ) -> None:
     """
     Get telescope information (model, firmware version).
@@ -194,7 +194,7 @@ def info(
 
         # TCP/IP connection
         nexstar info --tcp
-        nexstar info --tcp --host 192.168.4.1 --tcp-port 4030
+        nexstar info --tcp --host 1.2.3.4 --tcp-port 2000
 
         # JSON output
         nexstar info --json

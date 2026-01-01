@@ -96,8 +96,8 @@ def ensure_connected() -> NexStarTelescope:
 
     if connection_type == "tcp":
         # TCP/IP connection
-        host = Prompt.ask("TCP/IP host", default="192.168.4.1", console=console)
-        tcp_port_str = Prompt.ask("TCP/IP port", default="4030", console=console)
+        host = Prompt.ask("TCP/IP host", default="1.2.3.4", console=console)
+        tcp_port_str = Prompt.ask("TCP/IP port", default="2000", console=console)
         try:
             tcp_port = int(tcp_port_str)
         except ValueError:
