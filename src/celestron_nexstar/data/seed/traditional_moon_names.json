@@ -1,0 +1,84 @@
+{
+  "month_names": {
+    "1": {
+      "primary": "Wolf Moon",
+      "alternatives": ["Old Moon", "Ice Moon", "Snow Moon"]
+    },
+    "2": {
+      "primary": "Snow Moon",
+      "alternatives": ["Hunger Moon", "Storm Moon", "Candles Moon"]
+    },
+    "3": {
+      "primary": "Worm Moon",
+      "alternatives": ["Sap Moon", "Crow Moon", "Lenten Moon"]
+    },
+    "4": {
+      "primary": "Pink Moon",
+      "alternatives": ["Sprouting Grass Moon", "Egg Moon", "Fish Moon"]
+    },
+    "5": {
+      "primary": "Flower Moon",
+      "alternatives": ["Corn Planting Moon", "Milk Moon", "Hare Moon"]
+    },
+    "6": {
+      "primary": "Strawberry Moon",
+      "alternatives": ["Rose Moon", "Hot Moon", "Mead Moon"]
+    },
+    "7": {
+      "primary": "Buck Moon",
+      "alternatives": ["Thunder Moon", "Hay Moon", "Wort Moon"]
+    },
+    "8": {
+      "primary": "Sturgeon Moon",
+      "alternatives": ["Green Corn Moon", "Grain Moon", "Red Moon"]
+    },
+    "9": {
+      "primary": "Corn Moon",
+      "alternatives": ["Barley Moon", "Fruit Moon"]
+    },
+    "10": {
+      "primary": "Hunter's Moon",
+      "alternatives": ["Travel Moon", "Dying Grass Moon", "Blood Moon"]
+    },
+    "11": {
+      "primary": "Beaver Moon",
+      "alternatives": ["Frost Moon", "Freezing Moon", "Oak Moon"]
+    },
+    "12": {
+      "primary": "Cold Moon",
+      "alternatives": ["Long Nights Moon", "Winter Moon", "Oak Moon"]
+    }
+  },
+  "special_names": {
+    "harvest_moon": {
+      "name": "Harvest Moon",
+      "description": "Full moon closest to the autumnal equinox (around September 22-23)",
+      "priority": 100
+    },
+    "hunters_moon": {
+      "name": "Hunter's Moon",
+      "description": "Full moon following the Harvest Moon",
+      "priority": 90
+    },
+    "blue_moon_monthly": {
+      "name": "Blue Moon",
+      "description": "Second full moon in a calendar month",
+      "priority": 80
+    },
+    "blue_moon_seasonal": {
+      "name": "Blue Moon",
+      "description": "Third full moon in an astronomical season with four full moons",
+      "priority": 80
+    },
+    "supermoon": {
+      "name": "Supermoon",
+      "description": "Full moon that occurs when the Moon is at or near its closest approach to Earth (within 90% of perigee)",
+      "priority": 50
+    }
+  },
+  "notes": {
+    "source": "Traditional Native American and Colonial American moon names",
+    "priority_system": "Higher priority names override lower priority names. Harvest Moon (100) overrides month names. Blue Moon (80) overrides month names but not Harvest/Hunter's Moon.",
+    "supermoon_note": "Supermoon is an additional descriptor, not a replacement name"
+  }
+}
