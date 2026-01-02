@@ -722,11 +722,13 @@ class MoonInfoDialog(QDialog):
                     """
 
                 if is_supermoon:
+                    # Convert km to miles (1 km = 0.621371 miles)
+                    distance_miles = distance_km * 0.621371
                     special_events_html += f"""
                         <p style='margin-left: 40px; margin-top: 5px; margin-bottom: 5px;'>
                             <span style='font-size: 16px;'>🌕</span>
                             <span style='color: {colors["green"]};'> Supermoon</span>
-                            <span style='color: {colors["text_dim"]};'> (Distance: {distance_km:,.0f} km)</span>
+                            <span style='color: {colors["text_dim"]};'> (Distance: {distance_miles:,.0f} miles)</span>
                         </p>
                     """
 
@@ -792,12 +794,7 @@ class MoonInfoDialog(QDialog):
 
         try:
             # Load traditional names
-            json_path = (
-                Path(__file__).parent.parent.parent
-                / "data"
-                / "seed"
-                / "traditional_moon_names.json"
-            )
+            json_path = Path(__file__).parent.parent.parent / "data" / "seed" / "traditional_moon_names.json"
 
             with open(json_path) as f:
                 traditional_names = json.load(f)

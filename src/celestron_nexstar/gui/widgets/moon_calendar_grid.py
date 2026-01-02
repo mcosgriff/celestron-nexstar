@@ -149,9 +149,7 @@ class MoonCalendarCell(QFrame):
             # Moon data
             if moon_data:
                 # Render moon icon
-                icon = self._render_moon_icon(
-                    moon_data.illumination, moon_data.phase_name, size=45
-                )
+                icon = self._render_moon_icon(moon_data.illumination, moon_data.phase_name, size=45)
                 self.moon_icon_label.setPixmap(icon)
 
                 # Illumination percentage
@@ -168,14 +166,12 @@ class MoonCalendarCell(QFrame):
                     )
                 else:
                     self.setToolTip(
-                        f"{date.strftime('%B %d, %Y')}\n"
-                        f"{moon_data.phase_name.value}\n"
-                        f"Illumination: {percent:.1f}%"
+                        f"{date.strftime('%B %d, %Y')}\n{moon_data.phase_name.value}\nIllumination: {percent:.1f}%"
                     )
             else:
                 self.moon_icon_label.clear()
                 self.illumination_label.setText("")
-                self.setToolTip(date.strftime('%B %d, %Y'))
+                self.setToolTip(date.strftime("%B %d, %Y"))
 
             # Event badges
             if self._special_events:
@@ -189,9 +185,7 @@ class MoonCalendarCell(QFrame):
         # Update styling
         self._update_styling()
 
-    def _render_moon_icon(
-        self, illumination: float, phase: MoonPhase, size: int = 45
-    ) -> QPixmap:
+    def _render_moon_icon(self, illumination: float, phase: MoonPhase, size: int = 45) -> QPixmap:
         """
         Render moon phase icon using the EXACT same algorithm as Moon Info Dialog.
 
@@ -307,10 +301,7 @@ class MoonCalendarCell(QFrame):
                 limb_x = math.sqrt(max(0.0, 1.0 - y_normalized * y_normalized)) * radius
                 term_x = scale * limb_x
 
-                if f <= 0.5:
-                    x_inner = center_x + lit_side * term_x
-                else:
-                    x_inner = center_x - lit_side * term_x
+                x_inner = center_x + lit_side * term_x if f <= 0.5 else center_x - lit_side * term_x
 
                 path.lineTo(x_inner, center_y + y)
 
@@ -334,7 +325,7 @@ class MoonCalendarCell(QFrame):
     def _update_styling(self) -> None:
         """Update cell styling based on state."""
         palette = self.palette()
-        bg_color = palette.color(QPalette.ColorRole.Window)
+        palette.color(QPalette.ColorRole.Window)
 
         if self._is_current_day:
             # Current day - thicker border on cell frame only
@@ -479,7 +470,7 @@ class MoonCalendarGrid(QWidget):
         from datetime import timedelta
 
         current_date = display_start
-        for i, cell in enumerate(self._cells):
+        for _i, cell in enumerate(self._cells):
             # Check if in current month
             is_current_month = current_date.month == month and current_date.year == year
 
@@ -512,9 +503,7 @@ class MoonCalendarGrid(QWidget):
                         events.append(emoji)
 
             # Set cell data
-            cell.set_data(
-                current_date, day_moon_data, is_current_day, is_current_month, events
-            )
+            cell.set_data(current_date, day_moon_data, is_current_day, is_current_month, events)
 
             # Move to next day
             current_date = current_date + timedelta(days=1)
@@ -642,9 +631,7 @@ class PhaseTimelineWidget(QWidget):
         # Create table
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(
-            ["Date", "Phase", "Traditional Name", "Distance (km)", "Special"]
-        )
+        self.table.setHorizontalHeaderLabels(["Date", "Phase", "Traditional Name", "Distance (mi)", "Special"])
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -756,8 +743,9 @@ class PhaseTimelineWidget(QWidget):
                 name_item.setFont(font)
             self.table.setItem(row, 2, name_item)
 
-            # Distance
-            distance_item = QTableWidgetItem(f"{event.distance_km:,.0f}")
+            # Distance (convert km to miles: 1 km = 0.621371 miles)
+            distance_miles = event.distance_km * 0.621371
+            distance_item = QTableWidgetItem(f"{distance_miles:,.0f}")
             distance_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row, 3, distance_item)
 

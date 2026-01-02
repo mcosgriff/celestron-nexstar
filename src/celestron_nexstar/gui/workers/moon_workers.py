@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QThread, Signal
 
-from celestron_nexstar.api.astronomy.solar_system import calculate_moon_phase, get_moon_info
+from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.core.enums import MoonPhase
 
 
@@ -181,9 +181,7 @@ class MoonDataWorker(QThread):
             self._detect_special_events(phase_events)
 
             # Emit results
-            logger.debug(
-                f"Calculated {len(moon_data)} days, {len(phase_events)} phase events"
-            )
+            logger.debug(f"Calculated {len(moon_data)} days, {len(phase_events)} phase events")
             self.data_ready.emit(moon_data, phase_events)
 
         except Exception as e:
@@ -269,12 +267,7 @@ class MoonDataWorker(QThread):
         """Load traditional moon names from JSON file."""
         try:
             # Find the JSON file
-            json_path = (
-                Path(__file__).parent.parent.parent
-                / "data"
-                / "seed"
-                / "traditional_moon_names.json"
-            )
+            json_path = Path(__file__).parent.parent.parent / "data" / "seed" / "traditional_moon_names.json"
 
             with open(json_path) as f:
                 self._traditional_names = json.load(f)
@@ -310,9 +303,7 @@ class MoonDataWorker(QThread):
 
         return ""
 
-    def _extend_phase_events(
-        self, phase_events: list[MoonPhaseEvent], start_date: datetime
-    ) -> None:
+    def _extend_phase_events(self, phase_events: list[MoonPhaseEvent], start_date: datetime) -> None:
         """
         Extend phase events timeline for next N months.
 

@@ -224,9 +224,7 @@ class MoonCalendarWindow(QMainWindow):
 
         self.statusBar().showMessage(f"Loading {cache_key}...")
 
-    def _populate_ui(
-        self, moon_data: dict[str, MoonDayData], phase_events: list[MoonPhaseEvent]
-    ) -> None:
+    def _populate_ui(self, moon_data: dict[str, MoonDayData], phase_events: list[MoonPhaseEvent]) -> None:
         """
         Populate UI with moon data.
 
@@ -235,30 +233,22 @@ class MoonCalendarWindow(QMainWindow):
             phase_events: List of phase events
         """
         # Update calendar grid
-        self.calendar_grid.set_month_data(
-            self._current_year, self._current_month, moon_data, phase_events
-        )
+        self.calendar_grid.set_month_data(self._current_year, self._current_month, moon_data, phase_events)
 
         # Update timeline (replace events)
         self.timeline.set_phase_events(phase_events, replace=True)
 
         # Update status
-        self.statusBar().showMessage(
-            f"Showing {len(moon_data)} days, {len(phase_events)} phase events"
-        )
+        self.statusBar().showMessage(f"Showing {len(moon_data)} days, {len(phase_events)} phase events")
 
-    def _on_data_ready(
-        self, moon_data: dict[str, MoonDayData], phase_events: list[MoonPhaseEvent]
-    ) -> None:
+    def _on_data_ready(self, moon_data: dict[str, MoonDayData], phase_events: list[MoonPhaseEvent]) -> None:
         """Handle worker data ready."""
         # Cache the data
         cache_key = self._get_cache_key(self._current_year, self._current_month)
         self._moon_data_cache[cache_key] = moon_data
         self._phase_events_cache[cache_key] = phase_events
 
-        logger.debug(
-            f"Cached {len(moon_data)} days, {len(phase_events)} events for {cache_key}"
-        )
+        logger.debug(f"Cached {len(moon_data)} days, {len(phase_events)} events for {cache_key}")
 
         # Populate UI
         self._populate_ui(moon_data, phase_events)
@@ -278,9 +268,7 @@ class MoonCalendarWindow(QMainWindow):
             self._progress_dialog = None
 
         # Show error message
-        QMessageBox.critical(
-            self, "Error Loading Moon Data", f"Failed to load moon data:\n\n{error_msg}"
-        )
+        QMessageBox.critical(self, "Error Loading Moon Data", f"Failed to load moon data:\n\n{error_msg}")
 
         self.statusBar().showMessage("Error loading data")
 
@@ -412,9 +400,7 @@ class MoonCalendarWindow(QMainWindow):
         # Calculate next 6 months to load
         # This would ideally spawn a new worker to calculate additional months
         # For now, show a message
-        self.statusBar().showMessage(
-            "Load More feature - would calculate additional 6 months of phase events"
-        )
+        self.statusBar().showMessage("Load More feature - would calculate additional 6 months of phase events")
 
         # TODO: Implement loading additional months
         # Would need to:

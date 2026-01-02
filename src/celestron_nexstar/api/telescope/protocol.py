@@ -338,7 +338,9 @@ class NexStarProtocol:
                 if not byte:
                     # Connection closed
                     elapsed = asyncio.get_event_loop().time() - start_time
-                    logger.error(f"TCP/IP connection closed by remote host after {elapsed:.2f}s, received so far: {response!r}")
+                    logger.error(
+                        f"TCP/IP connection closed by remote host after {elapsed:.2f}s, received so far: {response!r}"
+                    )
                     raise TelescopeConnectionError("TCP/IP connection closed by remote host") from None
                 response += byte
                 if byte == terminator_bytes:

@@ -113,8 +113,7 @@ class SkyNowWorkerThread(QThread):
                 with ThreadPoolExecutor(max_workers=7) as executor:
                     # Submit all queries
                     future_to_type = {
-                        executor.submit(db.filter_objects, **kwargs): obj_type
-                        for obj_type, kwargs in query_tasks
+                        executor.submit(db.filter_objects, **kwargs): obj_type for obj_type, kwargs in query_tasks
                     }
 
                     # Collect results as they complete
@@ -151,7 +150,7 @@ class SkyNowWorkerThread(QThread):
             filtered_objects: list[tuple[CelestialObject, datetime]] = []
 
             for obj in all_objects:
-                obj_name = getattr(obj, 'common_name', None) or getattr(obj, 'name', 'Unknown')
+                obj_name = getattr(obj, "common_name", None) or getattr(obj, "name", "Unknown")
 
                 try:
                     # Calculate transit time using visibility timeline
@@ -160,13 +159,13 @@ class SkyNowWorkerThread(QThread):
                         observer_lat=location.latitude,
                         observer_lon=location.longitude,
                         start_time=now,
-                        days=1  # Look ahead 1 day
+                        days=1,  # Look ahead 1 day
                     )
 
                     transit_time = timeline.transit_time
 
                     # Debug logging for Rigel specifically
-                    if 'rigel' in obj_name.lower():
+                    if "rigel" in obj_name.lower():
                         logger.info(
                             f"Sky Now: Found Rigel! transit_time={transit_time}, "
                             f"tzinfo={transit_time.tzinfo if transit_time else 'N/A'}"
@@ -183,7 +182,7 @@ class SkyNowWorkerThread(QThread):
                         in_time_range = start_time <= transit_time_local <= end_time
 
                         # Debug logging for Rigel specifically
-                        if 'rigel' in obj_name.lower():
+                        if "rigel" in obj_name.lower():
                             logger.info(
                                 f"Sky Now: Rigel details: transit_local={transit_time_local.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
                                 f"start_time={start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
@@ -389,7 +388,9 @@ class SkyNowDialog(QDialog):
         self.table.setSortingEnabled(False)
 
         # Show progress dialog
-        self.progress_dialog = QProgressDialog("Loading objects transiting in selected time range...", "Cancel", 0, 0, self)
+        self.progress_dialog = QProgressDialog(
+            "Loading objects transiting in selected time range...", "Cancel", 0, 0, self
+        )
         self.progress_dialog.setWindowTitle("Sky Now")
         self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self.progress_dialog.setMinimumDuration(0)
