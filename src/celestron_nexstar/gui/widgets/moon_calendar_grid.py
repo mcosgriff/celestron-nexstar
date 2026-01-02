@@ -337,34 +337,28 @@ class MoonCalendarCell(QFrame):
             # Current day - thicker border on cell frame only
             self.setStyleSheet(
                 """
-                QFrame {
+                MoonCalendarCell {
                     border: 2px solid #4A90E2;
                     background-color: rgba(74, 144, 226, 0.1);
                 }
-                """
-            )
-            self.date_label.setStyleSheet(
-                """
                 QLabel {
                     border: none;
-                    font-weight: bold;
+                    background: transparent;
                 }
                 """
             )
+            self.date_label.setStyleSheet("font-weight: bold;")
         elif not self._is_current_month:
             # Other month - grayed out
             self.setStyleSheet(
                 """
-                QFrame {
+                MoonCalendarCell {
                     border: none;
                 }
-                """
-            )
-            self.date_label.setStyleSheet(
-                """
                 QLabel {
                     color: #999999;
                     border: none;
+                    background: transparent;
                 }
                 """
             )
@@ -372,19 +366,16 @@ class MoonCalendarCell(QFrame):
             # Normal cell - very faint border
             self.setStyleSheet(
                 """
-                QFrame {
+                MoonCalendarCell {
                     border: 1px solid rgba(200, 200, 200, 0.3);
                 }
-                QFrame:hover {
+                MoonCalendarCell:hover {
                     border: 1px solid rgba(74, 144, 226, 0.4);
                     background-color: rgba(74, 144, 226, 0.05);
                 }
-                """
-            )
-            self.date_label.setStyleSheet(
-                """
                 QLabel {
                     border: none;
+                    background: transparent;
                 }
                 """
             )
