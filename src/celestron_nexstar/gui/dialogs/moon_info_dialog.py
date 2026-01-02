@@ -53,10 +53,11 @@ class MoonPlotWorkerThread(QThread):
     plot_ready = Signal(bytes)  # PNG image data
     error_occurred = Signal(str)  # Error message
 
-    def __init__(self, is_dark_theme: bool, parent: QWidget | None = None) -> None:
+    def __init__(self, is_dark_theme: bool, target_date: datetime | None = None, parent: QWidget | None = None) -> None:
         """Initialize the worker thread."""
         super().__init__(parent)
         self.is_dark_theme = is_dark_theme
+        self.target_date = target_date
 
     def run(self) -> None:
         """Generate the moon plot in a background thread."""
@@ -68,7 +69,11 @@ class MoonPlotWorkerThread(QThread):
             # Get observer location and time
             logger.debug("Getting observer location...")
             location = get_observer_location()
-            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
+            # Use target date if provided, otherwise current time
+            if self.target_date:
+                now = self.target_date.replace(tzinfo=get_local_timezone(location.latitude, location.longitude))
+            else:
+                now = datetime.now(get_local_timezone(location.latitude, location.longitude))
 
             # Get ephemeris file path
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
@@ -210,9 +215,10 @@ class MoonDiskWorkerThread(QThread):
     disk_ready = Signal(bytes)  # PNG image data
     error_occurred = Signal(str)  # Error message
 
-    def __init__(self, is_dark_theme: bool, parent: QWidget | None = None) -> None:
+    def __init__(self, is_dark_theme: bool, target_date: datetime | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.is_dark_theme = is_dark_theme
+        self.target_date = target_date
 
     @staticmethod
     def _compute_bright_limb_pa_deg(
@@ -252,7 +258,8 @@ class MoonDiskWorkerThread(QThread):
             from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 
             location = get_observer_location()
-            now = datetime.now(UTC)
+            # Use target date if provided, otherwise current time
+            now = self.target_date if self.target_date else datetime.now(UTC)
 
             # Require a local ephemeris that includes the Moon to avoid Skyfield download progress on stdout.
             eph_dir = get_ephemeris_directory()
@@ -428,9 +435,16 @@ class MoonInfoDialog(QDialog):
     _plot_thread: MoonPlotWorkerThread | None
     _disk_thread: MoonDiskWorkerThread | None
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        """Initialize the moon info dialog."""
+    def __init__(self, parent: QWidget | None = None, target_date: datetime | None = None) -> None:
+        """
+        Initialize the moon info dialog.
+
+        Args:
+            parent: Parent widget
+            target_date: Optional target date to calculate for (defaults to current time)
+        """
         super().__init__(parent)
+        self.target_date = target_date  # Store for use in tabs
         self.setWindowTitle("Moon Information")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
@@ -648,7 +662,8 @@ class MoonInfoDialog(QDialog):
 
         try:
             location = get_observer_location()
-            now = datetime.now(UTC)
+            # Use target date if provided, otherwise current time
+            now = self.target_date if self.target_date else datetime.now(UTC)
 
             moon_info = get_moon_info(location.latitude, location.longitude, now)
             if not moon_info:
@@ -729,7 +744,7 @@ class MoonInfoDialog(QDialog):
         is_dark = self._is_dark_theme()
 
         # Create and start worker thread
-        self._plot_thread = MoonPlotWorkerThread(is_dark, self)
+        self._plot_thread = MoonPlotWorkerThread(is_dark, self.target_date, self)
         self._plot_thread.plot_ready.connect(self._on_plot_ready)
         self._plot_thread.error_occurred.connect(self._on_plot_error)
         self._plot_thread.finished.connect(self._on_plot_thread_finished)
@@ -742,7 +757,7 @@ class MoonInfoDialog(QDialog):
             self._disk_thread = None
 
         is_dark = self._is_dark_theme()
-        self._disk_thread = MoonDiskWorkerThread(is_dark, self)
+        self._disk_thread = MoonDiskWorkerThread(is_dark, self.target_date, self)
         self._disk_thread.disk_ready.connect(self._on_disk_ready)
         self._disk_thread.error_occurred.connect(self._on_disk_error)
         self._disk_thread.finished.connect(self._on_disk_thread_finished)

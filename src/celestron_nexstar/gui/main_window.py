@@ -1265,6 +1265,7 @@ class MainWindow(QMainWindow):
         self._sky_map_window = None  # Store reference to sky map window
         self._sky_now_window = None  # Store reference to sky now window
         self._zenith_star_chart_window = None  # Store reference to zenith star chart window
+        self._moon_calendar_window = None  # Store reference to moon calendar window
         self._comets_dialog = None  # Store reference to comets info dialog
         self._asteroids_dialog = None  # Store reference to asteroids info dialog
         self._telescope_control_window = None  # Store reference to telescope control window
@@ -1874,6 +1875,13 @@ class MainWindow(QMainWindow):
         self.moon_info_action.setToolTip("MOON INFO")
         self.moon_info_action.setStatusTip("View moon information, phase, and position")
         self.moon_info_action.triggered.connect(self._on_moon_info)
+
+        moon_calendar_icon = self._create_icon("view-calendar", ["calendar", "x-office-calendar"])
+        self.moon_calendar_action = planning_menu.addAction(moon_calendar_icon, "Moon Calendar")
+        self.moon_calendar_action.setIconVisibleInMenu(True)
+        self.moon_calendar_action.setToolTip("MOON CALENDAR")
+        self.moon_calendar_action.setStatusTip("View monthly moon calendar and phase timeline")
+        self.moon_calendar_action.triggered.connect(self._on_moon_calendar_clicked)
 
         sky_darkness_icon = self._create_icon("sky_darkness", ["weather-night", "moon-waxing-crescent", "star"])
         self.sky_darkness_action = planning_menu.addAction(sky_darkness_icon, "Sky Darkness")
@@ -4890,6 +4898,19 @@ class MainWindow(QMainWindow):
         self._sky_now_window.show()
         self._sky_now_window.raise_()
         self._sky_now_window.activateWindow()
+
+    def _on_moon_calendar_clicked(self) -> None:
+        """Handle Moon Calendar menu action - open Moon Calendar window."""
+        from celestron_nexstar.gui.windows.moon_calendar_window import MoonCalendarWindow
+
+        # Check if window already exists
+        if not hasattr(self, "_moon_calendar_window") or self._moon_calendar_window is None:
+            self._moon_calendar_window = MoonCalendarWindow(self)
+            self._moon_calendar_window.destroyed.connect(lambda: setattr(self, "_moon_calendar_window", None))
+
+        self._moon_calendar_window.show()
+        self._moon_calendar_window.raise_()
+        self._moon_calendar_window.activateWindow()
 
     def _on_glossary(self) -> None:
         """Handle glossary button click."""
