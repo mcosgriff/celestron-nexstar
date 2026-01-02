@@ -377,8 +377,9 @@ class MoonCalendarWindow(QMainWindow):
             # Import here to avoid circular dependency
             from celestron_nexstar.gui.dialogs.moon_info_dialog import MoonInfoDialog
 
-            # Open Moon Info Dialog with target date
-            dialog = MoonInfoDialog(self, target_date=date)
+            # Open Moon Info Dialog with target date at noon (same as calendar calculations)
+            date_at_noon = date.replace(hour=12, minute=0, second=0, microsecond=0)
+            dialog = MoonInfoDialog(self, target_date=date_at_noon)
             dialog.exec()
 
         except Exception as e:
