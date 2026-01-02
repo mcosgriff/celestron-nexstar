@@ -236,7 +236,7 @@ class MoonCalendarWindow(QMainWindow):
         """
         # Update calendar grid
         self.calendar_grid.set_month_data(
-            self._current_year, self._current_month, moon_data
+            self._current_year, self._current_month, moon_data, phase_events
         )
 
         # Update timeline (replace events)

@@ -94,7 +94,10 @@ class MoonCalendarCell(QFrame):
         # Event badges container (overlay at top-left)
         self.badges_label = QLabel(self)
         self.badges_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.badges_label.setGeometry(2, 2, 20, 20)
+        self.badges_label.setGeometry(2, 2, 60, 20)  # Wider to fit multiple badges
+        font = self.badges_label.font()
+        font.setPointSize(12)  # Larger font for emojis
+        self.badges_label.setFont(font)
         self.badges_label.setStyleSheet("background: transparent; border: none;")
         self.badges_label.hide()  # Hidden by default, shown only when there are events
 
@@ -436,7 +439,7 @@ class MoonCalendarGrid(QWidget):
             self.layout.setColumnStretch(col, 1)
 
     def set_month_data(
-        self, year: int, month: int, moon_data: dict[str, MoonDayData]
+        self, year: int, month: int, moon_data: dict[str, MoonDayData], phase_events: list[MoonPhaseEvent] | None = None
     ) -> None:
         """
         Set moon data for month and populate grid.
@@ -445,10 +448,18 @@ class MoonCalendarGrid(QWidget):
             year: Year to display
             month: Month to display (1-12)
             moon_data: Dictionary of moon data keyed by date string "YYYY-MM-DD"
+            phase_events: Optional list of phase events for special event detection
         """
         self._year = year
         self._month = month
         self._moon_data = moon_data
+
+        # Create phase events lookup by date
+        phase_events_by_date: dict[str, MoonPhaseEvent] = {}
+        if phase_events:
+            for event in phase_events:
+                date_key = event.date.strftime("%Y-%m-%d")
+                phase_events_by_date[date_key] = event
 
         # Get first and last day of month
         first_day = datetime(year, month, 1, tzinfo=UTC)
@@ -482,13 +493,23 @@ class MoonCalendarGrid(QWidget):
             # Get special events
             events = []
             if day_moon_data:
-                if day_moon_data.traditional_name and day_moon_data.traditional_name != "Blue Moon":
-                    # Don't show badge for regular traditional names, only special ones
-                    pass
-                if day_moon_data.traditional_name == "Blue Moon":
-                    events.append("🔵")
-                # Check for supermoon (need to check phase events)
-                # For now, we'll add supermoon detection in the window
+                # Check phase events for this date
+                phase_event = phase_events_by_date.get(date_key)
+
+                if phase_event:
+                    # Supermoon badge
+                    if phase_event.is_supermoon:
+                        events.append("🌕")  # Full moon emoji for supermoon
+
+                    # Blue moon badge
+                    if phase_event.is_blue_moon:
+                        events.append("🔵")  # Blue circle for blue moon
+
+                    # Traditional moon name badge (show for all full moons)
+                    if phase_event.traditional_name and not phase_event.is_blue_moon:
+                        # Map traditional names to emojis
+                        emoji = self._get_moon_name_emoji(phase_event.traditional_name)
+                        events.append(emoji)
 
             # Set cell data
             cell.set_data(
@@ -497,6 +518,41 @@ class MoonCalendarGrid(QWidget):
 
             # Move to next day
             current_date = current_date + timedelta(days=1)
+
+    def _get_moon_name_emoji(self, moon_name: str) -> str:
+        """
+        Get emoji for traditional moon name.
+
+        Args:
+            moon_name: Traditional moon name (e.g., "Wolf Moon", "Snow Moon")
+
+        Returns:
+            Emoji representing the moon name
+        """
+        # Map traditional moon names to emojis
+        moon_emoji_map = {
+            "Wolf": "🐺",  # Wolf Moon (January)
+            "Snow": "❄️",  # Snow Moon (February)
+            "Worm": "🪱",  # Worm Moon (March)
+            "Pink": "🌸",  # Pink Moon (April)
+            "Flower": "🌼",  # Flower Moon (May)
+            "Strawberry": "🍓",  # Strawberry Moon (June)
+            "Buck": "🦌",  # Buck Moon (July)
+            "Sturgeon": "🐟",  # Sturgeon Moon (August)
+            "Corn": "🌽",  # Corn Moon (September)
+            "Hunter": "🏹",  # Hunter's Moon (October)
+            "Beaver": "🦫",  # Beaver Moon (November)
+            "Cold": "🥶",  # Cold Moon (December)
+            "Harvest": "🌾",  # Harvest Moon (Special)
+        }
+
+        # Find matching emoji
+        for key, emoji in moon_emoji_map.items():
+            if key in moon_name:
+                return emoji
+
+        # Default to calendar emoji if no match
+        return "📅"
 
     def _on_cell_clicked(self, date: datetime) -> None:
         """Handle cell click."""

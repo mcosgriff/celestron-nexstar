@@ -37,6 +37,7 @@ except ImportError:
 
 from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.core import format_local_time
+from celestron_nexstar.api.core.enums import MoonPhase
 from celestron_nexstar.api.location.observer import get_observer_location
 
 
@@ -689,6 +690,46 @@ class MoonInfoDialog(QDialog):
             # Format phase
             phase_name = moon_info.phase_name.value
 
+            # Get traditional name and special events for full moons
+            traditional_name = None
+            is_supermoon = False
+            distance_km = 0.0
+
+            if moon_info.phase_name == MoonPhase.FULL_MOON:
+                traditional_name = self._get_traditional_moon_name(now)
+                distance_km = self._calculate_moon_distance(now)
+
+                # Supermoon threshold: within 90% of perigee (356,500 km)
+                SUPERMOON_THRESHOLD_KM = 356500 * 1.10  # 392,150 km
+                is_supermoon = distance_km > 0 and distance_km <= SUPERMOON_THRESHOLD_KM
+
+            # Build special events section
+            special_events_html = ""
+            if traditional_name or is_supermoon:
+                special_events_html = f"""
+                    <p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px;'>
+                        <strong style='color: {colors["header"]};'>Special Events:</strong>
+                    </p>
+                """
+
+                if traditional_name:
+                    emoji = self._get_moon_name_emoji(traditional_name)
+                    special_events_html += f"""
+                        <p style='margin-left: 40px; margin-top: 5px; margin-bottom: 5px;'>
+                            <span style='font-size: 16px;'>{emoji}</span>
+                            <span style='color: {colors["green"]};'> {traditional_name}</span>
+                        </p>
+                    """
+
+                if is_supermoon:
+                    special_events_html += f"""
+                        <p style='margin-left: 40px; margin-top: 5px; margin-bottom: 5px;'>
+                            <span style='font-size: 16px;'>🌕</span>
+                            <span style='color: {colors["green"]};'> Supermoon</span>
+                            <span style='color: {colors["text_dim"]};'> (Distance: {distance_km:,.0f} km)</span>
+                        </p>
+                    """
+
             # Build HTML content
             html_content = f"""
                 <h2 style='color: {colors["header"]};'>Moon Information</h2>
@@ -703,7 +744,9 @@ class MoonInfoDialog(QDialog):
                     <span style='color: {colors["cyan"]};'>{illumination_pct:.1f}%</span>
                 </p>
 
-                <p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>
+                {special_events_html}
+
+                <p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px;'>
                     <strong style='color: {colors["text"]};'>Moonrise:</strong>
                     <span style='color: {colors["cyan"]};'>{moonrise_str}</span>
                 </p>
@@ -733,6 +776,102 @@ class MoonInfoDialog(QDialog):
                 <p style='color: {colors["text"]};'>Error: {e!s}</p>
             """
             self.info_text.setHtml(html_content)
+
+    def _get_traditional_moon_name(self, date: datetime) -> str | None:
+        """
+        Get traditional moon name for a full moon.
+
+        Args:
+            date: Date to check
+
+        Returns:
+            Traditional name or None
+        """
+        import json
+        from pathlib import Path
+
+        try:
+            # Load traditional names
+            json_path = (
+                Path(__file__).parent.parent.parent
+                / "data"
+                / "seed"
+                / "traditional_moon_names.json"
+            )
+
+            with open(json_path) as f:
+                traditional_names = json.load(f)
+
+            month = date.month
+            month_data = traditional_names.get("month_names", {}).get(str(month))
+            if month_data:
+                return month_data.get("primary", "")
+
+        except Exception as e:
+            logger.debug(f"Could not load traditional moon names: {e}")
+
+        return None
+
+    def _calculate_moon_distance(self, date: datetime) -> float:
+        """
+        Calculate Earth-Moon distance in kilometers.
+
+        Args:
+            date: Date to calculate for
+
+        Returns:
+            Distance in kilometers
+        """
+        try:
+            from skyfield.api import Topos
+
+            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
+
+            location = get_observer_location()
+            ts = get_skyfield_timescale()
+            t = ts.from_datetime(date)
+            eph = get_skyfield_ephemeris("de421.bsp")
+
+            earth = eph["earth"]
+            moon = eph["moon"]
+
+            elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
+            observer = earth + Topos(
+                latitude_degrees=location.latitude,
+                longitude_degrees=location.longitude,
+                elevation_m=elev_m,
+            )
+
+            moon_distance = observer.at(t).observe(moon).distance()
+            return moon_distance.km
+
+        except Exception as e:
+            logger.debug(f"Could not calculate moon distance: {e}")
+            return 0.0
+
+    def _get_moon_name_emoji(self, moon_name: str) -> str:
+        """Get emoji for traditional moon name."""
+        moon_emoji_map = {
+            "Wolf": "🐺",
+            "Snow": "❄️",
+            "Worm": "🪱",
+            "Pink": "🌸",
+            "Flower": "🌼",
+            "Strawberry": "🍓",
+            "Buck": "🦌",
+            "Sturgeon": "🐟",
+            "Corn": "🌽",
+            "Hunter": "🏹",
+            "Beaver": "🦫",
+            "Cold": "🥶",
+            "Harvest": "🌾",
+        }
+
+        for key, emoji in moon_emoji_map.items():
+            if key in moon_name:
+                return emoji
+
+        return "🌕"
 
     def _load_moon_plot(self) -> None:
         """Load moon plot in a background thread."""
