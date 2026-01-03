@@ -1,13 +1,13 @@
 """
 Moon Calendar Grid Widgets
 
-Custom widgets for displaying monthly moon calendar and phase timeline.
+Custom widgets for displaying the monthly moon calendar and phase timeline.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSize, Qt, Signal
@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 )
 
 from celestron_nexstar.api.core.enums import MoonPhase
+from celestron_nexstar.api.core.utils import get_local_timezone
+from celestron_nexstar.api.location.observer import get_observer_location
 
 
 if TYPE_CHECKING:
@@ -45,7 +47,7 @@ class MoonCalendarCell(QFrame):
     - Special event badges
     """
 
-    clicked = Signal(datetime)  # type: ignore[type-arg,misc]  # Emits date when clicked
+    clicked = Signal(datetime)  # type: ignore[type-arg,misc] # Emits date when clicked
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the calendar cell."""
@@ -56,8 +58,10 @@ class MoonCalendarCell(QFrame):
         self._is_current_day = False
         self._is_current_month = True
         self._special_events: list[str] = []
+        self._observer_location = get_observer_location()
+        self._local_timezone = get_local_timezone(self._observer_location.latitude, self._observer_location.longitude)
 
-        # Set up frame - no border on frame itself
+        # Set up a frame - no border on the frame itself
         self.setFrameShape(QFrame.Shape.NoFrame)
 
         # Enable mouse tracking for hover effects
@@ -266,7 +270,7 @@ class MoonCalendarCell(QFrame):
             n_points = 100
             y_values = [(-1.0 + 2.0 * i / n_points) * radius for i in range(n_points + 1)]
 
-            # Create path for the overlay crescent
+            # Create a path for the overlay crescent
             path = QPainterPath()
 
             # Calculate limb and terminator x-coordinates
@@ -294,7 +298,7 @@ class MoonCalendarCell(QFrame):
                 else:
                     path.lineTo(x_outer, center_y + y)
 
-            # Return along terminator curve
+            # Return along a terminator curve
             for i in range(n_points, -1, -1):
                 y = y_values[i]
                 y_normalized = y / radius
@@ -343,7 +347,7 @@ class MoonCalendarCell(QFrame):
             )
             self.date_label.setStyleSheet("font-weight: bold;")
         elif not self._is_current_month:
-            # Other month - grayed out
+            # Another month - grayed out
             self.setStyleSheet(
                 """
                 MoonCalendarCell {
@@ -385,7 +389,7 @@ class MoonCalendarGrid(QWidget):
     """
     Calendar grid widget for displaying moon phases.
 
-    7x6 grid (day headers + up to 6 weeks)
+    7x6 grid (day headers and up to 6 weeks)
     Each cell shows date, moon phase icon, and illumination.
     """
 
@@ -399,6 +403,8 @@ class MoonCalendarGrid(QWidget):
         self._month = 0
         self._cells: list[MoonCalendarCell] = []
         self._moon_data: dict[str, MoonDayData] = {}
+        self._observer_location = get_observer_location()
+        self._local_timezone = get_local_timezone(self._observer_location.latitude, self._observer_location.longitude)
 
         # Create layout
         self.layout = QGridLayout(self)
@@ -453,9 +459,9 @@ class MoonCalendarGrid(QWidget):
                 phase_events_by_date[date_key] = event
 
         # Get first and last day of month
-        first_day = datetime(year, month, 1, tzinfo=UTC)
+        first_day = datetime(year, month, 1, tzinfo=self._local_timezone)
 
-        # Find first day to display (might be from previous month)
+        # Find the first day to display (might be from previous month)
         # Python weekday(): Monday=0, Sunday=6
         # We want to start on Sunday, so calculate days back
         from datetime import timedelta
@@ -463,8 +469,8 @@ class MoonCalendarGrid(QWidget):
         days_back = (first_day.weekday() + 1) % 7  # Days to go back to previous Sunday
         display_start = first_day - timedelta(days=days_back)
 
-        # Get current date for highlighting
-        today = datetime.now(UTC).date()
+        # Get current date for highlighting (use local time to match user's clock)
+        today = datetime.now(self._local_timezone).date()
 
         # Populate cells
         from datetime import timedelta
@@ -508,9 +514,10 @@ class MoonCalendarGrid(QWidget):
             # Move to next day
             current_date = current_date + timedelta(days=1)
 
-    def _get_moon_name_emoji(self, moon_name: str) -> str:
+    @staticmethod
+    def _get_moon_name_emoji(moon_name: str) -> str:
         """
-        Get emoji for traditional moon name.
+        Get emoji for a traditional moon name.
 
         Args:
             moon_name: Traditional moon name (e.g., "Wolf Moon", "Snow Moon")
@@ -550,7 +557,7 @@ class MoonCalendarGrid(QWidget):
 
 class PhaseTimelineWidget(QWidget):
     """
-    Timeline showing next 3-6 months of major moon phases.
+    Timeline showing the next 3-6 months of major moon phases.
 
     Displays:
     - Date
@@ -697,9 +704,8 @@ class PhaseTimelineWidget(QWidget):
                 continue
 
             # Special events filter
-            if self.filter_special.isChecked():
-                if not (event.is_supermoon or event.is_blue_moon or event.eclipse_type):
-                    continue
+            if self.filter_special.isChecked() and not (event.is_supermoon or event.is_blue_moon or event.eclipse_type):
+                continue
 
             filtered_events.append(event)
 
@@ -712,7 +718,7 @@ class PhaseTimelineWidget(QWidget):
         self._populate_table()
 
     def _populate_table(self) -> None:
-        """Populate table with current filtered events."""
+        """Populate the table with current filtered events."""
         events = self._phase_events
 
         # Disable sorting while populating

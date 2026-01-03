@@ -383,7 +383,7 @@ class CatalogSearchWindow(QMainWindow):
             from celestron_nexstar.api.database.models import UserPreferenceModel
 
             db = get_database()
-            with db._get_session() as session:
+            with db.get_session() as session:
                 pref = session.get(UserPreferenceModel, "catalog_recent_searches")
                 if pref:
                     data = json.loads(pref.value)
@@ -406,7 +406,7 @@ class CatalogSearchWindow(QMainWindow):
             from celestron_nexstar.api.database.models import UserPreferenceModel
 
             db = get_database()
-            with db._get_session() as session:
+            with db.get_session() as session:
                 pref = session.get(UserPreferenceModel, "catalog_recent_searches")
                 searches: list[str] = []
                 if pref:

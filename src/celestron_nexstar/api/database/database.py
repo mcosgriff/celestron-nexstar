@@ -494,7 +494,7 @@ class CatalogDatabase:
         self._sync_memory_to_file()
 
     @contextmanager
-    def _get_session(self) -> Iterator[Session]:
+    def get_session(self) -> Iterator[Session]:
         """Get a new synchronous database session."""
         # Ensure database is loaded into memory if using memory mode
         if self.use_memory and not self._memory_loaded:
@@ -546,7 +546,7 @@ class CatalogDatabase:
         Base.metadata.create_all(self._engine)
 
         # Create FTS5 table and triggers (not handled by SQLAlchemy)
-        with self._get_session() as session:
+        with self.get_session() as session:
             # Create FTS5 virtual table
             session.execute(
                 text("""
@@ -606,7 +606,7 @@ class CatalogDatabase:
         (stars, galaxies, etc.), this will skip FTS creation as FTS
         is no longer used in that schema.
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             # Check if objects table exists (it may have been split into separate tables)
             objects_table_result = session.execute(
                 text("""
@@ -702,7 +702,7 @@ class CatalogDatabase:
         """
         self.ensure_fts_table()  # Make sure table exists
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             # For external content FTS tables, we need to rebuild the index
             # Delete all existing FTS data first
             try:
@@ -807,7 +807,7 @@ class CatalogDatabase:
         object_type_enum = CelestialObjectType(object_type) if isinstance(object_type, str) else object_type
         model_class = self._get_model_class(object_type_enum)
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             # Check if object with this name already exists
@@ -866,7 +866,7 @@ class CatalogDatabase:
         if not objects:
             return 0
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             from celestron_nexstar.cli.data_import import TypeCache
@@ -1053,7 +1053,7 @@ class CatalogDatabase:
         Returns:
             Set of tuples (name, common_name, catalog_number)
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             existing_set: set[tuple[str, str | None, int | None]] = set()
@@ -1088,7 +1088,7 @@ class CatalogDatabase:
             object_id: Object ID
             object_type: Optional object type to speed up lookup (searches all tables if not provided)
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             # If object_type is provided, query the specific table
             if object_type:
                 if isinstance(object_type, str):
@@ -1130,7 +1130,7 @@ class CatalogDatabase:
         model_class = self._get_model_class(object_type)
         result_dict: dict[int, CelestialObject] = {}
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             # Query all objects in a single database call
@@ -1163,7 +1163,7 @@ class CatalogDatabase:
         if not name:
             return None
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             # Search across all type-specific tables
@@ -1384,7 +1384,7 @@ class CatalogDatabase:
         Returns:
             Common name if found, None otherwise
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             from celestron_nexstar.api.database.models import StarNameMappingModel
@@ -1418,7 +1418,7 @@ class CatalogDatabase:
         if not query:
             return []
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             all_models: list[Any] = []
@@ -1595,7 +1595,7 @@ class CatalogDatabase:
         # If range crosses ±180°, we need to query both sides
         wraps_around_rtree = ra_min_deg < -180 or ra_max_deg > 180
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             all_results: list[tuple[CelestialObject, float]] = []
 
             # Map from model class to R-tree table name
@@ -1724,7 +1724,7 @@ class CatalogDatabase:
     @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
     def get_by_catalog(self, catalog: str, limit: int = 1000) -> list[CelestialObject]:
         """Get all objects from a specific catalog."""
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             all_models: list[Any] = []
@@ -1762,7 +1762,7 @@ class CatalogDatabase:
         Returns:
             True if object exists, False otherwise
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import func, select
 
             # Check across all type-specific tables
@@ -1807,7 +1807,7 @@ class CatalogDatabase:
         Returns:
             List of matching objects
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             # Convert object_type to enum if string
@@ -1941,7 +1941,7 @@ class CatalogDatabase:
         Returns:
             List of moon objects
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             stmt = (
@@ -1977,7 +1977,7 @@ class CatalogDatabase:
         Returns:
             List of Messier objects sorted by Messier number (M1, M2, ..., M110)
         """
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             # Query all three tables for catalog="messier"
@@ -2010,7 +2010,7 @@ class CatalogDatabase:
     @deal.post(lambda result: isinstance(result, list), message="Must return list of catalog names")
     def get_all_catalogs(self) -> list[str]:
         """Get list of all catalog names."""
-        with self._get_session() as session:
+        with self.get_session() as session:
             from sqlalchemy import select
 
             catalog_set: set[str] = set()
@@ -2041,7 +2041,7 @@ class CatalogDatabase:
         """
         from sqlalchemy import func, select
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             # Build case-insensitive filter using LIKE for better compatibility
             prefix_lower = str(prefix).lower()
 
@@ -2108,7 +2108,7 @@ class CatalogDatabase:
         """Get database statistics."""
         from sqlalchemy import func, select
 
-        with self._get_session() as session:
+        with self.get_session() as session:
             # Total count - sum across all tables
             total = 0
             for model_class in self._TYPE_TO_MODEL.values():
@@ -2303,7 +2303,7 @@ def _repair_polar_constellation_holes(db: CatalogDatabase) -> None:
 
         from celestron_nexstar.api.database.models import ConstellationModel, StarModel
 
-        with db._get_session() as session:
+        with db.get_session() as session:
             max_dec = session.execute(select(func.max(ConstellationModel.dec_max_degrees))).scalar_one_or_none()
             min_dec = session.execute(select(func.min(ConstellationModel.dec_min_degrees))).scalar_one_or_none()
             if max_dec is None or min_dec is None:
@@ -2428,7 +2428,7 @@ def vacuum_database(db: CatalogDatabase | None = None) -> tuple[int, int]:
     # Run VACUUM
     # Note: VACUUM rebuilds the entire database file, so we need to ensure
     # all connections are closed for the file size to update properly
-    with db._get_session() as session:
+    with db.get_session() as session:
         session.execute(text("VACUUM"))
         session.commit()
 
@@ -2703,7 +2703,7 @@ def rebuild_database(
                 try:
                     # Dispose of engine to ensure fresh connection
                     db_temp._engine.dispose()
-                    with db_temp._get_session() as session:
+                    with db_temp.get_session() as session:
                         session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
                         session.execute(text("DROP TRIGGER IF EXISTS objects_ad"))
                         session.execute(text("DROP TRIGGER IF EXISTS objects_au"))
@@ -3095,7 +3095,7 @@ def get_ephemeris_files() -> dict[str, dict[str, Any]]:
         Dictionary mapping file_key to EphemerisFileInfo-like dict
     """
     db = get_database()
-    with db._get_session() as session:
+    with db.get_session() as session:
         from sqlalchemy import select
 
         stmt = select(EphemerisFileModel)
@@ -3206,7 +3206,7 @@ def sync_ephemeris_files_from_naif(force: bool = False) -> int:
 
     # Check if we need to sync (check last sync time in metadata)
     if not force:
-        with db._get_session() as session:
+        with db.get_session() as session:
             from sqlalchemy import select
 
             result = session.execute(select(MetadataModel).filter(MetadataModel.key == "ephemeris_files_last_sync"))
@@ -3255,7 +3255,7 @@ def sync_ephemeris_files_from_naif(force: bool = False) -> int:
             )
 
         # Upsert to database
-        with db._get_session() as session:
+        with db.get_session() as session:
             from sqlalchemy import select
 
             synced_count = 0

@@ -188,7 +188,7 @@ def clear_light_pollution_data(db: CatalogDatabase) -> int:
 
     from celestron_nexstar.api.database.models import LightPollutionGridModel
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         # First, get count of rows to be deleted
         row_count = session.scalar(select(func.count(LightPollutionGridModel.id))) or 0
 
@@ -751,7 +751,7 @@ def _insert_batch(db: CatalogDatabase, batch_data: list[tuple[float, float, floa
         return
 
     try:
-        with db._get_session() as session:
+        with db.get_session() as session:
             # Check if geometry column exists (required)
             inspector = inspect(session.bind)
             if inspector is None:
@@ -888,7 +888,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
 
     # Check if table exists first
     try:
-        with db._get_session() as session:
+        with db.get_session() as session:
             inspector = inspect(session.bind)
             if inspector is not None and "light_pollution_grid" not in inspector.get_table_names():
                 logger.debug("light_pollution_grid table does not exist")
@@ -902,7 +902,7 @@ def get_sqm_from_database(lat: float, lon: float, db: CatalogDatabase) -> float 
     search_radius_deg = search_radius_km / 111.0
 
     result: list[Any]
-    with db._get_session() as session:
+    with db.get_session() as session:
         # Check if geometry column exists (REQUIRED for spatial queries)
         inspector = inspect(session.bind)
         if inspector is None:

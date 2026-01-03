@@ -1298,7 +1298,7 @@ class ImportLightPollutionThread(QThread):
 
             # Truncate existing data for this region so import behaves like a fresh import
             try:
-                with db._get_session() as session:
+                with db.get_session() as session:
                     session.query(LightPollutionGridModel).filter(LightPollutionGridModel.region == self.region).delete(
                         synchronize_session=False
                     )

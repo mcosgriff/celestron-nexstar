@@ -163,7 +163,7 @@ class VisibilityCountThread(QThread):
 
                 # Get sky brightness from light pollution (single call outside the pool)
                 try:
-                    with db._get_session() as session:
+                    with db.get_session() as session:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
@@ -339,7 +339,7 @@ class ObjectsLoaderThread(QThread):
             if obj_type == CelestialObjectType.CONSTELLATION:
                 # Load visible constellations
                 db = get_database()
-                with db._get_session() as session:
+                with db.get_session() as session:
                     constellations = get_visible_constellations(
                         session,
                         conditions.latitude,
@@ -355,7 +355,7 @@ class ObjectsLoaderThread(QThread):
                 # since asterisms are educational/reference items and circumpolar
                 # ones like Big Dipper should always be visible
                 db = get_database()
-                with db._get_session() as session:
+                with db.get_session() as session:
                     asterisms = get_visible_asterisms(
                         session,
                         conditions.latitude,
@@ -384,7 +384,7 @@ class ObjectsLoaderThread(QThread):
                 moon_ra = moon_info.ra_hours if moon_info else None
                 moon_dec = moon_info.dec_degrees if moon_info else None
 
-                with db._get_session() as session:
+                with db.get_session() as session:
                     try:
                         variable_stars = get_known_variable_stars(session)
                     except DatabaseError as e:
@@ -554,7 +554,7 @@ class ObjectsLoaderThread(QThread):
                 moon_ra = moon_info.ra_hours if moon_info else None
                 moon_dec = moon_info.dec_degrees if moon_info else None
 
-                with db._get_session() as session:
+                with db.get_session() as session:
                     # Get sky brightness
                     try:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
@@ -668,7 +668,7 @@ class ObjectsLoaderThread(QThread):
                     "Pisces",
                 ]
 
-                with db._get_session() as session:
+                with db.get_session() as session:
                     try:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
@@ -778,7 +778,7 @@ class ObjectsLoaderThread(QThread):
                         config = get_current_configuration()
                         location = get_observer_location()
                         db = get_database()
-                        with db._get_session() as session:
+                        with db.get_session() as session:
                             lp = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
@@ -3058,7 +3058,7 @@ class MainWindow(QMainWindow):
             def _count_all_stars() -> dict[str, int]:
                 db = get_database()
 
-                with db._get_session() as session:
+                with db.get_session() as session:
                     # Get sky brightness from light pollution (once for all asterisms)
                     try:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
@@ -3168,7 +3168,7 @@ class MainWindow(QMainWindow):
             def _count_all_stars() -> dict[str, int]:
                 db = get_database()
 
-                with db._get_session() as session:
+                with db.get_session() as session:
                     # Get sky brightness from light pollution (once for all constellations)
                     try:
                         light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
@@ -4571,7 +4571,7 @@ class MainWindow(QMainWindow):
             location = get_observer_location()
 
             try:
-                with db._get_session() as session:
+                with db.get_session() as session:
                     light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
 
                 # Map Bortle class to SkyBrightness

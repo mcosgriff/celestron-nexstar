@@ -708,7 +708,9 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     """
     # Limit to 7 days (168 hours) - Open-Meteo maximum
     hours = min(hours, 168)
-    forecast_days = min((hours + 23) // 24, 7)  # Round up to days, max 7
+    # Add 1 to ensure we get enough future data even if we're late in the current day
+    # forecast_days counts calendar days, not 24-hour periods from now
+    forecast_days = min((hours + 23) // 24 + 1, 7)  # Round up to days + 1 buffer, max 7
 
     # Helper function to check database
     def _check_database_cache() -> tuple[list[WeatherForecastModel], datetime]:
@@ -1406,7 +1408,9 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
     # Fetch from API with past_days parameter, then persist so subsequent views don't re-hit API.
     try:
         url = "https://api.open-meteo.com/v1/forecast"
-        forecast_days = min((future_hours + 23) // 24, 7)  # Round up to days, max 7
+        # Add 1 to ensure we get enough future data even if we're late in the current day
+        # forecast_days counts calendar days, not 24-hour periods from now
+        forecast_days = min((future_hours + 23) // 24 + 1, 7)  # Round up to days + 1 buffer, max 7
         params: dict[str, str | int | float | list[str]] = {
             "latitude": location.latitude,
             "longitude": location.longitude,

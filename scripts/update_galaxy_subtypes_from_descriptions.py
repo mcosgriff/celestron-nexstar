@@ -134,7 +134,7 @@ def update_galaxy_subtypes() -> None:
 
     db = get_database()
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         # Get object type mapping
         console.print("[dim]Loading object type mappings...[/dim]")
         type_mapping = get_object_type_mapping(session)

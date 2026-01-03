@@ -36,7 +36,7 @@ def main() -> None:
         db = get_database()
 
         # Seed object types using the database seeder
-        with db._get_session() as session:
+        with db.get_session() as session:
             count = seed_object_types(session, force=True)
 
         # Print summary

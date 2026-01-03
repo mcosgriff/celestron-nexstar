@@ -16,7 +16,7 @@ def main():
         db = get_database()
         print(f"Database path: {db.db_path}")
         
-        with db._get_session() as session:
+        with db.get_session() as session:
             inspector = sa.inspect(session.bind)
             
             if "stars" not in inspector.get_table_names():

@@ -124,7 +124,7 @@ def migrate_all_tables() -> None:
     total_migrated = 0
     total_skipped = 0
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         # Get object type mapping
         console.print("[dim]Loading object type mappings...[/dim]")
         type_mapping = get_object_type_mapping(session)

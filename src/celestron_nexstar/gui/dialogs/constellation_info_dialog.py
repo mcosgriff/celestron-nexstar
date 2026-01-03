@@ -166,7 +166,7 @@ class MapGenerationWorkerThread(QThread):
                     from celestron_nexstar.api.database.models import ConstellationModel, StarModel
 
                     db = get_database()
-                    with db._get_session() as session:
+                    with db.get_session() as session:
                         constellation_model = session.scalar(
                             select(ConstellationModel).where(ConstellationModel.name == constellation_name).limit(1)
                         )
@@ -460,7 +460,7 @@ class StarVisibilityWorkerThread(QThread):
             conditions = planner.get_tonight_conditions()
 
             db = get_database()
-            with db._get_session() as session:
+            with db.get_session() as session:
                 # Get sky brightness from light pollution
                 try:
                     light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
@@ -715,7 +715,7 @@ class ConstellationInfoDialog(QDialog):
             from celestron_nexstar.api.database.models import ConstellationModel
 
             db = get_database()
-            with db._get_session() as session:
+            with db.get_session() as session:
                 # Get constellation model with boundaries
                 stmt = select(ConstellationModel).where(ConstellationModel.name == self.constellation_name).limit(1)
                 result = session.execute(stmt)

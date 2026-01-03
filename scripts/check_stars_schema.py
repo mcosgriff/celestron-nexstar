@@ -16,7 +16,7 @@ def main():
     print()
     
     try:
-        with db._get_session() as session:
+        with db.get_session() as session:
             # Get SQLite version
             version_result = session.execute(text("SELECT sqlite_version()"))
             sqlite_version = version_result.scalar()

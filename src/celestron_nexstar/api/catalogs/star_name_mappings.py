@@ -24,7 +24,7 @@ from celestron_nexstar.api.database.models import StarNameMappingModel
 logger = logging.getLogger(__name__)
 
 # SIMBAD API base URL
-SIMBAD_BASE_URL = "http://simbad.u-strasbg.fr/simbad/sim-id"
+SIMBAD_BASE_URL = "https:///simbad.u-strasbg.fr/simbad/sim-id"
 # VizieR catalog URL for HD-DM-GC-HR-HIP-Bayer-Flamsteed Cross Index
 # This is a comprehensive cross-reference catalog
 VIZIER_CATALOG_URL = "https://cdsarc.cds.unistra.fr/viz-bin/nph-Cat/txt?V/50"

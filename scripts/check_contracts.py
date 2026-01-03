@@ -33,7 +33,6 @@ API_MODULES = [
 # Functions to exclude from contract checking (internal/private helpers)
 EXCLUDED_FUNCTIONS = {
     "database.py": {
-        "_get_session",
         "_model_to_object",
         "__init__",
         "__enter__",

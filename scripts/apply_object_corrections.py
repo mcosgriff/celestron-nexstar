@@ -128,7 +128,7 @@ def apply_all_corrections() -> None:
     skipped = 0
     errors = 0
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         for correction in corrections:
             try:
                 if apply_correction(session, correction):

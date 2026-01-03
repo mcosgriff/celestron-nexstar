@@ -306,7 +306,7 @@ def update_star_names() -> None:
         def _update_star_names() -> None:
             from sqlalchemy import select
 
-            with db._get_session() as session:
+            with db.get_session() as session:
                 # Get all star name mappings for lookup
                 all_mappings_stmt = select(StarNameMappingModel)
                 mappings_result = session.execute(all_mappings_stmt)
@@ -717,7 +717,7 @@ def rebuild_fts() -> None:
         )
 
         def _get_counts() -> tuple[int, int]:
-            with db._get_session() as session:
+            with db.get_session() as session:
                 # FTS5 table requires raw SQL (virtual table) - may not exist if using split schema
                 fts_count = 0
                 try:
@@ -873,7 +873,7 @@ def setup(
             from sqlalchemy import text
 
             def _check_tables() -> set[str]:
-                with db._get_session() as session:
+                with db.get_session() as session:
                     result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
                     return {row[0] for row in result.fetchall()}
 
@@ -903,7 +903,7 @@ def setup(
 
                 # Count objects across all type-specific tables
                 total_count = 0
-                with db._get_session() as session:
+                with db.get_session() as session:
                     for model_class in [
                         StarModel,
                         DoubleStarModel,
@@ -1172,7 +1172,7 @@ def setup(
         )
 
         def _check_and_seed_static_data() -> None:
-            with db._get_session() as session:
+            with db.get_session() as session:
                 meteor_result = session.scalar(select(func.count(MeteorShowerModel.id)))  # type: ignore[attr-defined]
                 meteor_count = meteor_result or 0
                 constellation_result = session.scalar(select(func.count(ConstellationModel.id)))  # type: ignore[attr-defined]
@@ -1905,7 +1905,7 @@ def clear_light_pollution(
 
     # Check if table exists and get row count
     try:
-        with db._get_session() as session:
+        with db.get_session() as session:
             from sqlalchemy import text
 
             result = session.execute(text("SELECT COUNT(*) FROM light_pollution_grid")).fetchone()
@@ -2695,7 +2695,7 @@ def run_migrations(
                     db_temp._engine.dispose()
 
                     def _drop_triggers() -> None:
-                        with db_temp._get_session() as session:
+                        with db_temp.get_session() as session:
                             from sqlalchemy import text
 
                             session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))
@@ -2876,7 +2876,7 @@ def database_setup(
                     db_temp._engine.dispose()
 
                     def _drop_triggers() -> None:
-                        with db_temp._get_session() as session:
+                        with db_temp.get_session() as session:
                             from sqlalchemy import text
 
                             session.execute(text("DROP TRIGGER IF EXISTS objects_ai"))

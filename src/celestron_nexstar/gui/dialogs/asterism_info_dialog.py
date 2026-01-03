@@ -50,7 +50,7 @@ class VisibleAsterismStarsWorker(QThread):
                 9: SkyBrightness.URBAN,
             }
             try:
-                with db._get_session() as session:
+                with db.get_session() as session:
                     lp = get_light_pollution_data(session, location.latitude, location.longitude)
                     sky_brightness = bortle_to_sky_brightness.get(lp.bortle_class.value, SkyBrightness.FAIR)
             except Exception:
@@ -289,7 +289,7 @@ class AsterismInfoDialog(QDialog):
                                 from celestron_nexstar.api.database.models import AsterismModel, StarModel
 
                                 db = get_database()
-                                with db._get_session() as session:
+                                with db.get_session() as session:
                                     asterism_model = session.scalar(
                                         select(AsterismModel).where(AsterismModel.name == asterism.name).limit(1)
                                     )

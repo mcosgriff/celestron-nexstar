@@ -164,7 +164,7 @@ def _load_type_abbreviation_mappings() -> tuple[dict[str, str], dict[str, str]]:
     # Load all type names from database to get full descriptions
     abbrev_to_full_name = {}
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         result = session.execute(text("SELECT name, description FROM object_types")).fetchall()
 
         for name, _description in result:
@@ -666,7 +666,7 @@ def import_celestial_data_geojson(
             StarModel,
         )
 
-        with db._get_session() as session:
+        with db.get_session() as session:
             for model in (
                 StarModel,
                 DoubleStarModel,
@@ -969,7 +969,7 @@ def import_celestial_data_geojson(
 
             # For DSO objects, update geometry from GeoJSON after insert
             if "dso" in catalog.lower():
-                with db._get_session() as db_session:
+                with db.get_session() as db_session:
                     # Map object types to model classes
 
                     from sqlalchemy import select
@@ -1034,7 +1034,7 @@ def import_celestial_data_geojson(
             # Stars use junction tables, not direct foreign keys, so skip them
             if catalog in ("celestial_dsos", "celestial_dsos_bright", "messier", "local_group"):
                 try:
-                    with db._get_session() as db_session:
+                    with db.get_session() as db_session:
                         from sqlalchemy import select
 
                         from celestron_nexstar.api.database.models import (
@@ -1499,7 +1499,7 @@ def import_celestial_stars(
 
     from celestron_nexstar.api.database.models import StarModel
 
-    with db._get_session() as session:
+    with db.get_session() as session:
         session.execute(delete(StarModel).where(StarModel.catalog == "celestial_stars"))
         session.commit()
 
@@ -1790,7 +1790,7 @@ def import_celestial_stars(
 
             # Update foreign keys for stars (constellation_id and asterism_id) via spatial queries
             try:
-                with db._get_session() as db_session:
+                with db.get_session() as db_session:
                     from sqlalchemy import select
 
                     from celestron_nexstar.api.database.models import StarModel
@@ -3166,7 +3166,7 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                 ) -> tuple[set[str], list[StarModel]]:
                                     found_names: set[str] = set()
                                     found_models: list[StarModel] = []
-                                    with db._get_session() as session:
+                                    with db.get_session() as session:
                                         for lon_deg, lat_deg in points:
                                             # Convert lon back to RA hours
                                             point_ra_hours = CoordinateConverter.ra_degrees_to_hours(lon_deg)

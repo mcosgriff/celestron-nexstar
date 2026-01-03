@@ -207,7 +207,7 @@ def update_star_constellations(verbose: bool = False) -> tuple[int, int]:
     db = get_database()
 
     # Get all stars without constellation data
-    with db._get_session() as session:
+    with db.get_session() as session:
         stars = (
             session.query(CelestialObjectModel)
             .filter(CelestialObjectModel.object_type == CelestialObjectType.STAR.value)
@@ -254,7 +254,7 @@ def update_star_constellations(verbose: bool = False) -> tuple[int, int]:
 
             # Update the star if we found a constellation
             if constellation:
-                with db._get_session() as session:
+                with db.get_session() as session:
                     star_model = session.query(CelestialObjectModel).filter_by(id=star.id).first()
                     if star_model:
                         star_model.constellation = constellation

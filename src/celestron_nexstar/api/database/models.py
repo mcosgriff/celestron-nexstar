@@ -2009,5 +2009,5 @@ def get_db_session() -> Iterator[Session]:
     from celestron_nexstar.api.database.database import get_database
 
     db = get_database()
-    with db._get_session() as session:
+    with db.get_session() as session:
         yield session

@@ -7,7 +7,7 @@ Non-modal window displaying monthly moon calendar with phase timeline.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from celestron_nexstar.api.core.utils import get_local_timezone
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.gui.widgets.moon_calendar_grid import (
     MoonCalendarGrid,
@@ -57,18 +58,19 @@ class MoonCalendarWindow(QMainWindow):
         super().__init__(parent)
 
         # Window state
-        self._current_year = datetime.now(UTC).year
-        self._current_month = datetime.now(UTC).month
         self._moon_data_cache: dict[str, dict[str, MoonDayData]] = {}  # {year-month: {date: data}}
         self._phase_events_cache: dict[str, list[MoonPhaseEvent]] = {}  # {year-month: events}
         self._worker: MoonDataWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
         self._location: ObserverLocation = get_observer_location()
+        self._local_timezone = get_local_timezone(self._location.latitude, self._location.longitude)
+        self._current_year = datetime.now(self._local_timezone).year
+        self._current_month = datetime.now(self._local_timezone).month
 
         # Window setup
         self.setWindowTitle("Moon Calendar")
         self.setMinimumSize(1200, 700)
-        self.resize(1400, 800)
+        self.resize(1200, 700)
 
         # Create UI
         self._create_ui()
@@ -120,7 +122,7 @@ class MoonCalendarWindow(QMainWindow):
         self.date_picker = QDateEdit()
         self.date_picker.setCalendarPopup(True)
         self.date_picker.setDisplayFormat("MMMM yyyy")
-        self.date_picker.setDate(datetime.now(UTC).date())
+        self.date_picker.setDate(datetime.now(self._local_timezone).date())
         self.date_picker.dateChanged.connect(self._on_date_picker_changed)
         controls_layout.addWidget(self.date_picker)
 
@@ -173,13 +175,14 @@ class MoonCalendarWindow(QMainWindow):
         date = datetime(self._current_year, self._current_month, 1)
         self.month_label.setText(date.strftime("%B %Y"))
 
-    def _get_cache_key(self, year: int, month: int) -> str:
+    @staticmethod
+    def _get_cache_key(year: int, month: int) -> str:
         """Get cache key for year/month."""
         return f"{year}-{month:02d}"
 
     def _load_month_data(self, year: int, month: int) -> None:
         """
-        Load moon data for specified month.
+        Load moon data for a specified month.
 
         Args:
             year: Year to load
@@ -320,12 +323,14 @@ class MoonCalendarWindow(QMainWindow):
 
         # Update date picker without triggering signal
         self.date_picker.blockSignals(True)
-        self.date_picker.setDate(datetime(self._current_year, self._current_month, 1).date())
+        self.date_picker.setDate(
+            datetime(self._current_year, self._current_month, 1, tzinfo=self._local_timezone).date()
+        )
         self.date_picker.blockSignals(False)
 
     def _on_today(self) -> None:
         """Navigate to current month."""
-        now = datetime.now(UTC)
+        now = datetime.now(self._local_timezone)
         self._current_year = now.year
         self._current_month = now.month
 

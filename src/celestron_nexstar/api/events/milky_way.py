@@ -956,7 +956,7 @@ def get_next_milky_way_opportunity(
         db = get_database()
         months_in_db: set[int] = set()
         try:
-            with db._get_session() as session:
+            with db.get_session() as session:
                 stmt = (
                     select(HistoricalWeatherModel.month)
                     .where(
