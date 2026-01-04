@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+from concurrent.futures import Future
 from typing import Any, Literal
 
 import deal
@@ -112,6 +114,12 @@ class NexStarTelescope:
         # Store reference to auto-connect task if created
         self._connect_task: asyncio.Task[bool] | None = None
 
+        # Persistent event loop for thread-safe async operations
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread: threading.Thread | None = None
+        self._loop_started = threading.Event()
+        self._loop_lock = threading.Lock()  # Protects event loop creation
+
         # Auto-connect if requested (async, but we can't await in __init__)
         # Users should call await telescope.connect() explicitly if auto_connect is needed
         if self.config.auto_connect:
@@ -126,6 +134,140 @@ class NexStarTelescope:
             except RuntimeError:
                 # No event loop, create one
                 asyncio.run(self.connect())
+
+    def _start_event_loop(self) -> None:
+        """Start persistent event loop in background thread (thread-safe)."""
+        with self._loop_lock:
+            # Double-check pattern: check again inside lock
+            if self._loop is not None and not self._loop.is_closed():
+                return  # Loop already running
+
+            def run_loop() -> None:
+                """Run event loop in background thread."""
+                loop = None
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    self._loop = loop
+                    self._loop_started.set()
+                    logger.debug(f"Event loop running in thread {threading.current_thread().name}")
+                    loop.run_forever()
+                except Exception as e:
+                    logger.error(f"Event loop thread crashed: {e}", exc_info=True)
+                    self._loop_started.set()  # Unblock waiting threads
+                finally:
+                    # Clean up event loop
+                    if loop is not None and not loop.is_closed():
+                        try:
+                            # Cancel any pending tasks
+                            pending = asyncio.all_tasks(loop)
+                            if pending:
+                                logger.debug(f"Cancelling {len(pending)} pending tasks")
+                                for task in pending:
+                                    task.cancel()
+                                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                        except Exception as e:
+                            logger.warning(f"Error cancelling pending tasks: {e}")
+
+                        try:
+                            loop.close()
+                        except Exception as e:
+                            logger.warning(f"Error closing event loop: {e}")
+
+                    logger.debug("Event loop thread finished")
+
+            self._loop_thread = threading.Thread(target=run_loop, daemon=True, name="TelescopeEventLoop")
+            self._loop_thread.start()
+            self._loop_started.wait()  # Wait for loop to be ready
+            logger.debug("Event loop started in background thread")
+
+    def _stop_event_loop(self) -> None:
+        """Stop persistent event loop (thread-safe, idempotent)."""
+        # Get thread reference and stop loop (inside lock)
+        with self._loop_lock:
+            if self._loop is None or self._loop.is_closed():
+                logger.debug("Event loop already stopped or not started")
+                return
+
+            # Request loop to stop
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except RuntimeError:
+                # Loop already stopped or closing
+                logger.debug("Event loop already stopping")
+                pass
+
+            # Save thread reference before releasing lock
+            thread = self._loop_thread
+
+        # Wait outside the lock to avoid deadlock
+        if thread is not None and thread.is_alive():
+            logger.debug("Waiting for event loop thread to finish...")
+            thread.join(timeout=2.0)
+            if thread.is_alive():
+                logger.warning("Event loop thread did not finish within timeout")
+
+        # Acquire lock again to clear references
+        with self._loop_lock:
+            self._loop = None
+            self._loop_thread = None
+            self._loop_started.clear()
+            logger.debug("Event loop stopped and cleaned up")
+
+    def shutdown(self) -> None:
+        """
+        Shutdown telescope and cleanup resources.
+
+        This should be called when you're completely done with the telescope,
+        typically from synchronous code (not from within an async method).
+
+        Example:
+            >>> telescope.shutdown()
+        """
+        # Stop the persistent event loop if running
+        self._stop_event_loop()
+        logger.info("Telescope shutdown complete")
+
+    def run_coroutine_threadsafe(self, coro):
+        """
+        Run a coroutine in the telescope's event loop from any thread.
+
+        This allows worker threads to safely execute async operations.
+
+        Args:
+            coro: Coroutine to execute
+
+        Returns:
+            Result of the coroutine
+
+        Raises:
+            Exception: Any exception raised by the coroutine
+
+        Example:
+            >>> result = telescope.run_coroutine_threadsafe(telescope.get_position_ra_dec())
+        """
+        # Ensure event loop is running (thread-safe)
+        if self._loop is None or self._loop.is_closed():
+            self._start_event_loop()
+
+        # Submit coroutine to event loop
+        try:
+            future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except RuntimeError as e:
+            logger.error(f"Failed to submit coroutine to event loop: {e}")
+            raise
+
+        # Wait for result (blocking)
+        try:
+            result = future.result(timeout=30.0)  # Add timeout to prevent indefinite blocking
+            return result
+        except TimeoutError:
+            logger.error("Coroutine execution timed out after 30 seconds")
+            future.cancel()
+            raise
+        except Exception as e:
+            logger.error(f"Coroutine raised exception: {e}", exc_info=True)
+            raise
 
     async def _ensure_connected(self) -> None:
         """
@@ -209,6 +351,8 @@ class NexStarTelescope:
         await self.protocol.close()
         self.serial_conn = None
         logger.info("Disconnected from telescope")
+        # Don't stop event loop here - it's still being used by other operations
+        # The loop will be stopped when the telescope object is destroyed
 
     @deal.pre(lambda self, char: len(char) == 1, message="Char must be single character")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
@@ -474,7 +618,6 @@ class NexStarTelescope:
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
-    @deal.raises(ValueError)
     async def move_fixed(self, direction: Direction | str, rate: int = 4) -> bool:
         """
         Move telescope in a fixed direction at specified rate.
@@ -574,7 +717,6 @@ class NexStarTelescope:
     )  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
-    @deal.raises(ValueError)
     async def move_step(self, direction: Direction | str, rate: int = 4) -> bool:
         """
         Move telescope one step in the specified direction.
@@ -667,7 +809,6 @@ class NexStarTelescope:
     @deal.pre(lambda self, direction, rate, duration: 0 <= rate <= 9, message="Rate must be 0-9")  # type: ignore[misc,arg-type]
     @deal.pre(lambda self, direction, rate, duration: duration > 0, message="Duration must be positive")  # type: ignore[misc,arg-type]
     @deal.post(lambda result: isinstance(result, bool), message="Must return boolean")
-    @deal.raises(ValueError)
     async def move_for_time(self, direction: Direction | str, duration: float, rate: int = 4) -> bool:
         """
         Move telescope in specified direction for a set duration.
@@ -936,6 +1077,8 @@ class NexStarTelescope:
     async def __aexit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any | None) -> Literal[False]:
         """Async context manager exit."""
         await self.disconnect()
+        # Note: Don't call shutdown() here since we're in async context
+        # The event loop may still be needed by the caller
         return False
 
     def __enter__(self) -> NexStarTelescope:
@@ -967,4 +1110,16 @@ class NexStarTelescope:
             loop.run_until_complete(self.disconnect())
         except RuntimeError:
             asyncio.run(self.disconnect())
+
+        # Shutdown after disconnect completes
+        self.shutdown()
         return False
+
+    def __del__(self) -> None:
+        """Cleanup when object is garbage collected."""
+        # Stop event loop if still running (thread-safe, idempotent)
+        try:
+            self.shutdown()
+        except Exception:
+            # Ignore errors during cleanup (object may be partially destroyed)
+            pass

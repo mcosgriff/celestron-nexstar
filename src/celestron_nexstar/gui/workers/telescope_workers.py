@@ -33,7 +33,7 @@ class GetPositionRADecThread(QThread):
     def run(self) -> None:
         """Get telescope position in background thread."""
         try:
-            coords = asyncio.run(self.telescope.get_position_ra_dec())
+            coords = self.telescope.run_coroutine_threadsafe(self.telescope.get_position_ra_dec())
             self.position_ready.emit(coords)
         except Exception as e:
             logger.error(f"Error getting telescope position: {e}", exc_info=True)
@@ -54,7 +54,7 @@ class GetPositionAltAzThread(QThread):
     def run(self) -> None:
         """Get telescope position in background thread."""
         try:
-            position = asyncio.run(self.telescope.get_position_alt_az())
+            position = self.telescope.run_coroutine_threadsafe(self.telescope.get_position_alt_az())
             self.position_ready.emit(position)
         except Exception as e:
             logger.error(f"Error getting telescope Alt/Az position: {e}", exc_info=True)
@@ -75,7 +75,7 @@ class GetLocationThread(QThread):
     def run(self) -> None:
         """Get telescope location in background thread."""
         try:
-            location = asyncio.run(self.telescope.get_location())
+            location = self.telescope.run_coroutine_threadsafe(self.telescope.get_location())
             self.location_ready.emit(location)
         except Exception as e:
             logger.error(f"Error getting telescope location: {e}", exc_info=True)
@@ -98,7 +98,9 @@ class SyncRADecThread(QThread):
     def run(self) -> None:
         """Sync telescope in background thread."""
         try:
-            success = asyncio.run(self.telescope.sync_ra_dec(self.ra_hours, self.dec_degrees))
+            success = self.telescope.run_coroutine_threadsafe(
+                self.telescope.sync_ra_dec(self.ra_hours, self.dec_degrees)
+            )
             self.sync_complete.emit(success)
         except Exception as e:
             logger.error(f"Error syncing telescope: {e}", exc_info=True)
@@ -122,7 +124,9 @@ class GotoRADecThread(QThread):
     def run(self) -> None:
         """Goto coordinates in background thread."""
         try:
-            success = asyncio.run(self.telescope.goto_ra_dec(self.ra_hours, self.dec_degrees))
+            success = self.telescope.run_coroutine_threadsafe(
+                self.telescope.goto_ra_dec(self.ra_hours, self.dec_degrees)
+            )
             self.goto_complete.emit(success)
         except Exception as e:
             logger.error(f"Error going to coordinates: {e}", exc_info=True)
@@ -144,7 +148,10 @@ class DisconnectThread(QThread):
     def run(self) -> None:
         """Disconnect telescope in background thread."""
         try:
-            asyncio.run(self.telescope.disconnect())
+            # First disconnect from the telescope
+            self.telescope.run_coroutine_threadsafe(self.telescope.disconnect())
+            # Then shutdown the event loop (must be done from outside the loop)
+            self.telescope.shutdown()
             self.disconnect_complete.emit()
         except Exception as e:
             logger.error(f"Error disconnecting telescope: {e}", exc_info=True)
@@ -165,7 +172,7 @@ class ConnectTelescopeThread(QThread):
     def run(self) -> None:
         """Connect to telescope in background thread."""
         try:
-            success = asyncio.run(self.telescope.connect())
+            success = self.telescope.run_coroutine_threadsafe(self.telescope.connect())
             self.connection_ready.emit(success)
         except Exception as e:
             logger.error(f"Error connecting to telescope: {e}", exc_info=True)
@@ -187,7 +194,7 @@ class GetTrackingModeThread(QThread):
     def run(self) -> None:
         """Get tracking mode in background thread."""
         try:
-            mode = asyncio.run(self.telescope.get_tracking_mode())
+            mode = self.telescope.run_coroutine_threadsafe(self.telescope.get_tracking_mode())
             self.mode_ready.emit(mode)
         except Exception as e:
             logger.error(f"Error getting tracking mode: {e}", exc_info=True)
@@ -209,7 +216,7 @@ class SetTrackingModeThread(QThread):
     def run(self) -> None:
         """Set tracking mode in background thread."""
         try:
-            success = asyncio.run(self.telescope.set_tracking_mode(self.mode))
+            success = self.telescope.run_coroutine_threadsafe(self.telescope.set_tracking_mode(self.mode))
             self.mode_set.emit(success)
         except Exception as e:
             logger.error(f"Error setting tracking mode: {e}", exc_info=True)
@@ -233,7 +240,9 @@ class MoveFixedThread(QThread):
     def run(self) -> None:
         """Start continuous movement in background thread."""
         try:
-            success = asyncio.run(self.telescope.move_fixed(self.direction, self.rate))
+            success = self.telescope.run_coroutine_threadsafe(
+                self.telescope.move_fixed(self.direction, self.rate)
+            )
             self.move_started.emit(success)
         except Exception as e:
             logger.error(f"Error moving telescope: {e}", exc_info=True)
@@ -257,7 +266,9 @@ class MoveStepThread(QThread):
     def run(self) -> None:
         """Execute step movement in background thread."""
         try:
-            success = asyncio.run(self.telescope.move_step(self.direction, self.rate))
+            success = self.telescope.run_coroutine_threadsafe(
+                self.telescope.move_step(self.direction, self.rate)
+            )
             self.step_complete.emit(success)
         except Exception as e:
             logger.error(f"Error stepping telescope: {e}", exc_info=True)
@@ -280,7 +291,7 @@ class StopMotionThread(QThread):
     def run(self) -> None:
         """Stop telescope motion in background thread."""
         try:
-            success = asyncio.run(self.telescope.stop_motion(self.axis))
+            success = self.telescope.run_coroutine_threadsafe(self.telescope.stop_motion(self.axis))
             self.stopped.emit(success)
         except Exception as e:
             logger.error(f"Error stopping motion: {e}", exc_info=True)
@@ -302,7 +313,7 @@ class IsSlewingThread(QThread):
     def run(self) -> None:
         """Check slewing status in background thread."""
         try:
-            is_slewing = asyncio.run(self.telescope.is_slewing())
+            is_slewing = self.telescope.run_coroutine_threadsafe(self.telescope.is_slewing())
             self.slewing_status.emit(is_slewing)
         except Exception as e:
             logger.error(f"Error checking slew status: {e}", exc_info=True)

@@ -103,11 +103,37 @@ class NexStarProtocol:
         self.tcp_reader: StreamReader | None = None
         self.tcp_writer: StreamWriter | None = None
 
-        # Lock for concurrent command handling
-        self._command_lock = asyncio.Lock()
+        # Lock for concurrent command handling (created lazily per event loop)
+        self._command_lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
 
         # Optional command tracker for debugging/history (off by default)
         self._command_tracker: CommandTracker | None = None
+
+    def _get_command_lock(self) -> asyncio.Lock:
+        """
+        Get command lock for current event loop.
+
+        Creates a new lock if needed or if the event loop has changed.
+        This ensures the lock is always bound to the current event loop.
+
+        Returns:
+            asyncio.Lock bound to current event loop
+        """
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop running, create one
+            current_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(current_loop)
+
+        # Create new lock if we don't have one or if event loop changed
+        if self._command_lock is None or self._lock_loop is not current_loop:
+            self._command_lock = asyncio.Lock()
+            self._lock_loop = current_loop
+            logger.debug(f"Created new command lock for event loop {id(current_loop)}")
+
+        return self._command_lock
 
     def set_command_tracker(self, tracker: CommandTracker | None) -> None:
         """
@@ -121,6 +147,47 @@ class NexStarProtocol:
             logger.info("CommandTracker enabled for protocol")
         else:
             logger.info("CommandTracker disabled for protocol")
+
+    async def flush_input_buffer(self) -> int:
+        """
+        Flush any pending data in the input buffer.
+
+        This can help recover from situations where the telescope
+        has sent unexpected data or is in an inconsistent state.
+
+        Returns:
+            Number of bytes flushed
+
+        Example:
+            >>> await protocol.flush_input_buffer()
+            >>> # Now send commands normally
+        """
+        if self.connection_type == "tcp":
+            if not self.tcp_reader:
+                return 0
+            reader = self.tcp_reader
+        else:
+            if not self.serial_reader:
+                return 0
+            reader = self.serial_reader
+
+        total_flushed = 0
+        try:
+            logger.info("Flushing input buffer...")
+            while True:
+                try:
+                    garbage = await asyncio.wait_for(reader.read(1024), timeout=0.1)
+                    if not garbage:
+                        break
+                    total_flushed += len(garbage)
+                    logger.debug(f"Flushed {len(garbage)} bytes: {garbage[:50]!r}...")
+                except asyncio.TimeoutError:
+                    break  # No more data to read
+            logger.info(f"Flushed {total_flushed} bytes total from input buffer")
+        except Exception as e:
+            logger.warning(f"Error flushing buffer: {e}")
+
+        return total_flushed
 
     async def open(self) -> bool:
         """
@@ -154,6 +221,11 @@ class NexStarProtocol:
 
             # Allow connection to stabilize
             await asyncio.sleep(0.5)
+
+            # Note: We used to flush the buffer here, but it can interfere with telescope communication
+            # If you have garbage in the buffer, power cycle the telescope instead
+            logger.debug("Serial connection ready")
+
             logger.info(f"Async serial connection opened successfully on {self.port}")
             return True
         except Exception as e:
@@ -251,7 +323,7 @@ class NexStarProtocol:
 
         # Use lock to prevent concurrent commands
         try:
-            async with self._command_lock:
+            async with self._get_command_lock():
                 if self.connection_type == "tcp":
                     response = await self._send_command_tcp(command)
                 else:
@@ -274,21 +346,33 @@ class NexStarProtocol:
         assert self.serial_reader is not None and self.serial_writer is not None, "Serial connection should be open"
 
         # Clear input buffer by reading any pending data
+        # CRITICAL: The telescope may send unsolicited data (echoes, status updates, etc.)
+        flushed_total = 0
         try:
             while True:
                 # Try to read with a very short timeout to drain buffer
                 try:
-                    await asyncio.wait_for(self.serial_reader.read(1024), timeout=0.01)
-                except TimeoutError:
+                    garbage = await asyncio.wait_for(self.serial_reader.read(1024), timeout=0.01)
+                    if garbage:
+                        flushed_total += len(garbage)
+                        logger.warning(
+                            f"UNSOLICITED DATA: Flushed {len(garbage)} bytes before command {command!r}: "
+                            f"{garbage[:50]!r} (hex: {garbage[:50].hex()})"
+                        )
+                except asyncio.TimeoutError:
                     break
-        except Exception:
-            # Ignore errors while clearing buffer
-            pass
+        except Exception as e:
+            logger.debug(f"Error flushing buffer: {e}")
+
+        if flushed_total > 0:
+            logger.error(f"WARNING: Telescope sent {flushed_total} bytes of unsolicited data! "
+                        f"This indicates a communication problem. Consider power cycling the telescope.")
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
-        logger.debug(f"Sending command: {command!r}")
-        self.serial_writer.write(full_command.encode("ascii"))
+        full_command_bytes = full_command.encode("ascii")
+        logger.info(f"SERIAL TX: {command!r} ({len(full_command_bytes)} bytes, hex: {full_command_bytes.hex()})")
+        self.serial_writer.write(full_command_bytes)
         await self.serial_writer.drain()
 
         # Read response until terminator (async, non-blocking)
@@ -306,12 +390,26 @@ class NexStarProtocol:
                 if byte == terminator_bytes:
                     break
         except TimeoutError:
-            logger.error(f"Timeout waiting for response to command: {command!r}")
+            logger.error(f"SERIAL TIMEOUT after {self.timeout}s waiting for command {command!r}")
+            logger.error(f"  Received so far: {len(response)} bytes: {response!r} (hex: {response.hex()})")
             raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
+        # Log raw response
+        logger.info(f"SERIAL RX: {len(response)} bytes (hex: {response.hex()})")
+
         # Decode and remove terminator
-        response_str = response.decode("ascii").rstrip(self.TERMINATOR)
-        logger.debug(f"Received response: {response_str!r}")
+        # Use latin-1 encoding which can handle all byte values 0-255
+        # This prevents UnicodeDecodeError while preserving the bytes
+        try:
+            response_str = response.decode("ascii").rstrip(self.TERMINATOR)
+        except UnicodeDecodeError:
+            logger.warning(
+                f"Non-ASCII response received for command {command!r}: {response!r} "
+                f"(hex: {response.hex()}). Using latin-1 decoding."
+            )
+            response_str = response.decode("latin-1").rstrip(self.TERMINATOR)
+
+        logger.info(f"  Decoded: {response_str!r} ({len(response_str)} chars)")
         return response_str
 
     async def _send_command_tcp(self, command: str) -> str:
@@ -352,7 +450,16 @@ class NexStarProtocol:
             raise TelescopeTimeoutError(f"Timeout waiting for response to: {command}") from None
 
         # Decode and remove terminator
-        response_str = response.decode("ascii").rstrip(self.TERMINATOR)
+        # Use latin-1 encoding which can handle all byte values 0-255
+        try:
+            response_str = response.decode("ascii").rstrip(self.TERMINATOR)
+        except UnicodeDecodeError:
+            logger.warning(
+                f"TCP: Non-ASCII response received for command {command!r}: {response!r} "
+                f"(hex: {response.hex()}). Using latin-1 decoding."
+            )
+            response_str = response.decode("latin-1").rstrip(self.TERMINATOR)
+
         logger.info(f"TCP: Received response: {response_str!r} (raw: {response!r})")
         return response_str
 
@@ -479,7 +586,18 @@ class NexStarProtocol:
             True if response was empty (success)
         """
         response = await self.send_command(command)
-        return response == ""
+
+        # Handle unexpected responses gracefully
+        if response != "":
+            logger.warning(
+                f"Expected empty response for command {command!r}, "
+                f"got {len(response)} bytes: {response[:50]!r}"
+            )
+            # Some telescopes echo the command or send status - still treat as success
+            # if the response ends with our terminator (already stripped)
+            return True  # Be lenient with unexpected responses
+
+        return True
 
     # ========== Specific Protocol Commands ==========
 

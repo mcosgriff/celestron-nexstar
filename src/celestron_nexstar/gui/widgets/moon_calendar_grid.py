@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -60,6 +60,9 @@ class MoonCalendarCell(QFrame):
         self._special_events: list[str] = []
         self._observer_location = get_observer_location()
         self._local_timezone = get_local_timezone(self._observer_location.latitude, self._observer_location.longitude)
+
+        # Pending render data (to defer rendering to main thread)
+        self._pending_render: tuple[float, MoonPhase, int] | None = None
 
         # Set up a frame - no border on the frame itself
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -152,9 +155,10 @@ class MoonCalendarCell(QFrame):
 
             # Moon data
             if moon_data:
-                # Render moon icon
-                icon = self._render_moon_icon(moon_data.illumination, moon_data.phase_name, size=45)
-                self.moon_icon_label.setPixmap(icon)
+                # Schedule rendering in main thread using QTimer.singleShot
+                # This ensures QPainter is only used in the GUI thread
+                self._pending_render = (moon_data.illumination, moon_data.phase_name, 45)
+                QTimer.singleShot(0, self._render_pending_icon)
 
                 # Illumination percentage
                 percent = moon_data.illumination * 100
@@ -189,6 +193,18 @@ class MoonCalendarCell(QFrame):
         # Update styling
         self._update_styling()
 
+    def _render_pending_icon(self) -> None:
+        """Render pending moon icon (called in main thread via QTimer)."""
+        if self._pending_render is None:
+            return
+
+        illumination, phase, size = self._pending_render
+        self._pending_render = None
+
+        # Now safe to render in main thread
+        icon = self._render_moon_icon(illumination, phase, size)
+        self.moon_icon_label.setPixmap(icon)
+
     def _render_moon_icon(self, illumination: float, phase: MoonPhase, size: int = 45) -> QPixmap:
         """
         Render moon phase icon using the EXACT same algorithm as Moon Info Dialog.
@@ -204,6 +220,9 @@ class MoonCalendarCell(QFrame):
             Rendered moon icon as QPixmap
         """
         import math
+
+        # CRITICAL: This must only be called from the main GUI thread
+        # QPainter and QPixmap cannot be created in worker threads
 
         # Create pixmap
         pixmap = QPixmap(size, size)
