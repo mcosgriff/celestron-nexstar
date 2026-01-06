@@ -2143,6 +2143,10 @@ class MainWindow(QMainWindow):
         self.weather_action.setIcon(
             self._create_icon("weather", ["weather-cloudy", "weather-partly-cloudy", "weather-sunny"])
         )
+        if hasattr(self, "clear_dark_sky_action"):
+            self.clear_dark_sky_action.setIcon(
+                self._create_icon("chart", ["chart-line", "chart-areaspline", "weather-cloudy"])
+            )
         if hasattr(self, "moon_info_action"):
             self.moon_info_action.setIcon(
                 self._create_icon("moon", ["moon-waxing-crescent", "moon-full", "moon-new", "weather-night"])

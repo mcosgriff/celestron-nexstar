@@ -70,11 +70,9 @@ class MoonPlotWorkerThread(QThread):
             # Get observer location and time
             logger.debug("Getting observer location...")
             location = get_observer_location()
-            # Use target date if provided, otherwise current time
-            if self.target_date:
-                now = self.target_date.replace(tzinfo=get_local_timezone(location.latitude, location.longitude))
-            else:
-                now = datetime.now(get_local_timezone(location.latitude, location.longitude))
+            # For the "Where to Look" chart, always use current time to show current sky
+            # (target_date is used for Info tab to show moon phase for a specific date)
+            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
 
             # Get ephemeris file path
             from celestron_nexstar.api.ephemeris.ephemeris_manager import get_ephemeris_directory
@@ -125,30 +123,47 @@ class MoonPlotWorkerThread(QThread):
                 return
 
             # Center the plot on the moon's current position
-            # Show a 90-degree field of view
+            # Show a 20-degree field of view (±10 degrees from current altitude)
             # Starplot requires altitude_min < altitude_max and values within [0, 90].
-            # When the Moon is below the horizon, (alt+45) can be < 0 which yields an invalid range.
+            # When the Moon is below the horizon, (alt+10) can be < 0 which yields an invalid range.
             alt_center = max(0.0, min(90.0, float(moon_info.altitude_deg)))
-            alt_min = max(0.0, alt_center - 45.0)
-            alt_max = min(90.0, alt_center + 45.0)
-            if alt_max <= alt_min:
-                # Minimal valid window
-                alt_min = max(0.0, alt_center - 1.0)
-                alt_max = min(90.0, alt_center + 1.0)
-            if alt_max <= alt_min:
-                # Last resort: full altitude range
-                alt_min, alt_max = 0.0, 90.0
+            alt_min = max(0.0, alt_center - 10.0)
+            alt_max = min(90.0, alt_center + 10.0)
+
+            # Ensure we have at least a 5-degree window
+            if alt_max - alt_min < 5.0:
+                if alt_center < 5.0:
+                    alt_min = 0.0
+                    alt_max = 10.0
+                elif alt_center > 85.0:
+                    alt_min = 80.0
+                    alt_max = 90.0
+                else:
+                    alt_min = alt_center - 2.5
+                    alt_max = alt_center + 2.5
+
             altitude_range = (alt_min, alt_max)
-            # Azimuth wraps around 360
-            azimuth_min = (moon_info.azimuth_deg - 45) % 360
-            azimuth_max = (moon_info.azimuth_deg + 45) % 360
-            azimuth_range = (0, 360) if azimuth_min > azimuth_max else (azimuth_min, azimuth_max)
-            # Starplot limits azimuth range to 180 degrees max
-            if azimuth_range[1] - azimuth_range[0] > 180:
-                azimuth_range = (0, 180)
+
+            # Azimuth: Show ±15 degrees centered on current position
+            # Handle 360-degree wrap-around properly
+            azimuth_window = 15.0  # degrees on each side
+            azimuth_min = (moon_info.azimuth_deg - azimuth_window) % 360
+            azimuth_max = (moon_info.azimuth_deg + azimuth_window) % 360
+
+            # Handle wrap-around case (e.g., 350° to 10°)
+            if azimuth_min > azimuth_max:
+                # Starplot can't handle wrap-around, so we need to shift the range
+                # Center the view and avoid the discontinuity
+                azimuth_center = moon_info.azimuth_deg
+                azimuth_min = azimuth_center - azimuth_window
+                azimuth_max = azimuth_center + azimuth_window
+
+            azimuth_range = (azimuth_min, azimuth_max)
 
             # Create horizon plot
+            logger.info(f"Moon position: alt={moon_info.altitude_deg:.2f}°, az={moon_info.azimuth_deg:.2f}°")
             logger.info(f"Creating horizon plot: altitude={altitude_range}, azimuth={azimuth_range}")
+            logger.info(f"Plot observer time: {now}")
             plot = starplot.HorizonPlot(
                 observer=starplot_observer,
                 ephemeris=ephemeris_file,
@@ -637,6 +652,38 @@ class MoonInfoDialog(QDialog):
             "green": "#4caf50" if is_dark else "#2e7d32",
         }
 
+    def _azimuth_to_compass(self, azimuth_deg: float) -> str:
+        """Convert azimuth in degrees to compass direction.
+
+        Args:
+            azimuth_deg: Azimuth in degrees (0-360, where 0=North, 90=East, 180=South, 270=West)
+
+        Returns:
+            Compass direction string (N, NE, E, SE, S, SW, W, NW)
+        """
+        # Normalize azimuth to 0-360
+        azimuth = azimuth_deg % 360
+
+        # Define compass directions with their azimuth ranges
+        # Each direction covers 45 degrees, centered on the cardinal/intercardinal points
+        directions = [
+            (0, 22.5, "N"),
+            (22.5, 67.5, "NE"),
+            (67.5, 112.5, "E"),
+            (112.5, 157.5, "SE"),
+            (157.5, 202.5, "S"),
+            (202.5, 247.5, "SW"),
+            (247.5, 292.5, "W"),
+            (292.5, 337.5, "NW"),
+            (337.5, 360, "N"),
+        ]
+
+        for start, end, direction in directions:
+            if start <= azimuth < end:
+                return direction
+
+        return "N"  # Fallback
+
     def _load_moon_info(self) -> None:
         """Load moon information and format it for display."""
         colors = self._get_theme_colors()
@@ -663,10 +710,14 @@ class MoonInfoDialog(QDialog):
 
         try:
             location = get_observer_location()
-            # Use target date if provided, otherwise current time
-            now = self.target_date if self.target_date else datetime.now(UTC)
+            # Always use current time for position calculations
+            # (target_date could be used for phase info if we want to show "moon phase on X date")
+            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
 
+            logger.info(f"Info tab calculating moon position for time: {now}")
             moon_info = get_moon_info(location.latitude, location.longitude, now)
+            if moon_info:
+                logger.info(f"Info tab moon position: alt={moon_info.altitude_deg:.2f}°, az={moon_info.azimuth_deg:.2f}°")
             if not moon_info:
                 html_content = f"""
                     <h2 style='color: {colors["header"]};'>Moon Information</h2>
@@ -765,7 +816,7 @@ class MoonInfoDialog(QDialog):
                     <span style='color: {colors["text_dim"]};'>Altitude: {moon_info.altitude_deg:.1f}°</span>
                 </p>
                 <p style='margin-left: 40px; margin-top: 5px; margin-bottom: 5px;'>
-                    <span style='color: {colors["text_dim"]};'>Azimuth: {moon_info.azimuth_deg:.1f}°</span>
+                    <span style='color: {colors["text_dim"]};'>Azimuth: {moon_info.azimuth_deg:.1f}° ({self._azimuth_to_compass(moon_info.azimuth_deg)})</span>
                 </p>
             """
 

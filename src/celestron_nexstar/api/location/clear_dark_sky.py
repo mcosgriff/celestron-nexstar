@@ -39,7 +39,7 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
         Chart key (e.g., "ArvdCO") or None if not found
 
     Raises:
-        requests.RequestException: If request fails
+        requests.RequestException: If all server attempts fail
     """
     # Check cache (round to 2 decimal places)
     cache_key = (round(location.latitude, 2), round(location.longitude, 2))
@@ -47,8 +47,7 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
         logger.debug(f"Using cached chart key for {cache_key}")
         return _chart_key_cache[cache_key]
 
-    # Build request URL
-    url = "https://server1.cleardarksky.com/cgi-bin/find_chart.py"
+    # Build request parameters
     params = {
         "type": "llmap",
         "Mn": "photoshop",
@@ -57,36 +56,52 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
         "unit": 1,
     }
 
-    try:
-        # Get HTML response from Clear Dark Sky
-        response = requests.get(url, params=params, headers=_HEADERS, timeout=10)
-        response.raise_for_status()
+    # Try servers 1-5 until one responds
+    last_error = None
+    for server_num in range(1, 6):
+        url = f"https://server{server_num}.cleardarksky.com/cgi-bin/find_chart.py"
 
-        # Extract chart key from HTML response
-        # The response contains preview images like: <img src=../c/ArvdCOcs0.gif?1>
-        html_content = response.text
+        try:
+            logger.debug(f"Trying Clear Dark Sky server{server_num}...")
 
-        # Look for the chart preview image in the HTML
-        # Pattern: src=../c/{chart_key}cs0.gif
-        match = re.search(r"src=\.\./c/(.+?)cs0\.gif", html_content)
+            # Get HTML response from Clear Dark Sky
+            response = requests.get(url, params=params, headers=_HEADERS, timeout=10)
+            response.raise_for_status()
 
-        if not match:
-            # Try alternate pattern with full URL
-            match = re.search(r'src="?https?://www\.cleardarksky\.com/c/(.+?)cs0\.gif', html_content)
+            # Extract chart key from HTML response
+            # The response contains preview images like: <img src=../c/ArvdCOcs0.gif?1>
+            html_content = response.text
 
-        if match:
-            chart_key = match.group(1)
-            _chart_key_cache[cache_key] = chart_key
-            logger.info(f"Found chart key: {chart_key} for location {location.name or cache_key}")
-            return chart_key
+            # Look for the chart preview image in the HTML
+            # Pattern: src=../c/{chart_key}cs0.gif
+            match = re.search(r"src=\.\./c/(.+?)cs0\.gif", html_content)
 
-        logger.warning(f"Could not extract chart key from HTML response (location: {location.name or cache_key})")
-        logger.debug(f"HTML response preview: {html_content[:500]}")
+            if not match:
+                # Try alternate pattern with full URL
+                match = re.search(r'src="?https?://www\.cleardarksky\.com/c/(.+?)cs0\.gif', html_content)
+
+            if match:
+                chart_key = match.group(1)
+                _chart_key_cache[cache_key] = chart_key
+                logger.info(f"Found chart key: {chart_key} for location {location.name or cache_key} (using server{server_num})")
+                return chart_key
+
+            logger.warning(f"Could not extract chart key from server{server_num} HTML response (location: {location.name or cache_key})")
+            logger.debug(f"HTML response preview: {html_content[:500]}")
+            # Continue to next server
+
+        except requests.RequestException as e:
+            logger.debug(f"Server{server_num} failed: {e}")
+            last_error = e
+            # Continue to next server
+
+    # All servers failed
+    if last_error:
+        logger.error(f"All Clear Dark Sky servers (1-5) failed. Last error: {last_error}")
+        raise last_error
+    else:
+        logger.error(f"All Clear Dark Sky servers returned responses but no chart key was found")
         return None
-
-    except requests.RequestException as e:
-        logger.error(f"Failed to find Clear Dark Sky chart: {e}")
-        raise
 
 
 def get_chart_image_url(chart_key: str) -> str:

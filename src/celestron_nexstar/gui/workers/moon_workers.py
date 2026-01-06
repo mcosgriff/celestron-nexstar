@@ -114,24 +114,25 @@ class MoonDataWorker(QThread):
 
             total_days = (end_date - start_date).days
 
-            # Calculate for each day at noon local time
+            # Calculate for each day at midnight (start of night)
+            # This represents "the night of" that calendar date
             current_date = start_date
             day_count = 0
 
             while current_date < end_date:
                 day_count += 1
 
-                # Get moon info for this day (at noon)
+                # Get moon info for this day (at midnight)
                 moon_info = get_moon_info(
                     self.location.latitude,
                     self.location.longitude,
-                    current_date.replace(hour=12),
+                    current_date.replace(hour=0),
                     self.location.elevation,
                 )
 
                 if moon_info:
                     # Calculate distance
-                    distance = self._calculate_moon_distance(current_date.replace(hour=12))
+                    distance = self._calculate_moon_distance(current_date.replace(hour=0))
 
                     # Check if major phase transition
                     is_major = self._is_major_phase_transition(moon_info.phase_name)
@@ -317,11 +318,11 @@ class MoonDataWorker(QThread):
         current_date = start_date
 
         while current_date < end_date:
-            # Get moon info
+            # Get moon info (at midnight, consistent with main calculation)
             moon_info = get_moon_info(
                 self.location.latitude,
                 self.location.longitude,
-                current_date.replace(hour=12),
+                current_date.replace(hour=0),
                 self.location.elevation,
             )
 
@@ -330,7 +331,7 @@ class MoonDataWorker(QThread):
                 is_major = self._is_major_phase_transition(moon_info.phase_name)
 
                 if is_major:
-                    distance = self._calculate_moon_distance(current_date.replace(hour=12))
+                    distance = self._calculate_moon_distance(current_date.replace(hour=0))
 
                     # Get traditional name for full moons
                     traditional_name = None

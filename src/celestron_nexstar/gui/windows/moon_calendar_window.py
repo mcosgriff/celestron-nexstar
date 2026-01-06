@@ -62,6 +62,7 @@ class MoonCalendarWindow(QMainWindow):
         self._phase_events_cache: dict[str, list[MoonPhaseEvent]] = {}  # {year-month: events}
         self._worker: MoonDataWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
+        self._is_rendering = False  # Track if we're in the rendering phase
         self._location: ObserverLocation = get_observer_location()
         self._local_timezone = get_local_timezone(self._location.latitude, self._location.longitude)
         self._current_year = datetime.now(self._local_timezone).year
@@ -253,17 +254,39 @@ class MoonCalendarWindow(QMainWindow):
 
         logger.debug(f"Cached {len(moon_data)} days, {len(phase_events)} events for {cache_key}")
 
+        # Enter rendering phase
+        self._is_rendering = True
+
+        # Update progress dialog to show rendering phase
+        if self._progress_dialog:
+            self._progress_dialog.setLabelText(f"Rendering calendar for {datetime(self._current_year, self._current_month, 1).strftime('%B %Y')}...")
+            self._progress_dialog.setValue(95)  # Show we're in final phase
+
         # Populate UI
         self._populate_ui(moon_data, phase_events)
 
-        # Close progress dialog
+        # Process all pending UI events to ensure rendering completes
+        from PySide6.QtCore import QCoreApplication, QTimer
+        QCoreApplication.processEvents()
+
+        # Defer closing progress dialog to allow deferred icon rendering to complete
+        # The calendar cells use QTimer.singleShot(0) to defer icon rendering,
+        # so we need to wait for those operations to finish. Use 200ms to be safe.
+        QTimer.singleShot(200, self._close_progress_dialog)
+
+    def _close_progress_dialog(self) -> None:
+        """Close the progress dialog (called after rendering completes)."""
+        self._is_rendering = False
         if self._progress_dialog:
+            self._progress_dialog.setValue(100)  # Set to 100% before closing
             self._progress_dialog.close()
             self._progress_dialog = None
 
     def _on_error(self, error_msg: str) -> None:
         """Handle worker error."""
         logger.error(f"Error loading moon data: {error_msg}")
+
+        self._is_rendering = False
 
         # Close progress dialog
         if self._progress_dialog:
@@ -278,14 +301,17 @@ class MoonCalendarWindow(QMainWindow):
     def _on_progress(self, current: int, total: int) -> None:
         """Handle worker progress."""
         if self._progress_dialog:
-            percent = int((current / total) * 100)
+            # Cap at 95% to prevent auto-close, save last 5% for rendering phase
+            percent = int((current / total) * 95)
             self._progress_dialog.setValue(percent)
 
     def _on_worker_finished(self) -> None:
         """Handle worker finished."""
-        if self._progress_dialog:
-            self._progress_dialog.close()
-            self._progress_dialog = None
+        # Don't close progress dialog here - it will be closed by:
+        # - _close_progress_dialog() after rendering completes (normal flow)
+        # - _on_error() if there was an error
+        # - _on_loading_canceled() if user canceled
+        pass
 
     def _on_loading_canceled(self) -> None:
         """Handle loading canceled."""
