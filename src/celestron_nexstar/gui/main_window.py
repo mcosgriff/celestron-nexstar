@@ -4544,13 +4544,12 @@ class MainWindow(QMainWindow):
 
     def _on_moon_info(self) -> None:
         """Handle moon info button click."""
-        from datetime import UTC, datetime
+        location = get_observer_location()
 
-        # Use current date at noon for consistency with calendar calculations
-        now = datetime.now(UTC)
-        date_at_noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        local_tz = get_local_timezone(location.latitude, location.longitude)
+        now = datetime.now(local_tz)
 
-        dialog = MoonInfoDialog(self, target_date=date_at_noon)
+        dialog = MoonInfoDialog(self, target_date=now)
         dialog.exec()
 
     def _on_sky_darkness(self) -> None:

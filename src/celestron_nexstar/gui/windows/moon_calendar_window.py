@@ -396,9 +396,15 @@ class MoonCalendarWindow(QMainWindow):
             # Import here to avoid circular dependency
             from celestron_nexstar.gui.dialogs.moon_info_dialog import MoonInfoDialog
 
-            # Open Moon Info Dialog with target date at noon (same as calendar calculations)
-            date_at_noon = date.replace(hour=12, minute=0, second=0, microsecond=0)
-            dialog = MoonInfoDialog(self, target_date=date_at_noon)
+            # Preserve the calendar date (year, month, day) and create midnight in local timezone
+            # Don't convert UTC to local timezone as that shifts the date
+            date_at_midnight_local = datetime(
+                date.year, date.month, date.day,
+                hour=0, minute=0, second=0, microsecond=0,
+                tzinfo=self._local_timezone
+            )
+
+            dialog = MoonInfoDialog(self, target_date=date_at_midnight_local)
             dialog.exec()
 
         except Exception as e:

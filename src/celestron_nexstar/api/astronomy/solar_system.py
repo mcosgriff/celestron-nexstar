@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 from skyfield.api import Topos
 
 from celestron_nexstar.api.core.enums import MoonPhase
+from celestron_nexstar.api.core.utils import get_local_timezone
 
 
 logger = logging.getLogger(__name__)
@@ -147,14 +148,18 @@ def get_moon_info(
         observer_lat: Observer latitude in degrees
         observer_lon: Observer longitude in degrees
         dt: Datetime to calculate for (default: now)
+        elevation_ft: Elevation in feet
 
     Returns:
         MoonInfo or None if calculation fails
     """
+
+    local_timezone = get_local_timezone(observer_lat, observer_lon)
+
     if dt is None:
-        dt = datetime.now(UTC)
+        dt = datetime.now(local_timezone)
     elif dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=local_timezone)
 
     try:
         ts, earth, sun, moon = _get_skyfield_objects()
@@ -176,7 +181,8 @@ def get_moon_info(
         except Exception:
             elev_m = 0.0
 
-        observer = earth + Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
+        topos = Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon, elevation_m=elev_m)
+        observer = earth + topos
 
         # Get moon position
         astrometric = observer.at(t).observe(moon)
@@ -226,84 +232,43 @@ def get_moon_info(
         moonrise_time = None
         moonset_time = None
 
-        def _refine_horizon_crossing(start_dt: datetime, end_dt: datetime, rising: bool) -> datetime:
-            """Refine horizon crossing time using binary search between two datetimes."""
-            # Use 10-minute intervals for better precision
-            best_time = start_dt + timedelta(minutes=30)  # Default midpoint
-            min_diff = float("inf")
-
-            for minutes_offset in range(0, 61, 5):  # Check every 5 minutes
-                test_dt = start_dt + timedelta(minutes=minutes_offset)
-                if test_dt > end_dt:
-                    break
-                t_test = ts.from_datetime(test_dt)
-                astrometric_test = observer.at(t_test).observe(moon)
-                alt_test, _az_test, _ = astrometric_test.apparent().altaz()
-                moon_alt_test = alt_test.degrees
-
-                # Find the time closest to horizon (altitude = 0)
-                diff = abs(moon_alt_test)
-                if diff < min_diff:
-                    min_diff = diff
-                    best_time = test_dt
-
-                # If we're very close to horizon, we're done
-                if diff < 0.1:
-                    break
-
-            return best_time
-
         try:
-            # Always look forward to find NEXT moonrise and NEXT moonset
-            # Sample next 48 hours at 1-hour intervals to find moonset and next moonrise
-            for hours_ahead in range(1, 49):
-                check_dt = dt + timedelta(hours=hours_ahead)
-                t_check = ts.from_datetime(check_dt)
-                astrometric_check = observer.at(t_check).observe(moon)
-                alt_check, _az_check, _ = astrometric_check.apparent().altaz()
-                moon_alt_check = alt_check.degrees
+            from skyfield import almanac
 
-                # Check previous hour for comparison
-                prev_dt = check_dt - timedelta(hours=1)
-                t_prev = ts.from_datetime(prev_dt)
-                astrometric_prev = observer.at(t_prev).observe(moon)
-                alt_prev, _az_prev, _ = astrometric_prev.apparent().altaz()
-                moon_alt_prev = alt_prev.degrees
+            # Always look forward to find NEXT moonrise and NEXT moonset.
+            t0 = ts.from_datetime(dt)
+            t1 = ts.from_datetime(dt + timedelta(hours=48))
 
-                # Moonset: was above, now below (find next moonset)
-                if moon_alt_prev > 0 and moon_alt_check <= 0 and moonset_time is None:
-                    # Refine the crossing time for better accuracy
-                    moonset_time = _refine_horizon_crossing(prev_dt, check_dt, rising=False)
-                    # Ensure UTC timezone
-                    if moonset_time.tzinfo is None:
-                        moonset_time = moonset_time.replace(tzinfo=UTC)
-                    # Only accept if it's in the future
-                    if moonset_time <= dt:
-                        moonset_time = None
-                        continue
-                    if moonrise_time is not None:
-                        break
+            rise_times, _rise_events = almanac.find_risings(observer, moon, t0, t1)
+            for t_rise in rise_times:
+                event_dt = t_rise.utc_datetime().replace(tzinfo=UTC)
+                if event_dt > dt:
+                    moonrise_time = event_dt
+                    break
 
-                # Moonrise: was below, now above (find next moonrise)
-                if moon_alt_prev <= 0 and moon_alt_check > 0 and moonrise_time is None:
-                    # Refine the crossing time for better accuracy
-                    moonrise_time = _refine_horizon_crossing(prev_dt, check_dt, rising=True)
-                    # Ensure UTC timezone
-                    if moonrise_time.tzinfo is None:
-                        moonrise_time = moonrise_time.replace(tzinfo=UTC)
-                    # Only accept if it's in the future
-                    if moonrise_time <= dt:
-                        moonrise_time = None
-                        continue
-                    if moonset_time is not None:
-                        break
+            set_times, _set_events = almanac.find_settings(observer, moon, t0, t1)
+            for t_set in set_times:
+                event_dt = t_set.utc_datetime().replace(tzinfo=UTC)
+                if event_dt > dt:
+                    moonset_time = event_dt
+                    break
+
+            if moonrise_time is None and len(rise_times) == 0:
+                logger.warning(
+                    "No moonrise events found in next 48 hours for lat=%.4f lon=%.4f (start=%s).",
+                    observer_lat,
+                    observer_lon,
+                    dt,
+                )
+            if moonset_time is None and len(set_times) == 0:
+                logger.warning(
+                    "No moonset events found in next 48 hours for lat=%.4f lon=%.4f (start=%s).",
+                    observer_lat,
+                    observer_lon,
+                    dt,
+                )
         except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
-            # ValueError: invalid datetime or coordinates
-            # TypeError: wrong argument types
-            # AttributeError: missing attributes on Skyfield objects
-            # ZeroDivisionError: division by zero in calculations
-            logger.debug(f"Error calculating moonrise/moonset: {e}")
-            # If calculation fails, leave as None
+            logger.warning(f"Error calculating moonrise/moonset: {e}", exc_info=True)
             pass
 
         return MoonInfo(

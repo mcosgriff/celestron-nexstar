@@ -692,7 +692,11 @@ def _is_forecast_stale(forecast: WeatherForecastModel, now: datetime) -> bool:
         return fetch_age_hours > 12
 
 
-def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -> list[HourlySeeingForecast]:
+def fetch_hourly_weather_forecast(
+    location: ObserverLocation,
+    hours: int = 24,
+    force_refresh: bool = False,
+) -> list[HourlySeeingForecast]:
     """
     Fetch hourly weather forecast and calculate seeing conditions for each hour.
 
@@ -702,6 +706,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     Args:
         location: Observer location with latitude and longitude
         hours: Number of hours to forecast (default: 24, max: 168 for 7 days)
+        force_refresh: If True, bypass cache and fetch from Open-Meteo
 
     Returns:
         List of HourlySeeingForecast objects, or empty list if unavailable
@@ -806,7 +811,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
         cached_fallback = existing_forecasts
 
         # If we have enough non-stale forecasts covering the requested hours, return them
-        if existing_forecasts and len(existing_forecasts) >= hours:
+        if not force_refresh and existing_forecasts and len(existing_forecasts) >= hours:
             # Check if the forecasts cover a sufficient time range
             # Get the time span of cached forecasts
             first_ts = existing_forecasts[0].forecast_timestamp
@@ -848,7 +853,9 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                 return forecasts
 
         # If we get here, we need to fetch from API (either no cache, stale cache, or insufficient coverage)
-        if existing_forecasts:
+        if force_refresh:
+            logger.debug("Force refresh requested for weather charts, fetching from API")
+        elif existing_forecasts:
             logger.debug(
                 f"Found {len(existing_forecasts)} cached forecasts, but need {hours} hours of coverage, fetching from API"
             )
@@ -881,7 +888,7 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
                         WeatherForecastModel.longitude == location.longitude,
                     )
                 ).scalar_one_or_none()
-            if last_fetch is not None:
+            if not force_refresh and last_fetch is not None:
                 if last_fetch.tzinfo is None:
                     last_fetch = last_fetch.replace(tzinfo=UTC)
                 if (now - last_fetch) < timedelta(minutes=15):
@@ -1309,7 +1316,11 @@ def fetch_hourly_weather_forecast(location: ObserverLocation, hours: int = 24) -
     return forecasts
 
 
-def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24) -> list[HourlySeeingForecast]:
+def fetch_weather_for_charts(
+    location: ObserverLocation,
+    future_hours: int = 24,
+    force_refresh: bool = False,
+) -> list[HourlySeeingForecast]:
     """
     Fetch weather data for charting: past 3 days + future hours.
 
@@ -1319,6 +1330,7 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
     Args:
         location: Observer location with latitude and longitude
         future_hours: Number of future hours to include (default: 24)
+        force_refresh: If True, bypass cache and fetch from Open-Meteo
 
     Returns:
         List of HourlySeeingForecast objects, sorted by timestamp (past to future)
@@ -1374,7 +1386,7 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
             last_fetch = last_fetch if getattr(last_fetch, "tzinfo", None) else last_fetch.replace(tzinfo=UTC)
             fetched_recently = (now - last_fetch) < timedelta(minutes=30)
 
-        if rows and fetched_recently:
+        if rows and fetched_recently and not force_refresh:
             return [
                 HourlySeeingForecast(
                     timestamp=(
@@ -1689,12 +1701,16 @@ def fetch_weather_for_charts(location: ObserverLocation, future_hours: int = 24)
         return []
 
 
-def fetch_weather(location: ObserverLocation) -> WeatherData:
+def fetch_weather(
+    location: ObserverLocation,
+    force_refresh: bool = False,
+    max_cache_age: timedelta | None = timedelta(hours=2),
+) -> WeatherData:
     """
     Fetch current weather data for the observer location.
 
     Checks database first using current location and current time.
-    If not found or stale, fetches from Open-Meteo API and stores in database.
+    If not found, stale, or beyond the cache age threshold, fetches from Open-Meteo API and stores in database.
 
     Args:
         location: Observer location with latitude and longitude
@@ -1772,10 +1788,18 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
                     if candidate.fetched_at.tzinfo is None:
                         candidate.fetched_at = candidate.fetched_at.replace(tzinfo=UTC)
 
-                # Find the first non-stale forecast
-                for candidate in candidates:
-                    if not _is_forecast_stale(candidate, now):
-                        return candidate
+            # Find the first non-stale forecast
+            for candidate in candidates:
+                if not _is_forecast_stale(candidate, now):
+                    if max_cache_age is not None:
+                        fetched_at = candidate.fetched_at
+                        if fetched_at.tzinfo is None:
+                            fetched_at = fetched_at.replace(tzinfo=UTC)
+                        elif fetched_at.tzinfo != UTC:
+                            fetched_at = fetched_at.astimezone(UTC)
+                        if (now - fetched_at) > max_cache_age:
+                            continue
+                    return candidate
         except (AttributeError, RuntimeError, ValueError, TypeError, KeyError, IndexError, SQLAlchemyError) as e:
             # AttributeError: missing database/model attributes
             # RuntimeError: database connection errors
@@ -1790,7 +1814,7 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
 
     # Check database for current weather (within the current hour)
     try:
-        existing = _check_database_cache()
+        existing = None if force_refresh else _check_database_cache()
 
         if existing:
             # Convert database model to WeatherData
@@ -1906,41 +1930,81 @@ def fetch_weather(location: ObserverLocation) -> WeatherData:
         wind_speed_mph = safe_float(current.get("wind_speed_10m"))
         weather_code = current.get("weather_code")
 
-        # Get dew point from hourly data (first hour)
+        # Use the hourly index closest to the current timestamp for layered metrics.
+        hourly_time = hourly.get("time", [])
+        hourly_index = 0
+        current_time_str = current.get("time")
+        if hourly_time and current_time_str:
+            try:
+                current_dt = datetime.fromisoformat(current_time_str.replace("Z", "+00:00"))
+                if current_dt.tzinfo is None:
+                    current_dt = current_dt.replace(tzinfo=UTC)
+                hourly_dts = []
+                for time_str in hourly_time:
+                    try:
+                        t = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                        if t.tzinfo is None:
+                            t = t.replace(tzinfo=UTC)
+                        hourly_dts.append(t)
+                    except (ValueError, TypeError):
+                        hourly_dts.append(None)
+                diffs = [
+                    abs((t - current_dt).total_seconds()) if t is not None else float("inf")
+                    for t in hourly_dts
+                ]
+                hourly_index = diffs.index(min(diffs)) if diffs else 0
+            except (ValueError, TypeError):
+                hourly_index = 0
+
+        # Get dew point from hourly data (closest hour)
         # Open-Meteo API returns hourly data directly in hourly object
         dew_point_values = hourly.get("dew_point_2m", [])
-        dew_point_f = safe_float(dew_point_values[0]) if dew_point_values else None
+        dew_point_f = safe_float(dew_point_values[hourly_index]) if dew_point_values else None
 
         # If dew point not available, calculate from temp/humidity
         if dew_point_f is None and temp_f is not None and humidity is not None:
             dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
 
-        # Extract advanced metrics from hourly data (first hour)
-        cloud_low = safe_float(hourly.get("cloud_cover_low", [])[0] if hourly.get("cloud_cover_low") else None)
-        cloud_mid = safe_float(hourly.get("cloud_cover_mid", [])[0] if hourly.get("cloud_cover_mid") else None)
-        cloud_high = safe_float(hourly.get("cloud_cover_high", [])[0] if hourly.get("cloud_cover_high") else None)
-
-        visibility_m = safe_float(hourly.get("visibility", [])[0] if hourly.get("visibility") else None)
-        precip_prob = safe_float(
-            hourly.get("precipitation_probability", [])[0] if hourly.get("precipitation_probability") else None
+        # Extract advanced metrics from hourly data (closest hour)
+        cloud_low = safe_float(
+            hourly.get("cloud_cover_low", [])[hourly_index] if hourly.get("cloud_cover_low") else None
+        )
+        cloud_mid = safe_float(
+            hourly.get("cloud_cover_mid", [])[hourly_index] if hourly.get("cloud_cover_mid") else None
+        )
+        cloud_high = safe_float(
+            hourly.get("cloud_cover_high", [])[hourly_index] if hourly.get("cloud_cover_high") else None
         )
 
-        cape_val = safe_float(hourly.get("cape", [])[0] if hourly.get("cape") else None)
-        blh = safe_float(hourly.get("boundary_layer_height", [])[0] if hourly.get("boundary_layer_height") else None)
+        visibility_m = safe_float(hourly.get("visibility", [])[hourly_index] if hourly.get("visibility") else None)
+        precip_prob = safe_float(
+            hourly.get("precipitation_probability", [])[hourly_index]
+            if hourly.get("precipitation_probability")
+            else None
+        )
+
+        cape_val = safe_float(hourly.get("cape", [])[hourly_index] if hourly.get("cape") else None)
+        blh = safe_float(
+            hourly.get("boundary_layer_height", [])[hourly_index] if hourly.get("boundary_layer_height") else None
+        )
         freezing = safe_float(
-            hourly.get("freezing_level_height", [])[0] if hourly.get("freezing_level_height") else None
+            hourly.get("freezing_level_height", [])[hourly_index] if hourly.get("freezing_level_height") else None
         )
         vpd = safe_float(
-            hourly.get("vapour_pressure_deficit", [])[0] if hourly.get("vapour_pressure_deficit") else None
+            hourly.get("vapour_pressure_deficit", [])[hourly_index] if hourly.get("vapour_pressure_deficit") else None
         )
 
-        wind_80m = safe_float(hourly.get("wind_speed_80m", [])[0] if hourly.get("wind_speed_80m") else None)
-        wind_120m = safe_float(hourly.get("wind_speed_120m", [])[0] if hourly.get("wind_speed_120m") else None)
+        wind_80m = safe_float(hourly.get("wind_speed_80m", [])[hourly_index] if hourly.get("wind_speed_80m") else None)
+        wind_120m = safe_float(
+            hourly.get("wind_speed_120m", [])[hourly_index] if hourly.get("wind_speed_120m") else None
+        )
 
-        precip_mm = safe_float(hourly.get("precipitation", [])[0] if hourly.get("precipitation") else None)
-        rain_mm = safe_float(hourly.get("rain", [])[0] if hourly.get("rain") else None)
-        snow_cm = safe_float(hourly.get("snowfall", [])[0] if hourly.get("snowfall") else None)
-        pressure = safe_float(hourly.get("pressure_msl", [])[0] if hourly.get("pressure_msl") else None)
+        precip_mm = safe_float(
+            hourly.get("precipitation", [])[hourly_index] if hourly.get("precipitation") else None
+        )
+        rain_mm = safe_float(hourly.get("rain", [])[hourly_index] if hourly.get("rain") else None)
+        snow_cm = safe_float(hourly.get("snowfall", [])[hourly_index] if hourly.get("snowfall") else None)
+        pressure = safe_float(hourly.get("pressure_msl", [])[hourly_index] if hourly.get("pressure_msl") else None)
 
         # Map weather code to condition string
         condition = None

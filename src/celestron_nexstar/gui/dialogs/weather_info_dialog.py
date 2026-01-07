@@ -10,6 +10,7 @@ from PySide6.QtCore import QEvent, QObject
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QPushButton,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -139,6 +140,9 @@ class WeatherInfoDialog(QDialog):
 
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        refresh_button = QPushButton("Refresh")
+        button_box.addButton(refresh_button, QDialogButtonBox.ButtonRole.ActionRole)
+        refresh_button.clicked.connect(self._refresh_weather)
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
@@ -173,8 +177,27 @@ class WeatherInfoDialog(QDialog):
             "error": "#f44336" if is_dark else "#c62828",
         }
 
-    def _load_weather_info(self) -> None:
-        """Load weather information from the API and format it for display."""
+    def _refresh_weather(self) -> None:
+        """Force-refresh weather data from the API and update the dialog."""
+        try:
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.location.weather import fetch_weather
+
+            location = get_observer_location()
+            if not location:
+                self._load_weather_info(force_refresh=True)
+                self._load_advanced_metrics(force_refresh=True)
+                return
+
+            weather = fetch_weather(location, force_refresh=True)
+            self._load_weather_info(weather=weather)
+            self._load_advanced_metrics(weather=weather)
+            self._load_weather_charts(force_refresh=True)
+        except Exception as e:
+            logger.error(f"Error refreshing weather data: {e}", exc_info=True)
+
+    def _load_weather_info(self, weather: Any | None = None, force_refresh: bool = False) -> None:
+        """Load weather information and format it for display."""
         colors = self._get_theme_colors()
 
         # Update stylesheet with theme-aware colors (even though HTML uses inline styles)
@@ -218,7 +241,8 @@ class WeatherInfoDialog(QDialog):
 
             # Get location and weather
             location = get_observer_location()
-            weather = fetch_weather(location)
+            if weather is None:
+                weather = fetch_weather(location, force_refresh=force_refresh)
 
             # Build HTML content with inline styles for colors
             html_content = []
@@ -393,7 +417,7 @@ class WeatherInfoDialog(QDialog):
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load weather information: {e}</span></p>"
             )
 
-    def _load_advanced_metrics(self) -> None:
+    def _load_advanced_metrics(self, weather: Any | None = None, force_refresh: bool = False) -> None:
         """Load advanced atmospheric metrics in the Advanced tab."""
         colors = self._get_theme_colors()
 
@@ -412,7 +436,8 @@ class WeatherInfoDialog(QDialog):
                 )
                 return
 
-            weather = fetch_weather(location)
+            if weather is None:
+                weather = fetch_weather(location, force_refresh=force_refresh)
 
             if weather.error:
                 self.advanced_text.setHtml(f"<p style='color: {colors['error']};'><b>Error:</b> {weather.error}</p>")
@@ -568,7 +593,7 @@ class WeatherInfoDialog(QDialog):
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load advanced metrics: {e}</p>"
             )
 
-    def _load_weather_charts(self) -> None:
+    def _load_weather_charts(self, force_refresh: bool = False) -> None:
         """Load weather charts showing current day from 12 AM to now."""
         try:
             from celestron_nexstar.api.core.utils import get_local_timezone
@@ -585,7 +610,7 @@ class WeatherInfoDialog(QDialog):
                 return
 
             # Fetch weather data (past 3 days + 24 hours future to ensure we have today's data)
-            all_forecasts = fetch_weather_for_charts(location, future_hours=24)
+            all_forecasts = fetch_weather_for_charts(location, future_hours=24, force_refresh=force_refresh)
 
             # Use a +/- 6 hour window around "now" (total 12 hours) in local time
             now_utc = datetime.now(UTC)

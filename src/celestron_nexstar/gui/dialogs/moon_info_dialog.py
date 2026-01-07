@@ -3,7 +3,7 @@ Dialog to display moon information.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -275,7 +275,7 @@ class MoonDiskWorkerThread(QThread):
 
             location = get_observer_location()
             # Use target date if provided, otherwise current time
-            now = self.target_date if self.target_date else datetime.now(UTC)
+            now = self.target_date if self.target_date else datetime.now(get_local_timezone(location.latitude, location.longitude))
 
             # Require a local ephemeris that includes the Moon to avoid Skyfield download progress on stdout.
             eph_dir = get_ephemeris_directory()
@@ -710,12 +710,50 @@ class MoonInfoDialog(QDialog):
 
         try:
             location = get_observer_location()
-            # Always use current time for position calculations
-            # (target_date could be used for phase info if we want to show "moon phase on X date")
-            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
+            logger.info(f"Observer location: lat={location.latitude:.4f}, lon={location.longitude:.4f}, elevation={location.elevation} ft ({location.elevation * FEET_TO_METERS:.1f} m)")
 
-            logger.info(f"Info tab calculating moon position for time: {now}")
-            moon_info = get_moon_info(location.latitude, location.longitude, now)
+            # Determine calculation time based on context:
+            # - If target_date is None (main window): use current time for everything
+            # - If target_date is set (calendar): use midnight for rise/set, current time for alt/az if today
+            local_tz = get_local_timezone(location.latitude, location.longitude)
+            now = datetime.now(local_tz)
+
+            if self.target_date is None:
+                # Opened from main window - use current time for everything
+                calc_time = now
+                logger.info(f"Info tab calculating moon info at current time: {calc_time}")
+                moon_info = get_moon_info(location.latitude, location.longitude, calc_time, location.elevation)
+                moon_info_midnight = None  # Not needed when using current time
+            else:
+                # Opened from calendar - create clean midnight datetime to avoid timezone drift
+                target_midnight = datetime(
+                    self.target_date.year,
+                    self.target_date.month,
+                    self.target_date.day,
+                    hour=0, minute=0, second=0, microsecond=0,
+                    tzinfo=local_tz
+                )
+
+                logger.info(f"Calendar target_date: {self.target_date}, target_midnight: {target_midnight}, now: {now}")
+                is_today = now.date() == target_midnight.date()
+                logger.info(f"Is today check: now.date()={now.date()}, target_midnight.date()={target_midnight.date()}, is_today={is_today}")
+
+                # Always get moonrise/moonset from midnight of the target date
+                moon_info_midnight = get_moon_info(location.latitude, location.longitude, target_midnight, location.elevation)
+                if moon_info_midnight:
+                    logger.info(f"Moonrise/moonset calculated for {target_midnight.date()}: rise={moon_info_midnight.moonrise_time}, set={moon_info_midnight.moonset_time}")
+
+                if is_today:
+                    # For today, get current alt/az/illumination
+                    calc_time = now
+                    logger.info(f"Info tab calculating moon info for today at current time: {calc_time}")
+                    moon_info = get_moon_info(location.latitude, location.longitude, calc_time, location.elevation)
+                else:
+                    # For other days, use midnight for everything
+                    calc_time = target_midnight
+                    logger.info(f"Info tab calculating moon info for {target_midnight.date()} at midnight: {calc_time}")
+                    moon_info = moon_info_midnight
+
             if moon_info:
                 logger.info(f"Info tab moon position: alt={moon_info.altitude_deg:.2f}°, az={moon_info.azimuth_deg:.2f}°")
             if not moon_info:
@@ -726,14 +764,50 @@ class MoonInfoDialog(QDialog):
                 self.info_text.setHtml(html_content)
                 return
 
-            # Format times
+            # Format times - always use midnight calculation for rise/set/transit times
+            # Determine which midnight to use for transit calculation
+            if self.target_date is None:
+                # Main window: use today's midnight
+                transit_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                # Calendar: use target date's midnight
+                transit_date = datetime(
+                    self.target_date.year,
+                    self.target_date.month,
+                    self.target_date.day,
+                    hour=0, minute=0, second=0, microsecond=0,
+                    tzinfo=local_tz
+                )
+
+            # Calculate meridian transit
+            # Pass moonrise and moonset times so we can search between them
+            moonrise_time = None
+            moonset_time = None
+            if moon_info_midnight:
+                moonrise_time = moon_info_midnight.moonrise_time
+                moonset_time = moon_info_midnight.moonset_time
+            elif self.target_date is None and moon_info:
+                moonrise_time = moon_info.moonrise_time
+                moonset_time = moon_info.moonset_time
+
+            moonrise_time, moonset_time = self._normalize_moonrise_moonset(
+                moonrise_time,
+                moonset_time,
+                location,
+            )
+
             moonrise_str = "Not available"
-            if moon_info.moonrise_time:
-                moonrise_str = format_local_time(moon_info.moonrise_time, location.latitude, location.longitude)
+            if moonrise_time:
+                moonrise_str = format_local_time(moonrise_time, location.latitude, location.longitude)
+
+            transit_time, transit_alt = self._calculate_moon_transit(transit_date, moonrise_time, moonset_time)
+            transit_str = "Not available"
+            if transit_time:
+                transit_str = f"{format_local_time(transit_time, location.latitude, location.longitude)} ({transit_alt:.0f}°)"
 
             moonset_str = "Not available"
-            if moon_info.moonset_time:
-                moonset_str = format_local_time(moon_info.moonset_time, location.latitude, location.longitude)
+            if moonset_time:
+                moonset_str = format_local_time(moonset_time, location.latitude, location.longitude)
 
             # Format illumination
             illumination_pct = moon_info.illumination * 100
@@ -802,6 +876,11 @@ class MoonInfoDialog(QDialog):
                 <p style='margin-left: 20px; margin-top: 10px; margin-bottom: 5px;'>
                     <strong style='color: {colors["text"]};'>Moonrise:</strong>
                     <span style='color: {colors["cyan"]};'>{moonrise_str}</span>
+                </p>
+
+                <p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>
+                    <strong style='color: {colors["text"]};'>Passing the Meridian:</strong>
+                    <span style='color: {colors["cyan"]};'>{transit_str}</span>
                 </p>
 
                 <p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>
@@ -896,6 +975,135 @@ class MoonInfoDialog(QDialog):
         except Exception as e:
             logger.debug(f"Could not calculate moon distance: {e}")
             return 0.0
+
+    def _normalize_moonrise_moonset(
+        self,
+        moonrise_time: datetime | None,
+        moonset_time: datetime | None,
+        location: Any,
+    ) -> tuple[datetime | None, datetime | None]:
+        """
+        Ensure moonset is paired with the next moonrise for the same overnight cycle.
+
+        If the next moonset occurs before the next moonrise (e.g., just after midnight),
+        look up the following moonset after the moonrise.
+        """
+        if not moonrise_time or not moonset_time:
+            return moonrise_time, moonset_time
+
+        if moonset_time > moonrise_time:
+            return moonrise_time, moonset_time
+
+        try:
+            search_dt = moonrise_time + timedelta(minutes=1)
+            moon_info_after_rise = get_moon_info(
+                location.latitude,
+                location.longitude,
+                search_dt,
+                location.elevation,
+            )
+            if (
+                moon_info_after_rise
+                and moon_info_after_rise.moonset_time
+                and moon_info_after_rise.moonset_time > moonrise_time
+            ):
+                logger.info(
+                    "Adjusted moonset after moonrise: original=%s adjusted=%s",
+                    moonset_time,
+                    moon_info_after_rise.moonset_time,
+                )
+                return moonrise_time, moon_info_after_rise.moonset_time
+        except Exception as e:
+            logger.debug(f"Could not normalize moonrise/moonset: {e}")
+
+        return moonrise_time, moonset_time
+
+    def _calculate_moon_transit(self, date: datetime, moonrise_time: datetime | None = None, moonset_time: datetime | None = None) -> tuple[datetime | None, float]:
+        """
+        Calculate moon meridian passage (transit) time and altitude for a given date.
+
+        Args:
+            date: Date to calculate transit for (should be midnight local time)
+            moonrise_time: If provided, search from this time
+            moonset_time: If provided, search until this time
+
+        Returns:
+            Tuple of (transit_time, altitude_deg) or (None, 0.0) if calculation fails
+        """
+        try:
+            from skyfield import almanac
+            from skyfield.api import Topos
+
+            from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
+
+            location = get_observer_location()
+            ts = get_skyfield_timescale()
+            eph = get_skyfield_ephemeris("de421.bsp")
+
+            earth = eph["earth"]
+            moon = eph["moon"]
+
+            elev_m = float(location.elevation or 0.0) * FEET_TO_METERS
+            topos = Topos(
+                latitude_degrees=location.latitude,
+                longitude_degrees=location.longitude,
+                elevation_m=elev_m,
+            )
+            observer = earth + topos
+
+            # Search for meridian transit
+            from datetime import timedelta
+
+            if moonrise_time and moonset_time:
+                # Check if moonset is after moonrise (proper pairing)
+                # If moonset is before moonrise, it's from the previous night's cycle
+                if moonset_time > moonrise_time:
+                    # Search between moonrise and moonset
+                    t0 = ts.from_datetime(moonrise_time)
+                    t1 = ts.from_datetime(moonset_time)
+                    logger.info(f"Searching for transit between moonrise={moonrise_time} and moonset={moonset_time}")
+                else:
+                    # Moonset is before moonrise (previous cycle), search from moonrise forward
+                    t0 = ts.from_datetime(moonrise_time)
+                    t1 = ts.from_datetime(moonrise_time + timedelta(hours=18))  # Transit typically within 6-12 hours
+                    logger.info(f"Moonset before moonrise (prev cycle), searching from moonrise={moonrise_time} for 18 hours")
+            elif moonrise_time:
+                # Only have moonrise, search forward
+                t0 = ts.from_datetime(moonrise_time)
+                t1 = ts.from_datetime(moonrise_time + timedelta(hours=18))
+                logger.info(f"Searching for transit from moonrise={moonrise_time} for 18 hours")
+            else:
+                # Fallback: search from midnight for 48 hours to catch the transit
+                t0 = ts.from_datetime(date)
+                t1 = ts.from_datetime(date + timedelta(hours=48))
+                logger.info(f"Searching for transit from {date} for 48 hours")
+
+            # Find meridian transits using culmination (when altitude is maximum)
+            f = almanac.meridian_transits(eph, moon, topos)
+            times, events = almanac.find_discrete(t0, t1, f)
+
+            if len(times) > 0:
+                # Filter for upper transits (culminations) only, not lower transits
+                # events: True = upper transit (culmination), False = lower transit
+                for i, event in enumerate(events):
+                    if event:  # Upper transit
+                        transit_time_skyfield = times[i]
+                        transit_datetime = transit_time_skyfield.utc_datetime().astimezone(date.tzinfo)
+
+                        # Calculate altitude at transit
+                        moon_apparent = observer.at(transit_time_skyfield).observe(moon).apparent()
+                        alt, az, _ = moon_apparent.altaz()
+                        altitude_deg = float(alt.degrees)
+
+                        logger.info(f"Moon transit calculated: {transit_datetime}, altitude={altitude_deg:.1f}°")
+                        return (transit_datetime, altitude_deg)
+
+            logger.debug(f"No moon transit found for {date.date()}")
+            return (None, 0.0)
+
+        except Exception as e:
+            logger.error(f"Could not calculate moon transit: {e}", exc_info=True)
+            return (None, 0.0)
 
     def _get_moon_name_emoji(self, moon_name: str) -> str:
         """Get emoji for traditional moon name."""
