@@ -70,7 +70,7 @@ class AsteroidsInfoDialog(QDialog):
         # Flag to track if content has been loaded (lazy loading)
         self._content_loaded = False
 
-    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         """Override showEvent to lazy load content on first display."""
         super().showEvent(event)
         if not self._content_loaded:

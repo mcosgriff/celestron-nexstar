@@ -15,6 +15,8 @@ Provides utilities for planning observation sessions including:
 from __future__ import annotations
 
 import logging
+import math
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -22,8 +24,13 @@ from typing import Any
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
+from celestron_nexstar.api.ephemeris.ephemeris import (
+    PLANET_NAMES,
+    get_combined_ephemeris_target,
+    get_planetary_position,
+    is_dynamic_object,
+)
 from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
-from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
 
@@ -168,48 +175,70 @@ def get_object_visibility_timeline(
         t0 = ts.from_datetime(start_time)
         t1 = ts.from_datetime(start_time + timedelta(days=days))
 
+        def _is_valid_time(t_event: Any) -> bool:
+            try:
+                return math.isfinite(float(t_event.tt))
+            except (TypeError, ValueError, AttributeError):
+                return False
+
         def _next_event_after(times: Any, after_dt: datetime) -> datetime | None:
             for t_event in times:
-                event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
+                if not _is_valid_time(t_event):
+                    continue
+                try:
+                    event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
+                except (OverflowError, ValueError, OSError):
+                    continue
                 if event_dt > after_dt:
                     return event_dt
             return None
 
-        eph = None
+        base_ephemeris = get_skyfield_ephemeris("de440s.bsp")
         target = None
         if is_dynamic_object(obj.name):
-            from celestron_nexstar.api.ephemeris.ephemeris import PLANET_NAMES
-
             obj_key = obj.name.lower()
             if obj_key in PLANET_NAMES:
-                ephemeris_name, bsp_file = PLANET_NAMES[obj_key]
-                if " " in ephemeris_name and ephemeris_name[0].isdigit():
-                    spice_target = ephemeris_name.split(" ", 1)[1]
-                else:
-                    spice_target = ephemeris_name
-                eph = get_skyfield_ephemeris(bsp_file)
-                target = eph[spice_target]
+                base_ephemeris, target = get_combined_ephemeris_target(obj.name)
         if target is None:
-            eph = get_skyfield_ephemeris("de440s.bsp")
             target = Star(ra_hours=ra_hours, dec_degrees=dec_degrees)
 
-        earth = eph["earth"]
+        earth = base_ephemeris["earth"]
         observer = earth + topos
 
-        rise_time = _next_event_after(almanac.find_risings(observer, target, t0, t1)[0], start_time)
-        set_time = _next_event_after(almanac.find_settings(observer, target, t0, t1)[0], start_time)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*invalid value encountered in divide.*",
+                category=RuntimeWarning,
+                module=r"skyfield\.almanac",
+            )
+            rise_time = _next_event_after(almanac.find_risings(observer, target, t0, t1)[0], start_time)
+            set_time = _next_event_after(almanac.find_settings(observer, target, t0, t1)[0], start_time)
 
         transit_time = None
         max_altitude = 0.0
-        transits, events = almanac.find_discrete(t0, t1, almanac.meridian_transits(eph, target, topos))
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*invalid value encountered in divide.*",
+                category=RuntimeWarning,
+                module=r"skyfield\.almanac",
+            )
+            transits, events = almanac.find_discrete(t0, t1, almanac.meridian_transits(base_ephemeris, target, topos))
         for i, event in enumerate(events):
             if not event:
                 continue
-            event_dt = transits[i].utc_datetime().replace(tzinfo=UTC)
+            t_event = transits[i]
+            if not _is_valid_time(t_event):
+                continue
+            try:
+                event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
+            except (OverflowError, ValueError, OSError):
+                continue
             if event_dt <= start_time:
                 continue
             transit_time = event_dt
-            alt, _az, _ = observer.at(transits[i]).observe(target).apparent().altaz()
+            alt, _az, _ = observer.at(t_event).observe(target).apparent().altaz()
             max_altitude = float(alt.degrees)
             break
 

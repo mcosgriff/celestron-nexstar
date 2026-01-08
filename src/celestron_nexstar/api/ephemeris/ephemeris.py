@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from functools import lru_cache
+from typing import Any
 
 import deal
 from skyfield.jpllib import SpiceKernel
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "PLANET_NAMES",
+    "get_combined_ephemeris_target",
     "get_planet_magnitude",
     "get_planetary_position",
     "is_dynamic_object",
@@ -121,6 +123,52 @@ MOON_PARENTS = {
 }
 
 
+def get_combined_ephemeris_target(planet_name: str) -> tuple[SpiceKernel, Any]:
+    """
+    Return a base ephemeris (for Earth) plus a target body for mixed-kernel lookups.
+
+    For moons, use a planet/moon kernel for the target while keeping Earth from a
+    base planetary kernel to ensure required barycenters are present.
+    """
+    planet_key = planet_name.lower()
+    if planet_key not in PLANET_NAMES:
+        raise UnknownEphemerisObjectError(
+            f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}"
+        )
+
+    ephemeris_name, bsp_file = PLANET_NAMES[planet_key]
+    if " " in ephemeris_name and ephemeris_name[0].isdigit():
+        spice_target = ephemeris_name.split(" ", 1)[1]
+    else:
+        spice_target = ephemeris_name
+
+    if planet_key == "moon":
+        base_ephemeris = _get_ephemeris("de421.bsp")
+        target_ephemeris = base_ephemeris
+    elif bsp_file == "de440s.bsp":
+        base_ephemeris = _get_ephemeris("de440s.bsp")
+        target_ephemeris = base_ephemeris
+    else:
+        base_ephemeris = _get_ephemeris("de440s.bsp")
+        target_ephemeris = _get_ephemeris(bsp_file)
+
+    try:
+        target = target_ephemeris[spice_target]
+    except KeyError:
+        try:
+            target = target_ephemeris[ephemeris_name.upper()]
+        except KeyError:
+            available_objects = sorted(target_ephemeris.names())
+            error_msg = (
+                f"Object '{ephemeris_name}' not found in {bsp_file}.\n"
+                f"Available objects: {', '.join(str(obj) for obj in available_objects[:20])}...\n"
+                f"The ephemeris file may be missing or corrupted, or the object name may be incorrect."
+            )
+            raise UnknownEphemerisObjectError(error_msg) from None
+
+    return base_ephemeris, target
+
+
 # Cache for loaded ephemeris files
 _ephemeris_cache: dict[str, SpiceKernel] = {}
 
@@ -199,22 +247,12 @@ def get_planetary_position(
             f"Unknown planet/moon: {planet_name}. Valid names: {', '.join(sorted(PLANET_NAMES.keys()))}"
         )
 
-    # Get ephemeris name and required BSP file
-    # ephemeris_name is the SPICE target name (e.g., "299 VENUS")
-    # We need to use just the name part for Skyfield (e.g., "VENUS")
-    ephemeris_name, bsp_file = PLANET_NAMES[planet_key]
+    _ephemeris_name, bsp_file = PLANET_NAMES[planet_key]
 
-    # Extract just the name part if it's a numeric ID format (e.g., "299 VENUS" -> "VENUS")
-    # Skyfield can handle both formats, but numeric IDs sometimes fail
-    if " " in ephemeris_name and ephemeris_name[0].isdigit():
-        # Format is like "299 VENUS" - extract the name part
-        spice_target = ephemeris_name.split(" ", 1)[1]
-    else:
-        spice_target = ephemeris_name
-
-    # Load the appropriate ephemeris file
     try:
-        eph = _get_ephemeris(bsp_file)
+        base_ephemeris, target = get_combined_ephemeris_target(planet_name)
+    except EphemerisFileNotFoundError:
+        raise
     except FileNotFoundError:
         raise EphemerisFileNotFoundError(
             f"Ephemeris file {bsp_file} not found. "
@@ -231,29 +269,8 @@ def get_planetary_position(
 
     t = ts.from_datetime(dt)
 
-    # Get Earth and target body
-    earth = eph["earth"]
-
-    try:
-        target = eph[spice_target]
-    except KeyError:
-        # Try uppercase version (JPL ephemeris files often use uppercase)
-        try:
-            target = eph[ephemeris_name.upper()]
-        except KeyError:
-            # List available objects for better error message
-            available_objects = sorted(eph.names())
-            # Filter to strings only and convert to lowercase for comparison
-            mars_objects = [
-                str(obj) for obj in available_objects if isinstance(obj, str) and "mars" in str(obj).lower()
-            ]
-            error_msg = (
-                f"Object '{ephemeris_name}' not found in {bsp_file}.\n"
-                f"Available objects containing 'mars': {', '.join(mars_objects) if mars_objects else 'none'}\n"
-                f"Available objects: {', '.join(str(obj) for obj in available_objects[:20])}...\n"
-                f"The ephemeris file may be missing or corrupted, or the object name may be incorrect."
-            )
-            raise UnknownEphemerisObjectError(error_msg) from None
+    # Get Earth and target body (target may be from a different kernel)
+    earth = base_ephemeris["earth"]
 
     # Calculate apparent position from Earth
     astrometric = earth.at(t).observe(target)

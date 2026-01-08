@@ -208,8 +208,8 @@ def _compute_from_spk(
         elongation = angular_separation(ra_hours, dec_degrees, sun_ra.hours, sun_dec.degrees)
 
         # Phase angle
-        R = 1.0
-        cos_phase = (helio_dist**2 + geo_dist**2 - R**2) / (2 * helio_dist * geo_dist)
+        earth_sun_dist = 1.0
+        cos_phase = (helio_dist**2 + geo_dist**2 - earth_sun_dist**2) / (2 * helio_dist * geo_dist)
         cos_phase = max(-1.0, min(1.0, cos_phase))
         phase_angle = math.degrees(math.acos(cos_phase))
 
@@ -279,31 +279,33 @@ def _compute_asteroid_position(
         i = math.radians(asteroid.inclination_deg)
         omega = math.radians(asteroid.ascending_node_deg)
         w = math.radians(asteroid.arg_perihelion_deg)
-        M0 = math.radians(asteroid.mean_anomaly_deg)
+        mean_anomaly_0 = math.radians(asteroid.mean_anomaly_deg)
 
         # Mean motion (rad/day)
         n = math.sqrt(1.0 / (a**3)) * (2 * math.pi / 365.25)
 
         # Mean anomaly at target time
-        M = M0 + n * delta_days
-        M = M % (2 * math.pi)
+        mean_anomaly = mean_anomaly_0 + n * delta_days
+        mean_anomaly = mean_anomaly % (2 * math.pi)
 
         # Solve Kepler's equation for eccentric anomaly
-        E = M
+        eccentric_anomaly = mean_anomaly
         for _ in range(50):
-            dE = (M - E + e * math.sin(E)) / (1 - e * math.cos(E))
-            E += dE
-            if abs(dE) < 1e-10:
+            delta_e = (mean_anomaly - eccentric_anomaly + e * math.sin(eccentric_anomaly)) / (
+                1 - e * math.cos(eccentric_anomaly)
+            )
+            eccentric_anomaly += delta_e
+            if abs(delta_e) < 1e-10:
                 break
 
         # True anomaly
         nu = 2 * math.atan2(
-            math.sqrt(1 + e) * math.sin(E / 2),
-            math.sqrt(1 - e) * math.cos(E / 2),
+            math.sqrt(1 + e) * math.sin(eccentric_anomaly / 2),
+            math.sqrt(1 - e) * math.cos(eccentric_anomaly / 2),
         )
 
         # Heliocentric distance
-        r = a * (1 - e * math.cos(E))
+        r = a * (1 - e * math.cos(eccentric_anomaly))
 
         # Position in orbital plane
         x_orb = r * math.cos(nu)
@@ -378,8 +380,8 @@ def _compute_asteroid_position(
 
         # Phase angle
         helio_dist = r
-        R = 1.0  # Earth-Sun distance approx
-        cos_phase = (helio_dist**2 + geo_dist**2 - R**2) / (2 * helio_dist * geo_dist)
+        earth_sun_dist = 1.0  # Earth-Sun distance approx
+        cos_phase = (helio_dist**2 + geo_dist**2 - earth_sun_dist**2) / (2 * helio_dist * geo_dist)
         cos_phase = max(-1.0, min(1.0, cos_phase))
         phase_angle = math.degrees(math.acos(cos_phase))
 
@@ -413,27 +415,27 @@ def _compute_asteroid_magnitude(
 
     Where Φ₁, Φ₂ are phase functions.
     """
-    H = asteroid.absolute_magnitude_h
-    G = asteroid.slope_g if asteroid.slope_g is not None else 0.15
+    absolute_magnitude = asteroid.absolute_magnitude_h
+    slope_g = asteroid.slope_g if asteroid.slope_g is not None else 0.15
 
     # Simplified H-G magnitude formula
     # Phase functions (Bowell approximation)
     phase_rad = math.radians(phase_angle)
 
-    A1 = 3.332
-    A2 = 1.862
-    B1 = 0.631
-    B2 = 1.218
+    a1 = 3.332
+    a2 = 1.862
+    b1 = 0.631
+    b2 = 1.218
 
-    phi1 = math.exp(-A1 * (math.tan(phase_rad / 2)) ** B1)
-    phi2 = math.exp(-A2 * (math.tan(phase_rad / 2)) ** B2)
+    phi1 = math.exp(-a1 * (math.tan(phase_rad / 2)) ** b1)
+    phi2 = math.exp(-a2 * (math.tan(phase_rad / 2)) ** b2)
 
     # Avoid log of zero
-    phase_term = (1 - G) * phi1 + G * phi2
+    phase_term = (1 - slope_g) * phi1 + slope_g * phi2
     if phase_term <= 0:
         phase_term = 0.001
 
-    magnitude = H + 5 * math.log10(helio_dist * geo_dist) - 2.5 * math.log10(phase_term)
+    magnitude = absolute_magnitude + 5 * math.log10(helio_dist * geo_dist) - 2.5 * math.log10(phase_term)
 
     return magnitude
 

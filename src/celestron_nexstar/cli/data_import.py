@@ -1430,18 +1430,23 @@ def _find_spatial_relationships(model_obj: Any, db_session: Any) -> tuple[int | 
     # Bounding box fallback: if spatial query still failed (or no geometry), use ra/dec bounding boxes
     # This handles cases where constellation boundaries have small gaps, coordinate precision issues,
     # or objects without geometry (like Messier objects)
-    if constellation_id is None and hasattr(model_obj, "ra_hours") and hasattr(model_obj, "dec_degrees"):
-        if model_obj.ra_hours is not None and model_obj.dec_degrees is not None:
-            constellation_id = db_session.execute(
-                select(ConstellationModel.id)
-                .where(
-                    ConstellationModel.ra_min_hours <= model_obj.ra_hours,
-                    ConstellationModel.ra_max_hours >= model_obj.ra_hours,
-                    ConstellationModel.dec_min_degrees <= model_obj.dec_degrees,
-                    ConstellationModel.dec_max_degrees >= model_obj.dec_degrees,
-                )
-                .limit(1)
-            ).scalar_one_or_none()
+    if (
+        constellation_id is None
+        and hasattr(model_obj, "ra_hours")
+        and hasattr(model_obj, "dec_degrees")
+        and model_obj.ra_hours is not None
+        and model_obj.dec_degrees is not None
+    ):
+        constellation_id = db_session.execute(
+            select(ConstellationModel.id)
+            .where(
+                ConstellationModel.ra_min_hours <= model_obj.ra_hours,
+                ConstellationModel.ra_max_hours >= model_obj.ra_hours,
+                ConstellationModel.dec_min_degrees <= model_obj.dec_degrees,
+                ConstellationModel.dec_max_degrees >= model_obj.dec_degrees,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
 
     return constellation_id, asterism_id
 

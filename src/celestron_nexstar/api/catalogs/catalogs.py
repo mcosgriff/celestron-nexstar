@@ -7,6 +7,8 @@ Dynamically calculates positions for solar system objects.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 import re
 from collections.abc import Iterator
@@ -38,8 +40,10 @@ __all__ = [
     "get_available_catalogs",
     "get_catalog",
     "get_object_by_name",
+    "get_object_by_name_sync",
     "get_object_names_for_completion",
     "search_objects",
+    "search_objects_sync",
 ]
 
 
@@ -423,12 +427,19 @@ def get_available_catalogs() -> list[str]:
     return list(_load_all_catalogs().keys())
 
 
+async def _maybe_await(value: Any) -> Any:
+    """Await value when it is awaitable; otherwise return it."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 @deal.pre(
     lambda query, *args, **kwargs: query and len(query.strip()) > 0,
     message="Search query must be non-empty",
 )  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
-def search_objects(
+async def search_objects(
     query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
 ) -> list[tuple[CelestialObject, str]]:
     """
@@ -468,7 +479,9 @@ def search_objects(
         try:
             db = get_database()
             # Search for objects within 5 arcminutes of the coordinates
-            coord_results = db.search_by_coordinates(ra_hours, dec_degrees, radius_arcmin=5.0, limit=50)
+            coord_results = await _maybe_await(
+                db.search_by_coordinates(ra_hours, dec_degrees, radius_arcmin=5.0, limit=50)
+            )
 
             # Convert to expected format: (CelestialObject, match_type)
             # Use separation in arcminutes as part of match type for sorting
@@ -497,7 +510,662 @@ def search_objects(
         db = get_database()
         from celestron_nexstar.api.database.models import get_db_session
 
-        with get_db_session() as session:
+        if hasattr(db, "_AsyncSession"):
+            session_cm = db._AsyncSession()
+            async_cm = True
+        else:
+            session_cm = get_db_session()
+            async_cm = False
+
+        if async_cm:
+            async with session_cm as session:
+                from celestron_nexstar.api.database.models import (
+                    CelestialObjectModelProtocol,
+                    ClusterModel,
+                    DoubleStarModel,
+                    GalaxyModel,
+                    MoonModel,
+                    NebulaModel,
+                    PlanetModel,
+                    StarModel,
+                )
+
+                # Search across all type-specific tables
+                # Cast to Protocol type so mypy understands the attributes
+                # These models all inherit from CelestialObjectMixin which matches the Protocol
+                all_model_classes: list[type[CelestialObjectModelProtocol]] = [
+                    cast(type[CelestialObjectModelProtocol], StarModel),
+                    cast(type[CelestialObjectModelProtocol], DoubleStarModel),
+                    cast(type[CelestialObjectModelProtocol], GalaxyModel),
+                    cast(type[CelestialObjectModelProtocol], NebulaModel),
+                    cast(type[CelestialObjectModelProtocol], ClusterModel),
+                    cast(type[CelestialObjectModelProtocol], PlanetModel),
+                    cast(type[CelestialObjectModelProtocol], MoonModel),
+                ]
+
+                # First, search for exact matches (case-insensitive) - score: -1 (highest priority)
+                for model_class in all_model_classes:
+                    exact_query = select(model_class).where(
+                        (model_class.name.ilike(query)) | (model_class.common_name.ilike(query))
+                    )
+                    if catalog_name:
+                        exact_query = exact_query.where(model_class.catalog == catalog_name)
+
+                    result = await _maybe_await(session.execute(exact_query))
+                    exact_models = result.scalars().all()
+                    for exact_model in exact_models:
+                        exact_obj = db._model_to_object(exact_model)
+                        if update_positions:
+                            exact_obj = exact_obj.with_current_position()
+
+                        # Deduplicate by name (case-insensitive)
+                        obj_name_lower = str(exact_obj.name).lower() if exact_obj.name else ""
+                        if obj_name_lower and obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((-1, exact_obj, "exact"))
+
+                # Search constellations and asterisms for exact matches - score: -1 (same priority as other exact matches)
+                from celestron_nexstar.api.core.enums import CelestialObjectType
+                from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel
+
+                # Search constellations by name, abbreviation, or common_name (exact match)
+                constellation_exact_query = select(ConstellationModel).where(
+                    (ConstellationModel.name.ilike(query))
+                    | (ConstellationModel.abbreviation.ilike(query))
+                    | (ConstellationModel.common_name.ilike(query))
+                )
+                result = await _maybe_await(session.execute(constellation_exact_query))
+                constellation_exact_models: list[ConstellationModel] = list(result.scalars().all())
+                for constellation_model in constellation_exact_models:
+                    # Convert ConstellationModel to CelestialObject
+                    constellation_obj = CelestialObject(
+                        name=constellation_model.name,
+                        common_name=constellation_model.common_name,
+                        ra_hours=constellation_model.ra_hours,
+                        dec_degrees=constellation_model.dec_degrees,
+                        magnitude=None,  # Constellations don't have a single magnitude
+                        object_type=CelestialObjectType.CONSTELLATION,
+                        catalog="constellations",
+                        description=constellation_model.mythology,  # Use mythology as description
+                        parent_planet=None,
+                        constellation=None,  # Constellations don't belong to other constellations
+                    )
+
+                    obj_name_lower = str(constellation_obj.name).lower()
+                    if obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        all_results.append((-1, constellation_obj, "exact"))
+
+                # Search asterisms for exact matches
+                asterism_exact_query = select(AsterismModel).where(AsterismModel.name.ilike(query))
+                result = await _maybe_await(session.execute(asterism_exact_query))
+                asterism_exact_models: list[AsterismModel] = list(result.scalars().all())
+                for asterism_model in asterism_exact_models:
+                    # Convert AsterismModel to CelestialObject
+                    alt_names_list = []
+                    if asterism_model.alt_names:
+                        alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                    common_name = alt_names_list[0] if alt_names_list else None
+
+                    asterism_obj = CelestialObject(
+                        name=asterism_model.name,
+                        common_name=common_name,
+                        ra_hours=asterism_model.ra_hours,
+                        dec_degrees=asterism_model.dec_degrees,
+                        magnitude=None,  # Asterisms don't have magnitude
+                        object_type=CelestialObjectType.ASTERISM,
+                        catalog="asterisms",
+                        description=asterism_model.description,
+                        parent_planet=None,
+                        constellation=asterism_model.parent_constellation,
+                    )
+
+                    obj_name_lower = str(asterism_obj.name).lower()
+                    if obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        all_results.append((-1, asterism_obj, "exact"))
+
+                found_exact = any(score == -1 for score, _obj, _match_type in all_results)
+                if not found_exact:
+                    # Search for substring matches in name (score: 0) - all filtering in database
+                    for model_class in all_model_classes:
+                        name_query = select(model_class).where(model_class.name.ilike(f"%{query}%"))
+                        if catalog_name:
+                            name_query = name_query.where(model_class.catalog == catalog_name)
+
+                        result = await _maybe_await(session.execute(name_query))
+                        name_models = result.scalars().all()
+                        for model in name_models:
+                            obj = db._model_to_object(model)
+                            if update_positions:
+                                obj = obj.with_current_position()
+                            # Skip if already added as exact match
+                            obj_name_lower = str(obj.name).lower() if obj and obj.name else ""
+                            if obj_name_lower and obj_name_lower not in seen_names:
+                                seen_names.add(obj_name_lower)
+                                all_results.append((0, obj, "name"))
+
+                    # Search for substring matches in common_name (score: 1) - all filtering in database
+                    for model_class in all_model_classes:
+                        common_query = select(model_class).where(
+                            model_class.common_name.isnot(None),
+                            model_class.common_name.ilike(f"%{query}%"),
+                        )
+                        if catalog_name:
+                            common_query = common_query.where(model_class.catalog == catalog_name)
+
+                        result = await _maybe_await(session.execute(common_query))
+                        common_models = result.scalars().all()
+                        for model in common_models:
+                            obj = db._model_to_object(model)
+                            if obj and obj.name is not None:
+                                obj_name_lower = str(obj.name).lower()
+                                if obj_name_lower not in seen_names:
+                                    seen_names.add(obj_name_lower)
+                                    if update_positions:
+                                        obj = obj.with_current_position()
+                                    all_results.append((1, obj, "alias"))
+
+                    # Search in description across all type-specific tables (score: 2)
+                    # Note: FTS5 is no longer available after splitting objects table,
+                    # so we use LIKE queries on description fields instead
+                    for model_class in all_model_classes:
+                        desc_query = select(model_class).where(
+                            model_class.description.isnot(None),
+                            model_class.description.ilike(f"%{query}%"),
+                        )
+                        if catalog_name:
+                            desc_query = desc_query.where(model_class.catalog == catalog_name)
+
+                        result = await _maybe_await(session.execute(desc_query))
+                        desc_models = result.scalars().all()
+                        for model in desc_models:
+                            obj = db._model_to_object(model)
+                            if obj and obj.name is not None:
+                                obj_name_lower = str(obj.name).lower()
+                                if obj_name_lower not in seen_names:
+                                    seen_names.add(obj_name_lower)
+                                    if update_positions:
+                                        obj = obj.with_current_position()
+                                    # Only add if it's a description match (not already matched above)
+                                    if query_lower not in str(obj.name).lower() and (
+                                        not obj.common_name or query_lower not in str(obj.common_name).lower()
+                                    ):
+                                        all_results.append((2, obj, "description"))
+
+                    # Search constellations by name, abbreviation, or common_name (substring match) - score: 0
+                    # Update seen_names to include results from name search above
+                    seen_names = {
+                        str(obj.name).lower()
+                        for _, obj, _ in all_results
+                        if obj and hasattr(obj, "name") and obj.name is not None
+                    }
+                    constellation_name_query = select(ConstellationModel).where(
+                        (ConstellationModel.name.ilike(f"%{query}%"))
+                        | (ConstellationModel.abbreviation.ilike(f"%{query}%"))
+                        | (ConstellationModel.common_name.ilike(f"%{query}%"))
+                    )
+                    result = await _maybe_await(session.execute(constellation_name_query))
+                    constellation_name_models: list[ConstellationModel] = list(result.scalars().all())
+                    for constellation_model in constellation_name_models:
+                        constellation_obj = CelestialObject(
+                            name=constellation_model.name,
+                            common_name=constellation_model.common_name,
+                            ra_hours=constellation_model.ra_hours,
+                            dec_degrees=constellation_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.CONSTELLATION,
+                            catalog="constellations",
+                            description=constellation_model.mythology,
+                            parent_planet=None,
+                            constellation=None,
+                        )
+
+                        obj_name_lower = str(constellation_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((0, constellation_obj, "name"))
+
+                    # Search asterisms by name (substring match) - score: 0
+                    asterism_name_query = select(AsterismModel).where(AsterismModel.name.ilike(f"%{query}%"))
+                    result = await _maybe_await(session.execute(asterism_name_query))
+                    asterism_name_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_name_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((0, asterism_obj, "name"))
+
+                    # Search asterisms by alt_names (alternative names)
+                    asterism_alt_query = select(AsterismModel).where(
+                        AsterismModel.alt_names.isnot(None),
+                        AsterismModel.alt_names.ilike(f"%{query}%"),
+                    )
+                    result = await _maybe_await(session.execute(asterism_alt_query))
+                    asterism_alt_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_alt_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((1, asterism_obj, "alias"))
+
+                    # Search constellations by mythology/description - score: 2
+                    constellation_desc_query = select(ConstellationModel).where(
+                        ConstellationModel.mythology.isnot(None),
+                        ConstellationModel.mythology.ilike(f"%{query}%"),
+                    )
+                    result = await _maybe_await(session.execute(constellation_desc_query))
+                    constellation_desc_models: list[ConstellationModel] = list(result.scalars().all())
+                    for constellation_model in constellation_desc_models:
+                        constellation_obj = CelestialObject(
+                            name=constellation_model.name,
+                            common_name=constellation_model.common_name,
+                            ra_hours=constellation_model.ra_hours,
+                            dec_degrees=constellation_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.CONSTELLATION,
+                            catalog="constellations",
+                            description=constellation_model.mythology,
+                            parent_planet=None,
+                            constellation=None,
+                        )
+
+                        obj_name_lower = str(constellation_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            # Only add if it's a description match (not already matched above)
+                            if (
+                                query_lower not in str(constellation_obj.name).lower()
+                                and (
+                                    not constellation_obj.common_name
+                                    or query_lower not in str(constellation_obj.common_name).lower()
+                                )
+                                and query_lower not in str(constellation_model.abbreviation).lower()
+                            ):
+                                all_results.append((2, constellation_obj, "description"))
+
+                    # Search asterisms by description
+                    asterism_desc_query = select(AsterismModel).where(
+                        AsterismModel.description.isnot(None),
+                        AsterismModel.description.ilike(f"%{query}%"),
+                    )
+                    result = await _maybe_await(session.execute(asterism_desc_query))
+                    asterism_desc_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_desc_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            # Only add if it's a description match (not already matched above)
+                            if query_lower not in str(asterism_obj.name).lower() and (
+                                not asterism_obj.common_name or query_lower not in str(asterism_obj.common_name).lower()
+                            ):
+                                all_results.append((2, asterism_obj, "description"))
+        else:
+            with session_cm as session:
+                from celestron_nexstar.api.database.models import (
+                    CelestialObjectModelProtocol,
+                    ClusterModel,
+                    DoubleStarModel,
+                    GalaxyModel,
+                    MoonModel,
+                    NebulaModel,
+                    PlanetModel,
+                    StarModel,
+                )
+
+                all_model_classes: list[type[CelestialObjectModelProtocol]] = [
+                    cast(type[CelestialObjectModelProtocol], StarModel),
+                    cast(type[CelestialObjectModelProtocol], DoubleStarModel),
+                    cast(type[CelestialObjectModelProtocol], GalaxyModel),
+                    cast(type[CelestialObjectModelProtocol], NebulaModel),
+                    cast(type[CelestialObjectModelProtocol], ClusterModel),
+                    cast(type[CelestialObjectModelProtocol], PlanetModel),
+                    cast(type[CelestialObjectModelProtocol], MoonModel),
+                ]
+
+                for model_class in all_model_classes:
+                    exact_query = select(model_class).where(
+                        (model_class.name.ilike(query)) | (model_class.common_name.ilike(query))
+                    )
+                    if catalog_name:
+                        exact_query = exact_query.where(model_class.catalog == catalog_name)
+
+                    result = session.execute(exact_query)
+                    exact_models = result.scalars().all()
+                    for exact_model in exact_models:
+                        exact_obj = db._model_to_object(exact_model)
+                        if update_positions:
+                            exact_obj = exact_obj.with_current_position()
+
+                        obj_name_lower = str(exact_obj.name).lower() if exact_obj.name else ""
+                        if obj_name_lower and obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((-1, exact_obj, "exact"))
+
+                from celestron_nexstar.api.core.enums import CelestialObjectType
+                from celestron_nexstar.api.database.models import AsterismModel, ConstellationModel
+
+                constellation_exact_query = select(ConstellationModel).where(
+                    (ConstellationModel.name.ilike(query))
+                    | (ConstellationModel.abbreviation.ilike(query))
+                    | (ConstellationModel.common_name.ilike(query))
+                )
+                result = session.execute(constellation_exact_query)
+                constellation_exact_models: list[ConstellationModel] = list(result.scalars().all())
+                for constellation_model in constellation_exact_models:
+                    constellation_obj = CelestialObject(
+                        name=constellation_model.name,
+                        common_name=constellation_model.common_name,
+                        ra_hours=constellation_model.ra_hours,
+                        dec_degrees=constellation_model.dec_degrees,
+                        magnitude=None,
+                        object_type=CelestialObjectType.CONSTELLATION,
+                        catalog="constellations",
+                        description=constellation_model.mythology,
+                        parent_planet=None,
+                        constellation=None,
+                    )
+
+                    obj_name_lower = str(constellation_obj.name).lower()
+                    if obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        all_results.append((-1, constellation_obj, "exact"))
+
+                asterism_exact_query = select(AsterismModel).where(AsterismModel.name.ilike(query))
+                result = session.execute(asterism_exact_query)
+                asterism_exact_models: list[AsterismModel] = list(result.scalars().all())
+                for asterism_model in asterism_exact_models:
+                    alt_names_list = []
+                    if asterism_model.alt_names:
+                        alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                    common_name = alt_names_list[0] if alt_names_list else None
+
+                    asterism_obj = CelestialObject(
+                        name=asterism_model.name,
+                        common_name=common_name,
+                        ra_hours=asterism_model.ra_hours,
+                        dec_degrees=asterism_model.dec_degrees,
+                        magnitude=None,
+                        object_type=CelestialObjectType.ASTERISM,
+                        catalog="asterisms",
+                        description=asterism_model.description,
+                        parent_planet=None,
+                        constellation=asterism_model.parent_constellation,
+                    )
+
+                    obj_name_lower = str(asterism_obj.name).lower()
+                    if obj_name_lower not in seen_names:
+                        seen_names.add(obj_name_lower)
+                        all_results.append((-1, asterism_obj, "exact"))
+
+                found_exact = any(score == -1 for score, _obj, _match_type in all_results)
+                if not found_exact:
+                    for model_class in all_model_classes:
+                        name_query = select(model_class).where(model_class.name.ilike(f"%{query}%"))
+                        if catalog_name:
+                            name_query = name_query.where(model_class.catalog == catalog_name)
+
+                        result = session.execute(name_query)
+                        name_models = result.scalars().all()
+                        for model in name_models:
+                            obj = db._model_to_object(model)
+                            if update_positions:
+                                obj = obj.with_current_position()
+                            obj_name_lower = str(obj.name).lower() if obj and obj.name else ""
+                            if obj_name_lower and obj_name_lower not in seen_names:
+                                seen_names.add(obj_name_lower)
+                                all_results.append((0, obj, "name"))
+
+                    for model_class in all_model_classes:
+                        common_query = select(model_class).where(
+                            model_class.common_name.isnot(None),
+                            model_class.common_name.ilike(f"%{query}%"),
+                        )
+                        if catalog_name:
+                            common_query = common_query.where(model_class.catalog == catalog_name)
+
+                        result = session.execute(common_query)
+                        common_models = result.scalars().all()
+                        for model in common_models:
+                            obj = db._model_to_object(model)
+                            if obj and obj.name is not None:
+                                obj_name_lower = str(obj.name).lower()
+                                if obj_name_lower not in seen_names:
+                                    seen_names.add(obj_name_lower)
+                                    if update_positions:
+                                        obj = obj.with_current_position()
+                                    all_results.append((1, obj, "alias"))
+
+                    for model_class in all_model_classes:
+                        desc_query = select(model_class).where(
+                            model_class.description.isnot(None),
+                            model_class.description.ilike(f"%{query}%"),
+                        )
+                        if catalog_name:
+                            desc_query = desc_query.where(model_class.catalog == catalog_name)
+
+                        result = session.execute(desc_query)
+                        desc_models = result.scalars().all()
+                        for model in desc_models:
+                            obj = db._model_to_object(model)
+                            if obj and obj.name is not None:
+                                obj_name_lower = str(obj.name).lower()
+                                if obj_name_lower not in seen_names:
+                                    seen_names.add(obj_name_lower)
+                                    if update_positions:
+                                        obj = obj.with_current_position()
+                                    if query_lower not in str(obj.name).lower() and (
+                                        not obj.common_name or query_lower not in str(obj.common_name).lower()
+                                    ):
+                                        all_results.append((2, obj, "description"))
+
+                    seen_names = {
+                        str(obj.name).lower()
+                        for _, obj, _ in all_results
+                        if obj and hasattr(obj, "name") and obj.name is not None
+                    }
+                    constellation_name_query = select(ConstellationModel).where(
+                        (ConstellationModel.name.ilike(f"%{query}%"))
+                        | (ConstellationModel.abbreviation.ilike(f"%{query}%"))
+                        | (ConstellationModel.common_name.ilike(f"%{query}%"))
+                    )
+                    result = session.execute(constellation_name_query)
+                    constellation_name_models: list[ConstellationModel] = list(result.scalars().all())
+                    for constellation_model in constellation_name_models:
+                        constellation_obj = CelestialObject(
+                            name=constellation_model.name,
+                            common_name=constellation_model.common_name,
+                            ra_hours=constellation_model.ra_hours,
+                            dec_degrees=constellation_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.CONSTELLATION,
+                            catalog="constellations",
+                            description=constellation_model.mythology,
+                            parent_planet=None,
+                            constellation=None,
+                        )
+
+                        obj_name_lower = str(constellation_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((0, constellation_obj, "name"))
+
+                    asterism_name_query = select(AsterismModel).where(AsterismModel.name.ilike(f"%{query}%"))
+                    result = session.execute(asterism_name_query)
+                    asterism_name_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_name_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((0, asterism_obj, "name"))
+
+                    asterism_alt_query = select(AsterismModel).where(
+                        AsterismModel.alt_names.isnot(None),
+                        AsterismModel.alt_names.ilike(f"%{query}%"),
+                    )
+                    result = session.execute(asterism_alt_query)
+                    asterism_alt_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_alt_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            all_results.append((1, asterism_obj, "alias"))
+
+                    constellation_desc_query = select(ConstellationModel).where(
+                        ConstellationModel.mythology.isnot(None),
+                        ConstellationModel.mythology.ilike(f"%{query}%"),
+                    )
+                    result = session.execute(constellation_desc_query)
+                    constellation_desc_models: list[ConstellationModel] = list(result.scalars().all())
+                    for constellation_model in constellation_desc_models:
+                        constellation_obj = CelestialObject(
+                            name=constellation_model.name,
+                            common_name=constellation_model.common_name,
+                            ra_hours=constellation_model.ra_hours,
+                            dec_degrees=constellation_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.CONSTELLATION,
+                            catalog="constellations",
+                            description=constellation_model.mythology,
+                            parent_planet=None,
+                            constellation=None,
+                        )
+
+                        obj_name_lower = str(constellation_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            if (
+                                query_lower not in str(constellation_obj.name).lower()
+                                and (
+                                    not constellation_obj.common_name
+                                    or query_lower not in str(constellation_obj.common_name).lower()
+                                )
+                                and query_lower not in str(constellation_model.abbreviation).lower()
+                            ):
+                                all_results.append((2, constellation_obj, "description"))
+
+                    asterism_desc_query = select(AsterismModel).where(
+                        AsterismModel.description.isnot(None),
+                        AsterismModel.description.ilike(f"%{query}%"),
+                    )
+                    result = session.execute(asterism_desc_query)
+                    asterism_desc_models: list[AsterismModel] = list(result.scalars().all())
+                    for asterism_model in asterism_desc_models:
+                        alt_names_list = []
+                        if asterism_model.alt_names:
+                            alt_names_list = [name.strip() for name in asterism_model.alt_names.split(",")]
+                        common_name = alt_names_list[0] if alt_names_list else None
+
+                        asterism_obj = CelestialObject(
+                            name=asterism_model.name,
+                            common_name=common_name,
+                            ra_hours=asterism_model.ra_hours,
+                            dec_degrees=asterism_model.dec_degrees,
+                            magnitude=None,
+                            object_type=CelestialObjectType.ASTERISM,
+                            catalog="asterisms",
+                            description=asterism_model.description,
+                            parent_planet=None,
+                            constellation=asterism_model.parent_constellation,
+                        )
+
+                        obj_name_lower = str(asterism_obj.name).lower()
+                        if obj_name_lower not in seen_names:
+                            seen_names.add(obj_name_lower)
+                            if query_lower not in str(asterism_obj.name).lower() and (
+                                not asterism_obj.common_name or query_lower not in str(asterism_obj.common_name).lower()
+                            ):
+                                all_results.append((2, asterism_obj, "description"))
             from celestron_nexstar.api.database.models import (
                 CelestialObjectModelProtocol,
                 ClusterModel,
@@ -887,6 +1555,13 @@ def search_objects(
     return [(obj, match_type) for score, obj, match_type in deduped_results]
 
 
+def search_objects_sync(
+    query: str, catalog_name: str | None = None, max_l_dist: int = 2, update_positions: bool = True
+) -> list[tuple[CelestialObject, str]]:
+    """Sync wrapper for search_objects to preserve legacy call sites."""
+    return asyncio.run(search_objects(query, catalog_name, max_l_dist, update_positions))
+
+
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
 @deal.post(lambda result: isinstance(result, list), message="Must return list of objects")
 def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> list[str]:
@@ -920,7 +1595,7 @@ def get_object_names_for_completion(prefix: str = "", limit: int = 50) -> list[s
 
 
 @deal.pre(lambda name, *args, **kwargs: name and len(name.strip()) > 0, message="Name must be non-empty")  # type: ignore[misc,arg-type]
-def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
+async def get_object_by_name(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
     """
     Get objects by name (name field only, no common_name).
 
@@ -943,7 +1618,7 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
     try:
         db = get_database()
         # First, try exact match in database (highest priority) - name field only
-        db_obj = db.get_by_name(name)
+        db_obj = await _maybe_await(db.get_by_name(name))
         if db_obj:
             all_matches.append(db_obj)
             seen_names.add(str(db_obj.name).lower())
@@ -952,7 +1627,7 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
 
         # If no exact match, try FTS5 search (searches name, common_name, description)
         # But we'll filter to only return matches where name contains the query
-        db_results = db.search(name, limit=20)
+        db_results = await _maybe_await(db.search(name, limit=20))
         for obj in db_results:
             if obj and obj.name is not None:
                 obj_name_lower = str(obj.name).lower()
@@ -970,3 +1645,8 @@ def get_object_by_name(name: str, catalog_name: str | None = None) -> list[Celes
         # Database might not be available
 
     return all_matches
+
+
+def get_object_by_name_sync(name: str, catalog_name: str | None = None) -> list[CelestialObject]:
+    """Sync wrapper for get_object_by_name to preserve legacy call sites."""
+    return asyncio.run(get_object_by_name(name, catalog_name))

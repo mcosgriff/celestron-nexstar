@@ -232,7 +232,7 @@ class ClearDarkSkyDialog(QDialog):
         logger.info("Auto-refreshing Clear Dark Sky chart")
         self._on_refresh()
 
-    def closeEvent(self, event):
+    def closeEvent(self, event):  # noqa: N802
         """Handle dialog close event."""
         # Stop refresh timer
         self.refresh_timer.stop()
@@ -243,7 +243,7 @@ class ClearDarkSkyDialog(QDialog):
 
         super().closeEvent(event)
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event):  # noqa: N802
         """Handle resize event to re-scale image."""
         super().resizeEvent(event)
 

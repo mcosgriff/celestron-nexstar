@@ -17,9 +17,9 @@ Based on NexStar 6/8SE specifications:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
-from concurrent.futures import Future
 from typing import Any, Literal
 
 import deal
@@ -1118,8 +1118,5 @@ class NexStarTelescope:
     def __del__(self) -> None:
         """Cleanup when object is garbage collected."""
         # Stop event loop if still running (thread-safe, idempotent)
-        try:
+        with contextlib.suppress(Exception):
             self.shutdown()
-        except Exception:
-            # Ignore errors during cleanup (object may be partially destroyed)
-            pass

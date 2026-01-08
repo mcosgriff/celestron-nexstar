@@ -163,38 +163,42 @@ async def _fetch_spk_async(
     timeout = ClientTimeout(total=60)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(HORIZONS_API_URL, params=params) as resp:
-                if resp.status != 200:
-                    logger.error(f"Horizons API returned status {resp.status} for {designation}")
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(HORIZONS_API_URL, params=params) as resp,
+        ):
+            if resp.status != 200:
+                logger.error(f"Horizons API returned status {resp.status} for {designation}")
+                return None
+
+            data = await resp.json()
+
+            # Check for errors in response
+            if "error" in data:
+                logger.error(f"Horizons API error for {designation}: {data['error']}")
+                return None
+
+            # Get SPK URL from response
+            spk_url = data.get("spk_file_id") or data.get("spk")
+            if not spk_url:
+                # Check if we got a result with ephemeris URL
+                result = data.get("result", "")
+                if "$$SOE" in result:
+                    logger.warning(f"Got ephemeris text instead of SPK for {designation}")
+                else:
+                    logger.error(f"No SPK URL in Horizons response for {designation}")
+                return None
+
+            # Download the actual SPK file (using session timeout)
+            download_timeout = ClientTimeout(total=120)
+            async with (
+                aiohttp.ClientSession(timeout=download_timeout) as dl_session,
+                dl_session.get(spk_url) as spk_resp,
+            ):
+                if spk_resp.status != 200:
+                    logger.error(f"Failed to download SPK file for {designation}: {spk_resp.status}")
                     return None
-
-                data = await resp.json()
-
-                # Check for errors in response
-                if "error" in data:
-                    logger.error(f"Horizons API error for {designation}: {data['error']}")
-                    return None
-
-                # Get SPK URL from response
-                spk_url = data.get("spk_file_id") or data.get("spk")
-                if not spk_url:
-                    # Check if we got a result with ephemeris URL
-                    result = data.get("result", "")
-                    if "$$SOE" in result:
-                        logger.warning(f"Got ephemeris text instead of SPK for {designation}")
-                    else:
-                        logger.error(f"No SPK URL in Horizons response for {designation}")
-                    return None
-
-                # Download the actual SPK file (using session timeout)
-                download_timeout = ClientTimeout(total=120)
-                async with aiohttp.ClientSession(timeout=download_timeout) as dl_session:
-                    async with dl_session.get(spk_url) as spk_resp:
-                        if spk_resp.status != 200:
-                            logger.error(f"Failed to download SPK file for {designation}: {spk_resp.status}")
-                            return None
-                        return await spk_resp.read()
+                return await spk_resp.read()
 
     except aiohttp.ClientError as e:
         logger.error(f"Network error fetching SPK for {designation}: {e}")
@@ -556,30 +560,34 @@ async def _fetch_asteroid_spk_async(
     timeout = ClientTimeout(total=60)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(HORIZONS_API_URL, params=params) as resp:
-                if resp.status != 200:
-                    logger.error(f"Horizons API returned status {resp.status} for asteroid {designation}")
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(HORIZONS_API_URL, params=params) as resp,
+        ):
+            if resp.status != 200:
+                logger.error(f"Horizons API returned status {resp.status} for asteroid {designation}")
+                return None
+
+            data = await resp.json()
+
+            if "error" in data:
+                logger.error(f"Horizons API error for asteroid {designation}: {data['error']}")
+                return None
+
+            spk_url = data.get("spk_file_id") or data.get("spk")
+            if not spk_url:
+                logger.error(f"No SPK URL in Horizons response for asteroid {designation}")
+                return None
+
+            download_timeout = ClientTimeout(total=120)
+            async with (
+                aiohttp.ClientSession(timeout=download_timeout) as dl_session,
+                dl_session.get(spk_url) as spk_resp,
+            ):
+                if spk_resp.status != 200:
+                    logger.error(f"Failed to download SPK for asteroid {designation}: {spk_resp.status}")
                     return None
-
-                data = await resp.json()
-
-                if "error" in data:
-                    logger.error(f"Horizons API error for asteroid {designation}: {data['error']}")
-                    return None
-
-                spk_url = data.get("spk_file_id") or data.get("spk")
-                if not spk_url:
-                    logger.error(f"No SPK URL in Horizons response for asteroid {designation}")
-                    return None
-
-                download_timeout = ClientTimeout(total=120)
-                async with aiohttp.ClientSession(timeout=download_timeout) as dl_session:
-                    async with dl_session.get(spk_url) as spk_resp:
-                        if spk_resp.status != 200:
-                            logger.error(f"Failed to download SPK for asteroid {designation}: {spk_resp.status}")
-                            return None
-                        return await spk_resp.read()
+                return await spk_resp.read()
 
     except aiohttp.ClientError as e:
         logger.error(f"Network error fetching SPK for asteroid {designation}: {e}")
@@ -892,11 +900,7 @@ def compute_comet_position_from_elements(
 
         # Compute semi-major axis from perihelion distance and eccentricity
         # q = a(1-e), so a = q/(1-e)
-        if eccentricity < 1.0:
-            semi_major_axis_au = perihelion_distance_au / (1.0 - eccentricity)
-        else:
-            # Parabolic or hyperbolic orbit
-            semi_major_axis_au = None
+        semi_major_axis_au = perihelion_distance_au / (1.0 - eccentricity) if eccentricity < 1.0 else None
 
         # Use Skyfield's mpc.comet_orbit to create orbital elements
         # This returns a function that can compute positions

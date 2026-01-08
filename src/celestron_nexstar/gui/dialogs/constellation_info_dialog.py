@@ -447,7 +447,7 @@ class StarVisibilityWorkerThread(QThread):
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.optics import get_current_configuration
@@ -463,7 +463,7 @@ class StarVisibilityWorkerThread(QThread):
             with db.get_session() as session:
                 # Get sky brightness from light pollution
                 try:
-                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
+                    light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
                         2: SkyBrightness.EXCELLENT,
@@ -710,7 +710,7 @@ class ConstellationInfoDialog(QDialog):
         try:
             from sqlalchemy import select
 
-            from celestron_nexstar.api.astronomy.constellations import get_prominent_constellations
+            from celestron_nexstar.api.astronomy.constellations import get_prominent_constellations_sync
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.database.models import ConstellationModel
 
@@ -727,7 +727,7 @@ class ConstellationInfoDialog(QDialog):
                     constellation_data, boundaries = {}, None
                 else:
                     # Get constellation info (for display)
-                    constellations = get_prominent_constellations(session)
+                    constellations = get_prominent_constellations_sync(session)
                     constellation = None
                     for const in constellations:
                         if const.name == self.constellation_name:

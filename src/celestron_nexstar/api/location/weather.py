@@ -1948,10 +1948,7 @@ def fetch_weather(
                         hourly_dts.append(t)
                     except (ValueError, TypeError):
                         hourly_dts.append(None)
-                diffs = [
-                    abs((t - current_dt).total_seconds()) if t is not None else float("inf")
-                    for t in hourly_dts
-                ]
+                diffs = [abs((t - current_dt).total_seconds()) if t is not None else float("inf") for t in hourly_dts]
                 hourly_index = diffs.index(min(diffs)) if diffs else 0
             except (ValueError, TypeError):
                 hourly_index = 0
@@ -1999,9 +1996,7 @@ def fetch_weather(
             hourly.get("wind_speed_120m", [])[hourly_index] if hourly.get("wind_speed_120m") else None
         )
 
-        precip_mm = safe_float(
-            hourly.get("precipitation", [])[hourly_index] if hourly.get("precipitation") else None
-        )
+        precip_mm = safe_float(hourly.get("precipitation", [])[hourly_index] if hourly.get("precipitation") else None)
         rain_mm = safe_float(hourly.get("rain", [])[hourly_index] if hourly.get("rain") else None)
         snow_cm = safe_float(hourly.get("snowfall", [])[hourly_index] if hourly.get("snowfall") else None)
         pressure = safe_float(hourly.get("pressure_msl", [])[hourly_index] if hourly.get("pressure_msl") else None)

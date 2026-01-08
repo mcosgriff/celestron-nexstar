@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
-from celestron_nexstar.api.astronomy.comets import get_visible_comets
+from celestron_nexstar.api.astronomy.comets import get_visible_comets_sync
 from celestron_nexstar.api.astronomy.eclipses import get_next_lunar_eclipse, get_next_solar_eclipse
 from celestron_nexstar.api.astronomy.meteor_shower_predictions import get_enhanced_meteor_predictions
 from celestron_nexstar.api.astronomy.planetary_events import get_planetary_conjunctions, get_planetary_oppositions
@@ -518,7 +518,7 @@ def _show_comprehensive_plan_content(
             months_ahead = max(1, days_ahead // 30)
 
         with get_db_session() as db_session:
-            comets = get_visible_comets(db_session, location, months_ahead=months_ahead)
+            comets = get_visible_comets_sync(db_session, location, months_ahead=months_ahead)
 
         # Filter comets visible during date range (if we have visibility dates)
         if start_date and end_date and comets:

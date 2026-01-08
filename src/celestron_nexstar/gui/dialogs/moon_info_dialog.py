@@ -275,7 +275,11 @@ class MoonDiskWorkerThread(QThread):
 
             location = get_observer_location()
             # Use target date if provided, otherwise current time
-            now = self.target_date if self.target_date else datetime.now(get_local_timezone(location.latitude, location.longitude))
+            now = (
+                self.target_date
+                if self.target_date
+                else datetime.now(get_local_timezone(location.latitude, location.longitude))
+            )
 
             # Require a local ephemeris that includes the Moon to avoid Skyfield download progress on stdout.
             eph_dir = get_ephemeris_directory()
@@ -710,7 +714,9 @@ class MoonInfoDialog(QDialog):
 
         try:
             location = get_observer_location()
-            logger.info(f"Observer location: lat={location.latitude:.4f}, lon={location.longitude:.4f}, elevation={location.elevation} ft ({location.elevation * FEET_TO_METERS:.1f} m)")
+            logger.info(
+                f"Observer location: lat={location.latitude:.4f}, lon={location.longitude:.4f}, elevation={location.elevation} ft ({location.elevation * FEET_TO_METERS:.1f} m)"
+            )
 
             # Determine calculation time based on context:
             # - If target_date is None (main window): use current time for everything
@@ -730,18 +736,27 @@ class MoonInfoDialog(QDialog):
                     self.target_date.year,
                     self.target_date.month,
                     self.target_date.day,
-                    hour=0, minute=0, second=0, microsecond=0,
-                    tzinfo=local_tz
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                    tzinfo=local_tz,
                 )
 
                 logger.info(f"Calendar target_date: {self.target_date}, target_midnight: {target_midnight}, now: {now}")
                 is_today = now.date() == target_midnight.date()
-                logger.info(f"Is today check: now.date()={now.date()}, target_midnight.date()={target_midnight.date()}, is_today={is_today}")
+                logger.info(
+                    f"Is today check: now.date()={now.date()}, target_midnight.date()={target_midnight.date()}, is_today={is_today}"
+                )
 
                 # Always get moonrise/moonset from midnight of the target date
-                moon_info_midnight = get_moon_info(location.latitude, location.longitude, target_midnight, location.elevation)
+                moon_info_midnight = get_moon_info(
+                    location.latitude, location.longitude, target_midnight, location.elevation
+                )
                 if moon_info_midnight:
-                    logger.info(f"Moonrise/moonset calculated for {target_midnight.date()}: rise={moon_info_midnight.moonrise_time}, set={moon_info_midnight.moonset_time}")
+                    logger.info(
+                        f"Moonrise/moonset calculated for {target_midnight.date()}: rise={moon_info_midnight.moonrise_time}, set={moon_info_midnight.moonset_time}"
+                    )
 
                 if is_today:
                     # For today, get current alt/az/illumination
@@ -755,7 +770,9 @@ class MoonInfoDialog(QDialog):
                     moon_info = moon_info_midnight
 
             if moon_info:
-                logger.info(f"Info tab moon position: alt={moon_info.altitude_deg:.2f}°, az={moon_info.azimuth_deg:.2f}°")
+                logger.info(
+                    f"Info tab moon position: alt={moon_info.altitude_deg:.2f}°, az={moon_info.azimuth_deg:.2f}°"
+                )
             if not moon_info:
                 html_content = f"""
                     <h2 style='color: {colors["header"]};'>Moon Information</h2>
@@ -775,8 +792,11 @@ class MoonInfoDialog(QDialog):
                     self.target_date.year,
                     self.target_date.month,
                     self.target_date.day,
-                    hour=0, minute=0, second=0, microsecond=0,
-                    tzinfo=local_tz
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                    tzinfo=local_tz,
                 )
 
             # Calculate meridian transit
@@ -803,7 +823,9 @@ class MoonInfoDialog(QDialog):
             transit_time, transit_alt = self._calculate_moon_transit(transit_date, moonrise_time, moonset_time)
             transit_str = "Not available"
             if transit_time:
-                transit_str = f"{format_local_time(transit_time, location.latitude, location.longitude)} ({transit_alt:.0f}°)"
+                transit_str = (
+                    f"{format_local_time(transit_time, location.latitude, location.longitude)} ({transit_alt:.0f}°)"
+                )
 
             moonset_str = "Not available"
             if moonset_time:
@@ -825,8 +847,8 @@ class MoonInfoDialog(QDialog):
                 distance_km = self._calculate_moon_distance(now)
 
                 # Supermoon threshold: within 90% of perigee (356,500 km)
-                SUPERMOON_THRESHOLD_KM = 356500 * 1.10  # 392,150 km
-                is_supermoon = distance_km > 0 and distance_km <= SUPERMOON_THRESHOLD_KM
+                supermoon_threshold_km = 356500 * 1.10  # 392,150 km
+                is_supermoon = distance_km > 0 and distance_km <= supermoon_threshold_km
 
             # Build special events section
             special_events_html = ""
@@ -1018,7 +1040,9 @@ class MoonInfoDialog(QDialog):
 
         return moonrise_time, moonset_time
 
-    def _calculate_moon_transit(self, date: datetime, moonrise_time: datetime | None = None, moonset_time: datetime | None = None) -> tuple[datetime | None, float]:
+    def _calculate_moon_transit(
+        self, date: datetime, moonrise_time: datetime | None = None, moonset_time: datetime | None = None
+    ) -> tuple[datetime | None, float]:
         """
         Calculate moon meridian passage (transit) time and altitude for a given date.
 
@@ -1066,7 +1090,9 @@ class MoonInfoDialog(QDialog):
                     # Moonset is before moonrise (previous cycle), search from moonrise forward
                     t0 = ts.from_datetime(moonrise_time)
                     t1 = ts.from_datetime(moonrise_time + timedelta(hours=18))  # Transit typically within 6-12 hours
-                    logger.info(f"Moonset before moonrise (prev cycle), searching from moonrise={moonrise_time} for 18 hours")
+                    logger.info(
+                        f"Moonset before moonrise (prev cycle), searching from moonrise={moonrise_time} for 18 hours"
+                    )
             elif moonrise_time:
                 # Only have moonrise, search forward
                 t0 = ts.from_datetime(moonrise_time)
@@ -1092,7 +1118,7 @@ class MoonInfoDialog(QDialog):
 
                         # Calculate altitude at transit
                         moon_apparent = observer.at(transit_time_skyfield).observe(moon).apparent()
-                        alt, az, _ = moon_apparent.altaz()
+                        alt, _az, _ = moon_apparent.altaz()
                         altitude_deg = float(alt.degrees)
 
                         logger.info(f"Moon transit calculated: {transit_datetime}, altitude={altitude_deg:.1f}°")

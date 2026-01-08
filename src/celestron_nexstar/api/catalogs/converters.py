@@ -52,6 +52,8 @@ class CoordinateConverter:
         """
         # Normalize to [0, 360) range to handle GeoJSON coordinates that may be in [-180, 180]
         normalized_degrees = ra_degrees % 360.0
+        if abs(normalized_degrees) < 1e-12 and ra_degrees != 0:
+            return 24.0
         return normalized_degrees / DEGREES_PER_HOUR_ANGLE
 
     @staticmethod

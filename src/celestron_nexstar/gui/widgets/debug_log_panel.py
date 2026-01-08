@@ -2,6 +2,7 @@
 Debug log panel widget for displaying application logs with filtering and pause capability.
 """
 
+import contextlib
 import logging
 from collections import deque
 from typing import TYPE_CHECKING
@@ -38,12 +39,9 @@ class DebugLogHandler(logging.Handler, QObject):
 
     def emit(self, record: logging.LogRecord) -> None:
         """Emit log record via Qt signal (thread-safe)."""
-        try:
+        with contextlib.suppress(Exception):
             # Emit raw LogRecord for filtering
             self.log_signal.emit(record)
-        except Exception:
-            # Ignore errors to avoid logging recursion
-            pass
 
 
 class DebugLogPanel(QWidget):

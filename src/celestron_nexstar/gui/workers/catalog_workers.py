@@ -10,7 +10,7 @@ import logging
 
 from PySide6.QtCore import QThread, Signal
 
-from celestron_nexstar.api.catalogs.catalogs import search_objects
+from celestron_nexstar.api.catalogs.catalogs import search_objects_sync
 
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,9 @@ class SearchObjectsWorker(QThread):
         """Perform search in background thread."""
         try:
             logger.debug(f"Searching for: {self.query} (catalog: {self.catalog_name})")
-            results = search_objects(self.query, catalog_name=self.catalog_name, update_positions=self.update_positions)
+            results = search_objects_sync(
+                self.query, catalog_name=self.catalog_name, update_positions=self.update_positions
+            )
             logger.debug(f"Search found {len(results)} results")
             self.results_ready.emit(results)
         except Exception as e:

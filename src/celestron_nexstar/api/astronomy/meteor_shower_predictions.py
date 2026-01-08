@@ -113,15 +113,15 @@ def get_enhanced_meteor_predictions(
 
     # Get all meteor showers from database
     from celestron_nexstar.api.astronomy.meteor_showers import (
-        get_active_showers,
-        get_all_meteor_showers,
+        get_active_showers_sync,
+        get_all_meteor_showers_sync,
     )
     from celestron_nexstar.api.database.models import get_db_session
 
     with get_db_session() as db_session:
-        all_showers = get_all_meteor_showers(db_session)
+        all_showers = get_all_meteor_showers_sync(db_session)
         # Get currently active showers
-        active_showers = get_active_showers(db_session, now)
+        active_showers = get_active_showers_sync(db_session, now)
 
     # Track which showers we've already added to avoid duplicates
     added_shower_names: set[str] = set()

@@ -60,40 +60,44 @@ def solve_kepler(mean_anomaly: float, eccentricity: float, tol: float = 1e-10, m
     Returns:
         Eccentric anomaly (E) for elliptic, or hyperbolic anomaly (H) for hyperbolic orbits
     """
-    M = mean_anomaly
+    mean_anom = mean_anomaly
     e = eccentricity
 
     if e < 1.0:
         # Elliptic orbit - Newton-Raphson for E
-        E = M if e < 0.8 else math.pi
+        eccentric_anom = mean_anom if e < 0.8 else math.pi
         for _ in range(max_iter):
-            f = E - e * math.sin(E) - M
-            f_prime = 1 - e * math.cos(E)
+            f = eccentric_anom - e * math.sin(eccentric_anom) - mean_anom
+            f_prime = 1 - e * math.cos(eccentric_anom)
             delta = f / f_prime
-            E -= delta
+            eccentric_anom -= delta
             if abs(delta) < tol:
                 break
-        return E
+        return eccentric_anom
     elif abs(e - 1.0) < 1e-6:
         # Near-parabolic - use parabolic approximation (Barker's equation)
-        # tan(ν/2) = D, M = D + D³/3
+        # tan(v/2) = D, M = D + D^3/3
         # Cubic equation: D³ + 3D - 3M = 0
-        W = 3.0 * M
-        s = (W + math.sqrt(W * W + 1)) ** (1.0 / 3.0) if W >= 0 else -((abs(W) + math.sqrt(W * W + 1)) ** (1.0 / 3.0))
-        D = s - 1.0 / s
-        # Convert D (tan(ν/2)) to parabolic eccentric anomaly
-        return 2.0 * math.atan(D)
+        w_val = 3.0 * mean_anom
+        s = (
+            (w_val + math.sqrt(w_val * w_val + 1)) ** (1.0 / 3.0)
+            if w_val >= 0
+            else -((abs(w_val) + math.sqrt(w_val * w_val + 1)) ** (1.0 / 3.0))
+        )
+        d_val = s - 1.0 / s
+        # Convert D (tan(v/2)) to parabolic eccentric anomaly
+        return 2.0 * math.atan(d_val)
     else:
         # Hyperbolic orbit - Newton-Raphson for H
-        H = M
+        hyperbolic_anom = mean_anom
         for _ in range(max_iter):
-            f = e * math.sinh(H) - H - M
-            f_prime = e * math.cosh(H) - 1
+            f = e * math.sinh(hyperbolic_anom) - hyperbolic_anom - mean_anom
+            f_prime = e * math.cosh(hyperbolic_anom) - 1
             delta = f / f_prime
-            H -= delta
+            hyperbolic_anom -= delta
             if abs(delta) < tol:
                 break
-        return H
+        return hyperbolic_anom
 
 
 def _compute_true_anomaly(eccentric_anomaly: float, eccentricity: float) -> float:
@@ -109,25 +113,25 @@ def _compute_true_anomaly(eccentric_anomaly: float, eccentricity: float) -> floa
     """
     e = eccentricity
     if e < 1.0:
-        # Elliptic: tan(ν/2) = sqrt((1+e)/(1-e)) * tan(E/2)
-        E = eccentric_anomaly
+        # Elliptic: tan(v/2) = sqrt((1+e)/(1-e)) * tan(E/2)
+        eccentric_anom = eccentric_anomaly
         factor = math.sqrt((1 + e) / (1 - e))
-        return 2.0 * math.atan(factor * math.tan(E / 2.0))
+        return 2.0 * math.atan(factor * math.tan(eccentric_anom / 2.0))
     elif abs(e - 1.0) < 1e-6:
-        # Parabolic: ν = eccentric_anomaly (already computed as 2*atan(D))
+        # Parabolic: v = eccentric_anomaly (already computed as 2*atan(D))
         return eccentric_anomaly
     else:
-        # Hyperbolic: tan(ν/2) = sqrt((e+1)/(e-1)) * tanh(H/2)
-        H = eccentric_anomaly
+        # Hyperbolic: tan(v/2) = sqrt((e+1)/(e-1)) * tanh(H/2)
+        hyperbolic_anom = eccentric_anomaly
         factor = math.sqrt((e + 1) / (e - 1))
-        return 2.0 * math.atan(factor * math.tanh(H / 2.0))
+        return 2.0 * math.atan(factor * math.tanh(hyperbolic_anom / 2.0))
 
 
 def _compute_radius(true_anomaly: float, perihelion_distance: float, eccentricity: float) -> float:
     """
     Compute heliocentric distance from true anomaly.
 
-    r = q * (1 + e) / (1 + e * cos(ν))   for parabolic (e=1): r = 2q / (1 + cos(ν))
+    r = q * (1 + e) / (1 + e * cos(v))   for parabolic (e=1): r = 2q / (1 + cos(v))
 
     Args:
         true_anomaly: True anomaly in radians
@@ -172,7 +176,7 @@ def _orbital_to_heliocentric(
     nu = true_anomaly
     r = radius
     omega = arg_perihelion_rad  # Argument of perihelion
-    Omega = ascending_node_rad  # Longitude of ascending node
+    ascending_node = ascending_node_rad  # Longitude of ascending node
     i = inclination_rad  # Inclination
 
     # Position in orbital plane
@@ -181,13 +185,13 @@ def _orbital_to_heliocentric(
     # Transform to heliocentric ecliptic
     cos_u = math.cos(u)
     sin_u = math.sin(u)
-    cos_Omega = math.cos(Omega)
-    sin_Omega = math.sin(Omega)
+    cos_ascending_node = math.cos(ascending_node)
+    sin_ascending_node = math.sin(ascending_node)
     cos_i = math.cos(i)
     sin_i = math.sin(i)
 
-    x = r * (cos_Omega * cos_u - sin_Omega * sin_u * cos_i)
-    y = r * (sin_Omega * cos_u + cos_Omega * sin_u * cos_i)
+    x = r * (cos_ascending_node * cos_u - sin_ascending_node * sin_u * cos_i)
+    y = r * (sin_ascending_node * cos_u + cos_ascending_node * sin_u * cos_i)
     z = r * (sin_u * sin_i)
 
     return x, y, z
@@ -322,8 +326,8 @@ def _compute_from_spk(
         elongation = angular_separation(ra_hours, dec_degrees, sun_ra.hours, sun_dec.degrees)
 
         # Estimate phase angle
-        R = 1.0  # Approximate Earth-Sun distance
-        cos_phase = (helio_dist**2 + geo_dist**2 - R**2) / (2 * helio_dist * geo_dist)
+        earth_sun_dist = 1.0  # Approximate Earth-Sun distance
+        cos_phase = (helio_dist**2 + geo_dist**2 - earth_sun_dist**2) / (2 * helio_dist * geo_dist)
         cos_phase = max(-1.0, min(1.0, cos_phase))
         phase_angle = math.degrees(math.acos(cos_phase))
 
@@ -421,13 +425,15 @@ def compute_comet_position(
         e = comet.eccentricity
         i_rad = math.radians(comet.inclination_deg)
         omega_rad = math.radians(comet.arg_perihelion_deg)
-        Omega_rad = math.radians(comet.ascending_node_deg)
+        ascending_node_rad = math.radians(comet.ascending_node_deg)
 
         # Compute time since perihelion
-        T = comet.perihelion_time
-        T = T.replace(tzinfo=UTC) if T.tzinfo is None else T.astimezone(UTC)
+        perihelion_time = comet.perihelion_time
+        perihelion_time = (
+            perihelion_time.replace(tzinfo=UTC) if perihelion_time.tzinfo is None else perihelion_time.astimezone(UTC)
+        )
 
-        delta_t = (dt - T).total_seconds() / 86400.0  # Days since perihelion
+        delta_t = (dt - perihelion_time).total_seconds() / 86400.0  # Days since perihelion
 
         # Compute mean motion (n) in radians/day
         # For elliptic orbits: n = sqrt(GM/a³) where GM = k² (Gaussian gravitational constant)
@@ -438,29 +444,29 @@ def compute_comet_position(
             # Elliptic: compute semi-major axis from q and e
             a = q / (1.0 - e)
             n = k / (a**1.5)  # radians/day
-            M = n * delta_t  # Mean anomaly
+            mean_anomaly = n * delta_t  # Mean anomaly
         elif abs(e - 1.0) < 1e-6:
             # Parabolic: use different formulation
             # M = k * (t - T) / (2 * q^1.5)
             # Actually for parabolic, we directly compute true anomaly
-            M = k * delta_t / (2.0 * q**1.5)
+            mean_anomaly = k * delta_t / (2.0 * q**1.5)
         else:
             # Hyperbolic: n = k * sqrt(-1/a³) where a = q / (1 - e) < 0
             a = q / (1.0 - e)  # Negative for hyperbolic
             n = k / ((-a) ** 1.5)
-            M = n * delta_t
+            mean_anomaly = n * delta_t
 
         # Solve Kepler's equation
-        E = solve_kepler(M, e)
+        eccentric_anomaly = solve_kepler(mean_anomaly, e)
 
         # Compute true anomaly
-        nu = _compute_true_anomaly(E, e)
+        nu = _compute_true_anomaly(eccentric_anomaly, e)
 
         # Compute heliocentric distance
         r = _compute_radius(nu, q, e)
 
         # Convert to heliocentric ecliptic coordinates
-        x_ecl, y_ecl, z_ecl = _orbital_to_heliocentric(nu, r, omega_rad, Omega_rad, i_rad)
+        x_ecl, y_ecl, z_ecl = _orbital_to_heliocentric(nu, r, omega_rad, ascending_node_rad, i_rad)
 
         # Get Earth's position
         x_earth, y_earth, z_earth = _get_earth_position(ts, eph, t)
@@ -496,8 +502,8 @@ def compute_comet_position(
         # Compute phase angle (Sun-Comet-Earth angle)
         # Using law of cosines: cos(phase) = (r² + Δ² - R²) / (2rΔ)
         # where R is Earth-Sun distance
-        R = math.sqrt(x_earth * x_earth + y_earth * y_earth + z_earth * z_earth)
-        cos_phase = (r * r + delta * delta - R * R) / (2 * r * delta) if r * delta > 0 else 0
+        earth_sun_dist = math.sqrt(x_earth * x_earth + y_earth * y_earth + z_earth * z_earth)
+        cos_phase = (r * r + delta * delta - earth_sun_dist * earth_sun_dist) / (2 * r * delta) if r * delta > 0 else 0
         cos_phase = max(-1.0, min(1.0, cos_phase))
         phase_angle = math.degrees(math.acos(cos_phase))
 
@@ -551,10 +557,10 @@ def compute_comet_magnitude(
         return comet.peak_magnitude
 
     # Check if we have H and k (slope_g)
-    H = comet.absolute_magnitude_h
+    absolute_magnitude = comet.absolute_magnitude_h
     k = comet.slope_g
 
-    if H is not None:
+    if absolute_magnitude is not None:
         # Use H/k photometric model
         # Default k to 4.0 if not specified (typical for comets)
         if k is None:
@@ -563,7 +569,7 @@ def compute_comet_magnitude(
         # m = H + 5*log10(Δ) + 2.5*k*log10(r)
         # Note: Some sources use k directly, others use 2.5*k
         # MPC typically uses: m = H + 5*log10(Δ) + k*log10(r)
-        magnitude = H + 5.0 * math.log10(delta) + k * math.log10(r)
+        magnitude = absolute_magnitude + 5.0 * math.log10(delta) + k * math.log10(r)
         return magnitude
     else:
         # Fallback to simple model based on perihelion

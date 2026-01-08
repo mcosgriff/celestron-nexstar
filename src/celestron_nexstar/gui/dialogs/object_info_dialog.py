@@ -311,13 +311,13 @@ class ObjectInfoDialog(QDialog):
         """Load object information from the API."""
         colors = self._get_theme_colors()
         try:
-            from celestron_nexstar.api.catalogs.catalogs import get_object_by_name
+            from celestron_nexstar.api.catalogs.catalogs import get_object_by_name_sync
             from celestron_nexstar.api.core.enums import CelestialObjectType
             from celestron_nexstar.api.core.utils import format_dec, format_ra
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
             # Get object by name
-            matches = get_object_by_name(self.object_name)
+            matches = get_object_by_name_sync(self.object_name)
 
             if not matches:
                 self.info_text.setHtml(

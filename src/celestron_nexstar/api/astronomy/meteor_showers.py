@@ -7,10 +7,12 @@ and radiant positions. Useful for planning naked-eye observing sessions.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -26,8 +28,11 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "MeteorShower",
     "get_active_showers",
+    "get_active_showers_sync",
     "get_all_meteor_showers",
+    "get_all_meteor_showers_sync",
     "get_peak_showers",
+    "get_peak_showers_sync",
     "populate_meteor_shower_database",
 ]
 
@@ -59,7 +64,13 @@ class MeteorShower:
 # Data from IMO (International Meteor Organization) and reliable sources
 
 
-def get_all_meteor_showers(db_session: Session) -> list[MeteorShower]:
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def get_all_meteor_showers(db_session: Session) -> list[MeteorShower]:
     """
     Get list of all major meteor showers from database.
 
@@ -77,16 +88,21 @@ def get_all_meteor_showers(db_session: Session) -> list[MeteorShower]:
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import MeteorShowerModel
 
-    count = db_session.scalar(select(func.count(MeteorShowerModel.id)))
+    count = await _maybe_await(db_session.scalar(select(func.count(MeteorShowerModel.id))))
     if count == 0:
         raise DatabaseError(
             "No meteor showers found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = db_session.execute(select(MeteorShowerModel))
+    result = await _maybe_await(db_session.execute(select(MeteorShowerModel)))
     models = result.scalars().all()
 
     return [model.to_meteor_shower() for model in models]
+
+
+def get_all_meteor_showers_sync(db_session: Session) -> list[MeteorShower]:
+    """Sync wrapper for get_all_meteor_showers to preserve legacy call sites."""
+    return asyncio.run(get_all_meteor_showers(db_session))
 
 
 def _is_date_in_range(
@@ -124,7 +140,7 @@ def _is_date_in_range(
         return check_doy >= start_doy or check_doy <= end_doy
 
 
-def get_active_showers(db_session: Session, date: datetime | None = None) -> list[MeteorShower]:
+async def get_active_showers(db_session: Session, date: datetime | None = None) -> list[MeteorShower]:
     """
     Get meteor showers active on a given date.
 
@@ -142,7 +158,7 @@ def get_active_showers(db_session: Session, date: datetime | None = None) -> lis
     day = date.day
 
     active = []
-    showers = get_all_meteor_showers(db_session)
+    showers = await _maybe_await(get_all_meteor_showers(db_session))
     for shower in showers:
         if _is_date_in_range(
             month,
@@ -157,7 +173,12 @@ def get_active_showers(db_session: Session, date: datetime | None = None) -> lis
     return active
 
 
-def get_peak_showers(
+def get_active_showers_sync(db_session: Session, date: datetime | None = None) -> list[MeteorShower]:
+    """Sync wrapper for get_active_showers to preserve legacy call sites."""
+    return asyncio.run(get_active_showers(db_session, date))
+
+
+async def get_peak_showers(
     db_session: Session,
     date: datetime | None = None,
     tolerance_days: int = 2,
@@ -196,7 +217,7 @@ def get_peak_showers(
         end_day = end_day - 28
 
     peak = []
-    showers = get_all_meteor_showers(db_session)
+    showers = await _maybe_await(get_all_meteor_showers(db_session))
     for shower in showers:
         # Check if shower peak overlaps with our date range
         if _is_date_in_range(
@@ -217,6 +238,15 @@ def get_peak_showers(
             peak.append(shower)
 
     return peak
+
+
+def get_peak_showers_sync(
+    db_session: Session,
+    date: datetime | None = None,
+    tolerance_days: int = 2,
+) -> list[MeteorShower]:
+    """Sync wrapper for get_peak_showers to preserve legacy call sites."""
+    return asyncio.run(get_peak_showers(db_session, date, tolerance_days))
 
 
 def get_radiant_position(

@@ -6,6 +6,7 @@ helping observers quickly identify what's best to view right now.
 """
 
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -90,7 +91,7 @@ class SkyNowWorkerThread(QThread):
             # Query ALL objects from database (with reasonable magnitude limits)
             # Note: We skip the initial visibility filter and only check visibility at transit time
             # This is much faster than checking visibility twice (now + transit time)
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
             from celestron_nexstar.api.database.database import get_database
 
@@ -99,11 +100,11 @@ class SkyNowWorkerThread(QThread):
 
                 # Define all queries to run in parallel
                 query_tasks = [
-                    ("star", {"object_type": "star", "max_magnitude": 5.0, "limit": 500}),
-                    ("double_star", {"object_type": "double_star", "max_magnitude": 8.0, "limit": 200}),
-                    ("galaxy", {"object_type": "galaxy", "max_magnitude": 12.0, "limit": 500}),
-                    ("nebula", {"object_type": "nebula", "max_magnitude": 12.0, "limit": 500}),
-                    ("cluster", {"object_type": "cluster", "max_magnitude": 12.0, "limit": 500}),
+                    ("star", {"object_type": "star", "max_magnitude": 4.5, "limit": 300}),
+                    ("double_star", {"object_type": "double_star", "max_magnitude": 7.0, "limit": 100}),
+                    ("galaxy", {"object_type": "galaxy", "max_magnitude": 11.0, "limit": 200}),
+                    ("nebula", {"object_type": "nebula", "max_magnitude": 11.0, "limit": 200}),
+                    ("cluster", {"object_type": "cluster", "max_magnitude": 11.0, "limit": 200}),
                     ("planet", {"object_type": "planet", "limit": 50}),
                     ("moon", {"object_type": "moon", "limit": 100}),
                 ]
@@ -133,102 +134,134 @@ class SkyNowWorkerThread(QThread):
                 self.error_occurred.emit(f"Database error: {e}", "Error loading objects")
                 return
 
+            # Pre-filter objects by current altitude to reduce expensive timeline calculations
+            visible_now = []
+            for obj in all_objects:
+                try:
+                    altitude_deg, _azimuth_deg = get_object_altitude_azimuth(
+                        obj,
+                        observer_lat=location.latitude,
+                        observer_lon=location.longitude,
+                        dt=now,
+                    )
+                    if altitude_deg > -10.0:
+                        visible_now.append(obj)
+                except Exception:
+                    continue
+
+            logger.debug(f"Sky Now: {len(visible_now)} objects above -10° altitude right now")
+
             # Get observing conditions for visibility probability calculation
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.planning_utils import get_object_visibility_timeline
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
             planner = ObservationPlanner()
+            weather_executor = ThreadPoolExecutor(max_workers=1)
             try:
-                conditions = planner.get_tonight_conditions()
-            except Exception as e:
-                logger.warning(f"Could not get observing conditions, using defaults: {e}")
-                conditions = None
-
-            # Calculate transit times and check visibility at transit time
-            # (We only check visibility once - at the transit time)
-            filtered_objects: list[tuple[CelestialObject, datetime]] = []
-
-            for obj in all_objects:
-                obj_name = getattr(obj, "common_name", None) or getattr(obj, "name", "Unknown")
-
+                conditions_future = weather_executor.submit(planner.get_tonight_conditions)
                 try:
-                    # Calculate transit time using visibility timeline
-                    timeline = get_object_visibility_timeline(
-                        obj=obj,
-                        observer_lat=location.latitude,
-                        observer_lon=location.longitude,
-                        start_time=now,
-                        days=1,  # Look ahead 1 day
-                    )
+                    conditions = conditions_future.result(timeout=0.1)
+                except TimeoutError:
+                    conditions = None
+                except Exception as e:
+                    logger.warning(f"Could not get observing conditions, using defaults: {e}")
+                    conditions = None
 
-                    transit_time = timeline.transit_time
+                # Calculate transit times and check visibility at transit time
+                # (We only check visibility once - at the transit time)
+                filtered_objects: list[tuple[CelestialObject, datetime]] = []
 
-                    # Debug logging for Rigel specifically
-                    if "rigel" in obj_name.lower():
-                        logger.info(
-                            f"Sky Now: Found Rigel! transit_time={transit_time}, "
-                            f"tzinfo={transit_time.tzinfo if transit_time else 'N/A'}"
+                def process_object(obj: CelestialObject) -> tuple[CelestialObject, datetime] | None:
+                    obj_name = getattr(obj, "common_name", None) or getattr(obj, "name", "Unknown")
+
+                    try:
+                        # Calculate transit time using visibility timeline
+                        timeline = get_object_visibility_timeline(
+                            obj=obj,
+                            observer_lat=location.latitude,
+                            observer_lon=location.longitude,
+                            start_time=now,
+                            days=1,  # Look ahead 1 day
                         )
 
-                    if transit_time:
-                        # Convert transit_time to local timezone for comparison
-                        if transit_time.tzinfo is None:
-                            # If naive, assume it's UTC
-                            transit_time = transit_time.replace(tzinfo=UTC)
-                        transit_time_local = transit_time.astimezone(local_tz)
-
-                        # Check if transit time is in our range
-                        in_time_range = start_time <= transit_time_local <= end_time
+                        transit_time = timeline.transit_time
 
                         # Debug logging for Rigel specifically
                         if "rigel" in obj_name.lower():
                             logger.info(
-                                f"Sky Now: Rigel details: transit_local={transit_time_local.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                                f"start_time={start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                                f"end_time={end_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                                f"in_range={in_time_range}"
+                                f"Sky Now: Found Rigel! transit_time={transit_time}, "
+                                f"tzinfo={transit_time.tzinfo if transit_time else 'N/A'}"
                             )
 
-                        if in_time_range:
-                            # Use the SAME visibility check as main window tables
-                            # Assess visibility at transit time
-                            visibility_at_transit = assess_visibility(
-                                obj,
-                                min_altitude_deg=20.0,  # Match main window threshold
-                                observer_lat=location.latitude,
-                                observer_lon=location.longitude,
-                                dt=transit_time,  # Check visibility at transit time
-                            )
+                        if transit_time:
+                            # Convert transit_time to local timezone for comparison
+                            if transit_time.tzinfo is None:
+                                # If naive, assume it's UTC
+                                transit_time = transit_time.replace(tzinfo=UTC)
+                            transit_time_local = transit_time.astimezone(local_tz)
 
-                            # Calculate visibility probability (same as main window)
-                            if conditions:
-                                visibility_prob_result = planner._calculate_visibility_probability(
-                                    obj, conditions, visibility_at_transit
+                            # Check if transit time is in our range
+                            in_time_range = start_time <= transit_time_local <= end_time
+
+                            # Debug logging for Rigel specifically
+                            if "rigel" in obj_name.lower():
+                                logger.info(
+                                    f"Sky Now: Rigel details: transit_local={transit_time_local.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                                    f"start_time={start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                                    f"end_time={end_time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                                    f"in_range={in_time_range}"
                                 )
-                                # Handle tuple return (probability, explanations) or just probability
-                                if isinstance(visibility_prob_result, tuple):
-                                    visibility_probability = visibility_prob_result[0]
+
+                            if in_time_range:
+                                # Use the SAME visibility check as main window tables
+                                # Assess visibility at transit time
+                                visibility_at_transit = assess_visibility(
+                                    obj,
+                                    min_altitude_deg=20.0,  # Match main window threshold
+                                    observer_lat=location.latitude,
+                                    observer_lon=location.longitude,
+                                    dt=transit_time,  # Check visibility at transit time
+                                )
+
+                                # Calculate visibility probability (same as main window)
+                                if conditions:
+                                    visibility_prob_result = planner._calculate_visibility_probability(
+                                        obj, conditions, visibility_at_transit
+                                    )
+                                    # Handle tuple return (probability, explanations) or just probability
+                                    if isinstance(visibility_prob_result, tuple):
+                                        visibility_probability = visibility_prob_result[0]
+                                    else:
+                                        visibility_probability = visibility_prob_result
                                 else:
-                                    visibility_probability = visibility_prob_result
-                            else:
-                                # No conditions available, use observability score as proxy
-                                visibility_probability = visibility_at_transit.observability_score
+                                    # No conditions available, use observability score as proxy
+                                    visibility_probability = visibility_at_transit.observability_score
 
-                            # Use same threshold as main window: visibility_probability > 0
-                            # (Main window shows objects with visibility_probability > 0)
-                            if visibility_probability > 0:
-                                filtered_objects.append((obj, transit_time_local))
-                            else:
-                                logger.debug(
-                                    f"Sky Now: Excluding {obj_name} - visibility probability too low "
-                                    f"(prob={visibility_probability:.3f}, alt={visibility_at_transit.altitude_deg:.1f}°)"
-                                )
+                                # Use same threshold as main window: visibility_probability > 0
+                                # (Main window shows objects with visibility_probability > 0)
+                                if visibility_probability > 0:
+                                    return (obj, transit_time_local)
+                                else:
+                                    logger.debug(
+                                        f"Sky Now: Excluding {obj_name} - visibility probability too low "
+                                        f"(prob={visibility_probability:.3f}, alt={visibility_at_transit.altitude_deg:.1f}°)"
+                                    )
 
-                except Exception as e:
-                    # Skip objects that fail transit calculation
-                    logger.debug(f"Sky Now: Could not calculate transit for {obj_name}: {e}")
-                    continue
+                    except Exception as e:
+                        # Skip objects that fail transit calculation
+                        logger.debug(f"Sky Now: Could not calculate transit for {obj_name}: {e}")
+                        return None
+
+                    return None
+
+                max_workers = min(4, os.cpu_count() or 1)
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    for result in executor.map(process_object, visible_now):
+                        if result:
+                            filtered_objects.append(result)
+            finally:
+                weather_executor.shutdown(wait=False)
 
             logger.info(
                 f"Sky Now: Filtered to {len(filtered_objects)} objects transiting between {start_time.strftime('%H:%M')} and {end_time.strftime('%H:%M')} local time"
@@ -807,7 +840,7 @@ class SkyNowDialog(QDialog):
             self.refresh_timer.start(value * 60 * 1000)
             logger.info(f"Sky Now: Refresh interval changed to {value} minutes")
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802
         """Handle dialog close event."""
         # Stop refresh timer
         if self.refresh_timer.isActive():

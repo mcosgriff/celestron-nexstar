@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from celestron_nexstar.api.catalogs.catalogs import CelestialObject, search_objects
+from celestron_nexstar.api.catalogs.catalogs import CelestialObject, search_objects_sync
 from celestron_nexstar.api.core.utils import format_dec, format_ra
 from celestron_nexstar.api.observation.planning_utils import DifficultyLevel, get_object_difficulty
 from celestron_nexstar.api.observation.visibility import VisibilityInfo, assess_visibility
@@ -122,7 +122,7 @@ class ObjectComparisonDialog(QDialog):
         """Add an object to the comparison by name."""
         try:
             # Search for object
-            matches = search_objects(object_name, update_positions=True)
+            matches = search_objects_sync(object_name, update_positions=True)
             if not matches:
                 QMessageBox.warning(self, "Object Not Found", f"Could not find object: {object_name}")
                 return

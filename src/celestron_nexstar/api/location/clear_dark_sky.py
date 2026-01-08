@@ -83,10 +83,14 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
             if match:
                 chart_key = match.group(1)
                 _chart_key_cache[cache_key] = chart_key
-                logger.info(f"Found chart key: {chart_key} for location {location.name or cache_key} (using server{server_num})")
+                logger.info(
+                    f"Found chart key: {chart_key} for location {location.name or cache_key} (using server{server_num})"
+                )
                 return chart_key
 
-            logger.warning(f"Could not extract chart key from server{server_num} HTML response (location: {location.name or cache_key})")
+            logger.warning(
+                f"Could not extract chart key from server{server_num} HTML response (location: {location.name or cache_key})"
+            )
             logger.debug(f"HTML response preview: {html_content[:500]}")
             # Continue to next server
 
@@ -100,7 +104,7 @@ def find_nearest_chart(location: ObserverLocation) -> str | None:
         logger.error(f"All Clear Dark Sky servers (1-5) failed. Last error: {last_error}")
         raise last_error
     else:
-        logger.error(f"All Clear Dark Sky servers returned responses but no chart key was found")
+        logger.error("All Clear Dark Sky servers returned responses but no chart key was found")
         return None
 
 

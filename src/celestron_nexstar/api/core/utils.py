@@ -288,9 +288,8 @@ def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> floa
     dec1_rad = math.radians(dec1)
     dec2_rad = math.radians(dec2)
 
-    cos_sep = (
-        math.sin(dec1_rad) * math.sin(dec2_rad)
-        + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(ra1_rad - ra2_rad)
+    cos_sep = math.sin(dec1_rad) * math.sin(dec2_rad) + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(
+        ra1_rad - ra2_rad
     )
     cos_sep = max(-1.0, min(1.0, cos_sep))
     return math.degrees(math.acos(cos_sep))

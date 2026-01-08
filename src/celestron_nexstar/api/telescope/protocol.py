@@ -181,7 +181,7 @@ class NexStarProtocol:
                         break
                     total_flushed += len(garbage)
                     logger.debug(f"Flushed {len(garbage)} bytes: {garbage[:50]!r}...")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break  # No more data to read
             logger.info(f"Flushed {total_flushed} bytes total from input buffer")
         except Exception as e:
@@ -359,14 +359,16 @@ class NexStarProtocol:
                             f"UNSOLICITED DATA: Flushed {len(garbage)} bytes before command {command!r}: "
                             f"{garbage[:50]!r} (hex: {garbage[:50].hex()})"
                         )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     break
         except Exception as e:
             logger.debug(f"Error flushing buffer: {e}")
 
         if flushed_total > 0:
-            logger.error(f"WARNING: Telescope sent {flushed_total} bytes of unsolicited data! "
-                        f"This indicates a communication problem. Consider power cycling the telescope.")
+            logger.error(
+                f"WARNING: Telescope sent {flushed_total} bytes of unsolicited data! "
+                f"This indicates a communication problem. Consider power cycling the telescope."
+            )
 
         # Send command with terminator
         full_command = command + self.TERMINATOR
@@ -587,15 +589,12 @@ class NexStarProtocol:
         """
         response = await self.send_command(command)
 
-        # Handle unexpected responses gracefully
+        # Handle unexpected responses as failures
         if response != "":
             logger.warning(
-                f"Expected empty response for command {command!r}, "
-                f"got {len(response)} bytes: {response[:50]!r}"
+                f"Expected empty response for command {command!r}, got {len(response)} bytes: {response[:50]!r}"
             )
-            # Some telescopes echo the command or send status - still treat as success
-            # if the response ends with our terminator (already stripped)
-            return True  # Be lenient with unexpected responses
+            return False
 
         return True
 

@@ -368,7 +368,7 @@ def check_milky_way_visibility(
     try:
         from celestron_nexstar.api.astronomy.solar_system import get_moon_info
         from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast
 
         # Determine which weather time to use:
@@ -444,7 +444,7 @@ def check_milky_way_visibility(
             weather = fetch_weather(location)
             moon_info = get_moon_info(location.latitude, location.longitude, dt)
             with get_db_session() as db_session:
-                lp_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
+                lp_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
 
             if cloud_cover is None:
                 if isinstance(weather, Exception):
@@ -623,7 +623,7 @@ def get_milky_way_visibility_windows(
     # Fetch all data once upfront to avoid repeated API calls
 
     from celestron_nexstar.api.database.models import get_db_session
-    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
     from celestron_nexstar.api.location.weather import HourlySeeingForecast, fetch_hourly_weather_forecast
 
     # Get light pollution data once (doesn't change)
@@ -631,10 +631,10 @@ def get_milky_way_visibility_windows(
     sqm_value = None
     try:
         from celestron_nexstar.api.database.models import get_db_session
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
 
         with get_db_session() as db_session:
-            lp_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
+            lp_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
             sqm_value = lp_data.sqm_value
@@ -924,10 +924,10 @@ def get_next_milky_way_opportunity(
     bortle_class = None
     try:
         from celestron_nexstar.api.database.models import get_db_session
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
 
         with get_db_session() as db_session:
-            lp_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
+            lp_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
         if lp_data and not isinstance(lp_data, Exception):
             bortle_class = lp_data.bortle_class.value
     except (RuntimeError, TimeoutError, AttributeError) as e:

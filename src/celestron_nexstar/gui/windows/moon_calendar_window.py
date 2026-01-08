@@ -259,7 +259,9 @@ class MoonCalendarWindow(QMainWindow):
 
         # Update progress dialog to show rendering phase
         if self._progress_dialog:
-            self._progress_dialog.setLabelText(f"Rendering calendar for {datetime(self._current_year, self._current_month, 1).strftime('%B %Y')}...")
+            self._progress_dialog.setLabelText(
+                f"Rendering calendar for {datetime(self._current_year, self._current_month, 1).strftime('%B %Y')}..."
+            )
             self._progress_dialog.setValue(95)  # Show we're in final phase
 
         # Populate UI
@@ -267,6 +269,7 @@ class MoonCalendarWindow(QMainWindow):
 
         # Process all pending UI events to ensure rendering completes
         from PySide6.QtCore import QCoreApplication, QTimer
+
         QCoreApplication.processEvents()
 
         # Defer closing progress dialog to allow deferred icon rendering to complete
@@ -399,9 +402,7 @@ class MoonCalendarWindow(QMainWindow):
             # Preserve the calendar date (year, month, day) and create midnight in local timezone
             # Don't convert UTC to local timezone as that shifts the date
             date_at_midnight_local = datetime(
-                date.year, date.month, date.day,
-                hour=0, minute=0, second=0, microsecond=0,
-                tzinfo=self._local_timezone
+                date.year, date.month, date.day, hour=0, minute=0, second=0, microsecond=0, tzinfo=self._local_timezone
             )
 
             dialog = MoonInfoDialog(self, target_date=date_at_midnight_local)
@@ -445,7 +446,7 @@ class MoonCalendarWindow(QMainWindow):
         # 2. Spawn worker for next 6 months
         # 3. Append results to timeline (replace=False)
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802
         """Handle window close event."""
         # Cancel any running worker
         if self._worker and self._worker.isRunning():

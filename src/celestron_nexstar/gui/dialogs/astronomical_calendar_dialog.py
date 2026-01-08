@@ -641,11 +641,11 @@ class AstronomicalCalendarDialog(QDialog):
     def _load_meteor_showers(self, start_date: datetime) -> None:
         """Load meteor showers from database."""
         try:
-            from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers
+            from celestron_nexstar.api.astronomy.meteor_showers import get_all_meteor_showers_sync
             from celestron_nexstar.api.database.models import get_db_session
 
             with get_db_session() as session:
-                showers = get_all_meteor_showers(session)
+                showers = get_all_meteor_showers_sync(session)
 
             current_date = start_date
             end_date = current_date + timedelta(days=365)

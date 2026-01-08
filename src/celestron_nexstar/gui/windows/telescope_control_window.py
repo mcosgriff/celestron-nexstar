@@ -65,11 +65,11 @@ logger = logging.getLogger(__name__)
 # Slew rate descriptions
 SLEW_RATE_DESCRIPTIONS = {
     0: "Stop",
-    1: "2× sidereal",
-    2: "4× sidereal",
-    3: "8× sidereal",
-    4: "16× sidereal",
-    5: "32× sidereal",
+    1: "2x sidereal",
+    2: "4x sidereal",
+    3: "8x sidereal",
+    4: "16x sidereal",
+    5: "32x sidereal",
     6: "0.5°/sec",
     7: "1°/sec",
     8: "3°/sec",
@@ -1202,33 +1202,33 @@ class TelescopeControlWindow(QMainWindow):
         dialog = AlignmentAssistantDialog(self, telescope=self.telescope)
         dialog.exec()
 
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802
         """Handle window close event - cleanup resources."""
         logger.info("Telescope control window closing, cleaning up...")
 
         # Stop all timers first
         try:
-            if hasattr(self, 'position_timer') and self.position_timer:
+            if hasattr(self, "position_timer") and self.position_timer:
                 self.position_timer.stop()
-            if hasattr(self, 'slew_status_timer') and self.slew_status_timer:
+            if hasattr(self, "slew_status_timer") and self.slew_status_timer:
                 self.slew_status_timer.stop()
-            if hasattr(self, 'visible_objects_timer') and self.visible_objects_timer:
+            if hasattr(self, "visible_objects_timer") and self.visible_objects_timer:
                 self.visible_objects_timer.stop()
         except Exception as e:
             logger.warning(f"Error stopping timers: {e}")
 
         # Wait for all worker threads to finish
         threads_to_wait = [
-            ('_position_ra_dec_thread', 'Position RA/Dec'),
-            ('_position_alt_az_thread', 'Position Alt/Az'),
-            ('_step_thread', 'Step Movement'),
-            ('_move_thread', 'Continuous Movement'),
-            ('_stop_thread', 'Stop Movement'),
-            ('_connect_thread', 'Connect'),
-            ('_disconnect_thread', 'Disconnect'),
-            ('_sync_thread', 'Sync'),
-            ('_goto_thread', 'Goto'),
-            ('_tracking_mode_thread', 'Tracking Mode'),
+            ("_position_ra_dec_thread", "Position RA/Dec"),
+            ("_position_alt_az_thread", "Position Alt/Az"),
+            ("_step_thread", "Step Movement"),
+            ("_move_thread", "Continuous Movement"),
+            ("_stop_thread", "Stop Movement"),
+            ("_connect_thread", "Connect"),
+            ("_disconnect_thread", "Disconnect"),
+            ("_sync_thread", "Sync"),
+            ("_goto_thread", "Goto"),
+            ("_tracking_mode_thread", "Tracking Mode"),
         ]
 
         for thread_attr, thread_name in threads_to_wait:
@@ -1246,12 +1246,13 @@ class TelescopeControlWindow(QMainWindow):
                 logger.warning(f"Error waiting for {thread_name} thread: {e}")
 
         # If connected, disconnect and shutdown telescope
-        if hasattr(self, 'telescope') and self.telescope:
+        if hasattr(self, "telescope") and self.telescope:
             if self._is_connected:
                 logger.info("Disconnecting telescope on window close...")
                 try:
                     # Run disconnect in the telescope's event loop with timeout
                     import concurrent.futures
+
                     future = concurrent.futures.Future()
 
                     def do_disconnect():
@@ -1263,6 +1264,7 @@ class TelescopeControlWindow(QMainWindow):
 
                     # Run in a thread to avoid blocking
                     import threading
+
                     disconnect_thread = threading.Thread(target=do_disconnect, daemon=True)
                     disconnect_thread.start()
                     disconnect_thread.join(timeout=3.0)

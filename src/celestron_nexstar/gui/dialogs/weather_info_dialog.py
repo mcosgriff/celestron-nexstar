@@ -33,7 +33,7 @@ class WheelEventFilter(QObject):
         super().__init__()
         self.scroll_area = scroll_area
 
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         """Filter wheel events and redirect to scroll area."""
         if event.type() == QEvent.Type.Wheel:
             # Forward wheel event to scroll area

@@ -19,9 +19,9 @@ from celestron_nexstar.api.catalogs.catalogs import (
     CelestialObject,
     get_all_objects,
     get_catalog,
-    get_object_by_name,
+    get_object_by_name_sync,
     get_object_names_for_completion,
-    search_objects,
+    search_objects_sync,
 )
 from celestron_nexstar.api.database.database import get_database
 from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -220,7 +220,7 @@ def search(
 
         # Search for objects
         catalog_name = None if catalog == "all" else catalog
-        results: list[tuple[CelestialObject, str]] = search_objects(query, catalog_name)
+        results: list[tuple[CelestialObject, str]] = search_objects_sync(query, catalog_name)
 
         if not results:
             print_info(f"No objects found matching '{query}'")
@@ -573,7 +573,7 @@ def info(
         check_database_setup()
 
         # Get matching objects (fuzzy search)
-        matches: list[CelestialObject] = get_object_by_name(object_name)
+        matches: list[CelestialObject] = get_object_by_name_sync(object_name)
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")
@@ -816,7 +816,7 @@ def goto(
         check_database_setup()
 
         # Look up objects (fuzzy search)
-        matches: list[CelestialObject] = get_object_by_name(object_name)
+        matches: list[CelestialObject] = get_object_by_name_sync(object_name)
 
         if not matches:
             print_error(f"No objects found matching '{object_name}'")

@@ -13,7 +13,11 @@ from rich.console import Console
 from rich.table import Table
 from typer.core import TyperGroup
 
-from celestron_nexstar.api.astronomy.comets import CometVisibility, get_upcoming_comets, get_visible_comets
+from celestron_nexstar.api.astronomy.comets import (
+    CometVisibility,
+    get_upcoming_comets_sync,
+    get_visible_comets_sync,
+)
 from celestron_nexstar.api.database.models import get_db_session
 from celestron_nexstar.api.location.observer import ObserverLocation, get_observer_location
 from celestron_nexstar.cli.utils.export import FileConsole, create_file_console, export_to_text
@@ -68,7 +72,7 @@ def show_visible(
         raise typer.Exit(1)
 
     with get_db_session() as db_session:
-        comets = get_visible_comets(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
+        comets = get_visible_comets_sync(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("visible")
@@ -101,7 +105,7 @@ def show_next(
         raise typer.Exit(1)
 
     with get_db_session() as db_session:
-        comets = get_upcoming_comets(db_session, location, months_ahead=months)
+        comets = get_upcoming_comets_sync(db_session, location, months_ahead=months)
 
     if export:
         export_path_obj = Path(export_path) if export_path else _generate_export_filename("next")

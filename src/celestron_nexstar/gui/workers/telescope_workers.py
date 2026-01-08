@@ -6,7 +6,6 @@ QThread workers for async telescope operations to prevent UI blocking.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -240,9 +239,7 @@ class MoveFixedThread(QThread):
     def run(self) -> None:
         """Start continuous movement in background thread."""
         try:
-            success = self.telescope.run_coroutine_threadsafe(
-                self.telescope.move_fixed(self.direction, self.rate)
-            )
+            success = self.telescope.run_coroutine_threadsafe(self.telescope.move_fixed(self.direction, self.rate))
             self.move_started.emit(success)
         except Exception as e:
             logger.error(f"Error moving telescope: {e}", exc_info=True)
@@ -266,9 +263,7 @@ class MoveStepThread(QThread):
     def run(self) -> None:
         """Execute step movement in background thread."""
         try:
-            success = self.telescope.run_coroutine_threadsafe(
-                self.telescope.move_step(self.direction, self.rate)
-            )
+            success = self.telescope.run_coroutine_threadsafe(self.telescope.move_step(self.direction, self.rate))
             self.step_complete.emit(success)
         except Exception as e:
             logger.error(f"Error stepping telescope: {e}", exc_info=True)

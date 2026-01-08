@@ -267,15 +267,15 @@ class BinocularsInfoDialog(QDialog):
 
                 # Meteor Showers
                 from celestron_nexstar.api.astronomy.meteor_showers import (
-                    get_active_showers,
-                    get_peak_showers,
+                    get_active_showers_sync,
+                    get_peak_showers_sync,
                     get_radiant_position,
                 )
                 from celestron_nexstar.api.database.models import get_db_session
 
                 with get_db_session() as db_session:
-                    active_showers = get_active_showers(db_session, now)
-                    peak_showers = get_peak_showers(db_session, now, tolerance_days=3)
+                    active_showers = get_active_showers_sync(db_session, now)
+                    peak_showers = get_peak_showers_sync(db_session, now, tolerance_days=3)
 
                 content_parts.append(
                     "<h2>Active Meteor Showers</h2>"
@@ -337,9 +337,9 @@ class BinocularsInfoDialog(QDialog):
 
                 # Prominent Constellations
                 from celestron_nexstar.api.astronomy.constellations import (
-                    get_prominent_constellations,
-                    get_visible_asterisms,
-                    get_visible_constellations,
+                    get_prominent_constellations_sync,
+                    get_visible_asterisms_sync,
+                    get_visible_constellations_sync,
                 )
                 from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
                 from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
@@ -354,7 +354,7 @@ class BinocularsInfoDialog(QDialog):
 
                 # Get visible constellations
                 with get_db_session() as db_session:
-                    visible_constellations = get_visible_constellations(
+                    visible_constellations = get_visible_constellations_sync(
                         db_session, lat, lon, midnight, min_altitude_deg=10.0
                     )
 
@@ -394,7 +394,7 @@ class BinocularsInfoDialog(QDialog):
 
                 # Add constellations that have visible stars but aren't already in the list
                 with get_db_session() as db_session:
-                    all_prominent = get_prominent_constellations(db_session)
+                    all_prominent = get_prominent_constellations_sync(db_session)
                 existing_names = {c.name for c, _, _ in visible_constellations}
 
                 for constellation in all_prominent:
@@ -601,7 +601,9 @@ class BinocularsInfoDialog(QDialog):
                 )
 
                 with get_db_session() as db_session:
-                    visible_asterisms = get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=20.0)
+                    visible_asterisms = get_visible_asterisms_sync(
+                        db_session, lat, lon, midnight, min_altitude_deg=20.0
+                    )
 
                 if visible_asterisms:
                     content_parts.append(

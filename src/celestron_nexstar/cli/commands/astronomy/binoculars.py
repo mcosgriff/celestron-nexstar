@@ -18,11 +18,15 @@ from timezonefinder import TimezoneFinder
 from typer.core import TyperGroup
 
 from celestron_nexstar.api.astronomy.constellations import (
-    get_prominent_constellations,
-    get_visible_asterisms,
-    get_visible_constellations,
+    get_prominent_constellations_sync,
+    get_visible_asterisms_sync,
+    get_visible_constellations_sync,
 )
-from celestron_nexstar.api.astronomy.meteor_showers import get_active_showers, get_peak_showers, get_radiant_position
+from celestron_nexstar.api.astronomy.meteor_showers import (
+    get_active_showers_sync,
+    get_peak_showers_sync,
+    get_radiant_position,
+)
 from celestron_nexstar.api.astronomy.sun_moon import calculate_sun_times
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
@@ -345,8 +349,8 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[dim]Best viewed with naked eye or binoculars for wide-field sweeping[/dim]\n")
 
         with get_db_session() as db_session:
-            active_showers = get_active_showers(db_session, now)
-            peak_showers = get_peak_showers(db_session, now, tolerance_days=3)
+            active_showers = get_active_showers_sync(db_session, now)
+            peak_showers = get_peak_showers_sync(db_session, now, tolerance_days=3)
 
         if active_showers:
             table_showers = Table()
@@ -401,7 +405,9 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
 
         # Get visible constellations (using lower threshold to catch more)
         with get_db_session() as db_session:
-            visible_constellations = get_visible_constellations(db_session, lat, lon, midnight, min_altitude_deg=10.0)
+            visible_constellations = get_visible_constellations_sync(
+                db_session, lat, lon, midnight, min_altitude_deg=10.0
+            )
 
         # Track which constellations have low centers (below normal viewing threshold)
         # Normal threshold is 20° for binoculars
@@ -428,7 +434,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
 
         # Add constellations that have visible stars but aren't already in the list
         with get_db_session() as db_session:
-            all_prominent = get_prominent_constellations(db_session)
+            all_prominent = get_prominent_constellations_sync(db_session)
         existing_names = {c.name for c, _, _ in visible_constellations}
 
         for constellation in all_prominent:
@@ -593,7 +599,7 @@ async def _show_tonight_content(binoculars: str, output_console: Console | FileC
         output_console.print("[dim]Easily recognizable patterns visible through binoculars[/dim]\n")
 
         with get_db_session() as db_session:
-            visible_asterisms = get_visible_asterisms(db_session, lat, lon, midnight, min_altitude_deg=20.0)
+            visible_asterisms = get_visible_asterisms_sync(db_session, lat, lon, midnight, min_altitude_deg=20.0)
 
         if visible_asterisms:
             table_ast = Table()

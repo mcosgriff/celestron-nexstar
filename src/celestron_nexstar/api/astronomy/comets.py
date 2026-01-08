@@ -7,10 +7,12 @@ Uses Keplerian propagation from orbital elements when available.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # skyfield is a required dependency
 import skyfield.api  # noqa: F401
@@ -28,8 +30,11 @@ __all__ = [
     "Comet",
     "CometVisibility",
     "get_known_comets",
+    "get_known_comets_sync",
     "get_upcoming_comets",
+    "get_upcoming_comets_sync",
     "get_visible_comets",
+    "get_visible_comets_sync",
 ]
 
 # Propagation method constants
@@ -49,16 +54,16 @@ class Comet:
     peak_date: datetime  # Expected peak brightness date
     is_periodic: bool  # Whether comet is periodic
     period_years: float | None  # Orbital period in years (if periodic)
-    eccentricity: float | None
-    inclination_deg: float | None
-    arg_perihelion_deg: float | None
-    ascending_node_deg: float | None
-    semi_major_axis_au: float | None
-    perihelion_time: datetime | None
-    absolute_magnitude_h: float | None
-    slope_g: float | None
-    source: str | None
-    notes: str  # Additional information
+    eccentricity: float | None = None
+    inclination_deg: float | None = None
+    arg_perihelion_deg: float | None = None
+    ascending_node_deg: float | None = None
+    semi_major_axis_au: float | None = None
+    perihelion_time: datetime | None = None
+    absolute_magnitude_h: float | None = None
+    slope_g: float | None = None
+    source: str | None = None
+    notes: str = ""  # Additional information
 
 
 @dataclass
@@ -69,10 +74,10 @@ class CometVisibility:
     date: datetime
     magnitude: float  # Current magnitude
     altitude: float  # Altitude above horizon
-    azimuth: float  # Azimuth in degrees
-    is_visible: bool  # Whether comet is above horizon
-    best_viewing_time: datetime | None  # Best time to view (when highest)
-    notes: str
+    azimuth: float | None = None  # Azimuth in degrees
+    is_visible: bool = False  # Whether comet is above horizon
+    best_viewing_time: datetime | None = None  # Best time to view (when highest)
+    notes: str = ""
     # Enhanced fields for propagation
     ra_hours: float | None = None  # Right ascension
     dec_degrees: float | None = None  # Declination
@@ -89,7 +94,13 @@ class CometVisibility:
 # Data from Minor Planet Center and comet observation databases
 
 
-def get_known_comets(db_session: Session) -> list[Comet]:
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def get_known_comets(db_session: Session) -> list[Comet]:
     """
     Get list of known comets from database.
 
@@ -107,14 +118,19 @@ def get_known_comets(db_session: Session) -> list[Comet]:
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import CometModel
 
-    count = db_session.scalar(select(func.count(CometModel.id)))
+    count = await _maybe_await(db_session.scalar(select(func.count(CometModel.id))))
     if count == 0:
         raise DatabaseError("No comets found in database. Please seed the database by running: nexstar data seed")
 
-    result = db_session.execute(select(CometModel))
+    result = await _maybe_await(db_session.execute(select(CometModel)))
     models = result.scalars().all()
 
     return [model.to_comet() for model in models]
+
+
+def get_known_comets_sync(db_session: Session) -> list[Comet]:
+    """Sync wrapper for get_known_comets to preserve legacy call sites."""
+    return asyncio.run(get_known_comets(db_session))
 
 
 def _estimate_comet_magnitude_fallback(comet: Comet, date: datetime) -> float:
@@ -150,7 +166,12 @@ def _estimate_comet_magnitude_fallback(comet: Comet, date: datetime) -> float:
     return base_magnitude
 
 
-def get_visible_comets(
+def _estimate_comet_magnitude(comet: Comet, date: datetime) -> float:
+    """Estimate comet magnitude using the fallback heuristic."""
+    return _estimate_comet_magnitude_fallback(comet, date)
+
+
+async def get_visible_comets(
     db_session: Session,
     location: ObserverLocation,
     months_ahead: int = 12,
@@ -180,7 +201,7 @@ def get_visible_comets(
     now = datetime.now(UTC)
     end_date = now + timedelta(days=30 * months_ahead)
 
-    comets = get_known_comets(db_session)
+    comets = await get_known_comets(db_session)
 
     for comet in comets:
         # Normalize comet dates
@@ -234,6 +255,27 @@ def get_visible_comets(
     # Sort by magnitude (brightest first)
     visibilities.sort(key=lambda v: v.magnitude)
     return visibilities
+
+
+def get_visible_comets_sync(
+    db_session: Session,
+    location: ObserverLocation,
+    months_ahead: int = 12,
+    max_magnitude: float = 8.0,
+    min_altitude_deg: float = 10.0,
+    min_elongation_deg: float = 15.0,
+) -> list[CometVisibility]:
+    """Sync wrapper for get_visible_comets to preserve legacy call sites."""
+    return asyncio.run(
+        get_visible_comets(
+            db_session,
+            location,
+            months_ahead=months_ahead,
+            max_magnitude=max_magnitude,
+            min_altitude_deg=min_altitude_deg,
+            min_elongation_deg=min_elongation_deg,
+        )
+    )
 
 
 def _find_best_visibility_keplerian(
@@ -292,21 +334,24 @@ def _find_best_visibility_keplerian(
 
         mag = compute_comet_magnitude(comet, pos.helio_distance_au, pos.geo_distance_au)
 
-        # Check visibility criteria
-        if mag <= max_magnitude and pos.altitude_deg >= min_altitude_deg and pos.elongation_deg >= min_elongation_deg:
-            # Track best (brightest and highest)
-            if best_result is None or mag < best_result[1]:
-                best_result = (
-                    check_date,
-                    mag,
-                    pos.altitude_deg,
-                    pos.azimuth_deg,
-                    pos.ra_hours,
-                    pos.dec_degrees,
-                    pos.elongation_deg,
-                    pos.helio_distance_au,
-                    pos.geo_distance_au,
-                )
+        # Check visibility criteria and track best (brightest and highest)
+        if (
+            mag <= max_magnitude
+            and pos.altitude_deg >= min_altitude_deg
+            and pos.elongation_deg >= min_elongation_deg
+            and (best_result is None or mag < best_result[1])
+        ):
+            best_result = (
+                check_date,
+                mag,
+                pos.altitude_deg,
+                pos.azimuth_deg,
+                pos.ra_hours,
+                pos.dec_degrees,
+                pos.elongation_deg,
+                pos.helio_distance_au,
+                pos.geo_distance_au,
+            )
 
     if best_result is None:
         return None
@@ -423,7 +468,7 @@ def _find_best_visibility_fallback(
     )
 
 
-def get_upcoming_comets(
+async def get_upcoming_comets(
     db_session: Session,
     location: ObserverLocation,
     months_ahead: int = 24,
@@ -439,11 +484,18 @@ def get_upcoming_comets(
     Returns:
         List of CometVisibility objects, sorted by brightness
     """
-    return get_visible_comets(
+    return await get_visible_comets(
         db_session,
         location,
         months_ahead=months_ahead,
         max_magnitude=10.0,
-        min_altitude_deg=5.0,  # Lower threshold for upcoming
-        min_elongation_deg=10.0,  # Lower threshold for upcoming
     )
+
+
+def get_upcoming_comets_sync(
+    db_session: Session,
+    location: ObserverLocation,
+    months_ahead: int = 24,
+) -> list[CometVisibility]:
+    """Sync wrapper for get_upcoming_comets to preserve legacy call sites."""
+    return asyncio.run(get_upcoming_comets(db_session, location, months_ahead=months_ahead))

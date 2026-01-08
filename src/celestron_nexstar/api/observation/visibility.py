@@ -11,6 +11,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 
 import numpy as np
 
@@ -117,19 +118,63 @@ def get_object_altitude_azimuth(
     if dt is None:
         dt = datetime.now(UTC)
 
-    # Get object's RA/Dec
-    if is_dynamic_object(obj.name):
-        # Dynamic object - calculate current position
-        ra_hours, dec_degrees = get_planetary_position(obj.name, observer_lat, observer_lon, dt)
+    dt = _round_datetime_to_minutes(dt, minutes=5)
+    timestamp = int(dt.timestamp())
+    obj_name = getattr(obj, "name", "unknown")
+    is_dynamic = is_dynamic_object(obj_name)
+    if is_dynamic:
+        cache_key = obj_name
     else:
-        # Fixed object - use catalog coordinates
-        ra_hours = obj.ra_hours
-        dec_degrees = obj.dec_degrees
+        catalog = getattr(obj, "catalog", None)
+        catalog_number = getattr(obj, "catalog_number", None)
+        cache_key = f"{catalog}:{catalog_number}" if catalog and catalog_number is not None else obj_name
+    ra_hours = None if is_dynamic else obj.ra_hours
+    dec_degrees = None if is_dynamic else obj.dec_degrees
 
-    # Convert to altitude/azimuth
-    # Note: ra_dec_to_alt_az returns (azimuth, altitude), not (altitude, azimuth)
-    az_deg, alt_deg = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, dt)
+    return _cached_altitude_azimuth(
+        cache_key,
+        ra_hours,
+        dec_degrees,
+        is_dynamic,
+        observer_lat,
+        observer_lon,
+        timestamp,
+    )
 
+
+def _round_datetime_to_minutes(dt: datetime | None, minutes: int = 5) -> datetime:
+    """Round datetime to the nearest lower N-minute mark in UTC for caching."""
+    if dt is None:
+        dt = datetime.now(UTC)
+    elif dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    else:
+        dt = dt.astimezone(UTC)
+
+    discard = dt.minute % minutes
+    return dt.replace(minute=dt.minute - discard, second=0, microsecond=0)
+
+
+@lru_cache(maxsize=10000)
+def _cached_altitude_azimuth(
+    obj_key: str,
+    ra_hours: float | None,
+    dec_degrees: float | None,
+    is_dynamic: bool,
+    observer_lat: float,
+    observer_lon: float,
+    dt_timestamp: int,
+) -> tuple[float, float]:
+    """Cached altitude/azimuth calculation keyed by rounded time and observer location."""
+    dt = datetime.fromtimestamp(dt_timestamp, tz=UTC)
+
+    if is_dynamic:
+        ra_hours_use, dec_degrees_use = get_planetary_position(obj_key, observer_lat, observer_lon, dt)
+    else:
+        ra_hours_use = ra_hours if ra_hours is not None else 0.0
+        dec_degrees_use = dec_degrees if dec_degrees is not None else 0.0
+
+    az_deg, alt_deg = ra_dec_to_alt_az(ra_hours_use, dec_degrees_use, observer_lat, observer_lon, dt)
     return alt_deg, az_deg
 
 

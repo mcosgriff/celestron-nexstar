@@ -8,10 +8,12 @@ observer location and time.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -28,9 +30,13 @@ __all__ = [
     "Asterism",
     "Constellation",
     "get_famous_asterisms",
+    "get_famous_asterisms_sync",
     "get_prominent_constellations",
+    "get_prominent_constellations_sync",
     "get_visible_asterisms",
+    "get_visible_asterisms_sync",
     "get_visible_constellations",
+    "get_visible_constellations_sync",
     "populate_constellation_database",
 ]
 
@@ -80,7 +86,13 @@ class Asterism:
 # Removed FAMOUS_ASTERISMS - data is now in asterisms.json seed file and loaded via get_famous_asterisms()
 
 
-def get_prominent_constellations(db_session: Session) -> list[Constellation]:
+async def _maybe_await(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def get_prominent_constellations(db_session: Session) -> list[Constellation]:
     """
     Get list of prominent constellations from database.
 
@@ -98,19 +110,24 @@ def get_prominent_constellations(db_session: Session) -> list[Constellation]:
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import ConstellationModel
 
-    count = db_session.scalar(select(func.count(ConstellationModel.id)))
+    count = await _maybe_await(db_session.scalar(select(func.count(ConstellationModel.id))))
     if count == 0:
         raise DatabaseError(
             "No constellations found in database. Please seed the database by running: nexstar data seed"
         )
 
-    result = db_session.execute(select(ConstellationModel))
+    result = await _maybe_await(db_session.execute(select(ConstellationModel)))
     models = result.scalars().all()
 
     return [model.to_constellation() for model in models]
 
 
-def get_famous_asterisms(db_session: Session) -> list[Asterism]:
+def get_prominent_constellations_sync(db_session: Session) -> list[Constellation]:
+    """Sync wrapper for get_prominent_constellations to preserve legacy call sites."""
+    return asyncio.run(get_prominent_constellations(db_session))
+
+
+async def get_famous_asterisms(db_session: Session) -> list[Asterism]:
     """
     Get list of famous asterisms from database.
 
@@ -128,17 +145,22 @@ def get_famous_asterisms(db_session: Session) -> list[Asterism]:
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import AsterismModel
 
-    count = db_session.scalar(select(func.count(AsterismModel.id)))
+    count = await _maybe_await(db_session.scalar(select(func.count(AsterismModel.id))))
     if count == 0:
         raise DatabaseError("No asterisms found in database. Please seed the database by running: nexstar data seed")
 
-    result = db_session.execute(select(AsterismModel))
+    result = await _maybe_await(db_session.execute(select(AsterismModel)))
     models = result.scalars().all()
 
     return [model.to_asterism() for model in models]
 
 
-def get_visible_constellations(
+def get_famous_asterisms_sync(db_session: Session) -> list[Asterism]:
+    """Sync wrapper for get_famous_asterisms to preserve legacy call sites."""
+    return asyncio.run(get_famous_asterisms(db_session))
+
+
+async def get_visible_constellations(
     db_session: Session,
     latitude: float,
     longitude: float,
@@ -167,7 +189,7 @@ def get_visible_constellations(
 
     visible = []
 
-    constellations = get_prominent_constellations(db_session)
+    constellations = await get_prominent_constellations(db_session)
     for constellation in constellations:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -187,7 +209,26 @@ def get_visible_constellations(
     return visible
 
 
-def get_visible_asterisms(
+def get_visible_constellations_sync(
+    db_session: Session,
+    latitude: float,
+    longitude: float,
+    observation_time: datetime | None = None,
+    min_altitude_deg: float = 20.0,
+) -> list[tuple[Constellation, float, float]]:
+    """Sync wrapper for get_visible_constellations to preserve legacy call sites."""
+    return asyncio.run(
+        get_visible_constellations(
+            db_session,
+            latitude,
+            longitude,
+            observation_time=observation_time,
+            min_altitude_deg=min_altitude_deg,
+        )
+    )
+
+
+async def get_visible_asterisms(
     db_session: Session,
     latitude: float,
     longitude: float,
@@ -216,7 +257,7 @@ def get_visible_asterisms(
 
     visible = []
 
-    asterisms = get_famous_asterisms(db_session)
+    asterisms = await get_famous_asterisms(db_session)
     for asterism in asterisms:
         # Calculate altitude and azimuth
         alt, az = ra_dec_to_alt_az(
@@ -234,6 +275,25 @@ def get_visible_asterisms(
     visible.sort(key=lambda x: x[1], reverse=True)
 
     return visible
+
+
+def get_visible_asterisms_sync(
+    db_session: Session,
+    latitude: float,
+    longitude: float,
+    observation_time: datetime | None = None,
+    min_altitude_deg: float = 20.0,
+) -> list[tuple[Asterism, float, float]]:
+    """Sync wrapper for get_visible_asterisms to preserve legacy call sites."""
+    return asyncio.run(
+        get_visible_asterisms(
+            db_session,
+            latitude,
+            longitude,
+            observation_time=observation_time,
+            min_altitude_deg=min_altitude_deg,
+        )
+    )
 
 
 def populate_constellation_database(db_session: Session) -> None:

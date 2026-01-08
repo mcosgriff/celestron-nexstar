@@ -71,7 +71,7 @@ class CometsInfoDialog(QDialog):
         # Flag to track if content has been loaded (lazy loading)
         self._content_loaded = False
 
-    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         """Override showEvent to lazy load content on first display."""
         super().showEvent(event)
         if not self._content_loaded:
@@ -201,11 +201,11 @@ class CometsInfoDialog(QDialog):
             # Load content
             content_parts = []
 
-            from celestron_nexstar.api.astronomy.comets import get_visible_comets
+            from celestron_nexstar.api.astronomy.comets import get_visible_comets_sync
             from celestron_nexstar.api.database.models import get_db_session
 
             with get_db_session() as db_session:
-                comets = get_visible_comets(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
+                comets = get_visible_comets_sync(db_session, location, months_ahead=months, max_magnitude=max_magnitude)
 
             if not comets:
                 content_parts.append(

@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
+from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data_sync
 from celestron_nexstar.api.location.observer import ObserverLocation, geocode_location
 
 
@@ -308,7 +308,7 @@ def get_vacation_viewing_info(location: ObserverLocation | str) -> VacationViewi
     from celestron_nexstar.api.database.models import get_db_session
 
     with get_db_session() as db_session:
-        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
+        light_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
 
     return VacationViewingInfo(
         location=location,
