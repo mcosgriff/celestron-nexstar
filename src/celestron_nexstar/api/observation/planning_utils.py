@@ -22,7 +22,7 @@ from typing import Any
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
-from celestron_nexstar.api.core.utils import calculate_lst, ra_dec_to_alt_az
+from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 from celestron_nexstar.api.ephemeris.ephemeris import get_planetary_position, is_dynamic_object
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
@@ -130,107 +130,114 @@ def get_object_visibility_timeline(
     elif start_time.tzinfo is None:
         start_time = start_time.replace(tzinfo=UTC)
 
-    # Get object RA/Dec
-    if is_dynamic_object(obj.name):
-        ra_hours, dec_degrees = get_planetary_position(obj.name, observer_lat, observer_lon, start_time)
-    else:
-        ra_hours = obj.ra_hours
-        dec_degrees = obj.dec_degrees
+    try:
+        from skyfield import almanac
+        from skyfield.api import Star, Topos
 
-    # Validate declination is within valid range
-    if not (-90.0 <= dec_degrees <= 90.0):
-        logger.warning(
-            f"Invalid declination {dec_degrees}° for object {obj.name}. "
-            f"Declination must be between -90 and 90 degrees. Skipping timeline calculation."
+        # Get object RA/Dec for validation and circumpolar checks.
+        if is_dynamic_object(obj.name):
+            ra_hours, dec_degrees = get_planetary_position(obj.name, observer_lat, observer_lon, start_time)
+        else:
+            ra_hours = obj.ra_hours
+            dec_degrees = obj.dec_degrees
+
+        # Validate declination is within valid range
+        if not (-90.0 <= dec_degrees <= 90.0):
+            logger.warning(
+                f"Invalid declination {dec_degrees}° for object {obj.name}. "
+                f"Declination must be between -90 and 90 degrees. Skipping timeline calculation."
+            )
+            return ObjectVisibilityTimeline(
+                object_name=obj.name,
+                rise_time=None,
+                set_time=None,
+                transit_time=None,
+                max_altitude=0.0,
+                is_circumpolar=False,
+                is_always_visible=False,
+                is_never_visible=True,
+            )
+
+        # Check if object is circumpolar
+        lat_abs = abs(observer_lat)
+        dec_abs = abs(dec_degrees)
+        is_circumpolar = dec_abs > (90 - lat_abs)
+
+        ts = get_skyfield_timescale()
+        topos = Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
+        t0 = ts.from_datetime(start_time)
+        t1 = ts.from_datetime(start_time + timedelta(days=days))
+
+        def _next_event_after(times: Any, after_dt: datetime) -> datetime | None:
+            for t_event in times:
+                event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
+                if event_dt > after_dt:
+                    return event_dt
+            return None
+
+        eph = None
+        target = None
+        if is_dynamic_object(obj.name):
+            from celestron_nexstar.api.ephemeris.ephemeris import PLANET_NAMES
+
+            obj_key = obj.name.lower()
+            if obj_key in PLANET_NAMES:
+                ephemeris_name, bsp_file = PLANET_NAMES[obj_key]
+                if " " in ephemeris_name and ephemeris_name[0].isdigit():
+                    spice_target = ephemeris_name.split(" ", 1)[1]
+                else:
+                    spice_target = ephemeris_name
+                eph = get_skyfield_ephemeris(bsp_file)
+                target = eph[spice_target]
+        if target is None:
+            eph = get_skyfield_ephemeris("de440s.bsp")
+            target = Star(ra_hours=ra_hours, dec_degrees=dec_degrees)
+
+        earth = eph["earth"]
+        observer = earth + topos
+
+        rise_time = _next_event_after(almanac.find_risings(observer, target, t0, t1)[0], start_time)
+        set_time = _next_event_after(almanac.find_settings(observer, target, t0, t1)[0], start_time)
+
+        transit_time = None
+        max_altitude = 0.0
+        transits, events = almanac.find_discrete(t0, t1, almanac.meridian_transits(eph, target, topos))
+        for i, event in enumerate(events):
+            if not event:
+                continue
+            event_dt = transits[i].utc_datetime().replace(tzinfo=UTC)
+            if event_dt <= start_time:
+                continue
+            transit_time = event_dt
+            alt, _az, _ = observer.at(transits[i]).observe(target).apparent().altaz()
+            max_altitude = float(alt.degrees)
+            break
+
+        is_always_visible = rise_time is None and set_time is None and max_altitude > 0
+        is_never_visible = rise_time is None and set_time is None and max_altitude <= 0
+
+        return ObjectVisibilityTimeline(
+            object_name=obj.name,
+            rise_time=rise_time,
+            transit_time=transit_time if max_altitude > 0 else None,
+            set_time=set_time,
+            max_altitude=max_altitude,
+            is_circumpolar=is_circumpolar,
+            is_always_visible=is_always_visible,
+            is_never_visible=is_never_visible,
         )
-        # Return a minimal timeline indicating error
+    except Exception as e:
+        logger.warning(f"Failed to calculate visibility timeline for {obj.name}: {e}")
         return ObjectVisibilityTimeline(
             object_name=obj.name,
             rise_time=None,
-            set_time=None,
             transit_time=None,
+            set_time=None,
             max_altitude=0.0,
             is_circumpolar=False,
             is_always_visible=False,
             is_never_visible=True,
         )
-
-    # Check if object is circumpolar
-    # Object is circumpolar if |dec| > 90 - |lat|
-    lat_abs = abs(observer_lat)
-    dec_abs = abs(dec_degrees)
-    is_circumpolar = dec_abs > (90 - lat_abs)
-
-    # Calculate transit time (when object is highest)
-    # Transit occurs when LST = RA (hour angle = 0)
-    lst_hours = calculate_lst(observer_lon, start_time)
-
-    # Calculate time until next transit when LST = RA
-    # LST increases at approximately 15.041 degrees per hour (360/23.9345)
-    # Convert to hours: LST increases by 1 hour per sidereal hour
-    # But sidereal hours are shorter than solar hours by factor 0.9973
-
-    # Find the difference in LST needed to reach RA
-    lst_diff_hours = ra_hours - lst_hours
-
-    # Normalize to 0-24 range (find next transit)
-    while lst_diff_hours < 0:
-        lst_diff_hours += 24.0
-    while lst_diff_hours >= 24.0:
-        lst_diff_hours -= 24.0
-
-    # Convert sidereal hours to solar hours
-    # Sidereal day is 23.9345 hours, so 1 sidereal hour = 23.9345/24 = 0.9973 solar hours
-    time_diff_hours = lst_diff_hours * (23.9345 / 24.0)
-
-    transit_time = start_time + timedelta(hours=time_diff_hours)
-
-    # Get altitude at transit
-    # Note: ra_dec_to_alt_az returns (azimuth, altitude), not (altitude, azimuth)
-    _, transit_alt = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, transit_time)
-    max_altitude = transit_alt
-
-    # Check if always visible or never visible
-    is_always_visible = is_circumpolar and transit_alt > 0
-    is_never_visible = not is_circumpolar and transit_alt < 0
-
-    # Find rise and set times
-    rise_time: datetime | None = None
-    set_time: datetime | None = None
-
-    if not is_circumpolar and not is_never_visible:
-        # Sample next 48 hours to find rise/set
-        for hours_ahead in range(1, 49):
-            check_dt = start_time + timedelta(hours=hours_ahead)
-            try:
-                alt_check, _ = get_object_altitude_azimuth(obj, observer_lat, observer_lon, check_dt)
-                prev_dt = check_dt - timedelta(hours=1)
-                alt_prev, _ = get_object_altitude_azimuth(obj, observer_lat, observer_lon, prev_dt)
-
-                # Rise: was below, now above
-                if alt_prev <= 0 and alt_check > 0 and rise_time is None:
-                    rise_time = _refine_horizon_crossing(prev_dt, check_dt, obj, observer_lat, observer_lon, True)
-                    if set_time is not None:
-                        break
-
-                # Set: was above, now below
-                if alt_prev > 0 and alt_check <= 0 and set_time is None:
-                    set_time = _refine_horizon_crossing(prev_dt, check_dt, obj, observer_lat, observer_lon, False)
-                    if rise_time is not None:
-                        break
-            except Exception:
-                continue
-
-    return ObjectVisibilityTimeline(
-        object_name=obj.name,
-        rise_time=rise_time,
-        transit_time=transit_time if transit_alt > 0 else None,
-        set_time=set_time,
-        max_altitude=max_altitude,
-        is_circumpolar=is_circumpolar,
-        is_always_visible=is_always_visible,
-        is_never_visible=is_never_visible,
-    )
 
 
 def get_time_based_recommendations(

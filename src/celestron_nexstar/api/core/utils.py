@@ -2,21 +2,16 @@
 Utility functions for Celestron NexStar telescope coordinate conversions
 and astronomical calculations.
 
-This module uses Astropy extensively for all astronomical calculations,
-providing a clean interface while leveraging a well-tested astronomy library.
+Skyfield is preferred for astronomical calculations.
 """
 
 from __future__ import annotations
 
 import logging
-import warnings
+import math
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from astropy import units as u
-from astropy.coordinates import ICRS, AltAz, Angle, EarthLocation, SkyCoord
-from astropy.time import Time
-from astropy.utils import iers
 from timezonefinder import TimezoneFinder
 
 
@@ -58,86 +53,8 @@ def ensure_utc(dt: datetime | None) -> datetime | None:
 
 
 def configure_astropy_iers() -> None:
-    """
-    Configure Astropy IERS (International Earth Rotation Service) data handling.
-
-    This function:
-    1. Enables automatic downloading of the latest IERS data when needed
-    2. Attempts to refresh IERS data if it's outdated
-    3. Suppresses warnings about IERS data validity for dates beyond the current data range
-       (these warnings are not critical for most applications as precision is only affected
-       at the arcsec level, which is acceptable for most telescope control applications)
-
-    Should be called early in application startup, before any astropy coordinate calculations.
-    """
-    try:
-        # Enable automatic downloading of IERS data
-        # Astropy will automatically download the latest IERS data when needed
-        iers.conf.auto_download = True
-
-        # Try to refresh IERS data if it's outdated
-        # This helps ensure we have the most recent data available
-        try:
-            # IERS_Auto will automatically download newer data if available
-            # Opening it will trigger a download if the cache is stale
-            iers_table = iers.IERS_Auto.open()
-            if iers_table:
-                logger.debug("IERS data table loaded successfully")
-        except Exception as refresh_error:
-            # If refresh fails, that's okay - astropy will use cached data
-            logger.debug(f"Could not refresh IERS data (will use cached): {refresh_error}")
-
-        # Suppress the specific warning about IERS data validity
-        # This warning appears when calculating positions for dates beyond the current IERS data range
-        # For telescope control applications, the precision loss (arcsec level) is acceptable
-        # The warning can come from different modules, so we catch it broadly
-        warnings.filterwarnings(
-            "ignore",
-            message=".*Tried to get polar motions for times after IERS data is valid.*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=".*polar motions for times after IERS data is valid.*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=".*IERS data is valid.*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=".*Defaulting to polar motion from the 50-yr mean.*",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            message=".*check your astropy.utils.iers.conf.iers_auto_url.*",
-        )
-        # Also suppress the warning from the specific module
-        warnings.filterwarnings(
-            "ignore",
-            module="astropy.coordinates.builtin_frames.utils",
-            message=".*polar motions.*",
-        )
-
-        # Suppress warnings from jplephem about unawaited coroutines
-        # These are false positives - coroutines are properly awaited via asyncio.run()
-        # jplephem's internal code detects coroutines before they're awaited, but they are properly awaited
-        warnings.filterwarnings(
-            "ignore",
-            message=".*coroutine.*was never awaited.*",
-            category=RuntimeWarning,
-        )
-        # Also suppress specifically for jplephem module
-        warnings.filterwarnings(
-            "ignore",
-            module="jplephem.*",
-            message=".*coroutine.*",
-            category=RuntimeWarning,
-        )
-
-        logger.debug("Astropy IERS configuration applied successfully")
-    except Exception as e:
-        # If configuration fails, log but don't raise - astropy will still work
-        logger.warning(f"Could not configure Astropy IERS settings: {e}")
+    """Retained for backward compatibility; Skyfield does not require IERS setup here."""
+    logger.debug("Astropy IERS configuration is no longer required; using Skyfield for calculations.")
 
 
 def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -152,10 +69,8 @@ def ra_to_degrees(hours: float, minutes: float = 0, seconds: float = 0) -> float
     Returns:
         RA in decimal degrees (0-360)
     """
-    # Use Astropy's Angle with explicit unit conversion
     total_hours = hours + minutes / 60.0 + seconds / 3600.0
-    angle = Angle(total_hours, unit=u.hour)
-    return float(angle.degree)
+    return total_hours * 15.0
 
 
 def ra_to_hours(hours: float, minutes: float = 0, seconds: float = 0) -> float:
@@ -187,12 +102,10 @@ def dec_to_degrees(degrees: float, minutes: float = 0, seconds: float = 0, sign:
     Returns:
         Dec in decimal degrees (-90 to +90)
     """
-    # Use Astropy's Angle for conversion
     total_degrees = abs(degrees) + minutes / 60.0 + seconds / 3600.0
     if sign == "-":
         total_degrees = -total_degrees
-    angle = Angle(total_degrees, unit=u.deg)
-    return float(angle.degree)
+    return total_degrees
 
 
 def degrees_to_dms(degrees: float) -> tuple[int, int, float, str]:
@@ -205,10 +118,13 @@ def degrees_to_dms(degrees: float) -> tuple[int, int, float, str]:
     Returns:
         Tuple of (degrees, minutes, seconds, sign)
     """
-    angle = Angle(degrees, unit=u.deg)
-    dms = angle.dms
     sign = "+" if degrees >= 0 else "-"
-    return int(abs(dms.d)), int(abs(dms.m)), abs(dms.s), sign
+    degrees = abs(degrees)
+    d = int(degrees)
+    minutes_full = (degrees - d) * 60.0
+    m = int(minutes_full)
+    s = (minutes_full - m) * 60.0
+    return d, m, s, sign
 
 
 def hours_to_hms(hours: float) -> tuple[int, int, float]:
@@ -221,9 +137,12 @@ def hours_to_hms(hours: float) -> tuple[int, int, float]:
     Returns:
         Tuple of (hours, minutes, seconds)
     """
-    angle = Angle(hours, unit=u.hour)
-    hms = angle.hms
-    return int(hms.h), int(hms.m), hms.s
+    hours = hours % 24.0
+    h = int(hours)
+    minutes_full = (hours - h) * 60.0
+    m = int(minutes_full)
+    s = (minutes_full - m) * 60.0
+    return h, m, s
 
 
 def alt_az_to_ra_dec(
@@ -242,20 +161,25 @@ def alt_az_to_ra_dec(
     Returns:
         Tuple of (RA in hours, Dec in degrees)
     """
-    # Create observer location
-    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
+    from skyfield.api import Topos
 
-    # Create time object
-    time = Time(utc_time, scale="utc")
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 
-    # Create AltAz coordinate
-    altaz = AltAz(az=azimuth * u.deg, alt=altitude * u.deg, location=location, obstime=time)
+    if utc_time.tzinfo is None:
+        utc_time = utc_time.replace(tzinfo=UTC)
 
-    # Convert to ICRS (RA/Dec)
-    icrs = altaz.transform_to(ICRS())
+    ts = get_skyfield_timescale()
+    t = ts.from_datetime(utc_time)
+    try:
+        eph = get_skyfield_ephemeris("de421.bsp")
+    except FileNotFoundError as e:
+        raise RuntimeError("Skyfield ephemeris not found; install a BSP (e.g., de421.bsp).") from e
 
-    # Return RA in hours and Dec in degrees
-    return icrs.ra.hour, icrs.dec.degree
+    earth = eph["earth"]
+    observer = earth + Topos(latitude_degrees=latitude, longitude_degrees=longitude)
+    apparent = observer.at(t).from_altaz(alt_degrees=altitude, az_degrees=azimuth)
+    ra, dec, _ = apparent.radec()
+    return ra.hours, dec.degrees
 
 
 def ra_dec_to_alt_az(
@@ -285,20 +209,25 @@ def ra_dec_to_alt_az(
         # Normalize RA to 0-24 range
         ra_hours = ra_hours % 24.0
 
-    # Create observer location
-    location = EarthLocation(lat=latitude * u.deg, lon=longitude * u.deg)
+    from skyfield.api import Star, Topos
 
-    # Create time object
-    time = Time(utc_time, scale="utc")
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 
-    # Create ICRS coordinate (RA/Dec)
-    icrs = SkyCoord(ra=ra_hours * u.hourangle, dec=dec_degrees * u.deg, frame="icrs")
+    if utc_time.tzinfo is None:
+        utc_time = utc_time.replace(tzinfo=UTC)
 
-    # Convert to AltAz
-    altaz = icrs.transform_to(AltAz(location=location, obstime=time))
+    ts = get_skyfield_timescale()
+    t = ts.from_datetime(utc_time)
+    try:
+        eph = get_skyfield_ephemeris("de421.bsp")
+    except FileNotFoundError as e:
+        raise RuntimeError("Skyfield ephemeris not found; install a BSP (e.g., de421.bsp).") from e
 
-    # Return azimuth and altitude in degrees
-    return altaz.az.degree, altaz.alt.degree
+    earth = eph["earth"]
+    observer = earth + Topos(latitude_degrees=latitude, longitude_degrees=longitude)
+    star = Star(ra_hours=ra_hours, dec_degrees=dec_degrees)
+    alt, az, _ = observer.at(t).observe(star).apparent().altaz()
+    return az.degrees, alt.degrees
 
 
 def calculate_lst(longitude: float, utc_time: datetime) -> float:
@@ -312,14 +241,14 @@ def calculate_lst(longitude: float, utc_time: datetime) -> float:
     Returns:
         LST in hours (0-24)
     """
-    # Create time object
-    time = Time(utc_time, scale="utc")
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
 
-    # Calculate LST using Astropy's sidereal time
-    # longitude parameter expects Angle, so convert degrees to Angle
-    lst = time.sidereal_time("mean", longitude=longitude * u.deg)
-
-    return float(lst.hour)
+    if utc_time.tzinfo is None:
+        utc_time = utc_time.replace(tzinfo=UTC)
+    ts = get_skyfield_timescale()
+    t = ts.from_datetime(utc_time)
+    lst = (t.gmst + (longitude / 15.0)) % 24.0
+    return float(lst)
 
 
 def calculate_julian_date(dt: datetime) -> float:
@@ -330,10 +259,15 @@ def calculate_julian_date(dt: datetime) -> float:
         dt: datetime object (assumed to be UTC)
 
     Returns:
-        Julian Date
+        Julian Date (UT1-based)
     """
-    time = Time(dt, scale="utc")
-    return float(time.jd)
+    from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_timescale
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    ts = get_skyfield_timescale()
+    t = ts.from_datetime(dt)
+    return float(t.ut1)
 
 
 def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
@@ -349,14 +283,17 @@ def angular_separation(ra1: float, dec1: float, ra2: float, dec2: float) -> floa
     Returns:
         Angular separation in degrees
     """
-    # Create SkyCoord objects for both positions
-    coord1 = SkyCoord(ra=ra1 * u.hourangle, dec=dec1 * u.deg, frame="icrs")
-    coord2 = SkyCoord(ra=ra2 * u.hourangle, dec=dec2 * u.deg, frame="icrs")
+    ra1_rad = math.radians(ra1 * 15.0)
+    ra2_rad = math.radians(ra2 * 15.0)
+    dec1_rad = math.radians(dec1)
+    dec2_rad = math.radians(dec2)
 
-    # Calculate separation using Astropy's built-in method
-    separation = coord1.separation(coord2)
-
-    return float(separation.degree)
+    cos_sep = (
+        math.sin(dec1_rad) * math.sin(dec2_rad)
+        + math.cos(dec1_rad) * math.cos(dec2_rad) * math.cos(ra1_rad - ra2_rad)
+    )
+    cos_sep = max(-1.0, min(1.0, cos_sep))
+    return math.degrees(math.acos(cos_sep))
 
 
 def format_ra(hours: float, precision: int = 2) -> str:
@@ -370,10 +307,8 @@ def format_ra(hours: float, precision: int = 2) -> str:
     Returns:
         Formatted string (e.g., "12h 34m 56.78s")
     """
-    angle = Angle(hours, unit=u.hour)
-    hms = angle.hms
-    # Format with spaces: "12h 34m 56.78s"
-    return f"{int(hms.h):02d}h {int(hms.m):02d}m {hms.s:0{precision + 3}.{precision}f}s"
+    h, m, s = hours_to_hms(hours)
+    return f"{h:02d}h {m:02d}m {s:0{precision + 3}.{precision}f}s"
 
 
 def format_dec(degrees: float, precision: int = 1) -> str:
@@ -387,11 +322,8 @@ def format_dec(degrees: float, precision: int = 1) -> str:
     Returns:
         Formatted string (e.g., "+45° 12' 34.5\"")
     """
-    angle = Angle(degrees, unit=u.deg)
-    dms = angle.dms
-    sign = "+" if degrees >= 0 else "-"
-    # Format with spaces: "+45° 12' 34.5\""
-    return f"{sign}{int(abs(dms.d)):02d}° {int(abs(dms.m)):02d}' {abs(dms.s):0{precision + 3}.{precision}f}\""
+    d, m, s, sign = degrees_to_dms(degrees)
+    return f"{sign}{d:02d}° {m:02d}' {s:0{precision + 3}.{precision}f}\""
 
 
 def format_position(ra_hours: float, dec_degrees: float) -> str:

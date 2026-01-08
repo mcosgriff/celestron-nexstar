@@ -141,6 +141,8 @@ class WeatherInfoDialog(QDialog):
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         refresh_button = QPushButton("Refresh")
+        self._refresh_button = refresh_button
+        self._refresh_progress = None
         button_box.addButton(refresh_button, QDialogButtonBox.ButtonRole.ActionRole)
         refresh_button.clicked.connect(self._refresh_weather)
         button_box.accepted.connect(self.accept)
@@ -179,6 +181,25 @@ class WeatherInfoDialog(QDialog):
 
     def _refresh_weather(self) -> None:
         """Force-refresh weather data from the API and update the dialog."""
+        from PySide6.QtCore import QCoreApplication, Qt
+        from PySide6.QtWidgets import QProgressDialog
+
+        if self._refresh_progress is not None:
+            self._refresh_progress.close()
+            self._refresh_progress = None
+
+        progress = QProgressDialog("Refreshing weather data...", "", 0, 0, self)
+        progress.setWindowTitle("Weather")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        self._refresh_progress = progress
+        self._refresh_button.setEnabled(False)
+        progress.show()
+        QCoreApplication.processEvents()
+
         try:
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.weather import fetch_weather
@@ -189,12 +210,16 @@ class WeatherInfoDialog(QDialog):
                 self._load_advanced_metrics(force_refresh=True)
                 return
 
-            weather = fetch_weather(location, force_refresh=True)
-            self._load_weather_info(weather=weather)
-            self._load_advanced_metrics(weather=weather)
+            fetch_weather(location, force_refresh=True)
+            self._load_weather_info(force_refresh=False)
+            self._load_advanced_metrics(force_refresh=False)
             self._load_weather_charts(force_refresh=True)
         except Exception as e:
             logger.error(f"Error refreshing weather data: {e}", exc_info=True)
+        finally:
+            progress.close()
+            self._refresh_progress = None
+            self._refresh_button.setEnabled(True)
 
     def _load_weather_info(self, weather: Any | None = None, force_refresh: bool = False) -> None:
         """Load weather information and format it for display."""
