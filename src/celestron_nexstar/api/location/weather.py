@@ -94,8 +94,6 @@ class HourlySeeingForecast:
     wind_speed_120m_mph: float | None = None
 
 
-
-
 def calculate_dew_point_fahrenheit(temp_f: float, humidity_percent: float) -> float:
     """
     Calculate dew point from temperature and humidity using Magnus formula.
@@ -1003,7 +1001,7 @@ def fetch_hourly_weather_forecast(
             from celestron_nexstar.api.database.models import WeatherForecastModel, get_db_session
             from celestron_nexstar.api.location.geohash_utils import encode
 
-            db = get_database()
+            get_database()
             try:
                 with get_db_session() as session:
                     if forecasts_to_store:
@@ -1747,9 +1745,15 @@ def fetch_weather(
         if dew_point_f is None and temp_f is not None and humidity is not None:
             dew_point_f = calculate_dew_point_fahrenheit(temp_f, humidity)
 
-        cloud_low = safe_float(hourly.get("cloud_cover_low", [])[hourly_index] if hourly.get("cloud_cover_low") else None)
-        cloud_mid = safe_float(hourly.get("cloud_cover_mid", [])[hourly_index] if hourly.get("cloud_cover_mid") else None)
-        cloud_high = safe_float(hourly.get("cloud_cover_high", [])[hourly_index] if hourly.get("cloud_cover_high") else None)
+        cloud_low = safe_float(
+            hourly.get("cloud_cover_low", [])[hourly_index] if hourly.get("cloud_cover_low") else None
+        )
+        cloud_mid = safe_float(
+            hourly.get("cloud_cover_mid", [])[hourly_index] if hourly.get("cloud_cover_mid") else None
+        )
+        cloud_high = safe_float(
+            hourly.get("cloud_cover_high", [])[hourly_index] if hourly.get("cloud_cover_high") else None
+        )
         visibility_m = safe_float(hourly.get("visibility", [])[hourly_index] if hourly.get("visibility") else None)
         precip_prob = safe_float(
             hourly.get("precipitation_probability", [])[hourly_index]
@@ -1757,11 +1761,19 @@ def fetch_weather(
             else None
         )
         cape_val = safe_float(hourly.get("cape", [])[hourly_index] if hourly.get("cape") else None)
-        blh = safe_float(hourly.get("boundary_layer_height", [])[hourly_index] if hourly.get("boundary_layer_height") else None)
-        freezing = safe_float(hourly.get("freezing_level_height", [])[hourly_index] if hourly.get("freezing_level_height") else None)
-        vpd = safe_float(hourly.get("vapour_pressure_deficit", [])[hourly_index] if hourly.get("vapour_pressure_deficit") else None)
+        blh = safe_float(
+            hourly.get("boundary_layer_height", [])[hourly_index] if hourly.get("boundary_layer_height") else None
+        )
+        freezing = safe_float(
+            hourly.get("freezing_level_height", [])[hourly_index] if hourly.get("freezing_level_height") else None
+        )
+        vpd = safe_float(
+            hourly.get("vapour_pressure_deficit", [])[hourly_index] if hourly.get("vapour_pressure_deficit") else None
+        )
         wind_80m = safe_float(hourly.get("wind_speed_80m", [])[hourly_index] if hourly.get("wind_speed_80m") else None)
-        wind_120m = safe_float(hourly.get("wind_speed_120m", [])[hourly_index] if hourly.get("wind_speed_120m") else None)
+        wind_120m = safe_float(
+            hourly.get("wind_speed_120m", [])[hourly_index] if hourly.get("wind_speed_120m") else None
+        )
         precip_mm = safe_float(hourly.get("precipitation", [])[hourly_index] if hourly.get("precipitation") else None)
         rain_mm = safe_float(hourly.get("rain", [])[hourly_index] if hourly.get("rain") else None)
         snow_cm = safe_float(hourly.get("snowfall", [])[hourly_index] if hourly.get("snowfall") else None)
@@ -1943,6 +1955,7 @@ def fetch_weather(
     ) as e:
         logger.exception("Error fetching weather from Open-Meteo")
         return WeatherData(error=f"Error fetching weather: {e}")
+
 
 def fetch_weather_batch(locations: list[ObserverLocation]) -> dict[ObserverLocation, WeatherData]:
     """

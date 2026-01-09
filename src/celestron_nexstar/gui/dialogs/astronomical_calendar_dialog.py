@@ -141,7 +141,7 @@ class _AstroPixelsLoaderThread(QThread):
         super().__init__()
         self._start_date = start_date
 
-    def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+    def run(self) -> None:
         try:
             events = _fetch_astropixels_events(self._start_date)
             self.loaded.emit(events)

@@ -246,7 +246,7 @@ def load_jetbrains_mono_async(app: "QApplication") -> None:
             downloaded = Signal(object)
             error = Signal(str)
 
-            def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+            def run(self) -> None:
                 try:
                     zip_path = download_font()
                     font_file = extract_font_file(zip_path)

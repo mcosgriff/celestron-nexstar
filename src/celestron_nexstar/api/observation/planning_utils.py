@@ -15,22 +15,18 @@ Provides utilities for planning observation sessions including:
 from __future__ import annotations
 
 import logging
-import math
-import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Any
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
 from celestron_nexstar.api.core.utils import calculate_lst, ra_dec_to_alt_az
 from celestron_nexstar.api.ephemeris.ephemeris import (
-    PLANET_NAMES,
-    get_combined_ephemeris_target,
     get_planetary_position,
     is_dynamic_object,
 )
-from celestron_nexstar.api.ephemeris.skyfield_utils import get_skyfield_ephemeris, get_skyfield_timescale
 from celestron_nexstar.api.location.observer import get_observer_location
 from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
 

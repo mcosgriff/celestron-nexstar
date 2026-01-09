@@ -28,11 +28,11 @@ __all__ = [
     "OvationAuroraForecast",
     "SpaceWeatherConditions",
     "get_goes_xray_data",
+    "get_kp_ap_data",
     "get_ovation_aurora_forecast",
     "get_radio_flux_107",
     "get_solar_wind_data",
     "get_space_weather_conditions",
-    "get_kp_ap_data",
 ]
 
 

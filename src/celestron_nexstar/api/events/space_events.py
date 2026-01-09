@@ -290,9 +290,7 @@ def find_best_viewing_location(
         from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
         with get_db_session() as db_session:
-            current_light = get_light_pollution_data(
-                db_session, current_location.latitude, current_location.longitude
-            )
+            current_light = get_light_pollution_data(db_session, current_location.latitude, current_location.longitude)
         current_bortle = current_light.bortle_class.value
 
         # Check if current location meets requirements

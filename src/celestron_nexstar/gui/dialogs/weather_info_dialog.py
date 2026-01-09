@@ -54,7 +54,7 @@ class _WeatherLoadThread(QThread):
         super().__init__()
         self._force_refresh = force_refresh
 
-    def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+    def run(self) -> None:
         try:
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.weather import fetch_weather, fetch_weather_for_charts
@@ -661,6 +661,7 @@ class WeatherInfoDialog(QDialog):
         """Load weather charts showing current day from 12 AM to now."""
         try:
             from celestron_nexstar.api.core.utils import get_local_timezone
+
             if location is None:
                 return
 
