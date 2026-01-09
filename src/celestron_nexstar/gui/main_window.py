@@ -146,7 +146,7 @@ class VisibilityCountThread(QThread):
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.optics import get_current_configuration
@@ -164,7 +164,7 @@ class VisibilityCountThread(QThread):
                 # Get sky brightness from light pollution (single call outside the pool)
                 try:
                     with db.get_session() as session:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                     bortle_to_sky_brightness = {
                         1: SkyBrightness.EXCELLENT,
                         2: SkyBrightness.EXCELLENT,
@@ -375,7 +375,7 @@ class ObjectsLoaderThread(QThread):
                 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
                 from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
                 from celestron_nexstar.api.core.exceptions import DatabaseError
-                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                 from celestron_nexstar.api.observation.optics import get_current_configuration
                 from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -395,7 +395,7 @@ class ObjectsLoaderThread(QThread):
                         self.data_loaded.emit(self.obj_type_str, [])
                         return
                     try:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
                             2: SkyBrightness.EXCELLENT,
@@ -545,7 +545,7 @@ class ObjectsLoaderThread(QThread):
                 from celestron_nexstar.api.astronomy.solar_system import get_moon_info
                 from celestron_nexstar.api.core.enums import SkyBrightness
                 from celestron_nexstar.api.core.exceptions import DatabaseError
-                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                 from celestron_nexstar.api.observation.optics import get_current_configuration
                 from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -560,7 +560,7 @@ class ObjectsLoaderThread(QThread):
                 with db.get_session() as session:
                     # Get sky brightness
                     try:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
                             2: SkyBrightness.EXCELLENT,
@@ -646,7 +646,7 @@ class ObjectsLoaderThread(QThread):
                 # Load zodiacal objects (objects along the ecliptic - in zodiac constellations or near ecliptic)
                 from celestron_nexstar.api.core.enums import SkyBrightness
                 from celestron_nexstar.api.core.exceptions import DatabaseError
-                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+                from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                 from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                 from celestron_nexstar.api.observation.optics import get_current_configuration
                 from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -673,7 +673,7 @@ class ObjectsLoaderThread(QThread):
 
                 with db.get_session() as session:
                     try:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
                             2: SkyBrightness.EXCELLENT,
@@ -773,7 +773,7 @@ class ObjectsLoaderThread(QThread):
                     # Augment with bright DSOs even if currently below horizon so marquee targets still show.
                     try:
                         from celestron_nexstar.api.core.enums import SkyBrightness
-                        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+                        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
                         from celestron_nexstar.api.observation.observation_planner import RecommendedObject
                         from celestron_nexstar.api.observation.optics import get_current_configuration
                         from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -782,7 +782,7 @@ class ObjectsLoaderThread(QThread):
                         location = get_observer_location()
                         db = get_database()
                         with db.get_session() as session:
-                            lp = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                            lp = get_light_pollution_data(session, location.latitude, location.longitude)
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
                             2: SkyBrightness.EXCELLENT,
@@ -3051,7 +3051,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.optics import get_current_configuration
             from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -3068,7 +3068,7 @@ class MainWindow(QMainWindow):
                 with db.get_session() as session:
                     # Get sky brightness from light pollution (once for all asterisms)
                     try:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         # Map Bortle class to SkyBrightness
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
@@ -3159,7 +3159,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.optics import get_current_configuration
@@ -3178,7 +3178,7 @@ class MainWindow(QMainWindow):
                 with db.get_session() as session:
                     # Get sky brightness from light pollution (once for all constellations)
                     try:
-                        light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                        light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
                         # Map Bortle class to SkyBrightness
                         bortle_to_sky_brightness = {
                             1: SkyBrightness.EXCELLENT,
@@ -4563,7 +4563,7 @@ class MainWindow(QMainWindow):
             from celestron_nexstar.api.core.enums import SkyBrightness
             from celestron_nexstar.api.core.exceptions import DatabaseError
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.optics import calculate_limiting_magnitude, get_current_configuration
 
@@ -4578,7 +4578,7 @@ class MainWindow(QMainWindow):
 
             try:
                 with db.get_session() as session:
-                    light_pollution = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                    light_pollution = get_light_pollution_data(session, location.latitude, location.longitude)
 
                 # Map Bortle class to SkyBrightness
                 bortle_to_sky_brightness = {

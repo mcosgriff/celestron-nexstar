@@ -4,13 +4,11 @@ Light Pollution Data Integration
 Provides Bortle scale and SQM (Sky Quality Meter) values
 for assessing sky darkness at observing locations.
 
-Uses async HTTP to fetch data from light pollution APIs with caching.
+Uses offline database data with caching.
 """
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import logging
 from dataclasses import dataclass
@@ -82,12 +80,6 @@ class LightPollutionData:
 # NOTE: Bortle class characteristics are now stored in database seed files.
 # See _get_bortle_characteristics() which loads from database.
 # To regenerate seed files, run: python scripts/create_seed_files.py
-
-
-async def _maybe_await(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
 
 
 def sqm_to_bortle(sqm: float) -> BortleClass:
@@ -213,7 +205,7 @@ def _get_default_bortle_characteristics(bortle_class: BortleClass) -> dict[str, 
     return defaults.get(bortle_class, defaults[BortleClass.CLASS_5])
 
 
-async def _get_bortle_characteristics(db_session: Session, bortle_class: BortleClass) -> dict[str, Any]:
+def _get_bortle_characteristics(db_session: Session, bortle_class: BortleClass) -> dict[str, Any]:
     """
     Get Bortle class characteristics from database, with fallback to defaults.
 
@@ -234,10 +226,8 @@ async def _get_bortle_characteristics(db_session: Session, bortle_class: BortleC
     from celestron_nexstar.api.core.exceptions import DatabaseError
     from celestron_nexstar.api.database.models import BortleCharacteristicsModel
 
-    model = await _maybe_await(
-        db_session.scalar(
-            select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
-        )
+    model = db_session.scalar(
+        select(BortleCharacteristicsModel).where(BortleCharacteristicsModel.bortle_class == int(bortle_class.value))
     )
 
     if model is None:
@@ -257,12 +247,12 @@ async def _get_bortle_characteristics(db_session: Session, bortle_class: BortleC
     }
 
 
-async def _create_light_pollution_data(
+def _create_light_pollution_data(
     db_session: Session, sqm: float, source: str | None = None, cached: bool = False
 ) -> LightPollutionData:
     """Create LightPollutionData from SQM value."""
     bortle = sqm_to_bortle(sqm)
-    chars = await _maybe_await(_get_bortle_characteristics(db_session, bortle))
+    chars = _get_bortle_characteristics(db_session, bortle)
 
     return LightPollutionData(
         bortle_class=bortle,
@@ -391,7 +381,7 @@ def _fetch_from_darksky_api(lat: float, lon: float) -> float | None:
     return None
 
 
-async def _fetch_sqm(lat: float, lon: float) -> float | None:
+def _fetch_sqm(lat: float, lon: float) -> float | None:
     """
     Fetch SQM value from database (offline only).
 
@@ -420,7 +410,7 @@ async def _fetch_sqm(lat: float, lon: float) -> float | None:
     return None
 
 
-async def get_light_pollution_data(
+def get_light_pollution_data(
     db_session: Session, lat: float, lon: float, force_refresh: bool = False
 ) -> LightPollutionData | None:
     """
@@ -453,17 +443,15 @@ async def get_light_pollution_data(
                     age = datetime.now(UTC) - cache_time.replace(tzinfo=UTC)
                     if age < timedelta(hours=CACHE_STALE_HOURS):
                         logger.debug(f"Using cached light pollution data for {lat},{lon}")
-                        return await _maybe_await(
-                            _create_light_pollution_data(
-                                db_session, location_data["sqm"], location_data.get("source"), cached=True
-                            )
+                        return _create_light_pollution_data(
+                            db_session, location_data["sqm"], location_data.get("source"), cached=True
                         )
                 except (ValueError, KeyError):
                     pass
 
     # Need to fetch new data from database
     logger.info(f"Fetching light pollution data for {lat},{lon}")
-    sqm = await _fetch_sqm(lat, lon)
+    sqm = _fetch_sqm(lat, lon)
 
     if sqm is None:
         from celestron_nexstar.api.core.exceptions import DatabaseError
@@ -490,10 +478,10 @@ async def get_light_pollution_data(
     cache_data["timestamp"] = datetime.now(UTC).isoformat()
     _save_cache(cache_data)
 
-    return await _maybe_await(_create_light_pollution_data(db_session, sqm, source, cached=False))
+    return _create_light_pollution_data(db_session, sqm, source, cached=False)
 
 
-async def get_light_pollution_data_batch(
+def get_light_pollution_data_batch(
     db_session: Session, locations: list[tuple[float, float]], force_refresh: bool = False
 ) -> dict[tuple[float, float], LightPollutionData]:
     """
@@ -514,7 +502,7 @@ async def get_light_pollution_data_batch(
     data_map: dict[tuple[float, float], LightPollutionData] = {}
     for lat, lon in locations:
         try:
-            result = await _maybe_await(get_light_pollution_data(db_session, lat, lon, force_refresh))
+            result = get_light_pollution_data(db_session, lat, lon, force_refresh)
             if result is not None:
                 data_map[(lat, lon)] = result
         except Exception as e:
@@ -523,17 +511,3 @@ async def get_light_pollution_data_batch(
             continue
 
     return data_map
-
-
-def get_light_pollution_data_sync(
-    db_session: Session, lat: float, lon: float, force_refresh: bool = False
-) -> LightPollutionData | None:
-    """Sync wrapper for get_light_pollution_data to preserve legacy call sites."""
-    return asyncio.run(get_light_pollution_data(db_session, lat, lon, force_refresh))
-
-
-def get_light_pollution_data_batch_sync(
-    db_session: Session, locations: list[tuple[float, float]], force_refresh: bool = False
-) -> dict[tuple[float, float], LightPollutionData]:
-    """Sync wrapper for get_light_pollution_data_batch to preserve legacy call sites."""
-    return asyncio.run(get_light_pollution_data_batch(db_session, locations, force_refresh))

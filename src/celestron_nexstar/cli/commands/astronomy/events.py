@@ -329,7 +329,7 @@ def _show_viewing_recommendation_content(
     best_location: ObserverLocation | None,
 ) -> None:
     """Display viewing recommendations for an event."""
-    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
@@ -363,7 +363,7 @@ def _show_viewing_recommendation_content(
     from celestron_nexstar.api.database.models import get_db_session
 
     with get_db_session() as db_session:
-        light_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
+        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
     output_console.print("\n[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²")
@@ -751,7 +751,7 @@ def _show_article_viewing_recommendation_content(
     max_distance: float,
 ) -> None:
     """Display viewing recommendations for an astronomy article."""
-    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+    from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
     location_name = location.name or f"{location.latitude:.2f}°N, {location.longitude:.2f}°E"
 
@@ -763,7 +763,7 @@ def _show_article_viewing_recommendation_content(
     from celestron_nexstar.api.database.models import get_db_session
 
     with get_db_session() as db_session:
-        light_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
+        light_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
     output_console.print("[bold]Your Current Sky Conditions:[/bold]")
     output_console.print(f"  • Bortle Class: {light_data.bortle_class.value}")
     output_console.print(f"  • SQM Value: {light_data.sqm_value:.2f} mag/arcsec²\n")

@@ -4,10 +4,9 @@ Unit tests for variable_stars.py
 Tests variable star event calculations and data structures.
 """
 
-import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.astronomy.variable_stars import (
     VariableStar,
@@ -112,46 +111,46 @@ class TestKnownVariableStars(unittest.TestCase):
 
     def test_known_stars_not_empty(self):
         """Test that get_known_variable_stars returns non-empty list"""
-        mock_session = AsyncMock()
-        mock_session.scalar = AsyncMock(return_value=2)
+        mock_session = MagicMock()
+        mock_session.scalar.return_value = 2
         mock_result = MagicMock()
         mock_model1 = MagicMock()
         mock_model1.to_variable_star.return_value = self.mock_stars[0]
         mock_model2 = MagicMock()
         mock_model2.to_variable_star.return_value = self.mock_stars[1]
         mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        stars = asyncio.run(get_known_variable_stars(mock_session))
+        stars = get_known_variable_stars(mock_session)
         self.assertGreater(len(stars), 0)
 
     def test_known_stars_are_variable_stars(self):
         """Test that all known stars are VariableStar instances"""
-        mock_session = AsyncMock()
-        mock_session.scalar = AsyncMock(return_value=2)
+        mock_session = MagicMock()
+        mock_session.scalar.return_value = 2
         mock_result = MagicMock()
         mock_model1 = MagicMock()
         mock_model1.to_variable_star.return_value = self.mock_stars[0]
         mock_model2 = MagicMock()
         mock_model2.to_variable_star.return_value = self.mock_stars[1]
         mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        stars = asyncio.run(get_known_variable_stars(mock_session))
+        stars = get_known_variable_stars(mock_session)
         for star in stars:
             self.assertIsInstance(star, VariableStar)
 
     def test_algol_in_known_stars(self):
         """Test that Algol is in the known stars list"""
-        mock_session = AsyncMock()
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session = MagicMock()
+        mock_session.scalar.return_value = 1
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = self.mock_stars[0]  # Algol
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        stars = asyncio.run(get_known_variable_stars(mock_session))
+        stars = get_known_variable_stars(mock_session)
         algol = next((s for s in stars if s.name == "Algol"), None)
         self.assertIsNotNone(algol)
         self.assertEqual(algol.variable_type, "eclipsing_binary")
@@ -159,17 +158,17 @@ class TestKnownVariableStars(unittest.TestCase):
 
     def test_all_stars_have_required_fields(self):
         """Test that all known stars have all required fields"""
-        mock_session = AsyncMock()
-        mock_session.scalar = AsyncMock(return_value=2)
+        mock_session = MagicMock()
+        mock_session.scalar.return_value = 2
         mock_result = MagicMock()
         mock_model1 = MagicMock()
         mock_model1.to_variable_star.return_value = self.mock_stars[0]
         mock_model2 = MagicMock()
         mock_model2.to_variable_star.return_value = self.mock_stars[1]
         mock_result.scalars.return_value.all.return_value = [mock_model1, mock_model2]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        stars = asyncio.run(get_known_variable_stars(mock_session))
+        stars = get_known_variable_stars(mock_session)
         for star in stars:
             self.assertIsInstance(star.name, str)
             self.assertIsInstance(star.designation, str)
@@ -265,7 +264,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -277,14 +276,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar.return_value = 1
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
+        events = get_variable_star_events(mock_session, self.test_location)
 
         self.assertIsInstance(events, list)
         # Should have events for all known stars
@@ -298,7 +297,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -310,14 +309,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar.return_value = 1
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute.return_value = mock_result
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location, event_type="minimum"))
+        events = get_variable_star_events(mock_session, self.test_location, event_type="minimum")
 
         self.assertIsInstance(events, list)
         # All events should be minimum type
@@ -332,7 +331,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -344,14 +343,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar = MagicMock(return_value=1)
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = MagicMock(return_value=mock_result)
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location, months_ahead=1))
+        events = get_variable_star_events(mock_session, self.test_location, months_ahead=1)
 
         self.assertIsInstance(events, list)
         # All events should be within 1 month
@@ -367,7 +366,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -379,14 +378,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar = MagicMock(return_value=1)
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = MagicMock(return_value=mock_result)
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
+        events = get_variable_star_events(mock_session, self.test_location)
 
         # Should be sorted by date
         if len(events) > 1:
@@ -401,7 +400,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -413,14 +412,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar = MagicMock(return_value=1)
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = MagicMock(return_value=mock_result)
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
+        events = get_variable_star_events(mock_session, self.test_location)
 
         self.assertGreater(len(events), 0)
         for event in events:
@@ -439,7 +438,7 @@ class TestGetVariableStarEvents(unittest.TestCase):
         mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
 
         # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_star = VariableStar(
             name="Test Star",
             designation="α Test",
@@ -451,14 +450,14 @@ class TestGetVariableStarEvents(unittest.TestCase):
             dec_degrees=45.0,
             notes="Test",
         )
-        mock_session.scalar = AsyncMock(return_value=1)
+        mock_session.scalar = MagicMock(return_value=1)
         mock_result = MagicMock()
         mock_model = MagicMock()
         mock_model.to_variable_star.return_value = mock_star
         mock_result.scalars.return_value.all.return_value = [mock_model]
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = MagicMock(return_value=mock_result)
 
-        events = asyncio.run(get_variable_star_events(mock_session, self.test_location))
+        events = get_variable_star_events(mock_session, self.test_location)
 
         for event in events:
             if event.event_type == "minimum":

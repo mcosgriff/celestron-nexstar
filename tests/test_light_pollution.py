@@ -4,12 +4,11 @@ Unit tests for light_pollution.py
 Tests light pollution data fetching, Bortle scale conversion, and caching.
 """
 
-import asyncio
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.core.exceptions import DatabaseError
 from celestron_nexstar.api.location.light_pollution import (
@@ -118,7 +117,7 @@ class TestGetBortleCharacteristics(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        self.mock_session = AsyncMock()
+        self.mock_session = MagicMock()
 
     def test_get_bortle_characteristics_success(self):
         """Test successful retrieval of Bortle characteristics"""
@@ -132,9 +131,9 @@ class TestGetBortleCharacteristics(unittest.TestCase):
         mock_model.description = "Rural sky"
         mock_model.recommendations = '["Good for observing"]'
 
-        self.mock_session.scalar = AsyncMock(return_value=mock_model)
+        self.mock_session.scalar = MagicMock(return_value=mock_model)
 
-        result = asyncio.run(_get_bortle_characteristics(self.mock_session, BortleClass.CLASS_3))
+        result = _get_bortle_characteristics(self.mock_session, BortleClass.CLASS_3)
 
         self.assertIsInstance(result, dict)
         self.assertEqual(result["sqm_range"], (21.69, 21.89))
@@ -143,10 +142,10 @@ class TestGetBortleCharacteristics(unittest.TestCase):
 
     def test_get_bortle_characteristics_not_found(self):
         """Test error when Bortle characteristics not found"""
-        self.mock_session.scalar = AsyncMock(return_value=None)
+        self.mock_session.scalar = MagicMock(return_value=None)
 
         with self.assertRaises(DatabaseError) as context:
-            asyncio.run(_get_bortle_characteristics(self.mock_session, BortleClass.CLASS_3))
+            _get_bortle_characteristics(self.mock_session, BortleClass.CLASS_3)
 
         self.assertIn("Bortle class", str(context.exception))
 
@@ -156,7 +155,7 @@ class TestCreateLightPollutionData(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        self.mock_session = AsyncMock()
+        self.mock_session = MagicMock()
 
     @patch("celestron_nexstar.api.location.light_pollution._get_bortle_characteristics")
     def test_create_light_pollution_data(self, mock_get_chars):
@@ -172,7 +171,7 @@ class TestCreateLightPollutionData(unittest.TestCase):
             "recommendations": ["Good for observing"],
         }
 
-        result = asyncio.run(_create_light_pollution_data(self.mock_session, 21.5, source="database", cached=False))
+        result = _create_light_pollution_data(self.mock_session, 21.5, source="database", cached=False)
 
         self.assertIsInstance(result, LightPollutionData)
         self.assertEqual(result.bortle_class, BortleClass.CLASS_4)
@@ -281,7 +280,7 @@ class TestFetchSqm(unittest.TestCase):
         mock_get_db.return_value = mock_db
         mock_get_sqm.return_value = 21.5
 
-        result = asyncio.run(_fetch_sqm(40.0, -100.0))
+        result = _fetch_sqm(40.0, -100.0)
 
         self.assertEqual(result, 21.5)
 
@@ -293,7 +292,7 @@ class TestFetchSqm(unittest.TestCase):
         mock_get_db.return_value = mock_db
         mock_get_sqm.return_value = None
 
-        result = asyncio.run(_fetch_sqm(40.0, -100.0))
+        result = _fetch_sqm(40.0, -100.0)
 
         self.assertIsNone(result)
 
@@ -302,7 +301,7 @@ class TestFetchSqm(unittest.TestCase):
         """Test SQM fetch when exception occurs"""
         mock_get_db.side_effect = Exception("Database error")
 
-        result = asyncio.run(_fetch_sqm(40.0, -100.0))
+        result = _fetch_sqm(40.0, -100.0)
 
         self.assertIsNone(result)
 
@@ -312,7 +311,7 @@ class TestGetLightPollutionData(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        self.mock_session = AsyncMock()
+        self.mock_session = MagicMock()
 
     @patch("celestron_nexstar.api.location.light_pollution._fetch_sqm")
     @patch("celestron_nexstar.api.location.light_pollution._create_light_pollution_data")
@@ -335,7 +334,7 @@ class TestGetLightPollutionData(unittest.TestCase):
         )
         mock_create.return_value = mock_data
 
-        result = asyncio.run(get_light_pollution_data(self.mock_session, 40.0, -100.0))
+        result = get_light_pollution_data(self.mock_session, 40.0, -100.0)
 
         self.assertIsInstance(result, LightPollutionData)
         mock_fetch.assert_called_once_with(40.0, -100.0)
@@ -372,7 +371,7 @@ class TestGetLightPollutionData(unittest.TestCase):
         with patch("celestron_nexstar.api.location.light_pollution._create_light_pollution_data") as mock_create:
             mock_create.return_value = mock_data
 
-            result = asyncio.run(get_light_pollution_data(self.mock_session, 40.0, -100.0))
+            result = get_light_pollution_data(self.mock_session, 40.0, -100.0)
 
             self.assertTrue(result.cached)
             mock_fetch.assert_not_called()
@@ -385,7 +384,7 @@ class TestGetLightPollutionData(unittest.TestCase):
         mock_fetch.return_value = None
 
         with self.assertRaises(DatabaseError) as context:
-            asyncio.run(get_light_pollution_data(self.mock_session, 40.0, -100.0))
+            get_light_pollution_data(self.mock_session, 40.0, -100.0)
 
         self.assertIn("No light pollution data found", str(context.exception))
 
@@ -410,7 +409,7 @@ class TestGetLightPollutionData(unittest.TestCase):
         )
         mock_create.return_value = mock_data
 
-        result = asyncio.run(get_light_pollution_data(self.mock_session, 40.0, -100.0, force_refresh=True))
+        result = get_light_pollution_data(self.mock_session, 40.0, -100.0, force_refresh=True)
 
         mock_fetch.assert_called_once()
         self.assertFalse(result.cached)
@@ -421,7 +420,7 @@ class TestGetLightPollutionDataBatch(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        self.mock_session = AsyncMock()
+        self.mock_session = MagicMock()
 
     @patch("celestron_nexstar.api.location.light_pollution.get_light_pollution_data")
     def test_get_light_pollution_data_batch_success(self, mock_get_data):
@@ -449,7 +448,7 @@ class TestGetLightPollutionDataBatch(unittest.TestCase):
         )
         mock_get_data.side_effect = [mock_data1, mock_data2]
 
-        result = asyncio.run(get_light_pollution_data_batch(self.mock_session, locations))
+        result = get_light_pollution_data_batch(self.mock_session, locations)
 
         self.assertEqual(len(result), 2)
         self.assertIn((40.0, -100.0), result)
@@ -471,7 +470,7 @@ class TestGetLightPollutionDataBatch(unittest.TestCase):
         )
         mock_get_data.side_effect = [mock_data1, DatabaseError("No data")]
 
-        result = asyncio.run(get_light_pollution_data_batch(self.mock_session, locations))
+        result = get_light_pollution_data_batch(self.mock_session, locations)
 
         self.assertEqual(len(result), 1)
         self.assertIn((40.0, -100.0), result)

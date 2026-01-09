@@ -7,8 +7,6 @@ capabilities to recommend what to observe tonight.
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -41,19 +39,6 @@ from celestron_nexstar.api.observation.visibility import VisibilityInfo, filter_
 
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_maybe_await(value: object) -> object:
-    if inspect.isawaitable(value):
-        return asyncio.run(value)
-    return value
-
-
-async def _resolve_with_async_session(session_ctx: object, lat: float, lon: float) -> LightPollutionData | None:
-    async with session_ctx as db_session:
-        return await get_light_pollution_data(db_session, lat, lon)
-
-
 __all__ = [
     "ObservationPlanner",
     "ObservingConditions",
@@ -337,12 +322,8 @@ class ObservationPlanner:
         # Get light pollution
         from celestron_nexstar.api.database.models import get_db_session
 
-        session_ctx = get_db_session()
-        if hasattr(session_ctx, "__aenter__"):
-            lp_data = _resolve_maybe_await(_resolve_with_async_session(session_ctx, lat, lon))
-        else:
-            with session_ctx as db_session:
-                lp_data = _resolve_maybe_await(get_light_pollution_data(db_session, lat, lon))
+        with get_db_session() as db_session:
+            lp_data = get_light_pollution_data(db_session, lat, lon)
 
         # Get telescope configuration
         config = get_current_configuration()
@@ -574,13 +555,11 @@ class ObservationPlanner:
             if isinstance(target_types, CelestialObjectType):
                 filter_object_type = target_types
 
-        all_objects = _resolve_maybe_await(
-            db.filter_objects(
-                object_type=filter_object_type,
-                max_magnitude=max_mag,
-                limit=initial_limit,
-                constellation=constellation,
-            )
+        all_objects = db.filter_objects(
+            object_type=filter_object_type,
+            max_magnitude=max_mag,
+            limit=initial_limit,
+            constellation=constellation,
         )
 
         # Filter by target types if specified

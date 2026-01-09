@@ -684,7 +684,7 @@ def check_aurora_visibility(
 
     try:
         from celestron_nexstar.api.astronomy.solar_system import get_moon_info
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast, fetch_weather
 
         # Determine which weather time to use:
@@ -773,7 +773,7 @@ def check_aurora_visibility(
             weather = fetch_weather(location)
             moon_info = get_moon_info(location.latitude, location.longitude, dt)
             with get_db_session() as db_session:
-                lp_data = get_light_pollution_data_sync(db_session, location.latitude, location.longitude)
+                lp_data = get_light_pollution_data(db_session, location.latitude, location.longitude)
 
             if cloud_cover is None:
                 if isinstance(weather, Exception):

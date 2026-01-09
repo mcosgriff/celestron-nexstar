@@ -4,12 +4,11 @@ Unit tests for observer.py
 Tests observer location management, geocoding, and auto-detection.
 """
 
-import asyncio
 import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.core.exceptions import (
     GeocodingError,
@@ -52,7 +51,7 @@ class TestObserverLocation(unittest.TestCase):
         """Test that ObserverLocation is frozen (immutable)"""
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
         with self.assertRaises(Exception):  # dataclass frozen raises FrozenInstanceError
-            location = ObserverLocation(latitude=40.0, longitude=50.0)
+            location.longitude = 50.0
 
 
 class TestDefaultLocation(unittest.TestCase):
@@ -308,99 +307,61 @@ class TestClearObserverLocation(unittest.TestCase):
 class TestGeocodeLocation(unittest.TestCase):
     """Test suite for geocode_location function"""
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_success(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_success(self, mock_get):
         """Test successful geocoding"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value=[
-                {
-                    "lat": "40.7128",
-                    "lon": "-74.0060",
-                    "display_name": "New York, NY, USA",
-                }
-            ]
-        )
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {
+                "lat": "40.7128",
+                "lon": "-74.0060",
+                "display_name": "New York, NY, USA",
+            }
+        ]
+        mock_get.return_value = mock_response
 
-        # Create async context manager for response
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
-
-        result = asyncio.run(geocode_location("New York, NY"))
+        result = geocode_location("New York, NY")
 
         self.assertIsInstance(result, ObserverLocation)
         self.assertAlmostEqual(result.latitude, 40.7128, places=4)
         self.assertAlmostEqual(result.longitude, -74.0060, places=4)
         self.assertIn("New York", result.name or "")
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_not_found(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_not_found(self, mock_get):
         """Test geocoding when location not found"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value=[])
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
 
         with self.assertRaises(LocationNotFoundError) as context:
-            asyncio.run(geocode_location("NonexistentPlace12345"))
+            geocode_location("NonexistentPlace12345")
 
         self.assertIn("Could not find location", str(context.exception))
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_api_error(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_api_error(self, mock_get):
         """Test geocoding when API returns error"""
-        mock_response = AsyncMock()
-        mock_response.status = 500
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_get.return_value = mock_response
 
         with self.assertRaises(GeocodingError) as context:
-            asyncio.run(geocode_location("New York"))
+            geocode_location("New York")
 
         self.assertIn("Geocoding API returned", str(context.exception))
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_exception(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_exception(self, mock_get):
         """Test geocoding when exception occurs"""
-        import aiohttp
+        import requests
 
-        # Mock the session and make session.get() raise an exception
-        mock_session = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("Connection error"))
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
+        mock_get.side_effect = requests.RequestException("Connection error")
 
         with self.assertRaises(GeocodingError) as context:
-            asyncio.run(geocode_location("New York"))
+            geocode_location("New York")
 
         self.assertIn("Failed to geocode", str(context.exception))
 
@@ -416,7 +377,7 @@ class TestGeocodeLocationBatch(unittest.TestCase):
         mock_geocode.side_effect = [location1, location2]
 
         queries = ["New York", "Los Angeles"]
-        result = asyncio.run(geocode_location_batch(queries))
+        result = geocode_location_batch(queries)
 
         self.assertEqual(len(result), 2)
         self.assertIn("New York", result)
@@ -429,7 +390,7 @@ class TestGeocodeLocationBatch(unittest.TestCase):
         mock_geocode.side_effect = [location1, ValueError("Not found")]
 
         queries = ["New York", "Nonexistent"]
-        result = asyncio.run(geocode_location_batch(queries))
+        result = geocode_location_batch(queries)
 
         self.assertEqual(len(result), 1)
         self.assertIn("New York", result)
@@ -447,7 +408,7 @@ class TestDetectLocationAutomatically(unittest.TestCase):
         mock_system.return_value = location
         mock_ip.return_value = None
 
-        result = asyncio.run(detect_location_automatically())
+        result = detect_location_automatically()
 
         self.assertEqual(result, location)
         mock_ip.assert_not_called()
@@ -460,7 +421,7 @@ class TestDetectLocationAutomatically(unittest.TestCase):
         location = ObserverLocation(latitude=40.0, longitude=-100.0, name="IP location")
         mock_ip.return_value = location
 
-        result = asyncio.run(detect_location_automatically())
+        result = detect_location_automatically()
 
         self.assertEqual(result, location)
 
@@ -472,7 +433,7 @@ class TestDetectLocationAutomatically(unittest.TestCase):
         mock_ip.return_value = None
 
         with self.assertRaises(LocationNotSetError) as context:
-            asyncio.run(detect_location_automatically())
+            detect_location_automatically()
 
         self.assertIn("Could not automatically detect", str(context.exception))
 
@@ -480,82 +441,53 @@ class TestDetectLocationAutomatically(unittest.TestCase):
 class TestGetLocationFromIp(unittest.TestCase):
     """Test suite for _get_location_from_ip function"""
 
-    @patch("aiohttp.ClientSession")
-    def test_get_location_from_ip_success(self, mock_session_class):
+    @patch("requests.get")
+    def test_get_location_from_ip_success(self, mock_get):
         """Test successful IP geolocation"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "latitude": 40.7128,
-                "longitude": -74.0060,
-                "city": "New York",
-                "region": "New York",
-                "country_name": "United States",
-            }
-        )
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "latitude": 40.7128,
+            "longitude": -74.0060,
+            "city": "New York",
+            "region": "New York",
+            "country_name": "United States",
+        }
+        mock_get.return_value = mock_response
 
         from celestron_nexstar.api.location.observer import _get_location_from_ip
 
-        result = asyncio.run(_get_location_from_ip())
+        result = _get_location_from_ip()
 
         self.assertIsNotNone(result)
         self.assertAlmostEqual(result.latitude, 40.7128, places=4)
         self.assertAlmostEqual(result.longitude, -74.0060, places=4)
         self.assertIn("New York", result.name or "")
 
-    @patch("aiohttp.ClientSession")
-    def test_get_location_from_ip_api_error(self, mock_session_class):
+    @patch("requests.get")
+    def test_get_location_from_ip_api_error(self, mock_get):
         """Test IP geolocation when API returns error"""
-        mock_response = AsyncMock()
-        mock_response.status = 500
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_get.return_value = mock_response
 
         from celestron_nexstar.api.location.observer import _get_location_from_ip
 
-        result = asyncio.run(_get_location_from_ip())
+        result = _get_location_from_ip()
 
         self.assertIsNone(result)
 
-    @patch("aiohttp.ClientSession")
-    def test_get_location_from_ip_missing_coordinates(self, mock_session_class):
+    @patch("requests.get")
+    def test_get_location_from_ip_missing_coordinates(self, mock_get):
         """Test IP geolocation when response missing coordinates"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"city": "New York"})  # Missing lat/lon
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"city": "New York"}
+        mock_get.return_value = mock_response
 
         from celestron_nexstar.api.location.observer import _get_location_from_ip
 
-        result = asyncio.run(_get_location_from_ip())
+        result = _get_location_from_ip()
 
         self.assertIsNone(result)
 
@@ -570,7 +502,7 @@ class TestGetLocationFromSystem(unittest.TestCase):
         from celestron_nexstar.api.location.observer import _get_location_from_system
 
         # Should return None if dbus not available or permission denied
-        result = asyncio.run(_get_location_from_system())
+        result = _get_location_from_system()
         # Result may be None if dbus not available, which is expected
         self.assertIsNone(result)  # dbus likely not available in test environment
 
@@ -581,7 +513,7 @@ class TestGetLocationFromSystem(unittest.TestCase):
         from celestron_nexstar.api.location.observer import _get_location_from_system
 
         # Should return None if PyObjC not available
-        result = asyncio.run(_get_location_from_system())
+        result = _get_location_from_system()
         # Result may be None if PyObjC not available, which is expected
         self.assertIsNone(result)  # PyObjC likely not available in test environment
 
@@ -592,7 +524,7 @@ class TestGetLocationFromSystem(unittest.TestCase):
         from celestron_nexstar.api.location.observer import _get_location_from_system
 
         # Should return None if winrt not available
-        result = asyncio.run(_get_location_from_system())
+        result = _get_location_from_system()
         # Result may be None if winrt not available, which is expected
         self.assertIsNone(result)  # winrt likely not available in test environment
 
@@ -602,7 +534,7 @@ class TestGetLocationFromSystem(unittest.TestCase):
         mock_platform.return_value = "UnknownOS"
         from celestron_nexstar.api.location.observer import _get_location_from_system
 
-        result = asyncio.run(_get_location_from_system())
+        result = _get_location_from_system()
         self.assertIsNone(result)
 
 
@@ -678,65 +610,38 @@ class TestLoadLocationEdgeCases(unittest.TestCase):
 class TestGeocodeLocationEdgeCases(unittest.TestCase):
     """Test suite for edge cases in geocode_location function"""
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_with_empty_response(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_with_empty_response(self, mock_get):
         """Test geocoding with empty response"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value=[])
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
 
         with self.assertRaises(LocationNotFoundError):
-            asyncio.run(geocode_location("Test Location"))
+            geocode_location("Test Location")
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_with_missing_coordinates(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_with_missing_coordinates(self, mock_get):
         """Test geocoding with response missing lat/lon"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value=[{"display_name": "Test"}])  # Missing lat/lon
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"display_name": "Test"}]
+        mock_get.return_value = mock_response
 
         with self.assertRaises(GeocodingError):
-            asyncio.run(geocode_location("Test Location"))
+            geocode_location("Test Location")
 
-    @patch("aiohttp.ClientSession")
-    def test_geocode_location_with_invalid_coordinates(self, mock_session_class):
+    @patch("requests.get")
+    def test_geocode_location_with_invalid_coordinates(self, mock_get):
         """Test geocoding with invalid coordinate values"""
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value=[{"lat": "invalid", "lon": "invalid", "display_name": "Test"}])
-
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_response_context)
-        mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"lat": "invalid", "lon": "invalid", "display_name": "Test"}]
+        mock_get.return_value = mock_response
 
         with self.assertRaises(GeocodingError):
-            asyncio.run(geocode_location("Test Location"))
+            geocode_location("Test Location")
 
 
 class TestGetObserverLocationEdgeCases(unittest.TestCase):

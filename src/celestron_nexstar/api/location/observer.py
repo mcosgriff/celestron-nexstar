@@ -33,6 +33,7 @@ __all__ = [
     "detect_location_automatically",
     "enrich_location_with_elevation_feet",
     "geocode_location",
+    "geocode_location_batch",
     "get_observer_location",
     "set_observer_location",
 ]
@@ -47,7 +48,7 @@ class ObserverLocation:
 
     latitude: float  # Degrees north (negative for south)
     longitude: float  # Degrees east (negative for west)
-    elevation: float = 0.0  # Feet above sea level
+    elevation: float = 0.0  # Elevation above sea level (unitless, stored as-is)
     name: str | None = None  # Optional location name
 
 
@@ -91,9 +92,7 @@ def save_location(location: ObserverLocation) -> None:
     data = {
         "latitude": location.latitude,
         "longitude": location.longitude,
-        # Persist elevation in feet (preferred). Keep meters too for clarity/debugging.
-        "elevation_ft": location.elevation,
-        "elevation_m": location.elevation / METERS_TO_FEET if location.elevation else 0.0,
+        "elevation": location.elevation,
         "name": location.name,
     }
 
@@ -201,13 +200,16 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
             raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
 
         # Backwards compatibility:
-        # - New configs: elevation_ft
-        # - Old configs: elevation (meters)
-        if "elevation_ft" in data:
-            elevation = float(data.get("elevation_ft", 0.0))
+        # - Preferred: elevation (stored as-is)
+        # - Older configs: elevation_m or elevation_ft
+        if "elevation" in data:
+            elevation = float(data.get("elevation", 0.0))
+        elif "elevation_m" in data:
+            elevation = float(data.get("elevation_m", 0.0))
+        elif "elevation_ft" in data:
+            elevation = float(data.get("elevation_ft", 0.0)) * FEET_TO_METERS
         else:
-            elevation_m = float(data.get("elevation", 0.0))
-            elevation = elevation_m * METERS_TO_FEET
+            elevation = 0.0
         if elevation < 0:
             logger.warning(f"Negative elevation in config: {elevation}, using 0.0")
             elevation = 0.0
@@ -286,10 +288,8 @@ def clear_observer_location() -> None:
     _current_location = None
 
 
-# type: ignore[misc,arg-type]
 @deal.pre(lambda query: query and len(query.strip()) > 0, message="Query must be non-empty")
 @deal.post(lambda result: result is not None, message="Geocoded location must be returned")
-# Note: Postconditions on async functions check the coroutine, not the awaited result
 # Latitude/longitude validation happens in the function implementation
 @deal.raises(GeocodingError, LocationNotFoundError)
 def geocode_location(query: str) -> ObserverLocation:
@@ -307,9 +307,9 @@ def geocode_location(query: str) -> ObserverLocation:
     Raises:
         ValueError: If location could not be found or geocoding failed
     """
-    import requests
-
     try:
+        import requests
+
         # Use Nominatim API directly
         url = "https://nominatim.openstreetmap.org/search"
         params: dict[str, str | int] = {
@@ -325,7 +325,6 @@ def geocode_location(query: str) -> ObserverLocation:
         response = requests.get(url, params=params, headers=headers, timeout=10)
         if response.status_code != 200:
             raise GeocodingError(f"Geocoding API returned HTTP {response.status_code}")
-
         data = response.json()
 
         if not data or len(data) == 0:
@@ -388,9 +387,9 @@ def _get_location_from_ip() -> ObserverLocation | None:
     Returns:
         ObserverLocation if successful, None otherwise
     """
-    import requests
-
     try:
+        import requests
+
         # Use ipapi.co (free, no API key required, rate limited)
         url = "https://ipapi.co/json/"
         headers = {

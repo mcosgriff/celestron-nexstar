@@ -32,6 +32,7 @@ __all__ = [
     "get_radio_flux_107",
     "get_solar_wind_data",
     "get_space_weather_conditions",
+    "get_kp_ap_data",
 ]
 
 
@@ -193,16 +194,15 @@ def get_solar_wind_data() -> dict[str, float | None]:
                     bt = None
                     bz = None
 
-        result = {
-            "solar_wind_speed": speed,
-            "solar_wind_bt": bt,
-            "solar_wind_bz": bz,
-            "solar_wind_density": density,
-        }
-        _set_cache(cache_key, result)
+            result = {
+                "solar_wind_speed": speed,
+                "solar_wind_bt": bt,
+                "solar_wind_bz": bz,
+                "solar_wind_density": density,
+            }
+            _set_cache(cache_key, result)
         return result
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
@@ -273,7 +273,6 @@ def get_goes_xray_data() -> dict[str, float | str | None]:
 
         return {}
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
         # ValueError: invalid JSON or data format
         # TypeError: wrong data types
         # KeyError: missing keys in response
@@ -458,7 +457,6 @@ def get_kp_ap_data() -> dict[str, float | None]:
 
         return {"kp_index": None}
     except (requests.RequestException, KeyError, TimeoutError) as e:
-        # requests.RequestException: HTTP/network errors
         # KeyError: missing keys in response
         # TimeoutError: request timeout
         logger.debug(f"Error fetching Kp/Ap data: {e}")

@@ -12,12 +12,11 @@ Shows a full month calendar with upcoming astronomical events including:
 from __future__ import annotations
 
 import logging
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QDate, Qt, QTimer, Signal
+from PySide6.QtCore import QDate, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -61,6 +60,93 @@ class CalendarEvent:
     description: str
     event_type: str  # "moon_phase", "meteor_shower", "eclipse", "planetary", "other"
     color: str  # Hex color for highlighting
+
+
+def _fetch_astropixels_events(start_date: datetime) -> list[Any]:
+    from celestron_nexstar.api.database.models import get_db_session
+    from celestron_nexstar.api.events.astropixels_almanac import (
+        TIMEZONE_OFFSETS,
+        cache_astropixels_events,
+        get_cached_astropixels_events,
+    )
+
+    location = get_observer_location()
+    if not location:
+        return []
+
+    year = start_date.year
+    try:
+        from celestron_nexstar.api.core.utils import get_local_timezone
+
+        tz = get_local_timezone(location.latitude, location.longitude)
+        if tz:
+            tz_name = str(tz)
+            timezone_map = {
+                "America/New_York": "EST",
+                "America/Chicago": "CST",
+                "America/Denver": "MST",
+                "America/Los_Angeles": "PST",
+                "America/Anchorage": "AKST",
+                "Pacific/Honolulu": "HST",
+            }
+            tz_str = timezone_map.get(tz_name, "MST")
+        else:
+            tz_str = "MST"
+    except Exception:
+        tz_str = "MST"
+
+    end_date = start_date + timedelta(days=365)
+    tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)
+
+    with get_db_session() as session:
+        cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+
+        if len(cached_events) < 50:
+            current_date = datetime.now(UTC)
+            current_year = current_date.year
+            current_month = current_date.month
+            years_to_fetch = []
+            max_future_year = current_year + 2
+            if year <= max_future_year:
+                years_to_fetch.append(year)
+            else:
+                logger.info(
+                    f"Skipping fetch for {year} - beyond reasonable range (current year: {current_year}, max: {max_future_year})"
+                )
+
+            if year == current_year and current_month >= 11:
+                next_year = year + 1
+                if next_year <= max_future_year and next_year not in years_to_fetch:
+                    years_to_fetch.append(next_year)
+
+            for fetch_year in years_to_fetch:
+                logger.info(f"Fetching AstroPixels almanac for {fetch_year} ({tz_str})")
+                events_cached = cache_astropixels_events(session, fetch_year, tz_str, force_refresh=False)
+                if events_cached == 0:
+                    logger.warning(f"No events found for {fetch_year} - almanac may not be available yet")
+
+            cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
+            logger.info(f"Fetched and cached AstroPixels events, now have {len(cached_events)} events")
+        else:
+            logger.info(f"Using cached AstroPixels events ({len(cached_events)} events found)")
+
+    return cached_events
+
+
+class _AstroPixelsLoaderThread(QThread):
+    loaded = Signal(object)
+    error = Signal(str)
+
+    def __init__(self, start_date: datetime) -> None:
+        super().__init__()
+        self._start_date = start_date
+
+    def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+        try:
+            events = _fetch_astropixels_events(self._start_date)
+            self.loaded.emit(events)
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 
 # Removed CustomCalendarWidget - no longer needed
@@ -329,6 +415,7 @@ class AstronomicalCalendarDialog(QDialog):
         self._close_progress_signal.connect(self._close_progress)
 
         # Load events
+        self._astropixels_thread: _AstroPixelsLoaderThread | None = None
         self._load_events()
 
     def _load_events(self) -> None:
@@ -348,37 +435,14 @@ class AstronomicalCalendarDialog(QDialog):
 
             QApplication.processEvents()
 
-            # Load events in background thread, but update UI on main thread
-            def _load_in_background() -> None:
-                """Load events in background and update UI on main thread."""
-                try:
-                    # Load AstroPixels events first (primary source)
-                    self._load_astropixels_events(now)
+            if self._astropixels_thread and self._astropixels_thread.isRunning():
+                return
 
-                    # Load other events
-                    # self._load_space_events(now)
-
-                    # Load meteor showers (async but fast)
-                    # self._load_meteor_showers(now)
-
-                    # Load eclipses (async but fast)
-                    # self._load_eclipses(location, now)
-
-                    # Load moon phases last (slower, but optimized)
-                    # Skip this since AstroPixels already has moon phases
-                    # self._load_moon_phases(location, now)
-
-                    # Update calendar formatting on main thread using signal
-                    # This ensures the call happens on the main Qt thread
-                    self._update_formatting_signal.emit()
-                except Exception as e:
-                    logger.error(f"Error loading events: {e}", exc_info=True)
-                finally:
-                    # Always close progress dialog on main thread
-                    self._close_progress_signal.emit()
-
-            # Run in background thread
-            thread = threading.Thread(target=_load_in_background, daemon=True)
+            thread = _AstroPixelsLoaderThread(now)
+            thread.loaded.connect(self._on_astropixels_loaded)
+            thread.error.connect(self._on_astropixels_error)
+            thread.finished.connect(thread.deleteLater)
+            self._astropixels_thread = thread
             thread.start()
 
             # Set timeout to close progress dialog
@@ -395,169 +459,88 @@ class AstronomicalCalendarDialog(QDialog):
             self._progress_dialog.close()
             self._progress_dialog = None
 
-    def _load_astropixels_events(self, start_date: datetime) -> None:
-        """Load AstroPixels events from cache or fetch if needed."""
+    def _on_astropixels_loaded(self, cached_events: object) -> None:
         try:
-            from celestron_nexstar.api.database.models import get_db_session
-            from celestron_nexstar.api.events.astropixels_almanac import (
-                TIMEZONE_OFFSETS,
-                cache_astropixels_events,
-                get_cached_astropixels_events,
-            )
-            from celestron_nexstar.api.location.observer import get_observer_location
+            self._apply_astropixels_events(cached_events)
+            self._update_formatting_signal.emit()
+        finally:
+            self._close_progress_signal.emit()
 
-            # Get location
-            location = get_observer_location()
+    def _on_astropixels_error(self, message: str) -> None:
+        logger.error(f"Error loading events: {message}", exc_info=True)
+        self._close_progress_signal.emit()
 
-            # Determine year and timezone
-            year = start_date.year
-            # Get user's timezone
-            try:
-                from celestron_nexstar.api.core.utils import get_local_timezone
+    def _apply_astropixels_events(self, cached_events: object) -> None:
+        """Apply AstroPixels events to the calendar UI."""
+        events = cached_events or []
+        logger.info(f"Adding {len(events)} AstroPixels events to calendar")
+        events_by_month: dict[int, int] = {}
+        december_events: list[str] = []
+        for event in events:
+            # Determine color based on event type
+            color_map = {
+                "moon_phase": "#f39c12" if "Full" in event.event_name else "#3498db",
+                "moon_perigee": "#95a5a6",
+                "moon_apogee": "#95a5a6",
+                "moon_ascending_node": "#95a5a6",
+                "moon_descending_node": "#95a5a6",
+                "meteor_shower": "#9b59b6",
+                "lunar_eclipse": "#e74c3c",
+                "solar_eclipse": "#c0392b",
+                "planetary_opposition": "#16a085",
+                "planetary_elongation": "#16a085",
+                "planetary_perihelion": "#16a085",
+                "planetary_aphelion": "#16a085",
+                "planetary_inferior_conjunction": "#16a085",
+                "planetary_superior_conjunction": "#16a085",
+                "solstice": "#27ae60",
+                "equinox": "#27ae60",
+                "conjunction": "#16a085",
+                "occultation": "#e67e22",
+                "star_position": "#9b59b6",
+                "other": "#34495e",
+            }
+            color = color_map.get(event.event_type, "#34495e")
 
-                tz = get_local_timezone(location.latitude, location.longitude)
-                # Map timezone to AstroPixels format
-                # Default to MST if we can't determine
-                if tz:
-                    tz_name = str(tz)
-                    timezone_map = {
-                        "America/New_York": "EST",
-                        "America/Chicago": "CST",
-                        "America/Denver": "MST",
-                        "America/Los_Angeles": "PST",
-                        "America/Anchorage": "AKST",
-                        "Pacific/Honolulu": "HST",
-                    }
-                    tz_str = timezone_map.get(tz_name, "MST")
-                else:
-                    tz_str = "MST"
-            except Exception:
-                tz_str = "MST"  # Default to MST
+            # Use local_date if available (for correct calendar date), otherwise use UTC date
+            # For AstroPixels events, local_date is set; for database events, it's None
+            if event.local_date:
+                # Use the local date (timezone-naive) for correct calendar date
+                event_date = event.local_date
+                month = event.local_date.month
+            else:
+                # For database events without local_date, reconstruct local date from UTC
+                # by adding back the timezone offset
+                # This is approximate but should work for most cases
+                event_date = event.date
+                month = event.date.month
 
-            # Check if events are cached, if not fetch and cache them
-            end_date = start_date + timedelta(days=365)
-
-            # Get timezone offset for reconstructing local_date from database events
-            tz_offset = TIMEZONE_OFFSETS.get(tz_str, -7)  # Default to MST
-
-            with get_db_session() as session:
-                # Check if we have cached events first
-                cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
-
-                # Only fetch if we don't have enough events (less than 50 events suggests incomplete data)
-                if len(cached_events) < 50:
-                    current_date = datetime.now(UTC)
-                    current_year = current_date.year
-                    current_month = current_date.month
-
-                    # AstroPixels has almanacs for years 2021-2030
-                    # Fetch years that are in a reasonable range (current year and up to 2 years ahead)
-                    years_to_fetch = []
-
-                    # Fetch the requested year if it's in a reasonable range (current year to current year + 2)
-                    max_future_year = current_year + 2
-                    if year <= max_future_year:
-                        years_to_fetch.append(year)
-                    else:
-                        logger.info(
-                            f"Skipping fetch for {year} - beyond reasonable range (current year: {current_year}, max: {max_future_year})"
-                        )
-
-                    # Also fetch next year if we're late in the current year and the requested year is current year
-                    if year == current_year and current_month >= 11:
-                        next_year = year + 1
-                        if next_year <= max_future_year and next_year not in years_to_fetch:
-                            years_to_fetch.append(next_year)
-
-                    # Fetch each year that's available
-                    for fetch_year in years_to_fetch:
-                        logger.info(f"Fetching AstroPixels almanac for {fetch_year} ({tz_str})")
-                        events_cached = cache_astropixels_events(session, fetch_year, tz_str, force_refresh=False)
-                        if events_cached == 0:
-                            logger.warning(f"No events found for {fetch_year} - almanac may not be available yet")
-
-                    # Get cached events again after fetching
-                    cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
-                    logger.info(f"Fetched and cached AstroPixels events, now have {len(cached_events)} events")
-                else:
-                    logger.info(f"Using cached AstroPixels events ({len(cached_events)} events found)")
-
-            # Add events to calendar
-            logger.info(f"Adding {len(cached_events)} AstroPixels events to calendar")
-            events_by_month: dict[int, int] = {}
-            december_events: list[str] = []
-            for event in cached_events:
-                # Determine color based on event type
-                color_map = {
-                    "moon_phase": "#f39c12" if "Full" in event.event_name else "#3498db",
-                    "moon_perigee": "#95a5a6",
-                    "moon_apogee": "#95a5a6",
-                    "moon_ascending_node": "#95a5a6",
-                    "moon_descending_node": "#95a5a6",
-                    "meteor_shower": "#9b59b6",
-                    "lunar_eclipse": "#e74c3c",
-                    "solar_eclipse": "#c0392b",
-                    "planetary_opposition": "#16a085",
-                    "planetary_elongation": "#16a085",
-                    "planetary_perihelion": "#16a085",
-                    "planetary_aphelion": "#16a085",
-                    "planetary_inferior_conjunction": "#16a085",
-                    "planetary_superior_conjunction": "#16a085",
-                    "solstice": "#27ae60",
-                    "equinox": "#27ae60",
-                    "conjunction": "#16a085",
-                    "occultation": "#e67e22",
-                    "star_position": "#9b59b6",
-                    "other": "#34495e",
-                }
-                color = color_map.get(event.event_type, "#34495e")
-
-                # Use local_date if available (for correct calendar date), otherwise use UTC date
-                # For AstroPixels events, local_date is set; for database events, it's None
-                if event.local_date:
-                    # Use the local date (timezone-naive) for correct calendar date
-                    event_date = event.local_date
-                    month = event.local_date.month
-                else:
-                    # For database events without local_date, reconstruct local date from UTC
-                    # by adding back the timezone offset
-                    # This is approximate but should work for most cases
-                    event_date = event.date
-                    month = event.date.month
-
-                # Debug logging for FULL MOON events
-                if "FULL MOON" in event.event_name.upper() or "full moon" in event.event_name.lower():
-                    logger.debug(
-                        f"Adding FULL MOON to calendar: {event.event_name}, "
-                        f"event_date={event_date}, local_date={event.local_date}, "
-                        f"utc_date={event.date}, type={event.event_type}"
-                    )
-
-                # Track events by month for debugging
-                events_by_month[month] = events_by_month.get(month, 0) + 1
-
-                # Track December events specifically
-                if month == 12:
-                    december_events.append(f"{event_date.day:02d} {event.event_name}")
-
-                self._add_event(
-                    event_date,
-                    event.event_name,
-                    event.description,
-                    event.event_type,
-                    color,
+            # Debug logging for FULL MOON events
+            if "FULL MOON" in event.event_name.upper() or "full moon" in event.event_name.lower():
+                logger.debug(
+                    f"Adding FULL MOON to calendar: {event.event_name}, "
+                    f"event_date={event_date}, local_date={event.local_date}, "
+                    f"utc_date={event.date}, type={event.event_type}"
                 )
 
-            logger.info(f"Events by month: {events_by_month}")
-            if december_events:
-                logger.info(f"December events ({len(december_events)}): {sorted(december_events)}")
+            # Track events by month for debugging
+            events_by_month[month] = events_by_month.get(month, 0) + 1
 
-            # Update calendar formatting after loading events
-            # Use signal to ensure this runs on the main Qt thread
-            self._update_formatting_signal.emit()
+            # Track December events specifically
+            if month == 12:
+                december_events.append(f"{event_date.day:02d} {event.event_name}")
 
-        except Exception as e:
-            logger.error(f"Error loading AstroPixels events: {e}", exc_info=True)
+            self._add_event(
+                event_date,
+                event.event_name,
+                event.description,
+                event.event_type,
+                color,
+            )
+
+        logger.info(f"Events by month: {events_by_month}")
+        if december_events:
+            logger.info(f"December events ({len(december_events)}): {sorted(december_events)}")
 
     def _load_moon_phases(self, location: ObserverLocation | Any, start_date: datetime) -> None:
         """Load moon phases for the next 12 months."""

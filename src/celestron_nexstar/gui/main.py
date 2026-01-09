@@ -112,14 +112,11 @@ def main() -> int:
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
-    # Load JetBrains Mono font
+    # Load JetBrains Mono font without blocking startup
     try:
-        from celestron_nexstar.gui.utils.font_loader import load_jetbrains_mono
+        from celestron_nexstar.gui.utils.font_loader import load_jetbrains_mono_async
 
-        font_family = load_jetbrains_mono()
-        if font_family:
-            # Store font family name for use in widgets
-            app.setProperty("monospace_font", font_family)
+        load_jetbrains_mono_async(app)
     except Exception:
         # If font loading fails, widgets will fall back to system monospace fonts
         pass

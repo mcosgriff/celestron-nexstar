@@ -175,8 +175,8 @@ class TestGetUpcomingEvents(unittest.TestCase):
         self.start_date = datetime(2024, 6, 1, tzinfo=UTC)
         self.end_date = datetime(2024, 12, 31, tzinfo=UTC)
 
-    @patch("celestron_nexstar.api.events.space_events.asyncio.run")
-    def test_get_upcoming_events_with_database(self, mock_asyncio_run):
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    def test_get_upcoming_events_with_database(self, mock_get_db_session):
         """Test get_upcoming_events with database data"""
         # Mock database event
         mock_event_model = MagicMock()
@@ -195,7 +195,12 @@ class TestGetUpcomingEvents(unittest.TestCase):
         mock_event_model.source = "Test Source"
         mock_event_model.url = None
 
-        mock_asyncio_run.return_value = [mock_event_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_event_model]
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         result = get_upcoming_events(self.start_date, self.end_date)
 
@@ -204,8 +209,8 @@ class TestGetUpcomingEvents(unittest.TestCase):
             self.assertIsInstance(result[0], SpaceEvent)
             self.assertEqual(result[0].name, "Test Event")
 
-    @patch("celestron_nexstar.api.events.space_events.asyncio.run")
-    def test_get_upcoming_events_filtered_by_type(self, mock_asyncio_run):
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    def test_get_upcoming_events_filtered_by_type(self, mock_get_db_session):
         """Test get_upcoming_events filtered by event type"""
         mock_event_model = MagicMock()
         mock_event_model.name = "Meteor Shower"
@@ -223,7 +228,12 @@ class TestGetUpcomingEvents(unittest.TestCase):
         mock_event_model.source = "Test"
         mock_event_model.url = None
 
-        mock_asyncio_run.return_value = [mock_event_model]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_event_model]
+        mock_session = MagicMock()
+        mock_session.execute.return_value = mock_result
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         result = get_upcoming_events(self.start_date, self.end_date, event_types=[SpaceEventType.METEOR_SHOWER])
 
@@ -272,8 +282,9 @@ class TestFindBestViewingLocation(unittest.TestCase):
         self.assertIsNone(location)
         self.assertIn("good viewing", message.lower())
 
-    @patch("celestron_nexstar.api.events.space_events.asyncio.run")
-    def test_dark_sky_required_meets_requirements(self, mock_asyncio_run):
+    @patch("celestron_nexstar.api.location.light_pollution.get_light_pollution_data")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    def test_dark_sky_required_meets_requirements(self, mock_get_db_session, mock_get_light_pollution):
         """Test when dark sky is required and current location meets requirements"""
         from celestron_nexstar.api.location.light_pollution import BortleClass, LightPollutionData
 
@@ -298,7 +309,10 @@ class TestFindBestViewingLocation(unittest.TestCase):
             description="Good",
             recommendations="Good for observing",
         )
-        mock_asyncio_run.return_value = mock_light_data
+        mock_get_light_pollution.return_value = mock_light_data
+        mock_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         location, message = find_best_viewing_location(event, self.test_location)
 
@@ -309,16 +323,17 @@ class TestFindBestViewingLocation(unittest.TestCase):
 class TestPopulateSpaceEventsDatabase(unittest.TestCase):
     """Test suite for populate_space_events_database function"""
 
-    @patch("celestron_nexstar.api.events.space_events.asyncio.run")
-    def test_populate_space_events_database(self, mock_asyncio_run):
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    @patch("celestron_nexstar.api.database.database_seeder.seed_space_events")
+    def test_populate_space_events_database(self, mock_seed, mock_get_db_session):
         """Test populate_space_events_database"""
         mock_session = MagicMock()
-        mock_asyncio_run.return_value = None
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         populate_space_events_database(mock_session)
 
-        # Should call asyncio.run with the seed function
-        mock_asyncio_run.assert_called_once()
+        mock_seed.assert_called_once_with(mock_session, force=True)
 
 
 if __name__ == "__main__":

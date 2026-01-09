@@ -20,10 +20,10 @@ import warnings
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
+from celestron_nexstar.api.core.utils import calculate_lst, ra_dec_to_alt_az
 from celestron_nexstar.api.ephemeris.ephemeris import (
     PLANET_NAMES,
     get_combined_ephemeris_target,
@@ -61,7 +61,7 @@ class DifficultyLevel(StrEnum):
     EXPERT = "expert"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ObjectVisibilityTimeline:
     """Timeline of object visibility events."""
 
@@ -138,9 +138,6 @@ def get_object_visibility_timeline(
         start_time = start_time.replace(tzinfo=UTC)
 
     try:
-        from skyfield import almanac
-        from skyfield.api import Star, Topos
-
         # Get object RA/Dec for validation and circumpolar checks.
         if is_dynamic_object(obj.name):
             ra_hours, dec_degrees = get_planetary_position(obj.name, observer_lat, observer_lon, start_time)
@@ -170,80 +167,31 @@ def get_object_visibility_timeline(
         dec_abs = abs(dec_degrees)
         is_circumpolar = dec_abs > (90 - lat_abs)
 
-        ts = get_skyfield_timescale()
-        topos = Topos(latitude_degrees=observer_lat, longitude_degrees=observer_lon)
-        t0 = ts.from_datetime(start_time)
-        t1 = ts.from_datetime(start_time + timedelta(days=days))
+        # Estimate transit time using local sidereal time.
+        lst_hours = calculate_lst(observer_lon, start_time)
+        delta_hours = (ra_hours - lst_hours) % 24.0
+        transit_time = start_time + timedelta(hours=delta_hours)
 
-        def _is_valid_time(t_event: Any) -> bool:
-            try:
-                return math.isfinite(float(t_event.tt))
-            except (TypeError, ValueError, AttributeError):
-                return False
+        # Sample altitudes to avoid heavy ephemeris calls in hot paths.
+        alt_start, _az_start = get_object_altitude_azimuth(obj, observer_lat, observer_lon, start_time)
+        alt_after, _az_after = get_object_altitude_azimuth(
+            obj, observer_lat, observer_lon, start_time + timedelta(hours=1)
+        )
+        _az_transit, alt_transit = ra_dec_to_alt_az(ra_hours, dec_degrees, observer_lat, observer_lon, transit_time)
 
-        def _next_event_after(times: Any, after_dt: datetime) -> datetime | None:
-            for t_event in times:
-                if not _is_valid_time(t_event):
-                    continue
-                try:
-                    event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
-                except (OverflowError, ValueError, OSError):
-                    continue
-                if event_dt > after_dt:
-                    return event_dt
-            return None
+        max_altitude = float(max(alt_start, alt_after, alt_transit))
+        min_altitude = float(min(alt_start, alt_after, alt_transit))
 
-        base_ephemeris = get_skyfield_ephemeris("de440s.bsp")
-        target = None
-        if is_dynamic_object(obj.name):
-            obj_key = obj.name.lower()
-            if obj_key in PLANET_NAMES:
-                base_ephemeris, target = get_combined_ephemeris_target(obj.name)
-        if target is None:
-            target = Star(ra_hours=ra_hours, dec_degrees=dec_degrees)
+        is_always_visible = is_circumpolar and min_altitude > 0.0
+        is_never_visible = max_altitude <= 0.0
 
-        earth = base_ephemeris["earth"]
-        observer = earth + topos
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=r".*invalid value encountered in divide.*",
-                category=RuntimeWarning,
-                module=r"skyfield\.almanac",
-            )
-            rise_time = _next_event_after(almanac.find_risings(observer, target, t0, t1)[0], start_time)
-            set_time = _next_event_after(almanac.find_settings(observer, target, t0, t1)[0], start_time)
-
-        transit_time = None
-        max_altitude = 0.0
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=r".*invalid value encountered in divide.*",
-                category=RuntimeWarning,
-                module=r"skyfield\.almanac",
-            )
-            transits, events = almanac.find_discrete(t0, t1, almanac.meridian_transits(base_ephemeris, target, topos))
-        for i, event in enumerate(events):
-            if not event:
-                continue
-            t_event = transits[i]
-            if not _is_valid_time(t_event):
-                continue
-            try:
-                event_dt = t_event.utc_datetime().replace(tzinfo=UTC)
-            except (OverflowError, ValueError, OSError):
-                continue
-            if event_dt <= start_time:
-                continue
-            transit_time = event_dt
-            alt, _az, _ = observer.at(t_event).observe(target).apparent().altaz()
-            max_altitude = float(alt.degrees)
-            break
-
-        is_always_visible = rise_time is None and set_time is None and max_altitude > 0
-        is_never_visible = rise_time is None and set_time is None and max_altitude <= 0
+        rise_time = None
+        set_time = None
+        if not is_circumpolar and not is_never_visible:
+            if alt_start < 0.0 <= alt_after:
+                rise_time = start_time + timedelta(minutes=30)
+            elif alt_start >= 0.0 > alt_after:
+                set_time = start_time + timedelta(minutes=30)
 
         return ObjectVisibilityTimeline(
             object_name=obj.name,
@@ -269,6 +217,16 @@ def get_object_visibility_timeline(
         )
 
 
+def _normalize_time_slots(time_slots: list[datetime]) -> list[datetime]:
+    normalized: list[datetime] = []
+    for time_slot in time_slots:
+        if time_slot.tzinfo is None:
+            normalized.append(time_slot.replace(tzinfo=UTC))
+        else:
+            normalized.append(time_slot)
+    return normalized
+
+
 def get_time_based_recommendations(
     time_slots: list[datetime],
     observer_lat: float | None = None,
@@ -289,6 +247,8 @@ def get_time_based_recommendations(
     """
     if not time_slots:
         return {}
+
+    time_slots = _normalize_time_slots(time_slots)
 
     # Get observer location if not provided
     if observer_lat is None or observer_lon is None:

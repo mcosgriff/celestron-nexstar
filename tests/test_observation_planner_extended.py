@@ -6,7 +6,7 @@ Tests internal methods and edge cases for observation planning.
 
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject
 from celestron_nexstar.api.core.enums import CelestialObjectType, MoonPhase
@@ -450,7 +450,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_get_moon.return_value = mock_moon_info
 
         mock_db = MagicMock()
-        mock_db.filter_objects = AsyncMock(return_value=[])
+        mock_db.filter_objects = MagicMock(return_value=[])
         mock_get_db.return_value = mock_db
 
         from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
@@ -494,7 +494,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_get_moon.return_value = mock_moon_info
 
         mock_db = MagicMock()
-        mock_db.filter_objects = AsyncMock(return_value=[])
+        mock_db.filter_objects = MagicMock(return_value=[])
         mock_get_db.return_value = mock_db
 
         from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
@@ -536,7 +536,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_get_moon.return_value = mock_moon_info
 
         mock_db = MagicMock()
-        mock_db.filter_objects = AsyncMock(return_value=[])
+        mock_db.filter_objects = MagicMock(return_value=[])
         mock_get_db.return_value = mock_db
 
         from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
@@ -579,7 +579,7 @@ class TestObservationPlannerGetRecommendedObjects(unittest.TestCase):
         mock_get_moon.return_value = mock_moon_info
 
         mock_db = MagicMock()
-        mock_db.filter_objects = AsyncMock(return_value=[])
+        mock_db.filter_objects = MagicMock(return_value=[])
         mock_get_db.return_value = mock_db
 
         from celestron_nexstar.api.observation.optics import EyepieceSpecs, TelescopeModel, TelescopeSpecs
@@ -663,11 +663,11 @@ class TestObservationPlannerGetTonightConditionsExtended(unittest.TestCase):
         mock_get_location,
     ):
         """Test that daytime conditions use sunset weather"""
-        from contextlib import asynccontextmanager
+        from contextlib import contextmanager
 
-        @asynccontextmanager
-        async def mock_session():
-            mock_sess = AsyncMock()
+        @contextmanager
+        def mock_session():
+            mock_sess = MagicMock()
             yield mock_sess
 
         mock_get_db_session.return_value = mock_session()
@@ -741,11 +741,11 @@ class TestObservationPlannerGetTonightConditionsExtended(unittest.TestCase):
         mock_get_location,
     ):
         """Test that space weather conditions are included"""
-        from contextlib import asynccontextmanager
+        from contextlib import contextmanager
 
-        @asynccontextmanager
-        async def mock_session():
-            mock_sess = AsyncMock()
+        @contextmanager
+        def mock_session():
+            mock_sess = MagicMock()
             yield mock_sess
 
         mock_get_db_session.return_value = mock_session()
@@ -909,7 +909,7 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
 
         mock_db = MagicMock()
         # Poor seeing should limit to max_mag = 10.0
-        mock_db.filter_objects = AsyncMock(return_value=[bright_obj, faint_obj, planet])
+        mock_db.filter_objects = MagicMock(return_value=[bright_obj, faint_obj, planet])
         mock_get_db.return_value = mock_db
 
         mock_config = OpticalConfiguration(
@@ -1016,7 +1016,7 @@ class TestObservationPlannerGetRecommendedObjectsExtended(unittest.TestCase):
         )
 
         mock_db = MagicMock()
-        mock_db.filter_objects = AsyncMock(return_value=[star_obj, galaxy_obj])
+        mock_db.filter_objects = MagicMock(return_value=[star_obj, galaxy_obj])
         mock_get_db.return_value = mock_db
 
         mock_config = OpticalConfiguration(
@@ -1530,11 +1530,11 @@ class TestObservationPlannerEdgeCases(unittest.TestCase):
     @patch("celestron_nexstar.api.observation.observation_planner.get_observer_location")
     def test_get_tonight_conditions_with_start_time_no_tzinfo(self, mock_get_location):
         """Test get_tonight_conditions with start_time that has no timezone info"""
-        from contextlib import asynccontextmanager
+        from contextlib import contextmanager
 
-        @asynccontextmanager
-        async def mock_session():
-            mock_sess = AsyncMock()
+        @contextmanager
+        def mock_session():
+            mock_sess = MagicMock()
             yield mock_sess
 
         mock_get_location.return_value = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test")
@@ -1632,11 +1632,11 @@ class TestObservationPlannerEdgeCases(unittest.TestCase):
     @patch("celestron_nexstar.api.astronomy.sun_moon.calculate_sun_times")
     def test_get_tonight_conditions_sunrise_before_sunset(self, mock_calculate_sun_times, mock_get_location):
         """Test get_tonight_conditions when sunrise is before sunset (next day)"""
-        from contextlib import asynccontextmanager
+        from contextlib import contextmanager
 
-        @asynccontextmanager
-        async def mock_session():
-            mock_sess = AsyncMock()
+        @contextmanager
+        def mock_session():
+            mock_sess = MagicMock()
             yield mock_sess
 
         mock_get_location.return_value = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test")

@@ -23,7 +23,7 @@ from celestron_nexstar.api.astronomy.solar_system import get_moon_info
 from celestron_nexstar.api.catalogs.catalogs import CelestialObject, get_object_by_name_sync
 from celestron_nexstar.api.core.enums import CelestialObjectType
 from celestron_nexstar.api.core.utils import calculate_lst, ra_dec_to_alt_az
-from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data_sync
+from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
 from celestron_nexstar.api.location.weather import HourlySeeingForecast
 from celestron_nexstar.api.observation.colors import (
     get_darkness_color,
@@ -701,7 +701,7 @@ def _show_best_night_content(output_console: Console | FileConsole, object_name:
         from celestron_nexstar.api.database.models import get_db_session
 
         with get_db_session() as db_session:
-            light_pollution_data = get_light_pollution_data_sync(db_session, lat, lon)
+            light_pollution_data = get_light_pollution_data(db_session, lat, lon)
         output_console.print(
             f"[dim]Location light pollution: Bortle {light_pollution_data.bortle_class.value} - {light_pollution_data.description}[/dim]\n"
         )
@@ -1023,7 +1023,7 @@ def show_clear_sky_chart(
 ) -> None:
     """Display a Clear Sky Chart-style forecast grid showing conditions over multiple days."""
     try:
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
         from celestron_nexstar.api.location.observer import get_observer_location
         from celestron_nexstar.api.location.weather import fetch_hourly_weather_forecast
 
@@ -1066,7 +1066,7 @@ def show_clear_sky_chart(
         from celestron_nexstar.api.database.models import get_db_session
 
         with get_db_session() as db_session:
-            lp_data = get_light_pollution_data_sync(db_session, lat, lon)
+            lp_data = get_light_pollution_data(db_session, lat, lon)
 
         # Calculate transparency and darkness for each hour using API functions
         from celestron_nexstar.api.observation.clear_sky import calculate_chart_data_point

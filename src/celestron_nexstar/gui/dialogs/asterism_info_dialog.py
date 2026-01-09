@@ -29,7 +29,7 @@ class VisibleAsterismStarsWorker(QThread):
         try:
             from celestron_nexstar.api.core.enums import CelestialObjectType, SkyBrightness
             from celestron_nexstar.api.database.database import get_database
-            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+            from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
             from celestron_nexstar.api.observation.visibility import assess_visibility
@@ -51,7 +51,7 @@ class VisibleAsterismStarsWorker(QThread):
             }
             try:
                 with db.get_session() as session:
-                    lp = get_light_pollution_data_sync(session, location.latitude, location.longitude)
+                    lp = get_light_pollution_data(session, location.latitude, location.longitude)
                     sky_brightness = bortle_to_sky_brightness.get(lp.bortle_class.value, SkyBrightness.FAIR)
             except Exception:
                 sky_brightness = SkyBrightness.FAIR

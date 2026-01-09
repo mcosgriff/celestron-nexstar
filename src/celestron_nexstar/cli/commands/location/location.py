@@ -4,8 +4,6 @@ Location Commands
 Commands for managing observer location.
 """
 
-import asyncio
-
 import typer
 from click import Context
 from rich.table import Table
@@ -171,7 +169,7 @@ def set_observer(
         # Option 1: Geocode from city/address/ZIP
         if location:
             print_info(f"Geocoding location: {location}")
-            observer_loc = asyncio.run(geocode_location(location))
+            observer_loc = geocode_location(location)
             print_success(f"Found: {observer_loc.name}")
 
         # Option 2: Use explicit coordinates
@@ -300,7 +298,7 @@ def detect_location(
             "[dim]This may use your IP address or system location services (if available and permitted).[/dim]\n"
         )
 
-        detected = asyncio.run(detect_location_automatically())
+        detected = detect_location_automatically()
 
         # Display results
         lat_dir = "N" if detected.latitude >= 0 else "S"

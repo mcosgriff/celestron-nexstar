@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QObject
+from PySide6.QtCore import QEvent, QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -44,6 +44,31 @@ class WheelEventFilter(QObject):
             QCoreApplication.sendEvent(self.scroll_area, wheel_event)
             return True
         return False
+
+
+class _WeatherLoadThread(QThread):
+    loaded = Signal(object, object, object)
+    error = Signal(str)
+
+    def __init__(self, force_refresh: bool) -> None:
+        super().__init__()
+        self._force_refresh = force_refresh
+
+    def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+        try:
+            from celestron_nexstar.api.location.observer import get_observer_location
+            from celestron_nexstar.api.location.weather import fetch_weather, fetch_weather_for_charts
+
+            location = get_observer_location()
+            if not location:
+                self.error.emit("No observer location configured.")
+                return
+
+            weather = fetch_weather(location, force_refresh=self._force_refresh)
+            forecasts = fetch_weather_for_charts(location, future_hours=24, force_refresh=self._force_refresh)
+            self.loaded.emit(location, weather, forecasts)
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 
 class WeatherInfoDialog(QDialog):
@@ -148,10 +173,8 @@ class WeatherInfoDialog(QDialog):
         button_box.accepted.connect(self.accept)
         layout.addWidget(button_box)
 
-        # Load weather information (this will also update stylesheet with theme colors)
-        self._load_weather_info()
-        self._load_advanced_metrics()
-        self._load_weather_charts()
+        self._weather_thread: _WeatherLoadThread | None = None
+        self._start_weather_load(force_refresh=False)
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -200,26 +223,42 @@ class WeatherInfoDialog(QDialog):
         progress.show()
         QCoreApplication.processEvents()
 
-        try:
-            from celestron_nexstar.api.location.observer import get_observer_location
-            from celestron_nexstar.api.location.weather import fetch_weather
+        self._start_weather_load(force_refresh=True)
+        QCoreApplication.processEvents()
 
-            location = get_observer_location()
-            if not location:
-                self._load_weather_info(force_refresh=True)
-                self._load_advanced_metrics(force_refresh=True)
-                return
-
-            fetch_weather(location, force_refresh=True)
-            self._load_weather_info(force_refresh=False)
-            self._load_advanced_metrics(force_refresh=False)
-            self._load_weather_charts(force_refresh=True)
-        except Exception as e:
-            logger.error(f"Error refreshing weather data: {e}", exc_info=True)
-        finally:
-            progress.close()
-            self._refresh_progress = None
+    def _start_weather_load(self, force_refresh: bool) -> None:
+        if self._weather_thread and self._weather_thread.isRunning():
+            if self._refresh_progress:
+                self._refresh_progress.close()
+                self._refresh_progress = None
             self._refresh_button.setEnabled(True)
+            return
+
+        self._refresh_button.setEnabled(False)
+        thread = _WeatherLoadThread(force_refresh=force_refresh)
+        thread.loaded.connect(self._on_weather_loaded)
+        thread.error.connect(self._on_weather_error)
+        thread.finished.connect(thread.deleteLater)
+        self._weather_thread = thread
+        thread.start()
+
+    def _on_weather_loaded(self, location: object, weather: object, forecasts: object) -> None:
+        try:
+            self._load_weather_info(weather=weather)
+            self._load_advanced_metrics(weather=weather)
+            self._render_weather_charts(location, forecasts)
+        finally:
+            if self._refresh_progress:
+                self._refresh_progress.close()
+                self._refresh_progress = None
+            self._refresh_button.setEnabled(True)
+
+    def _on_weather_error(self, message: str) -> None:
+        logger.error(f"Error refreshing weather data: {message}", exc_info=True)
+        if self._refresh_progress:
+            self._refresh_progress.close()
+            self._refresh_progress = None
+        self._refresh_button.setEnabled(True)
 
     def _load_weather_info(self, weather: Any | None = None, force_refresh: bool = False) -> None:
         """Load weather information and format it for display."""
@@ -618,15 +657,11 @@ class WeatherInfoDialog(QDialog):
                 f"<p style='color: {colors['error']};'><b>Error:</b> Failed to load advanced metrics: {e}</p>"
             )
 
-    def _load_weather_charts(self, force_refresh: bool = False) -> None:
+    def _render_weather_charts(self, location: object, forecasts: object) -> None:
         """Load weather charts showing current day from 12 AM to now."""
         try:
             from celestron_nexstar.api.core.utils import get_local_timezone
-            from celestron_nexstar.api.location.observer import get_observer_location
-            from celestron_nexstar.api.location.weather import fetch_weather_for_charts
-
-            location = get_observer_location()
-            if not location:
+            if location is None:
                 return
 
             # Get local timezone
@@ -634,8 +669,7 @@ class WeatherInfoDialog(QDialog):
             if not local_tz:
                 return
 
-            # Fetch weather data (past 3 days + 24 hours future to ensure we have today's data)
-            all_forecasts = fetch_weather_for_charts(location, future_hours=24, force_refresh=force_refresh)
+            all_forecasts = forecasts or []
 
             # Use a +/- 6 hour window around "now" (total 12 hours) in local time
             now_utc = datetime.now(UTC)

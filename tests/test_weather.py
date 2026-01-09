@@ -4,10 +4,9 @@ Unit tests for weather.py
 Tests weather data fetching, seeing conditions calculations, and observing condition assessments.
 """
 
-import asyncio
 import unittest
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from celestron_nexstar.api.database.models import WeatherForecastModel
 from celestron_nexstar.api.location import weather
@@ -23,6 +22,17 @@ from celestron_nexstar.api.location.weather import (
     get_historical_cloud_cover_for_month,
     get_weather_api_key,
 )
+
+
+def _execute_side_effect(sequence: list[object]) -> callable:
+    last_item = sequence[-1] if sequence else MagicMock()
+
+    def _side_effect(*_args: object, **_kwargs: object) -> object:
+        if sequence:
+            return sequence.pop(0)
+        return last_item
+
+    return _side_effect
 
 
 class TestCalculateDewPointFahrenheit(unittest.TestCase):
@@ -616,77 +626,111 @@ class TestFetchWeather(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_success(self, mock_session_class: MagicMock) -> None:
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_success(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test successful weather fetch"""
+        mock_db = MagicMock()
+        mock_db._engine = MagicMock()
+        mock_get_db.return_value = mock_db
+
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
+        mock_session.commit = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
+
         # Mock response
-        mock_response = AsyncMock()
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 10.0,
-                    "wind_speed_10m": 5.0,
-                    "visibility": 20.0,
-                    "weather_code": 0,  # Clear
-                },
-                "current_units": {
-                    "temperature_2m": "°F",
-                    "wind_speed_10m": "mph",
-                },
-            }
-        )
-        mock_response.status = 200
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 10.0,
+                "wind_speed_10m": 5.0,
+                "visibility": 20.0,
+                "weather_code": 0,  # Clear
+            },
+            "current_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+        }
+        mock_response.status_code = 200
+        mock_requests_get.return_value = mock_response
 
-        # Mock session with proper async context manager support
-        mock_session = AsyncMock()
-        mock_get_context = AsyncMock()
-        mock_get_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_get_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get = MagicMock(return_value=mock_get_context)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
-
-        weather = asyncio.run(fetch_weather(self.test_location))
+        weather = fetch_weather(self.test_location)
 
         self.assertIsInstance(weather, WeatherData)
         self.assertIsNone(weather.error)
 
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_api_error(self, mock_session_class: MagicMock) -> None:
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_api_error(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather fetch with API error"""
+        mock_db = MagicMock()
+        mock_db._engine = MagicMock()
+        mock_get_db.return_value = mock_db
+
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
+
         # Mock response with error
-        mock_response = AsyncMock()
-        mock_response.status = 500
-        mock_response.text = AsyncMock(return_value="Internal Server Error")
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_requests_get.return_value = mock_response
 
-        # Mock session
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
-
-        weather = asyncio.run(fetch_weather(self.test_location))
+        weather = fetch_weather(self.test_location)
 
         self.assertIsInstance(weather, WeatherData)
         self.assertIsNotNone(weather.error)
 
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_network_error(self, mock_session_class: MagicMock) -> None:
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_network_error(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather fetch with network error"""
-        import aiohttp
+        mock_db = MagicMock()
+        mock_db._engine = MagicMock()
+        mock_get_db.return_value = mock_db
 
-        # Mock session that raises exception
-        mock_session = AsyncMock()
-        mock_session.get = AsyncMock(side_effect=aiohttp.ClientError("Network error"))
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session_class.return_value = mock_session
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
-        weather = asyncio.run(fetch_weather(self.test_location))
+        import requests
+
+        mock_requests_get.side_effect = requests.RequestException("Network error")
+
+        weather = fetch_weather(self.test_location)
 
         self.assertIsInstance(weather, WeatherData)
         self.assertIsNotNone(weather.error)
@@ -699,9 +743,15 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    def test_fetch_weather_uses_database_cache(self, mock_is_stale: MagicMock, mock_get_db: MagicMock) -> None:
+    def test_fetch_weather_uses_database_cache(
+        self,
+        mock_is_stale: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test that fetch_weather uses cached data from database when available"""
         # Mock database with cached forecast
         now = datetime.now(UTC)
@@ -717,56 +767,43 @@ class TestFetchWeatherDatabaseCache(unittest.TestCase):
             wind_speed_mph=5.0,
         )
 
-        # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_forecast]
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session_context = MagicMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result])
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
-        # Mock database
         mock_db = MagicMock()
-        mock_db._AsyncSession.return_value = mock_session_context
-        mock_engine = MagicMock()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn_context = MagicMock()
-        mock_conn_context.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn_context.__aexit__ = AsyncMock(return_value=None)
-        mock_engine.begin = AsyncMock(return_value=mock_conn_context)
-        mock_db._engine = mock_engine
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
 
         mock_is_stale.return_value = False  # Cache is fresh
 
-        weather_data = asyncio.run(fetch_weather(self.test_location))
+        weather_data = fetch_weather(self.test_location)
 
         self.assertIsInstance(weather_data, WeatherData)
         self.assertIsNone(weather_data.error)
         self.assertEqual(weather_data.temperature_c, 70.0)
 
+    @patch("celestron_nexstar.api.location.weather.requests.get")
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_fetch_weather_handles_database_error(self, mock_get_db: MagicMock) -> None:
+    def test_fetch_weather_handles_database_error(
+        self,
+        mock_get_db: MagicMock,
+        mock_requests_get: MagicMock,
+    ) -> None:
         """Test that fetch_weather handles database errors gracefully"""
         # Mock database to raise exception
         mock_get_db.side_effect = RuntimeError("Database error")
 
-        # Should fall back to API
-        with patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession") as mock_session_class:
-            mock_response = AsyncMock()
-            mock_response.status = 500
-            mock_response.text = AsyncMock(return_value="Error")
-            mock_session = AsyncMock()
-            mock_session.get = AsyncMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
-            mock_session_class.return_value = mock_session
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_requests_get.return_value = mock_response
 
-            weather_data = asyncio.run(fetch_weather(self.test_location))
+        weather_data = fetch_weather(self.test_location)
 
-            self.assertIsInstance(weather_data, WeatherData)
+        self.assertIsInstance(weather_data, WeatherData)
 
 
 class TestFetchHourlyWeatherForecast(unittest.TestCase):
@@ -776,9 +813,15 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
         """Set up test fixtures"""
         self.test_location = ObserverLocation(latitude=40.0, longitude=-100.0, name="Test Location")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    def test_fetch_hourly_weather_forecast_uses_cache(self, mock_is_stale: MagicMock, mock_get_db: MagicMock) -> None:
+    def test_fetch_hourly_weather_forecast_uses_cache(
+        self,
+        mock_is_stale: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test that fetch_hourly_weather_forecast uses cached data when available"""
         # Mock database with cached forecasts
         now = datetime.now(UTC)
@@ -797,127 +840,100 @@ class TestFetchHourlyWeatherForecast(unittest.TestCase):
             for i in range(24)
         ]
 
-        # Mock database session
-        mock_session = AsyncMock()
+        mock_session = MagicMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = mock_forecasts
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_session_context = MagicMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
+        mock_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result])
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
-        # Mock database
         mock_db = MagicMock()
-        mock_db._AsyncSession.return_value = mock_session_context
-        mock_engine = MagicMock()
-        mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock()
-        mock_conn_context = MagicMock()
-        mock_conn_context.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn_context.__aexit__ = AsyncMock(return_value=None)
-        mock_engine.begin = AsyncMock(return_value=mock_conn_context)
-        mock_db._engine = mock_engine
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
 
         mock_is_stale.return_value = False  # Cache is fresh
 
-        forecasts = asyncio.run(fetch_hourly_weather_forecast(self.test_location, hours=24))
+        forecasts = fetch_hourly_weather_forecast(self.test_location, hours=24)
 
         self.assertIsInstance(forecasts, list)
         self.assertGreater(len(forecasts), 0)
 
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_hourly_weather_forecast_api_fallback(self, mock_session_class: MagicMock) -> None:
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    def test_fetch_hourly_weather_forecast_api_fallback(
+        self,
+        mock_get_db_session: MagicMock,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+    ) -> None:
         """Test that fetch_hourly_weather_forecast falls back to API when cache is empty"""
         # Mock database to return empty cache
-        with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
-            mock_db = MagicMock()
-            mock_session = AsyncMock()
-            mock_result = MagicMock()
-            mock_result.scalars.return_value.all.return_value = []
-            mock_session.execute = AsyncMock(return_value=mock_result)
-            mock_session_context = MagicMock()
-            mock_session_context.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_context.__aexit__ = AsyncMock(return_value=None)
-            mock_db._AsyncSession.return_value = mock_session_context
-            mock_engine = MagicMock()
-            mock_conn = AsyncMock()
-            mock_conn.execute = AsyncMock()
-            mock_conn_context = MagicMock()
-            mock_conn_context.__aenter__ = AsyncMock(return_value=mock_conn)
-            mock_conn_context.__aexit__ = AsyncMock(return_value=None)
-            mock_engine.begin = AsyncMock(return_value=mock_conn_context)
-            mock_db._engine = mock_engine
-            mock_get_db.return_value = mock_db
+        mock_db = MagicMock()
+        mock_db._engine = MagicMock()
+        mock_get_db.return_value = mock_db
 
-            # Mock API response
-            mock_response = AsyncMock()
-            mock_response.status = 200
-            mock_response.json = AsyncMock(
-                return_value={
-                    "hourly": {
-                        "time": [f"2024-06-15T{i:02d}:00" for i in range(24)],
-                        "temperature_2m": [70.0 + i for i in range(24)],
-                        "relative_humidity_2m": [50.0] * 24,
-                        "cloud_cover": [10.0] * 24,
-                        "wind_speed_10m": [5.0] * 24,
-                        "dew_point_2m": [50.0] * 24,
-                    },
-                    "hourly_units": {
-                        "temperature_2m": "°F",
-                        "wind_speed_10m": "mph",
-                    },
-                }
-            )
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_last_fetch = MagicMock()
+        mock_last_fetch.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result, mock_last_fetch])
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
-            mock_session = AsyncMock()
-            mock_session.get = AsyncMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
-            mock_session_class.return_value = mock_session
+        # Mock API response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "hourly": {
+                "time": [f"2024-06-15T{i:02d}:00" for i in range(24)],
+                "temperature_2m": [70.0 + i for i in range(24)],
+                "relative_humidity_2m": [50.0] * 24,
+                "cloud_cover": [10.0] * 24,
+                "wind_speed_10m": [5.0] * 24,
+                "dew_point_2m": [50.0] * 24,
+            },
+            "hourly_units": {
+                "temperature_2m": "°F",
+                "wind_speed_10m": "mph",
+            },
+        }
+        mock_requests_get.return_value = mock_response
 
-            forecasts = asyncio.run(fetch_hourly_weather_forecast(self.test_location, hours=24))
+        forecasts = fetch_hourly_weather_forecast(self.test_location, hours=24)
 
-            self.assertIsInstance(forecasts, list)
+        self.assertIsInstance(forecasts, list)
 
     def test_fetch_hourly_weather_forecast_limits_hours(self) -> None:
         """Test that fetch_hourly_weather_forecast limits hours to 168 (7 days)"""
         # Should limit to 168 hours even if more requested
         with patch("celestron_nexstar.api.database.database.get_database") as mock_get_db:
             mock_db = MagicMock()
-            mock_session = AsyncMock()
-            mock_result = MagicMock()
-            mock_result.scalars.return_value.all.return_value = []
-            mock_session.execute = AsyncMock(return_value=mock_result)
-            mock_session_context = MagicMock()
-            mock_session_context.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session_context.__aexit__ = AsyncMock(return_value=None)
-            mock_db._AsyncSession.return_value = mock_session_context
-            mock_engine = MagicMock()
-            mock_conn = AsyncMock()
-            mock_conn.execute = AsyncMock()
-            mock_conn_context = MagicMock()
-            mock_conn_context.__aenter__ = AsyncMock(return_value=mock_conn)
-            mock_conn_context.__aexit__ = AsyncMock(return_value=None)
-            mock_engine.begin = AsyncMock(return_value=mock_conn_context)
-            mock_db._engine = mock_engine
+            mock_db._engine = MagicMock()
             mock_get_db.return_value = mock_db
 
-            with patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession") as mock_session_class:
-                mock_response = AsyncMock()
-                mock_response.status = 200
-                mock_response.json = AsyncMock(return_value={"hourly": {"time": []}})
-                mock_session = AsyncMock()
-                mock_session.get = AsyncMock(return_value=mock_response)
-                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_session.__aexit__ = AsyncMock(return_value=None)
-                mock_session_class.return_value = mock_session
+            with patch("celestron_nexstar.api.database.models.get_db_session") as mock_get_db_session:
+                mock_session = MagicMock()
+                mock_result = MagicMock()
+                mock_result.scalars.return_value.all.return_value = []
+                mock_last_fetch = MagicMock()
+                mock_last_fetch.scalar_one_or_none.return_value = None
+                mock_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result, mock_last_fetch])
+                mock_get_db_session.return_value.__enter__.return_value = mock_session
+                mock_get_db_session.return_value.__exit__.return_value = None
 
-                # Request more than 168 hours
-                forecasts = asyncio.run(fetch_hourly_weather_forecast(self.test_location, hours=200))
+                with patch("celestron_nexstar.api.location.weather.requests.get") as mock_requests_get:
+                    mock_response = MagicMock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {"hourly": {"time": []}}
+                    mock_requests_get.return_value = mock_response
 
-                # Should still work (limited internally)
-                self.assertIsInstance(forecasts, list)
+                    # Request more than 168 hours
+                    forecasts = fetch_hourly_weather_forecast(self.test_location, hours=200)
+
+                    # Should still work (limited internally)
+                    self.assertIsInstance(forecasts, list)
 
 
 class TestFetchWeatherBatch(unittest.TestCase):
@@ -930,17 +946,16 @@ class TestFetchWeatherBatch(unittest.TestCase):
             ObserverLocation(latitude=35.0, longitude=-110.0, name="Location 2"),
         ]
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
-    def test_fetch_weather_batch_success(self, mock_fetch: AsyncMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
+    def test_fetch_weather_batch_success(self, mock_fetch: MagicMock) -> None:
         """Test successful batch weather fetch"""
-        # Mock successful responses - fetch_weather is async, so mock_fetch should be AsyncMock
         mock_fetch.return_value = WeatherData(temperature_c=70.0, cloud_cover_percent=10.0)
 
         # Actually, ObserverLocation is not hashable, so this test will fail
         # Skip this test for now - the code has a bug where it tries to use ObserverLocation as dict key
         # For now, just verify the function can be called
         try:
-            result = asyncio.run(fetch_weather_batch(self.test_locations))
+            result = fetch_weather_batch(self.test_locations)
             # If it works, check results
             self.assertIsInstance(result, dict)
         except TypeError as e:
@@ -950,8 +965,8 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
-    def test_fetch_weather_batch_with_errors(self, mock_fetch: AsyncMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
+    def test_fetch_weather_batch_with_errors(self, mock_fetch: MagicMock) -> None:
         """Test batch weather fetch with some errors"""
         # Mock one success and one error
         # Use side_effect to return different values for each call
@@ -962,7 +977,7 @@ class TestFetchWeatherBatch(unittest.TestCase):
 
         # ObserverLocation is not hashable, so this test will fail
         try:
-            result = asyncio.run(fetch_weather_batch(self.test_locations))
+            result = fetch_weather_batch(self.test_locations)
             self.assertIsInstance(result, dict)
         except TypeError as e:
             if "unhashable" in str(e):
@@ -970,8 +985,8 @@ class TestFetchWeatherBatch(unittest.TestCase):
             else:
                 raise
 
-    @patch("celestron_nexstar.api.location.weather.fetch_weather", new_callable=AsyncMock)
-    def test_fetch_weather_batch_unexpected_result(self, mock_fetch: AsyncMock) -> None:
+    @patch("celestron_nexstar.api.location.weather.fetch_weather")
+    def test_fetch_weather_batch_unexpected_result(self, mock_fetch: MagicMock) -> None:
         """Test batch weather fetch with unexpected result type"""
         # Mock unexpected result type
         # Set mock_fetch to return an unexpected value
@@ -979,7 +994,7 @@ class TestFetchWeatherBatch(unittest.TestCase):
 
         # ObserverLocation is not hashable, so this test will fail
         try:
-            result = asyncio.run(fetch_weather_batch(self.test_locations))
+            result = fetch_weather_batch(self.test_locations)
             self.assertIsInstance(result, dict)
             for weather_data in result.values():
                 self.assertIsNotNone(weather_data.error)
@@ -993,72 +1008,79 @@ class TestFetchWeatherBatch(unittest.TestCase):
 class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
     """Test suite for fetch_hourly_weather_forecast database operations"""
 
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_hourly_forecast_table_creation(self, mock_session, mock_stale, mock_get_db):
+    def test_fetch_hourly_forecast_table_creation(
+        self,
+        mock_stale: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+        mock_requests_get: MagicMock,
+    ) -> None:
         """Test that table is created if it doesn't exist"""
-
         mock_db = MagicMock()
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
 
-        # First call raises exception (table doesn't exist), second succeeds
-        mock_conn.execute.side_effect = [RuntimeError("Table not found"), None]
-
-        # Mock session for database queries
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = []
-        mock_db_session.execute.return_value = mock_result
+        mock_last_fetch = MagicMock()
+        mock_last_fetch.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = _execute_side_effect(
+            [
+                RuntimeError("Table not found"),
+                mock_result,
+                mock_last_fetch,
+            ]
+        )
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         # Mock API response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "hourly": {
-                    "time": ["2024-01-15T12:00"],
-                    "temperature_2m": [70.0],
-                    "relative_humidity_2m": [50.0],
-                    "cloud_cover": [10.0],
-                    "wind_speed_10m": [5.0],
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "hourly": {
+                "time": ["2024-01-15T12:00"],
+                "temperature_2m": [70.0],
+                "relative_humidity_2m": [50.0],
+                "cloud_cover": [10.0],
+                "wind_speed_10m": [5.0],
             }
-        )
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         mock_stale.return_value = False
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_hourly_weather_forecast(location, hours=1))
+        result = fetch_hourly_weather_forecast(location, hours=1)
 
         # Should have attempted to create table
         self.assertIsInstance(result, list)
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    def test_fetch_hourly_forecast_cached_data(self, mock_stale, mock_get_db):
+    def test_fetch_hourly_forecast_cached_data(
+        self,
+        mock_stale: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test using cached forecast data from database"""
         from datetime import UTC, datetime, timedelta
 
         from celestron_nexstar.api.database.models import WeatherForecastModel
 
         mock_db = MagicMock()
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         now = datetime.now(UTC)
         future_time = now + timedelta(hours=1)
@@ -1089,11 +1111,11 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_forecast1, mock_forecast2]
-        mock_session.execute.return_value = mock_result
+        mock_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result])
         mock_stale.return_value = False  # Forecasts are not stale
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_hourly_weather_forecast(location, hours=2))
+        result = fetch_hourly_weather_forecast(location, hours=2)
 
         # Should return cached forecasts
         self.assertIsInstance(result, list)
@@ -1102,23 +1124,35 @@ class TestFetchHourlyWeatherForecastDatabase(unittest.TestCase):
 class TestFetchWeatherDatabase(unittest.TestCase):
     """Test suite for fetch_weather database operations"""
 
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_fetch_weather_table_creation(self, mock_get_db):
+    def test_fetch_weather_table_creation(
+        self,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+        mock_requests_get: MagicMock,
+    ) -> None:
         """Test that table is created if it doesn't exist"""
 
         mock_db = MagicMock()
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
 
-        # First call raises exception (table doesn't exist), second succeeds
-        mock_conn.execute.side_effect = [RuntimeError("Table not found"), None]
+        mock_session = MagicMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = _execute_side_effect([RuntimeError("Table not found"), mock_result])
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
 
         # Should have attempted to create table
         self.assertIsInstance(result, WeatherData)
@@ -1127,15 +1161,20 @@ class TestFetchWeatherDatabase(unittest.TestCase):
 class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
     """Test suite for get_historical_cloud_cover_for_month function"""
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_get_historical_cloud_cover_tighter_range(self, mock_get_db):
+    def test_get_historical_cloud_cover_tighter_range(
+        self,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test getting historical cloud cover with tighter range (p40-p60)"""
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         mock_record = MagicMock()
         mock_record.p40_cloud_cover_percent = 30.0
@@ -1147,21 +1186,26 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
         mock_session.execute.return_value = mock_result
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=True))
+        result = get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=True)
 
         self.assertIsNotNone(result)
         self.assertEqual(result[0], 30.0)  # p40
         self.assertEqual(result[1], 50.0)  # p60
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_get_historical_cloud_cover_fallback_to_p25_p75(self, mock_get_db):
+    def test_get_historical_cloud_cover_fallback_to_p25_p75(
+        self,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test fallback to p25-p75 when p40-p60 not available"""
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         # Create a mock record where p40/p60 attributes don't exist
         # The code uses getattr(record, "p40_cloud_cover_percent", None)
@@ -1182,22 +1226,27 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
         mock_session.execute.return_value = mock_result
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=True))
+        result = get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=True)
 
         # Should fall back to p25-p75 since p40-p60 don't exist (getattr returns None)
         self.assertIsNotNone(result)
         self.assertEqual(result[0], 25.0)  # p25
         self.assertEqual(result[1], 55.0)  # p75
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    def test_get_historical_cloud_cover_wider_range(self, mock_get_db):
+    def test_get_historical_cloud_cover_wider_range(
+        self,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test getting historical cloud cover with wider range (p25-p75)"""
 
         mock_db = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         mock_record = MagicMock()
         mock_record.p25_cloud_cover_percent = 25.0
@@ -1209,7 +1258,7 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
         mock_session.execute.return_value = mock_result
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=False))
+        result = get_historical_cloud_cover_for_month(location, month=6, use_tighter_range=False)
 
         self.assertIsNotNone(result)
         self.assertEqual(result[0], 25.0)  # p25
@@ -1219,449 +1268,306 @@ class TestGetHistoricalCloudCoverForMonth(unittest.TestCase):
 class TestFetchWeatherWeatherCodes(unittest.TestCase):
     """Test suite for weather code mapping in fetch_weather"""
 
-    @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_clear(self, mock_session, mock_get_db):
-        """Test weather code 0 (Clear)"""
+    def _setup_db_mocks(self, mock_get_db: MagicMock, mock_get_db_session: MagicMock) -> None:
         mock_db = MagicMock()
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
 
-        # Mock engine for table creation check
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]  # Table exists
-
-        # Mock session for database queries
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # No cached data
-        mock_db_session.execute.return_value = mock_result
+        mock_result.scalars.return_value.all.return_value = []
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
+        mock_session.commit = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
-        # Mock API response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 0.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 0,
-                }
+    @patch("celestron_nexstar.api.database.models.get_db_session")
+    @patch("celestron_nexstar.api.database.database.get_database")
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_clear(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
+        """Test weather code 0 (Clear)"""
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 0.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 0,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Clear")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_foggy(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_foggy(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 45 (Foggy)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        # Mock engine for table creation check
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]  # Table exists
-
-        # Mock session for database queries
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # No cached data
-        mock_db_session.execute.return_value = mock_result
-
-        # Mock API response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 45,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 45,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Foggy")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_thunderstorm(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_thunderstorm(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 95 (Thunderstorm)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        # Mock engine for table creation check
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]  # Table exists
-
-        # Mock session for database queries
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # No cached data
-        mock_db_session.execute.return_value = mock_result
-
-        # Mock API response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 95,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 95,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Thunderstorm")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_drizzle(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_drizzle(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 51 (Drizzle)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 51,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 51,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Drizzle")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_rain(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_rain(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 61 (Rain)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 61,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 61,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Rain")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_snow(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_snow(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 71 (Snow)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 71,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 71,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Snow")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_rain_showers(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_rain_showers(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 80 (Rain Showers)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 80,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 80,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Rain Showers")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_snow_showers(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_snow_showers(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test weather code 85 (Snow Showers)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 85,
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 85,
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Snow Showers")
 
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_weather_code_unknown(self, mock_session, mock_get_db):
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    def test_fetch_weather_code_unknown(
+        self,
+        mock_requests_get: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+    ) -> None:
         """Test unknown weather code (defaults to Cloudy)"""
-        mock_db = MagicMock()
-        mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        mock_db_session.execute.return_value = mock_result
+        self._setup_db_mocks(mock_get_db, mock_get_db_session)
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "current": {
-                    "temperature_2m": 70.0,
-                    "relative_humidity_2m": 50.0,
-                    "cloud_cover": 100.0,
-                    "wind_speed_10m": 5.0,
-                    "weather_code": 999,  # Unknown code
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "current": {
+                "temperature_2m": 70.0,
+                "relative_humidity_2m": 50.0,
+                "cloud_cover": 100.0,
+                "wind_speed_10m": 5.0,
+                "weather_code": 999,  # Unknown code
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_weather(location))
+        result = fetch_weather(location)
         self.assertEqual(result.condition, "Cloudy")
 
 
 class TestFetchHourlyForecastEdgeCases(unittest.TestCase):
     """Test suite for edge cases in fetch_hourly_weather_forecast"""
 
+    @patch("celestron_nexstar.api.location.weather.requests.get")
+    @patch("celestron_nexstar.api.database.models.get_db_session")
     @patch("celestron_nexstar.api.database.database.get_database")
     @patch("celestron_nexstar.api.location.weather._is_forecast_stale")
-    @patch("celestron_nexstar.api.location.weather.aiohttp.ClientSession")
-    def test_fetch_hourly_forecast_cached_insufficient_coverage(self, mock_session, mock_stale, mock_get_db):
+    def test_fetch_hourly_forecast_cached_insufficient_coverage(
+        self,
+        mock_stale: MagicMock,
+        mock_get_db: MagicMock,
+        mock_get_db_session: MagicMock,
+        mock_requests_get: MagicMock,
+    ) -> None:
         """Test when cached forecasts don't cover enough hours"""
         from datetime import UTC, datetime, timedelta
 
         mock_db = MagicMock()
+        mock_db._engine = MagicMock()
         mock_get_db.return_value = mock_db
-        mock_conn = AsyncMock()
-        mock_engine = MagicMock()
-        mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_db._engine = mock_engine
-        mock_conn.execute.side_effect = [None]
-
-        mock_db_session = AsyncMock()
-        mock_db._AsyncSession.return_value.__aenter__ = AsyncMock(return_value=mock_db_session)
-        mock_db._AsyncSession.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_db_session = MagicMock()
+        mock_get_db_session.return_value.__enter__.return_value = mock_db_session
+        mock_get_db_session.return_value.__exit__.return_value = None
 
         now = datetime.now(UTC)
         # Create one forecast that doesn't cover enough hours
@@ -1679,35 +1585,28 @@ class TestFetchHourlyForecastEdgeCases(unittest.TestCase):
 
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mock_forecast]
-        mock_db_session.execute.return_value = mock_result
+        mock_last_fetch = MagicMock()
+        mock_last_fetch.scalar_one_or_none.return_value = None
+        mock_db_session.execute.side_effect = _execute_side_effect([MagicMock(), mock_result, mock_last_fetch])
         mock_stale.return_value = False
 
         # Mock API response
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            return_value={
-                "hourly": {
-                    "time": ["2024-01-15T12:00", "2024-01-15T13:00"],
-                    "temperature_2m": [70.0, 72.0],
-                    "relative_humidity_2m": [50.0, 55.0],
-                    "cloud_cover": [10.0, 15.0],
-                    "wind_speed_10m": [5.0, 6.0],
-                    "dew_point_2m": [50.0, 52.0],
-                }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "hourly": {
+                "time": ["2024-01-15T12:00", "2024-01-15T13:00"],
+                "temperature_2m": [70.0, 72.0],
+                "relative_humidity_2m": [50.0, 55.0],
+                "cloud_cover": [10.0, 15.0],
+                "wind_speed_10m": [5.0, 6.0],
+                "dew_point_2m": [50.0, 52.0],
             }
-        )
-        mock_response_context = AsyncMock()
-        mock_response_context.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context = AsyncMock()
-        mock_session_context.__aenter__ = AsyncMock(return_value=mock_session_context)
-        mock_session_context.__aexit__ = AsyncMock(return_value=None)
-        mock_session_context.get = MagicMock(return_value=mock_response_context)
-        mock_session.return_value = mock_session_context
+        }
+        mock_requests_get.return_value = mock_response
 
         location = ObserverLocation(latitude=40.0, longitude=-100.0)
-        result = asyncio.run(fetch_hourly_weather_forecast(location, hours=24))
+        result = fetch_hourly_weather_forecast(location, hours=24)
 
         # Should fetch from API since cached data doesn't cover enough
         self.assertIsInstance(result, list)

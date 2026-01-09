@@ -271,7 +271,7 @@ def find_best_viewing_location(
         If current location is good, returns (None, message)
     """
     from celestron_nexstar.api.events.vacation_planning import find_dark_sites_near
-    from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data_sync
+    from celestron_nexstar.api.location.light_pollution import BortleClass, get_light_pollution_data
 
     req = event.viewing_requirements
 
@@ -287,10 +287,10 @@ def find_best_viewing_location(
     # Check if dark sky is required
     if req.dark_sky_required or req.min_bortle_class:
         from celestron_nexstar.api.database.models import get_db_session
-        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data_sync
+        from celestron_nexstar.api.location.light_pollution import get_light_pollution_data
 
         with get_db_session() as db_session:
-            current_light = get_light_pollution_data_sync(
+            current_light = get_light_pollution_data(
                 db_session, current_location.latitude, current_location.longitude
             )
         current_bortle = current_light.bortle_class.value

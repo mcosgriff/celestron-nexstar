@@ -380,7 +380,6 @@ def show_when(
         nexstar milky-way when --lat 40.7128 --lon -74.0060
         nexstar milky-way when  # Will prompt for location
     """
-    import asyncio
     import sys
 
     from rich.prompt import Prompt
@@ -393,7 +392,7 @@ def show_when(
     if location:
         try:
             console.print(f"[dim]Geocoding location: {location}...[/dim]")
-            observer_location = asyncio.run(geocode_location(location))
+            observer_location = geocode_location(location)
             console.print(f"[green]✓[/green] Found: {observer_location.name}\n")
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
@@ -461,7 +460,7 @@ def show_when(
                 if not observer_location:
                     try:
                         console.print(f"[dim]Geocoding: {location_input}...[/dim]")
-                        observer_location = asyncio.run(geocode_location(location_input))
+                        observer_location = geocode_location(location_input)
                         console.print(f"[green]✓[/green] Found: {observer_location.name}\n")
                     except Exception as e:
                         console.print(f"[red]Error: Could not geocode location '{location_input}': {e}[/red]")
@@ -640,7 +639,6 @@ def show_next(
         nexstar milky-way next --lat 40.7128 --lon -74.0060
         nexstar milky-way next  # Will prompt for location
     """
-    import asyncio
     import sys
 
     from rich.prompt import Prompt
@@ -653,7 +651,7 @@ def show_next(
     if location:
         try:
             console.print(f"[dim]Geocoding location: {location}...[/dim]")
-            observer_location = asyncio.run(geocode_location(location))
+            observer_location = geocode_location(location)
             console.print(f"[green]✓[/green] Found: {observer_location.name}\n")
         except Exception as e:
             console.print(f"[red]Error: Could not geocode location '{location}': {e}[/red]")
@@ -721,7 +719,7 @@ def show_next(
                 if not observer_location:
                     try:
                         console.print(f"[dim]Geocoding: {location_input}...[/dim]")
-                        observer_location = asyncio.run(geocode_location(location_input))
+                        observer_location = geocode_location(location_input)
                         console.print(f"[green]✓[/green] Found: {observer_location.name}\n")
                     except Exception as e:
                         console.print(f"[red]Error: Could not geocode location '{location_input}': {e}[/red]")

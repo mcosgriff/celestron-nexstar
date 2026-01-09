@@ -18,6 +18,7 @@ from celestron_nexstar.api.observation.visibility import (
     calculate_parent_separation,
     filter_visible_objects,
     get_object_altitude_azimuth,
+    _cached_altitude_azimuth,
 )
 
 
@@ -99,6 +100,7 @@ class TestGetObjectAltitudeAzimuth(unittest.TestCase):
             object_type=CelestialObjectType.STAR,
             catalog="bright_stars",
         )
+        _cached_altitude_azimuth.cache_clear()
 
     @patch("celestron_nexstar.api.observation.visibility.ra_dec_to_alt_az")
     @patch("celestron_nexstar.api.observation.visibility.is_dynamic_object")

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QFontDatabase
+    from PySide6.QtWidgets import QApplication
 
 logger = logging.getLogger(__name__)
 
@@ -222,3 +223,55 @@ def load_jetbrains_mono() -> str | None:
     except Exception as e:
         logger.error(f"Error loading JetBrains Mono font: {e}", exc_info=True)
         return None
+
+
+def load_jetbrains_mono_async(app: "QApplication") -> None:
+    """
+    Load JetBrains Mono without blocking the UI thread.
+
+    Checks system fonts immediately, then downloads/extracts in a QThread if needed.
+    """
+    try:
+        from PySide6.QtCore import QThread, Signal
+        from PySide6.QtGui import QFontDatabase
+
+        font_db = QFontDatabase()
+        system_font = _find_jetbrains_mono_in_system(font_db)
+        if system_font:
+            logger.info(f"Using system-installed font: {system_font}")
+            app.setProperty("monospace_font", system_font)
+            return
+
+        class _FontDownloadThread(QThread):
+            downloaded = Signal(object)
+            error = Signal(str)
+
+            def run(self) -> None:  # noqa: D401 - Qt thread entry point.
+                try:
+                    zip_path = download_font()
+                    font_file = extract_font_file(zip_path)
+                    self.downloaded.emit(font_file)
+                except Exception as exc:
+                    self.error.emit(str(exc))
+
+        def _on_downloaded(font_file: Path) -> None:
+            font_id = font_db.addApplicationFont(str(font_file))
+            if font_id == -1:
+                logger.error("Failed to load downloaded font into Qt font database")
+                return
+            families = font_db.applicationFontFamilies(font_id)
+            family_name = families[0] if families else FONT_FAMILY_NAME
+            logger.info(f"Successfully loaded downloaded font: {family_name}")
+            app.setProperty("monospace_font", family_name)
+
+        def _on_error(message: str) -> None:
+            logger.warning(f"Could not download/load font: {message}")
+
+        thread = _FontDownloadThread()
+        thread.downloaded.connect(_on_downloaded)
+        thread.error.connect(_on_error)
+        thread.finished.connect(thread.deleteLater)
+        app.setProperty("font_loader_thread", thread)
+        thread.start()
+    except Exception as e:
+        logger.error(f"Error starting async font load: {e}", exc_info=True)
