@@ -313,6 +313,26 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
+        form = QFormLayout()
+        self.location_combo = QComboBox()
+        self.location_combo.currentIndexChanged.connect(self._on_location_selected)
+        form.addRow("Saved Location:", self.location_combo)
+        layout.addLayout(form)
+
+        button_row = QHBoxLayout()
+        self.location_add_btn = QPushButton("Add Location…")
+        self.location_add_btn.setToolTip("Save a new observing location")
+        self.location_add_btn.clicked.connect(self._on_add_location)
+        button_row.addWidget(self.location_add_btn)
+
+        self.location_set_btn = QPushButton("Set Active")
+        self.location_set_btn.setToolTip("Use the selected location for calculations")
+        self.location_set_btn.clicked.connect(self._on_set_active_location)
+        self.location_set_btn.setEnabled(False)
+        button_row.addWidget(self.location_set_btn)
+        button_row.addStretch()
+        layout.addLayout(button_row)
+
         location_text = QTextEdit()
         location_text.setReadOnly(True)
         location_text.setAcceptRichText(True)
@@ -327,15 +347,6 @@ class SettingsDialog(QDialog):
         )
         self.location_text = location_text
         layout.addWidget(location_text, 1)
-
-        button_row = QHBoxLayout()
-        button_row.addStretch()
-        set_btn = QPushButton("Set Location…")
-        set_btn.setToolTip("Set observer location used for calculations")
-        set_btn.clicked.connect(self._on_set_location)
-        self.location_set_btn = set_btn
-        button_row.addWidget(set_btn)
-        layout.addLayout(button_row)
 
         self.tab_widget.addTab(widget, "Location")
 
@@ -730,7 +741,7 @@ class SettingsDialog(QDialog):
             alembic_cfg = Config("alembic.ini")
             alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 
-            current_rev = None
+            current_rev: str | list[str] | None = None
             heads: tuple[str, ...] | None = None
             pending: list[Any] | None = None
 
@@ -738,7 +749,16 @@ class SettingsDialog(QDialog):
             try:
                 with engine.connect() as conn:
                     context = MigrationContext.configure(conn)
-                    current_rev = context.get_current_revision()
+                    try:
+                        current_rev = context.get_current_revision()
+                    except Exception:
+                        current_heads = context.get_current_heads()
+                        if len(current_heads) == 1:
+                            current_rev = current_heads[0]
+                        elif len(current_heads) > 1:
+                            current_rev = list(current_heads)
+                        else:
+                            current_rev = None
                 script = ScriptDirectory.from_config(alembic_cfg)
                 heads_tuple = tuple(script.get_heads())
                 heads = heads_tuple
@@ -747,8 +767,9 @@ class SettingsDialog(QDialog):
                 engine.dispose()
 
             pending_list = [getattr(rev, "revision", "") for rev in pending] if pending else []
+            current_label = ", ".join(current_rev) if isinstance(current_rev, list) else current_rev
             migration_text = (
-                f"<b>Current revision:</b> {current_rev or 'None'}<br>"
+                f"<b>Current revision:</b> {current_label or 'None'}<br>"
                 f"<b>Head(s):</b> {', '.join(heads) if heads else 'None'}<br>"
                 f"<b>Pending:</b> {', '.join(pending_list) if pending_list else 'None'}"
             )
@@ -824,12 +845,21 @@ class SettingsDialog(QDialog):
 
         engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
-        current_rev = None
+        current_rev: str | list[str] | None = None
         pending_revs: list[str] = []
 
         with engine.connect() as conn:
             context = MigrationContext.configure(conn)
-            current_rev = context.get_current_revision()
+            try:
+                current_rev = context.get_current_revision()
+            except Exception:
+                current_heads = context.get_current_heads()
+                if len(current_heads) == 1:
+                    current_rev = current_heads[0]
+                elif len(current_heads) > 1:
+                    current_rev = list(current_heads)
+                else:
+                    current_rev = None
 
         script = ScriptDirectory.from_config(alembic_cfg)
         heads = script.get_heads()
@@ -837,9 +867,10 @@ class SettingsDialog(QDialog):
             pending = list(script.iterate_revisions(heads, current_rev))
             pending_revs = [rev.revision for rev in pending]
 
+        current_label = ", ".join(current_rev) if isinstance(current_rev, list) else current_rev
         log_lines = [
             f"DB Path: {db_path}",
-            f"Current revision: {current_rev or 'None'}",
+            f"Current revision: {current_label or 'None'}",
             f"Target head(s): {', '.join(heads) if heads else 'None'}",
             f"Pending: {', '.join(pending_revs) if pending_revs else 'None'}",
             "Applying migrations...",
@@ -870,13 +901,23 @@ class SettingsDialog(QDialog):
 
         # Determine new revision after upgrade
         engine2 = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-        new_rev = None
+        new_rev: str | list[str] | None = None
         with engine2.connect() as conn:
             context = MigrationContext.configure(conn)
-            new_rev = context.get_current_revision()
+            try:
+                new_rev = context.get_current_revision()
+            except Exception:
+                new_heads = context.get_current_heads()
+                if len(new_heads) == 1:
+                    new_rev = new_heads[0]
+                elif len(new_heads) > 1:
+                    new_rev = list(new_heads)
+                else:
+                    new_rev = None
         engine2.dispose()
 
-        log_lines.append(f"Completed. Current revision: {new_rev or 'None'}")
+        new_label = ", ".join(new_rev) if isinstance(new_rev, list) else new_rev
+        log_lines.append(f"Completed. Current revision: {new_label or 'None'}")
         return "\n".join(log_lines), pending_revs
 
     def _load_config_info(self) -> None:
@@ -1766,14 +1807,24 @@ class SettingsDialog(QDialog):
         """Load location configuration information."""
         colors = self._get_theme_colors()
         try:
-            from celestron_nexstar.api.location.observer import get_config_path, get_observer_location
+            from celestron_nexstar.api.database.database import get_database
+            from celestron_nexstar.api.location.observer import (
+                get_active_observer_location_id,
+                get_observer_location,
+                list_observer_locations,
+            )
 
+            locations = list_observer_locations()
+            active_id = get_active_observer_location_id()
             location = get_observer_location()
-            config_path = get_config_path()
+            database_path = get_database().db_path
 
             html_content = []
             html_content.append(
                 f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Observer Location</span></p>"
+            )
+            html_content.append(
+                f"<p style='color: {colors['text_dim']};'>Saved locations: {len(locations)}</p>"
             )
 
             html_content.append(
@@ -1800,19 +1851,18 @@ class SettingsDialog(QDialog):
             html_content.append("</table>")
 
             html_content.append(
-                f"<p style='color: {colors['text']};'><b>Config File:</b> <span style='color: {colors['text_dim']};'>{config_path}</span></p>"
+                f"<p style='color: {colors['text']};'><b>Database:</b> <span style='color: {colors['text_dim']};'>{database_path}</span></p>"
             )
-            exists_marker = (
-                f"<span style='color: {colors['green']};'>✓ Exists</span>"
-                if config_path.exists()
-                else f"<span style='color: {colors['text_dim']};'>(not saved)</span>"
-            )
-            html_content.append(f"<p style='color: {colors['text']};'>{exists_marker}</p>")
+            if not locations:
+                html_content.append(
+                    f"<p style='color: {colors['text_dim']}; margin-top: 10px;'>No saved locations yet. Add one to enable selection.</p>"
+                )
             html_content.append(
                 f"<p style='color: {colors['text_dim']}; margin-top: 15px;'>Tip: You can also set it via CLI: nexstar location set.</p>"
             )
 
             self.location_text.setHtml("\n".join(html_content))
+            self._refresh_location_options(locations, active_id)
 
         except Exception as e:
             logger.error(f"Error loading location info: {e}", exc_info=True)
@@ -1820,8 +1870,58 @@ class SettingsDialog(QDialog):
                 f"<p><span style='color: {colors['error']};'><b>Error:</b> Failed to load location information: {e}</span></p>"
             )
 
-    def _on_set_location(self) -> None:
-        """Open modal dialog to set observer location."""
+    def _refresh_location_options(self, locations: list[object] | None = None, active_id: str | None = None) -> None:
+        """Refresh the saved location dropdown."""
+        from celestron_nexstar.api.location.observer import list_observer_locations
+
+        if locations is None:
+            locations = list_observer_locations()
+
+        if active_id is None:
+            from celestron_nexstar.api.location.observer import get_active_observer_location_id
+
+            active_id = get_active_observer_location_id()
+
+        self._active_location_id = active_id
+        self.location_combo.blockSignals(True)
+        self.location_combo.clear()
+
+        if not locations:
+            self.location_combo.addItem("No saved locations", None)
+            self.location_combo.setEnabled(False)
+            self.location_set_btn.setEnabled(False)
+        else:
+            self.location_combo.setEnabled(True)
+            for entry in locations:
+                loc = entry.location
+                if loc.name:
+                    label = loc.name
+                else:
+                    lat_dir = "N" if loc.latitude >= 0 else "S"
+                    lon_dir = "E" if loc.longitude >= 0 else "W"
+                    label = f"{abs(loc.latitude):.4f}°{lat_dir}, {abs(loc.longitude):.4f}°{lon_dir}"
+                self.location_combo.addItem(label, entry.id)
+
+            if active_id:
+                idx = self.location_combo.findData(active_id)
+                if idx >= 0:
+                    self.location_combo.setCurrentIndex(idx)
+
+        self.location_combo.blockSignals(False)
+        self._update_location_set_button()
+
+    def _update_location_set_button(self) -> None:
+        current_id = self.location_combo.currentData()
+        if not current_id or current_id == getattr(self, "_active_location_id", None):
+            self.location_set_btn.setEnabled(False)
+        else:
+            self.location_set_btn.setEnabled(True)
+
+    def _on_location_selected(self) -> None:
+        self._update_location_set_button()
+
+    def _on_add_location(self) -> None:
+        """Open modal dialog to add a new observer location."""
         try:
             from celestron_nexstar.gui.dialogs.location_config_dialog import LocationConfigDialog
 
@@ -1833,6 +1933,23 @@ class SettingsDialog(QDialog):
             from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.critical(self, "Error", f"Failed to open location configuration dialog:\n{e!s}")
+
+    def _on_set_active_location(self) -> None:
+        """Set the selected saved location as active."""
+        location_id = self.location_combo.currentData()
+        if not location_id:
+            return
+
+        try:
+            from celestron_nexstar.api.location.observer import set_active_observer_location
+
+            set_active_observer_location(location_id, save=True)
+            self._load_location_info()
+        except Exception as e:
+            logger.error("Failed to set active location", exc_info=True)
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(self, "Error", f"Failed to set active location:\n{e!s}")
 
     def _load_optics_info(self) -> None:
         """Load optics configuration information."""

@@ -151,6 +151,7 @@ def show_all_config(
 
     from rich.table import Table
 
+    from celestron_nexstar.api.database.database import get_database
     from celestron_nexstar.api.location.observer import get_observer_location
     from celestron_nexstar.api.observation.optics import get_current_configuration
     from celestron_nexstar.cli.utils.output import print_error, print_info, print_json
@@ -163,7 +164,7 @@ def show_all_config(
         # Get config file paths
         config_dir = Path.home() / ".config" / "celestron-nexstar"
         optical_config_path = config_dir / "optical_config.json"
-        location_config_path = config_dir / "observer_location.json"
+        database_path = get_database().db_path
 
         if json_output:
             # JSON output
@@ -204,7 +205,7 @@ def show_all_config(
                     "config_files": {
                         "directory": str(config_dir),
                         "optical_config": str(optical_config_path),
-                        "location_config": str(location_config_path),
+                        "database": str(database_path),
                     },
                 }
             )
@@ -284,9 +285,9 @@ def show_all_config(
                 + (" [green]✓[/green]" if optical_config_path.exists() else " [dim](not saved)[/dim]"),
             )
             paths_table.add_row(
-                "Location Config",
-                str(location_config_path)
-                + (" [green]✓[/green]" if location_config_path.exists() else " [dim](not saved)[/dim]"),
+                "Database",
+                str(database_path)
+                + (" [green]✓[/green]" if database_path.exists() else " [dim](not created)[/dim]"),
             )
 
             console.print(paths_table)

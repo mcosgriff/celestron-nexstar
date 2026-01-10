@@ -227,20 +227,29 @@ class WeatherInfoDialog(QDialog):
         QCoreApplication.processEvents()
 
     def _start_weather_load(self, force_refresh: bool) -> None:
-        if self._weather_thread and self._weather_thread.isRunning():
-            if self._refresh_progress:
-                self._refresh_progress.close()
-                self._refresh_progress = None
-            self._refresh_button.setEnabled(True)
-            return
+        if self._weather_thread:
+            try:
+                if self._weather_thread.isRunning():
+                    if self._refresh_progress:
+                        self._refresh_progress.close()
+                        self._refresh_progress = None
+                    self._refresh_button.setEnabled(True)
+                    return
+            except RuntimeError:
+                # Thread wrapper already deleted by Qt; clear reference.
+                self._weather_thread = None
 
         self._refresh_button.setEnabled(False)
         thread = _WeatherLoadThread(force_refresh=force_refresh)
         thread.loaded.connect(self._on_weather_loaded)
         thread.error.connect(self._on_weather_error)
+        thread.finished.connect(self._clear_weather_thread)
         thread.finished.connect(thread.deleteLater)
         self._weather_thread = thread
         thread.start()
+
+    def _clear_weather_thread(self) -> None:
+        self._weather_thread = None
 
     def _on_weather_loaded(self, location: object, weather: object, forecasts: object) -> None:
         try:

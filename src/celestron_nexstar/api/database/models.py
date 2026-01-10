@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol
+from uuid import uuid4
 
 import sqlalchemy as sa
 from geoalchemy2 import Geometry
@@ -627,6 +628,39 @@ class UserPreferenceModel(Base):
     def __repr__(self) -> str:
         """String representation of preference."""
         return f"<UserPreference(key='{self.key}', category='{self.category}')>"
+
+
+class ObserverLocationModel(Base):
+    """
+    SQLAlchemy model for saved observer locations.
+
+    Stores multiple named observing locations and an active selection.
+    """
+
+    __tablename__ = "observer_locations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: uuid4().hex)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    elevation: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_observer_locations_name", "name"),
+        Index("ix_observer_locations_lat_lon", "latitude", "longitude"),
+    )
+
+    def __repr__(self) -> str:
+        """String representation of observer location."""
+        return f"<ObserverLocation(id='{self.id}', name='{self.name}', active={self.is_active})>"
 
 
 class FavoriteModel(Base):

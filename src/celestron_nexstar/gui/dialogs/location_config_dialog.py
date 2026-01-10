@@ -30,11 +30,11 @@ from PySide6.QtWidgets import (
 
 from celestron_nexstar.api.location.observer import (
     ObserverLocation,
+    add_observer_location,
     detect_location_automatically,
     enrich_location_with_elevation_feet,
     geocode_location,
     get_observer_location,
-    set_observer_location,
 )
 
 
@@ -81,7 +81,7 @@ class LocationConfigDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Set Location")
+        self.setWindowTitle("Add Location")
         self.setMinimumWidth(560)
         self.setMinimumHeight(420)
         self.resize(620, 520)
@@ -317,7 +317,7 @@ class LocationConfigDialog(QDialog):
                 QMessageBox.information(self, "Set Location", "No location selected yet.")
                 return
 
-            set_observer_location(self._pending_location, save=True)
+            add_observer_location(self._pending_location, set_active=True)
             self.accept()
         except Exception as e:
             logger.error("Failed to save observer location", exc_info=True)

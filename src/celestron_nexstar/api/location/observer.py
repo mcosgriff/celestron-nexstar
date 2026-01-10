@@ -11,14 +11,18 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
+from uuid import uuid4
 
 import deal
+from sqlalchemy import select, update
 
 from celestron_nexstar.api.core.exceptions import (
     GeocodingError,
     LocationNotFoundError,
     LocationNotSetError,
 )
+from celestron_nexstar.api.database.models import ObserverLocationModel, get_db_session
 
 
 logger = logging.getLogger(__name__)
@@ -29,13 +33,19 @@ __all__ = [
     "FEET_TO_METERS",
     "METERS_TO_FEET",
     "ObserverLocation",
+    "ObserverLocationEntry",
+    "add_observer_location",
     "clear_observer_location",
     "detect_location_automatically",
     "enrich_location_with_elevation_feet",
     "geocode_location",
     "geocode_location_batch",
+    "get_active_observer_location_id",
     "get_observer_location",
+    "list_observer_locations",
+    "set_active_observer_location",
     "set_observer_location",
+    "update_observer_location",
 ]
 
 METERS_TO_FEET = 3.28084
@@ -52,6 +62,14 @@ class ObserverLocation:
     name: str | None = None  # Optional location name
 
 
+@dataclass(frozen=True)
+class ObserverLocationEntry:
+    """Saved observer location entry."""
+
+    id: str
+    location: ObserverLocation
+
+
 # Default location (Greenwich Observatory)
 DEFAULT_LOCATION = ObserverLocation(
     latitude=51.4769,
@@ -62,11 +80,172 @@ DEFAULT_LOCATION = ObserverLocation(
 
 # Global current location
 _current_location: ObserverLocation | None = None
+_current_location_id: str | None = None
+
+
+def _normalize_elevation(raw: object) -> float:
+    elevation = float(raw or 0.0)
+    if elevation < 0:
+        logger.warning(f"Negative elevation in config: {elevation}, using 0.0")
+        elevation = 0.0
+    return elevation
+
+
+def _location_from_dict(data: dict[str, object]) -> ObserverLocation:
+    if "latitude" not in data or "longitude" not in data:
+        raise KeyError("Missing required fields: latitude and/or longitude")
+
+    latitude = float(data["latitude"])
+    longitude = float(data["longitude"])
+
+    if not -90 <= latitude <= 90:
+        raise ValueError(f"Invalid latitude: {latitude} (must be -90 to 90)")
+    if not -180 <= longitude <= 180:
+        raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
+
+    if "elevation" in data:
+        elevation = _normalize_elevation(data.get("elevation", 0.0))
+    elif "elevation_m" in data:
+        elevation = _normalize_elevation(data.get("elevation_m", 0.0))
+    elif "elevation_ft" in data:
+        elevation = _normalize_elevation(data.get("elevation_ft", 0.0)) * FEET_TO_METERS
+    else:
+        elevation = 0.0
+
+    return ObserverLocation(
+        latitude=latitude,
+        longitude=longitude,
+        elevation=elevation,
+        name=cast(str | None, data.get("name")),
+    )
+
+
+def _entry_from_dict(data: dict[str, object]) -> ObserverLocationEntry | None:
+    try:
+        location = _location_from_dict(data)
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    entry_id = data.get("id")
+    if not isinstance(entry_id, str) or not entry_id.strip():
+        entry_id = uuid4().hex
+    return ObserverLocationEntry(id=entry_id, location=location)
+
+
+def _load_locations_config() -> tuple[list[ObserverLocationEntry], str | None]:
+    config_path = get_config_path()
+    if not config_path.exists():
+        return [], None
+
+    try:
+        with config_path.open("r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError, PermissionError, TypeError) as e:
+        logger.warning(f"Failed to read location config: {e}")
+        return [], None
+
+    if isinstance(data, dict) and isinstance(data.get("locations"), list):
+        locations: list[ObserverLocationEntry] = []
+        for item in data.get("locations", []):
+            if not isinstance(item, dict):
+                continue
+            entry = _entry_from_dict(item)
+            if entry:
+                locations.append(entry)
+        active_id = data.get("active_location_id")
+        if not isinstance(active_id, str):
+            active_id = None
+        return locations, active_id
+
+    # Legacy single-location schema
+    if isinstance(data, dict) and "latitude" in data and "longitude" in data:
+        try:
+            location = _location_from_dict(data)
+            entry = ObserverLocationEntry(id=uuid4().hex, location=location)
+            return [entry], entry.id
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to load legacy location config: {e}")
+            return [], None
+
+    return [], None
+
+
+def _model_to_entry(model: ObserverLocationModel) -> ObserverLocationEntry:
+    location = ObserverLocation(
+        latitude=model.latitude,
+        longitude=model.longitude,
+        elevation=model.elevation,
+        name=model.name,
+    )
+    return ObserverLocationEntry(id=model.id, location=location)
+
+
+def _seed_locations_from_config() -> None:
+    config_locations, active_id = _load_locations_config()
+    if not config_locations:
+        return
+
+    with get_db_session() as session:
+        existing = session.execute(select(ObserverLocationModel.id).limit(1)).scalar_one_or_none()
+        if existing is not None:
+            return
+
+        active_found = False
+        models: list[ObserverLocationModel] = []
+        for entry in config_locations:
+            is_active = entry.id == active_id
+            active_found = active_found or is_active
+            models.append(
+                ObserverLocationModel(
+                    id=entry.id,
+                    name=entry.location.name,
+                    latitude=entry.location.latitude,
+                    longitude=entry.location.longitude,
+                    elevation=entry.location.elevation,
+                    is_active=is_active,
+                )
+            )
+
+        if models and not active_found:
+            models[0].is_active = True
+
+        session.add_all(models)
+        session.commit()
+
+
+def _get_active_location_model(session) -> ObserverLocationModel | None:
+    active_locations = list(
+        session.execute(
+            select(ObserverLocationModel)
+            .where(ObserverLocationModel.is_active.is_(True))
+            .order_by(ObserverLocationModel.created_at)
+        ).scalars()
+    )
+    if active_locations:
+        active = active_locations[0]
+        if len(active_locations) > 1:
+            extra_ids = [entry.id for entry in active_locations[1:]]
+            session.execute(
+                update(ObserverLocationModel)
+                .where(ObserverLocationModel.id.in_(extra_ids))
+                .values(is_active=False)
+            )
+            session.commit()
+        return active
+
+    first = session.execute(
+        select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)
+    ).scalars().first()
+    if first:
+        first.is_active = True
+        session.commit()
+        return first
+    return None
 
 
 @deal.post(lambda result: (result is not None and result.exists()) or True, message="Must return valid path")
 def get_config_path() -> Path:
-    """Get path to observer location config file."""
+    """Get path to legacy observer location config file."""
     # Store in user's home directory
     config_dir = Path.home() / ".config" / "celestron-nexstar"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -79,33 +258,44 @@ def get_config_path() -> Path:
 @deal.post(lambda result: result is None, message="Save must complete")
 def save_location(location: ObserverLocation) -> None:
     """
-    Save observer location to config file.
+    Save observer location to database.
 
     Args:
         location: Observer location to save
     """
-    config_path = get_config_path()
     logger.info(
         f"Saving observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})"
     )
 
-    data = {
-        "latitude": location.latitude,
-        "longitude": location.longitude,
-        "elevation": location.elevation,
-        "name": location.name,
-    }
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        active = _get_active_location_model(session)
+        if active:
+            active.name = location.name
+            active.latitude = location.latitude
+            active.longitude = location.longitude
+            active.elevation = location.elevation
+            session.commit()
+        else:
+            active = ObserverLocationModel(
+                name=location.name,
+                latitude=location.latitude,
+                longitude=location.longitude,
+                elevation=location.elevation,
+                is_active=True,
+            )
+            session.add(active)
+            session.commit()
 
-    with config_path.open("w") as f:
-        json.dump(data, f, indent=2)
-
-    logger.debug(f"Location saved to {config_path}")
+        global _current_location_id
+        _current_location_id = active.id
+    logger.debug("Observer location saved to database")
 
 
 @deal.post(lambda result: result is not None, message="Location must be returned")
 def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
     """
-    Load observer location from config file.
+    Load observer location from database.
 
     Args:
         ask_for_auto_detect: If True and no saved location exists, prompt user to auto-detect
@@ -113,10 +303,25 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
     Returns:
         Saved observer location, or default if not configured
     """
-    config_path = get_config_path()
+    try:
+        _seed_locations_from_config()
+        with get_db_session() as session:
+            active = _get_active_location_model(session)
+            if active:
+                location = ObserverLocation(
+                    latitude=active.latitude,
+                    longitude=active.longitude,
+                    elevation=active.elevation,
+                    name=active.name,
+                )
+                global _current_location_id
+                _current_location_id = active.id
+                logger.info(
+                    "Loaded observer location: "
+                    f"{location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})"
+                )
+                return location
 
-    if not config_path.exists():
-        logger.debug(f"No saved location found at {config_path}")
         if ask_for_auto_detect:
             # Try to auto-detect location with user permission
             try:
@@ -181,61 +386,8 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
                 # If we can't prompt (e.g., imports fail, not a TTY), just log and continue
                 logger.debug(f"Could not prompt for auto-detection: {e}", exc_info=True)
         return DEFAULT_LOCATION
-
-    try:
-        with config_path.open("r") as f:
-            data = json.load(f)
-
-        # Validate required fields
-        if "latitude" not in data or "longitude" not in data:
-            raise KeyError("Missing required fields: latitude and/or longitude")
-
-        latitude = float(data["latitude"])
-        longitude = float(data["longitude"])
-
-        # Validate coordinate ranges
-        if not -90 <= latitude <= 90:
-            raise ValueError(f"Invalid latitude: {latitude} (must be -90 to 90)")
-        if not -180 <= longitude <= 180:
-            raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
-
-        # Backwards compatibility:
-        # - Preferred: elevation (stored as-is)
-        # - Older configs: elevation_m or elevation_ft
-        if "elevation" in data:
-            elevation = float(data.get("elevation", 0.0))
-        elif "elevation_m" in data:
-            elevation = float(data.get("elevation_m", 0.0))
-        elif "elevation_ft" in data:
-            elevation = float(data.get("elevation_ft", 0.0)) * FEET_TO_METERS
-        else:
-            elevation = 0.0
-        if elevation < 0:
-            logger.warning(f"Negative elevation in config: {elevation}, using 0.0")
-            elevation = 0.0
-
-        location = ObserverLocation(
-            latitude=latitude,
-            longitude=longitude,
-            elevation=float(elevation),
-            name=data.get("name"),
-        )
-        logger.info(
-            f"Loaded observer location: {location.name or 'Unnamed'} ({location.latitude:.4f}, {location.longitude:.4f})"
-        )
-        return location
-    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-        # If config is corrupted or invalid, return default
-        logger.warning(f"Failed to load location from {config_path}: {e}. Using default location.")
-        return DEFAULT_LOCATION
-    except (OSError, FileNotFoundError, PermissionError, AttributeError, IndexError) as e:
-        # OSError: file I/O errors
-        # FileNotFoundError: config file doesn't exist (shouldn't happen, but safe)
-        # PermissionError: can't read file
-        # AttributeError: missing attributes in data
-        # IndexError: missing array indices
-        # Catch any other unexpected errors
-        logger.error(f"Unexpected error loading location from {config_path}: {e}", exc_info=True)
+    except Exception as e:
+        logger.warning(f"Failed to load observer location from database: {e}. Using default location.")
         return DEFAULT_LOCATION
 
 
@@ -272,20 +424,126 @@ def set_observer_location(location: ObserverLocation, save: bool = True) -> None
 
     Args:
         location: New observer location
-        save: Whether to save to config file (default: True)
+        save: Whether to save to database (default: True)
     """
-    global _current_location
+    global _current_location, _current_location_id
     _current_location = location
 
     if save:
         save_location(location)
+    else:
+        _current_location_id = None
+
+
+def list_observer_locations() -> list[ObserverLocationEntry]:
+    """Return all saved observer locations."""
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        models = session.execute(
+            select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)
+        ).scalars()
+        return [_model_to_entry(model) for model in models]
+
+
+def get_active_observer_location_id() -> str | None:
+    """Return the active observer location id, if any."""
+    global _current_location_id
+    if _current_location_id is not None:
+        return _current_location_id
+
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        active = _get_active_location_model(session)
+        if active:
+            _current_location_id = active.id
+            return active.id
+    return None
+
+
+def set_active_observer_location(location_id: str, save: bool = True) -> ObserverLocation:
+    """Set the active observer location by id."""
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        location = session.get(ObserverLocationModel, location_id)
+        if not location:
+            raise LocationNotFoundError(f"Saved location not found: {location_id}")
+
+        if save:
+            session.execute(update(ObserverLocationModel).values(is_active=False))
+            location.is_active = True
+            session.commit()
+
+        active_location = ObserverLocation(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            elevation=location.elevation,
+            name=location.name,
+        )
+        global _current_location, _current_location_id
+        _current_location = active_location
+        _current_location_id = location.id
+        return active_location
+
+
+def add_observer_location(location: ObserverLocation, set_active: bool = True) -> ObserverLocationEntry:
+    """Add a new observer location entry."""
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        if set_active:
+            session.execute(update(ObserverLocationModel).values(is_active=False))
+        model = ObserverLocationModel(
+            name=location.name,
+            latitude=location.latitude,
+            longitude=location.longitude,
+            elevation=location.elevation,
+            is_active=set_active,
+        )
+        session.add(model)
+        session.commit()
+
+        entry = _model_to_entry(model)
+        if set_active:
+            global _current_location, _current_location_id
+            _current_location = entry.location
+            _current_location_id = entry.id
+        return entry
+
+
+def update_observer_location(
+    location_id: str,
+    location: ObserverLocation,
+    set_active: bool = True,
+) -> ObserverLocationEntry:
+    """Update an existing observer location entry."""
+    _seed_locations_from_config()
+    with get_db_session() as session:
+        model = session.get(ObserverLocationModel, location_id)
+        if not model:
+            raise LocationNotFoundError(f"Saved location not found: {location_id}")
+
+        model.name = location.name
+        model.latitude = location.latitude
+        model.longitude = location.longitude
+        model.elevation = location.elevation
+        if set_active:
+            session.execute(update(ObserverLocationModel).values(is_active=False))
+            model.is_active = True
+        session.commit()
+
+        entry = _model_to_entry(model)
+        if set_active:
+            global _current_location, _current_location_id
+            _current_location = entry.location
+            _current_location_id = entry.id
+        return entry
 
 
 @deal.post(lambda result: result is None, message="Clear must complete")
 def clear_observer_location() -> None:
     """Clear cached observer location (will reload from config on next access)."""
-    global _current_location
+    global _current_location, _current_location_id
     _current_location = None
+    _current_location_id = None
 
 
 @deal.pre(lambda query: query and len(query.strip()) > 0, message="Query must be non-empty")
