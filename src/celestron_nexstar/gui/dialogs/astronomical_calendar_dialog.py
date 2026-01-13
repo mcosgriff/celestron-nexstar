@@ -102,7 +102,12 @@ def _fetch_astropixels_events(start_date: datetime) -> list[Any]:
         cached_events = get_cached_astropixels_events(session, start_date, end_date, tz_offset)
 
         if len(cached_events) < 50:
-            current_date = datetime.now(UTC)
+            from celestron_nexstar.api.core.utils import get_local_timezone
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            location = get_observer_location()
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            current_date = datetime.now(local_tz)
             current_year = current_date.year
             current_month = current_date.month
             years_to_fetch = []
@@ -421,8 +426,12 @@ class AstronomicalCalendarDialog(QDialog):
     def _load_events(self) -> None:
         """Load all astronomical events."""
         try:
-            get_observer_location()
-            now = datetime.now(UTC)
+            from celestron_nexstar.api.core.utils import get_local_timezone
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            location = get_observer_location()
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            now = datetime.now(local_tz)
 
             # Show progress dialog
             self._progress_dialog = QProgressDialog("Loading astronomical events...", "Cancel", 0, 0, self)
@@ -1185,7 +1194,7 @@ class AstronomicalCalendarDialog(QDialog):
                     # Timed event - use UTC format
                     dtstart_utc = event.date.strftime("%Y%m%dT%H%M%S")
                     ics_lines.append(f"DTSTART:{dtstart_utc}Z")
-                    # Set end time to 1 hour later (or next day if it would overflow)
+                    # Set end time to 1 hour later (or next day if it overflows)
                     dtend = event.date + timedelta(hours=1)
                     dtend_utc = dtend.strftime("%Y%m%dT%H%M%S")
                     ics_lines.append(f"DTEND:{dtend_utc}Z")

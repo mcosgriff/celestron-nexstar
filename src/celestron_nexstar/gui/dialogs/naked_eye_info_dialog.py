@@ -138,7 +138,10 @@ class NakedEyeInfoDialog(QDialog):
             location_name = location.name or f"{lat:.2f}°, {lon:.2f}°"
 
             # Get current time and sunset/sunrise
-            now = datetime.now(UTC)
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
+            local_tz = get_local_timezone(lat, lon) or UTC
+            now = datetime.now(local_tz)
             from celestron_nexstar.api.astronomy.sun_moon import calculate_sun_times
 
             sun_times = calculate_sun_times(lat, lon, now)

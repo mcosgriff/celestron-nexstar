@@ -72,6 +72,7 @@ class SkyMapWidget(QWidget):
 
         # Loading dialog (will be created when needed)
         self._loading_dialog: QProgressDialog | None = None
+        self._map_image = None
 
         # Create UI
         self._create_ui()
@@ -161,6 +162,14 @@ class SkyMapWidget(QWidget):
         azimuth = self.azimuth
         altitude = self.altitude
 
+        dpr = self.image_label.devicePixelRatioF() or 1.0
+        label_size = self.image_label.size()
+        if label_size.width() > 0 and label_size.height() > 0:
+            target_resolution = int(max(label_size.width(), label_size.height()) * dpr)
+        else:
+            target_resolution = 2048
+        target_resolution = max(1024, min(4096, target_resolution))
+
         # Create and start map generation thread
         self._map_thread = _MapGenerationThread(
             magnitude_limit=self.magnitude_limit,
@@ -168,6 +177,7 @@ class SkyMapWidget(QWidget):
             altitude=altitude,
             telescope=self.telescope,  # Pass telescope so thread can query it
             is_dark_theme=is_dark,  # Pass theme info to avoid Qt access in background thread
+            resolution=target_resolution,
         )
         self._map_thread.image_ready.connect(self._on_image_ready)
         self._map_thread.finished.connect(self._on_map_generation_finished)
@@ -186,17 +196,32 @@ class SkyMapWidget(QWidget):
             return
 
         # Load into QPixmap and display
-        pixmap = QPixmap()
-        if pixmap.loadFromData(image_data):
-            # Scale to fit label while maintaining aspect ratio
-            scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
+        from PySide6.QtGui import QImage
+
+        image = QImage()
+        if not image.loadFromData(image_data):
+            logger.error("Failed to load star chart image")
+            return
+
+        estimated_size_mb = (image.width() * image.height() * 4) / (1024 * 1024)
+        max_size_mb = 100
+        if estimated_size_mb > max_size_mb:
+            scale_factor = (max_size_mb / estimated_size_mb) ** 0.5
+            new_width = int(image.width() * scale_factor)
+            new_height = int(image.height() * scale_factor)
+            logger.info(
+                f"Image too large ({estimated_size_mb:.1f}MB), scaling from {image.width()}x{image.height()} "
+                f"to {new_width}x{new_height} before loading into QPixmap"
+            )
+            image = image.scaled(
+                new_width,
+                new_height,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            self.image_label.setPixmap(scaled_pixmap)
-        else:
-            logger.error("Failed to load star chart image")
+
+        self._map_image = image
+        self._render_map_image()
 
         # Update coordinate label
         self.coord_label.setText(f"Azimuth: {self.azimuth:.1f}°  Altitude: {self.altitude:.1f}°")
@@ -243,16 +268,33 @@ class SkyMapWidget(QWidget):
         super().resizeEvent(event)  # type: ignore[arg-type]
         # Don't regenerate on resize - just scale the existing image
         # Regenerating on every resize would be too expensive
-        if hasattr(self, "image_label") and self.image_label.pixmap():
-            # Just rescale the existing pixmap
-            pixmap = self.image_label.pixmap()
-            if pixmap:
-                scaled_pixmap = pixmap.scaled(
-                    self.image_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self.image_label.setPixmap(scaled_pixmap)
+        if hasattr(self, "image_label"):
+            self._render_map_image()
+
+    def _render_map_image(self) -> None:
+        """Render the cached map image at the label size with device pixel ratio."""
+        if self._map_image is None:
+            return
+
+        dpr = self.image_label.devicePixelRatioF() or 1.0
+        target_size = self.image_label.size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return
+
+        target_width = int(target_size.width() * dpr)
+        target_height = int(target_size.height() * dpr)
+        scaled_image = self._map_image.scaled(
+            target_width,
+            target_height,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        pixmap = QPixmap.fromImage(scaled_image)
+        if pixmap.isNull():
+            logger.error("Failed to convert image to QPixmap")
+            return
+        pixmap.setDevicePixelRatio(dpr)
+        self.image_label.setPixmap(pixmap)
 
 
 class _MapGenerationThread(QThread):
@@ -267,6 +309,7 @@ class _MapGenerationThread(QThread):
         altitude: float,
         telescope: NexStarTelescope | None = None,
         is_dark_theme: bool = True,
+        resolution: int = 4096,
         parent: QWidget | None = None,
     ) -> None:
         """Initialize the map generation thread."""
@@ -276,6 +319,7 @@ class _MapGenerationThread(QThread):
         self.altitude = altitude
         self.telescope = telescope
         self.is_dark_theme = is_dark_theme
+        self.resolution = resolution
 
     def run(self) -> None:
         """Generate the star chart image in background thread."""
@@ -314,10 +358,12 @@ class _MapGenerationThread(QThread):
 
             logger.debug("Getting observer location...")
             # Get observer location and time
+            from celestron_nexstar.api.core.utils import get_local_timezone
             from celestron_nexstar.api.location.observer import get_observer_location
 
             location = get_observer_location()
-            now = datetime.now(UTC)
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            now = datetime.now(local_tz)
 
             logger.debug("Getting ephemeris file path...")
             # Get ephemeris file path (use downloaded ephemeris if available)
@@ -377,7 +423,7 @@ class _MapGenerationThread(QThread):
                 altitude=altitude_range,  # (min_altitude, max_altitude) in degrees (0-90)
                 azimuth=azimuth_range,  # (min_azimuth, max_azimuth) in degrees (0-360, 0=North)
                 style=plot_style,
-                resolution=4096,
+                resolution=self.resolution,
                 scale=1.25,
                 autoscale=True,
             )

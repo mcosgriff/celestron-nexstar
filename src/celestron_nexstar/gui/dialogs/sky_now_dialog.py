@@ -597,7 +597,10 @@ class SkyNowDialog(QDialog):
 
             # Altitude now column
             try:
-                altitude, _ = get_object_altitude_azimuth(obj, observer_lat, observer_lon, datetime.now(UTC))
+                from celestron_nexstar.api.core.utils import get_local_timezone
+
+                local_tz = get_local_timezone(observer_lat, observer_lon) or UTC
+                altitude, _ = get_object_altitude_azimuth(obj, observer_lat, observer_lon, datetime.now(local_tz))
                 alt_str = f"{altitude:.1f}°" if altitude >= 0 else "Below horizon"
                 alt_item = QTableWidgetItem(alt_str)
                 alt_item.setData(Qt.ItemDataRole.UserRole, altitude)  # For numeric sorting
@@ -705,7 +708,10 @@ class SkyNowDialog(QDialog):
         """
         start_str = format_local_time(start_time, observer_lat, observer_lon)
         end_str = format_local_time(end_time, observer_lat, observer_lon)
-        now_str = format_local_time(datetime.now(UTC), observer_lat, observer_lon)
+        from celestron_nexstar.api.core.utils import get_local_timezone
+
+        local_tz = get_local_timezone(observer_lat, observer_lon) or UTC
+        now_str = format_local_time(datetime.now(local_tz), observer_lat, observer_lon)
 
         self.status_label.setText(
             f"Showing {count} object{'s' if count != 1 else ''} transiting {start_str} - {end_str} "

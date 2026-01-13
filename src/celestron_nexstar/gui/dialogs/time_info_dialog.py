@@ -96,14 +96,17 @@ class TimeInfoDialog(QDialog):
         """Load time, sun, and moon information."""
         try:
             location = get_observer_location()
-            now = datetime.now(UTC)
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            now = datetime.now(local_tz)
 
             # Local time
             local_time_str = format_local_time(now, location.latitude, location.longitude)
             self.local_time_label.setText(local_time_str)
 
             # UTC time
-            utc_time_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+            utc_time_str = now.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
             self.utc_time_label.setText(utc_time_str)
 
             # Sun information

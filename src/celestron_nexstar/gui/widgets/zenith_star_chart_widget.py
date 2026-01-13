@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -57,6 +57,7 @@ class ZenithStarChartWidget(QWidget):
 
         # Loading dialog (will be created when needed)
         self._loading_dialog: QProgressDialog | None = None
+        self._chart_image = None
 
         # Create UI
         self._create_ui()
@@ -101,7 +102,7 @@ class ZenithStarChartWidget(QWidget):
         # Image label to display the star chart
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setMinimumSize(800, 800)
+        self.image_label.setMinimumSize(800, 825)
         self.image_label.setStyleSheet("background-color: black;")
         layout.addWidget(self.image_label)
 
@@ -139,12 +140,21 @@ class ZenithStarChartWidget(QWidget):
             brightness = window_color.lightness()
             is_dark = brightness < 128
 
-        # Create and start chart generation thread
+        # Create and start a chart generation thread
+        dpr = self.image_label.devicePixelRatioF() or 1.0
+        label_size = self.image_label.size()
+        if label_size.width() > 0 and label_size.height() > 0:
+            target_resolution = int(max(label_size.width(), label_size.height()) * dpr)
+        else:
+            target_resolution = 2048
+        target_resolution = max(1024, min(4096, target_resolution))
+
         self._chart_thread = _ChartGenerationThread(
             magnitude_limit=self.magnitude_limit,
             magnitude_limit_labels=self.magnitude_limit_labels,
-            telescope=self.telescope,  # Pass telescope so thread can query it
-            is_dark_theme=is_dark,  # Pass theme info to avoid Qt access in background thread
+            telescope=self.telescope,  # Pass telescope so the thread can query it
+            is_dark_theme=is_dark,  # Pass theme info to avoid Qt access in the background thread
+            resolution=target_resolution,
         )
         self._chart_thread.image_ready.connect(self._on_image_ready)
         self._chart_thread.finished.connect(self._on_chart_generation_finished)
@@ -154,7 +164,7 @@ class ZenithStarChartWidget(QWidget):
         QTimer.singleShot(60000, self._on_generation_timeout)
 
     def _on_image_ready(self, image_data: bytes) -> None:
-        """Handle image ready signal from background thread."""
+        """Handle image ready signal from the background thread."""
         # Close loading dialog when image is ready (or if empty, indicating error)
         if self._loading_dialog is not None:
             self._loading_dialog.close()
@@ -176,7 +186,7 @@ class ZenithStarChartWidget(QWidget):
             logger.error("Failed to load star chart image data")
             return
 
-        # Check if image is too large for QPixmap (estimate: width * height * 4 bytes per pixel)
+        # Check if the image is too large for QPixmap (estimate: width * height * 4 bytes per pixel)
         # QPixmap limit is typically around 128-256MB, so we'll use 100MB as a safe limit
         estimated_size_mb = (image.width() * image.height() * 4) / (1024 * 1024)
         max_size_mb = 100  # Safe limit for QPixmap
@@ -197,18 +207,34 @@ class ZenithStarChartWidget(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
 
-        # Convert to QPixmap and scale to fit label
-        pixmap = QPixmap.fromImage(image)
-        if not pixmap.isNull():
-            # Scale to fit label while maintaining aspect ratio
-            scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            self.image_label.setPixmap(scaled_pixmap)
-        else:
+        self._chart_image = image
+        self._render_chart_image()
+
+    def _render_chart_image(self) -> None:
+        """Render the cached chart image at the label size with device pixel ratio."""
+        if self._chart_image is None:
+            return
+
+        dpr = self.image_label.devicePixelRatioF() or 1.0
+        target_size = self.image_label.size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return
+
+        target_width = int(target_size.width() * dpr)
+        target_height = int(target_size.height() * dpr)
+        scaled_image = self._chart_image.scaled(
+            target_width,
+            target_height,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        pixmap = QPixmap.fromImage(scaled_image)
+        if pixmap.isNull():
             logger.error("Failed to convert image to QPixmap")
+            return
+
+        pixmap.setDevicePixelRatio(dpr)
+        self.image_label.setPixmap(pixmap)
 
     def _on_chart_generation_finished(self) -> None:
         """Handle chart generation thread finished signal."""
@@ -234,16 +260,8 @@ class ZenithStarChartWidget(QWidget):
         super().resizeEvent(event)  # type: ignore[arg-type]
         # Don't regenerate on resize - just scale the existing image
         # Regenerating on every resize would be too expensive
-        if hasattr(self, "image_label") and self.image_label.pixmap():
-            # Just rescale the existing pixmap
-            pixmap = self.image_label.pixmap()
-            if pixmap:
-                scaled_pixmap = pixmap.scaled(
-                    self.image_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-                self.image_label.setPixmap(scaled_pixmap)
+        if hasattr(self, "image_label"):
+            self._render_chart_image()
 
 
 class _ChartGenerationThread(QThread):
@@ -257,6 +275,7 @@ class _ChartGenerationThread(QThread):
         magnitude_limit_labels: float,
         telescope: NexStarTelescope | None = None,
         is_dark_theme: bool = True,
+        resolution: int = 4096,
         parent: QWidget | None = None,
     ) -> None:
         """Initialize the chart generation thread."""
@@ -265,6 +284,7 @@ class _ChartGenerationThread(QThread):
         self.magnitude_limit_labels = magnitude_limit_labels
         self.telescope = telescope
         self.is_dark_theme = is_dark_theme
+        self.resolution = resolution
 
     def run(self) -> None:
         """Generate the star chart image in background thread."""
@@ -281,10 +301,11 @@ class _ChartGenerationThread(QThread):
 
             logger.debug("Getting observer location...")
             # Get observer location and time
+            from celestron_nexstar.api.core.utils import get_local_timezone
             from celestron_nexstar.api.location.observer import get_observer_location
 
             location = get_observer_location()
-            now = datetime.now(UTC)
+            now = datetime.now(get_local_timezone(location.latitude, location.longitude))
 
             logger.debug("Getting ephemeris file path...")
             # Get ephemeris file path (use downloaded ephemeris if available)
@@ -314,20 +335,20 @@ class _ChartGenerationThread(QThread):
             )
 
             logger.debug("Determining plot style...")
-            # Determine style based on theme (passed from main thread to avoid Qt access in background thread)
+            # Determine style based on theme (passed from the main thread to avoid Qt access in the background thread)
             if self.is_dark_theme:
                 plot_style = styles.PlotStyle().extend(styles.extensions.BLUE_NIGHT)
             else:
                 plot_style = styles.PlotStyle().extend(styles.extensions.BLUE_LIGHT)
 
             logger.info("Creating zenith plot...")
-            # Create zenith plot (full sky view from above)
-            # Based on example: https://starplot.dev/examples/star-chart-basic/
+            # Create a zenith plot (full sky view from above)
+            # Based on an example: https://starplot.dev/examples/star-chart-basic/
             plot = zenith_plot(
                 observer=starplot_observer,
                 ephemeris=ephemeris_file,  # Use downloaded ephemeris file
                 style=plot_style,
-                resolution=4096,
+                resolution=self.resolution,
                 autoscale=True,  # Automatically scale for best appearance
             )
             logger.debug("Zenith plot created successfully")

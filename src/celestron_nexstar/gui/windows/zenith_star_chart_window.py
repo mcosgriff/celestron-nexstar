@@ -28,14 +28,14 @@ class ZenithStarChartWindow(QMainWindow):
         """Initialize the zenith star chart window."""
         super().__init__(parent)
         self.setWindowTitle("Zenith Star Chart - Full Sky View")
-        self.setMinimumSize(800, 800)
+        self.setMinimumSize(800, 850)
 
-        # Create central widget
+        # Create a central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create zenith star chart widget
+        # Create a zenith star chart widget
         self.star_chart = ZenithStarChartWidget(self, telescope=telescope)
         layout.addWidget(self.star_chart)

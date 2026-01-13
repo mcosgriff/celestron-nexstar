@@ -295,7 +295,10 @@ class _PlotGenerationThread(QThread):
             from celestron_nexstar.api.location.observer import get_observer_location
 
             location = get_observer_location()
-            now = datetime.now(UTC)
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            now = datetime.now(local_tz)
 
             # Create starplot observer
             starplot_observer = Observer(

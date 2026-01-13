@@ -553,8 +553,9 @@ class WeatherInfoDialog(QDialog):
                 )
 
             if weather.boundary_layer_height_m is not None:
+                boundary_layer_ft = weather.boundary_layer_height_m * 3.28084
                 html.append(
-                    f"<p><span style='color: {colors['cyan']};'>Boundary Layer Height:</span> {weather.boundary_layer_height_m:.0f}m</p>"
+                    f"<p><span style='color: {colors['cyan']};'>Boundary Layer Height (AGL):</span> {boundary_layer_ft:,.0f} ft</p>"
                 )
 
             if weather.vapour_pressure_deficit is not None:
@@ -570,8 +571,9 @@ class WeatherInfoDialog(QDialog):
                 )
 
             if weather.freezing_level_height_m is not None:
+                freezing_level_ft = weather.freezing_level_height_m * 3.28084
                 html.append(
-                    f"<p><span style='color: {colors['cyan']};'>Freezing Level:</span> {weather.freezing_level_height_m:.0f}m</p>"
+                    f"<p><span style='color: {colors['cyan']};'>Freezing Level:</span> {freezing_level_ft:,.0f} ft</p>"
                 )
 
             # Wind Profile
@@ -633,25 +635,14 @@ class WeatherInfoDialog(QDialog):
                     f"<p><span style='color: {colors['cyan']};'>Pressure (MSL):</span> {weather.pressure_msl:.1f} hPa</p>"
                 )
 
-            # Seeing Score Comparison
-            html.append(f"<h2 style='color: {colors['header']};'>Seeing Score Comparison</h2>")
-            html.append("<p><em>Compare old and new seeing algorithms:</em></p>")
-
-            # Calculate both scores
-            old_score = calculate_seeing_conditions(weather)
+            # Calculate score
             new_score, components = calculate_seeing_conditions_v2(weather)
 
-            html.append(f"<p><span style='color: {colors['cyan']};'>Old Algorithm:</span> {old_score:.0f}/100</p>")
-            html.append(f"<p><span style='color: {colors['cyan']};'>New Algorithm:</span> {new_score:.0f}/100</p>")
-            diff = new_score - old_score
-            diff_color = colors["green"] if diff > 0 else colors["red"] if diff < 0 else colors["yellow"]
-            html.append(
-                f"<p><span style='color: {colors['cyan']};'>Difference:</span> <span style='color: {diff_color};'>{diff:+.0f} points</span></p>"
-            )
+            html.append(f"<p><span style='color: {colors['cyan']};'>Quality:</span> {new_score:.0f}/100</p>")
 
             # Component breakdown
             if components:
-                html.append(f"<h3 style='color: {colors['header']};'>Component Scores (New Algorithm):</h3>")
+                html.append(f"<h3 style='color: {colors['header']};'>Component Scores:</h3>")
                 html.append("<ul>")
                 for name, score in components.items():
                     formatted_name = name.replace("_", " ").title()

@@ -252,7 +252,10 @@ class LiveDashboardDialog(QDialog):
 
         # Fetch moon info (synchronous function)
         try:
-            moon_info = get_moon_info(location.latitude, location.longitude, datetime.now(UTC))
+            from celestron_nexstar.api.core.utils import get_local_timezone
+
+            local_tz = get_local_timezone(location.latitude, location.longitude) or UTC
+            moon_info = get_moon_info(location.latitude, location.longitude, datetime.now(local_tz))
             self._update_moon(moon_info, colors)
         except Exception as e:
             logger.debug(f"Could not fetch moon info: {e}")

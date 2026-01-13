@@ -2405,7 +2405,7 @@ class MainWindow(QMainWindow):
             table.setHorizontalHeaderLabels(["Asterism", "Visible Stars", "Favorite"])
         # For star tab, add a Constellation and Asterism column
         elif obj_type == CelestialObjectType.STAR:
-            table.setColumnCount(12)
+            table.setColumnCount(13)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -2414,6 +2414,7 @@ class MainWindow(QMainWindow):
                     "Asterism",
                     "Mag",
                     "Alt",
+                    "Az Dir",
                     "Visibility",
                     "Transit",
                     "Moon Sep",
@@ -2426,7 +2427,7 @@ class MainWindow(QMainWindow):
             obj_type in (CelestialObjectType.GALAXY, CelestialObjectType.CLUSTER)
             or obj_type == CelestialObjectType.NEBULA
         ):
-            table.setColumnCount(11)
+            table.setColumnCount(12)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -2434,6 +2435,7 @@ class MainWindow(QMainWindow):
                     "Subtype",
                     "Mag",
                     "Alt",
+                    "Az Dir",
                     "Visibility",
                     "Transit",
                     "Moon Sep",
@@ -2443,7 +2445,7 @@ class MainWindow(QMainWindow):
                 ]
             )
         elif obj_type == CelestialObjectType.MOON:
-            table.setColumnCount(12)
+            table.setColumnCount(13)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -2452,6 +2454,7 @@ class MainWindow(QMainWindow):
                     "Type",
                     "Mag",
                     "Alt",
+                    "Az Dir",
                     "Visibility",
                     "Transit",
                     "Moon Sep",
@@ -2464,7 +2467,7 @@ class MainWindow(QMainWindow):
             CelestialObjectType.VARIABLE_STAR,
             CelestialObjectType.ZODIACAL,
         ):
-            table.setColumnCount(12)
+            table.setColumnCount(13)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -2473,6 +2476,7 @@ class MainWindow(QMainWindow):
                     "Constellation",
                     "Mag",
                     "Alt",
+                    "Az Dir",
                     "Visibility",
                     "Transit",
                     "Moon Sep",
@@ -2482,7 +2486,7 @@ class MainWindow(QMainWindow):
                 ]
             )
         else:
-            table.setColumnCount(11)
+            table.setColumnCount(12)
             table.setHorizontalHeaderLabels(
                 [
                     "Priority",
@@ -2490,6 +2494,7 @@ class MainWindow(QMainWindow):
                     "Type",
                     "Mag",
                     "Alt",
+                    "Az Dir",
                     "Visibility",
                     "Transit",
                     "Moon Sep",
@@ -2672,6 +2677,7 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(objects))
 
         # Get conditions for timezone (use cached if available, otherwise get fresh)
+        conditions = None
         try:
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
@@ -2704,6 +2710,9 @@ class MainWindow(QMainWindow):
             favorite_statuses = [False] * len(objects)
 
         # Now populate table with all data
+        from celestron_nexstar.api.observation.visibility import get_object_altitude_azimuth
+        from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+
         for row, obj_rec in enumerate(objects):
             # Priority (stars)
             priority_stars = "★" * (6 - obj_rec.priority)
@@ -2724,43 +2733,47 @@ class MainWindow(QMainWindow):
                 asterism_col = 3
                 mag_col = 4
                 alt_col = 5
-                vis_col = 6
-                transit_col = 7
-                moonsep_col = 8
-                prob_col = 9
-                tips_col = 10
-                fav_col = 11
+                az_col = 6
+                vis_col = 7
+                transit_col = 8
+                moonsep_col = 9
+                prob_col = 10
+                tips_col = 11
+                fav_col = 12
             elif is_moon_tab:
                 type_col = 3
                 mag_col = 4
                 alt_col = 5
-                vis_col = 6
-                transit_col = 7
-                moonsep_col = 8
-                prob_col = 9
-                tips_col = 10
-                fav_col = 11
+                az_col = 6
+                vis_col = 7
+                transit_col = 8
+                moonsep_col = 9
+                prob_col = 10
+                tips_col = 11
+                fav_col = 12
             elif is_messier_tab or is_variable_star_tab:
                 type_col = 2
                 constellation_col = 3
                 mag_col = 4
                 alt_col = 5
+                az_col = 6
+                vis_col = 7
+                transit_col = 8
+                moonsep_col = 9
+                prob_col = 10
+                tips_col = 11
+                fav_col = 12
+            else:
+                type_col = 2
+                mag_col = 3
+                alt_col = 4
+                az_col = 5
                 vis_col = 6
                 transit_col = 7
                 moonsep_col = 8
                 prob_col = 9
                 tips_col = 10
                 fav_col = 11
-            else:
-                type_col = 2
-                mag_col = 3
-                alt_col = 4
-                vis_col = 5
-                transit_col = 6
-                moonsep_col = 7
-                prob_col = 8
-                tips_col = 9
-                fav_col = 10
 
             # Type
             if is_nebula_tab or is_galaxy_tab or is_cluster_tab:
@@ -2808,12 +2821,27 @@ class MainWindow(QMainWindow):
             mag_text = f"{obj_rec.apparent_magnitude:.2f}" if obj_rec.apparent_magnitude else "-"
             table.setItem(row, mag_col, QTableWidgetItem(mag_text))
 
+            current_alt = obj_rec.altitude
+            current_az = obj_rec.azimuth
+            if conditions is not None:
+                try:
+                    current_alt, current_az = get_object_altitude_azimuth(
+                        obj, conditions.latitude, conditions.longitude, conditions.timestamp
+                    )
+                except Exception:
+                    current_alt = obj_rec.altitude
+                    current_az = obj_rec.azimuth
+
             # Altitude
-            alt_text = f"{obj_rec.altitude:.0f}°"
+            alt_text = f"{current_alt:.0f}°"
             table.setItem(row, alt_col, QTableWidgetItem(alt_text))
 
+            # Azimuth direction
+            az_text = azimuth_to_compass_8point(current_az)
+            table.setItem(row, az_col, QTableWidgetItem(az_text))
+
             # Visibility indicator
-            visibility_item = self._create_visibility_item(obj_rec.altitude, obj_rec.visibility_probability)
+            visibility_item = self._create_visibility_item(current_alt, obj_rec.visibility_probability)
             table.setItem(row, vis_col, visibility_item)
 
             # Transit time
