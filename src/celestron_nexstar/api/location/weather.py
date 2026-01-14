@@ -1060,6 +1060,17 @@ def fetch_hourly_weather_forecast(
                         )
                         result = session.execute(stmt)
                         existing = result.scalar_one_or_none()
+                        if existing:
+                            session.execute(
+                                delete(WeatherForecastModel).where(
+                                    and_(
+                                        WeatherForecastModel.latitude == location.latitude,
+                                        WeatherForecastModel.longitude == location.longitude,
+                                        WeatherForecastModel.forecast_timestamp == existing.forecast_timestamp,
+                                        WeatherForecastModel.id != existing.id,
+                                    )
+                                )
+                            )
 
                         location_geohash = encode(location.latitude, location.longitude, precision=9)
                         if existing:
@@ -1482,6 +1493,14 @@ def fetch_weather_for_charts(
                 # Convert to naive UTC for database comparison
                 min_ts_naive = min_ts.replace(tzinfo=None) if min_ts.tzinfo else min_ts
                 max_ts_naive = max_ts.replace(tzinfo=None) if max_ts.tzinfo else max_ts
+                current_hour_start = now_db.replace(minute=0, second=0, microsecond=0)
+                current_hour_end = current_hour_start + timedelta(hours=1)
+                current_hour_start_naive = (
+                    current_hour_start.replace(tzinfo=None) if current_hour_start.tzinfo else current_hour_start
+                )
+                current_hour_end_naive = (
+                    current_hour_end.replace(tzinfo=None) if current_hour_end.tzinfo else current_hour_end
+                )
 
                 with get_db_session() as session:
                     # De-dupe the range we're about to insert.
@@ -1492,6 +1511,17 @@ def fetch_weather_for_charts(
                                 WeatherForecastModel.longitude == location.longitude,
                                 WeatherForecastModel.forecast_timestamp >= min_ts_naive,
                                 WeatherForecastModel.forecast_timestamp <= max_ts_naive,
+                                WeatherForecastModel.forecast_timestamp < current_hour_start_naive,
+                            )
+                        )
+                    )
+                    session.execute(
+                        delete(WeatherForecastModel).where(
+                            and_(
+                                WeatherForecastModel.latitude == location.latitude,
+                                WeatherForecastModel.longitude == location.longitude,
+                                WeatherForecastModel.forecast_timestamp >= current_hour_end_naive,
+                                WeatherForecastModel.forecast_timestamp <= max_ts_naive,
                             )
                         )
                     )
@@ -1500,6 +1530,8 @@ def fetch_weather_for_charts(
                     now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
                     for f in forecasts:
                         forecast_ts_naive = f.timestamp.replace(tzinfo=None) if f.timestamp.tzinfo else f.timestamp
+                        if current_hour_start_naive <= forecast_ts_naive < current_hour_end_naive:
+                            continue
                         session.add(
                             WeatherForecastModel(
                                 latitude=location.latitude,
@@ -1593,7 +1625,7 @@ def fetch_weather(
                             WeatherForecastModel.forecast_timestamp < current_hour_end.replace(tzinfo=None),
                         )
                     )
-                    .order_by(WeatherForecastModel.forecast_timestamp.desc())
+                    .order_by(WeatherForecastModel.fetched_at.desc(), WeatherForecastModel.forecast_timestamp.desc())
                 )
                 result = session.execute(stmt)
                 candidates = result.scalars().all()
@@ -1620,6 +1652,27 @@ def fetch_weather(
 
         return None
 
+    def _infer_condition_from_cache(forecast: WeatherForecastModel) -> str | None:
+        try:
+            if forecast.snowfall_cm is not None and forecast.snowfall_cm > 0:
+                return "Snow"
+            if forecast.rain_mm is not None and forecast.rain_mm > 0:
+                return "Rain"
+            if forecast.precipitation_mm is not None and forecast.precipitation_mm > 0:
+                return "Rain"
+            if forecast.visibility_m is not None and forecast.visibility_m < 1000:
+                return "Foggy"
+            cloud_cover = forecast.cloud_cover_percent
+            if cloud_cover is None:
+                return None
+            if cloud_cover < 20:
+                return "Clear"
+            if cloud_cover < 60:
+                return "Partly Cloudy"
+            return "Cloudy"
+        except Exception:
+            return None
+
     try:
         existing = None if force_refresh else _check_database_cache()
 
@@ -1632,7 +1685,7 @@ def fetch_weather(
                 cloud_cover_percent=existing.cloud_cover_percent,
                 wind_speed_ms=existing.wind_speed_mph,
                 visibility_km=None,
-                condition=None,
+                condition=_infer_condition_from_cache(existing),
                 last_updated=existing.fetched_at.isoformat() if existing.fetched_at else None,
                 cloud_cover_low=existing.cloud_cover_low_percent,
                 cloud_cover_mid=existing.cloud_cover_mid_percent,
@@ -1833,7 +1886,7 @@ def fetch_weather(
         if not weather_data.error:
 
             def _store_weather_in_db(weather_to_store: WeatherData) -> None:
-                from sqlalchemy import and_, select
+                from sqlalchemy import and_, delete, select
                 from sqlalchemy.exc import SQLAlchemyError
 
                 from celestron_nexstar.api.database.database import get_database
@@ -1868,16 +1921,37 @@ def fetch_weather(
                             .limit(1)
                         )
                         result = session.execute(stmt)
-                        existing = result.scalar_one_or_none()
-
-                        seeing_score = calculate_seeing_conditions(weather_to_store)
-
                         current_hour_start_naive = (
                             current_hour_start_db.replace(tzinfo=None)
                             if current_hour_start_db.tzinfo
                             else current_hour_start_db
                         )
                         now_db_naive = now_db.replace(tzinfo=None) if now_db.tzinfo else now_db
+
+                        existing = result.scalar_one_or_none()
+                        if existing:
+                            session.execute(
+                                delete(WeatherForecastModel).where(
+                                    and_(
+                                        WeatherForecastModel.latitude == location.latitude,
+                                        WeatherForecastModel.longitude == location.longitude,
+                                        WeatherForecastModel.forecast_timestamp == existing.forecast_timestamp,
+                                        WeatherForecastModel.id != existing.id,
+                                    )
+                                )
+                            )
+                        else:
+                            session.execute(
+                                delete(WeatherForecastModel).where(
+                                    and_(
+                                        WeatherForecastModel.latitude == location.latitude,
+                                        WeatherForecastModel.longitude == location.longitude,
+                                        WeatherForecastModel.forecast_timestamp == current_hour_start_naive,
+                                    )
+                                )
+                            )
+
+                        seeing_score = calculate_seeing_conditions(weather_to_store)
 
                         if existing:
                             existing.geohash = location_geohash

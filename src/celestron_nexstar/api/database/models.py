@@ -803,6 +803,12 @@ class WeatherForecastModel(Base):
     __table_args__ = (
         Index("idx_location_timestamp", "latitude", "longitude", "forecast_timestamp"),
         Index("idx_location_fetched", "latitude", "longitude", "fetched_at"),
+        sa.UniqueConstraint(
+            "latitude",
+            "longitude",
+            "forecast_timestamp",
+            name="uq_weather_forecast_location_timestamp",
+        ),
     )
 
     def __repr__(self) -> str:
