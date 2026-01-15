@@ -102,16 +102,12 @@ def _get_active_location_model(session) -> ObserverLocationModel | None:
         if len(active_locations) > 1:
             extra_ids = [entry.id for entry in active_locations[1:]]
             session.execute(
-                update(ObserverLocationModel)
-                .where(ObserverLocationModel.id.in_(extra_ids))
-                .values(is_active=False)
+                update(ObserverLocationModel).where(ObserverLocationModel.id.in_(extra_ids)).values(is_active=False)
             )
             session.commit()
         return active
 
-    first = session.execute(
-        select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)
-    ).scalars().first()
+    first = session.execute(select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)).scalars().first()
     if first:
         first.is_active = True
         session.commit()
@@ -303,9 +299,7 @@ def set_observer_location(location: ObserverLocation, save: bool = True) -> None
 def list_observer_locations() -> list[ObserverLocationEntry]:
     """Return all saved observer locations."""
     with get_db_session() as session:
-        models = session.execute(
-            select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)
-        ).scalars()
+        models = session.execute(select(ObserverLocationModel).order_by(ObserverLocationModel.created_at)).scalars()
         return [_model_to_entry(model) for model in models]
 
 

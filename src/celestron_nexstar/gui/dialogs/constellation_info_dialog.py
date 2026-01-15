@@ -509,7 +509,7 @@ class StarVisibilityWorkerThread(QThread):
 
                     # Calculate altitude/azimuth
                     try:
-                        az, alt = ra_dec_to_alt_az(  # noqa: RUF059
+                        az, alt = ra_dec_to_alt_az(
                             star.ra_hours,
                             star.dec_degrees,
                             location.latitude,
@@ -1065,10 +1065,7 @@ class ConstellationInfoDialog(QDialog):
                         alt_deg = star_info["altitude"]
                         alt_text = f"{alt_deg:.0f}°"
                         az_deg = star_info.get("azimuth")
-                        if az_deg is None:
-                            az_text = "—"
-                        else:
-                            az_text = f"{az_deg:.0f}° ({azimuth_to_compass_8point(az_deg)})"
+                        az_text = "—" if az_deg is None else f"{az_deg:.0f}° ({azimuth_to_compass_8point(az_deg)})"
                         prob_text = f"{star_info['visibility_probability']:.0%}"
 
                         # Color code by visibility probability

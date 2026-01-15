@@ -920,10 +920,7 @@ class AsterismInfoDialog(QDialog):
                     alt = star_info.get("altitude")
                     az = star_info.get("azimuth")
                     alt_text = f"{alt:.0f}°" if isinstance(alt, (int, float)) else "—"
-                    if isinstance(az, (int, float)):
-                        az_text = f"{az:.0f}° ({azimuth_to_compass_8point(az)})"
-                    else:
-                        az_text = "—"
+                    az_text = f"{az:.0f}° ({azimuth_to_compass_8point(az)})" if isinstance(az, (int, float)) else "—"
 
                     encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
                     info_link = (

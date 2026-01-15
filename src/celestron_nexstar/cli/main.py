@@ -286,8 +286,7 @@ def show_all_config(
             )
             paths_table.add_row(
                 "Database",
-                str(database_path)
-                + (" [green]✓[/green]" if database_path.exists() else " [dim](not created)[/dim]"),
+                str(database_path) + (" [green]✓[/green]" if database_path.exists() else " [dim](not created)[/dim]"),
             )
 
             console.print(paths_table)

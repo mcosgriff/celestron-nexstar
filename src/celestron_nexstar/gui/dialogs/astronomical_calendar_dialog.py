@@ -103,7 +103,6 @@ def _fetch_astropixels_events(start_date: datetime) -> list[Any]:
 
         if len(cached_events) < 50:
             from celestron_nexstar.api.core.utils import get_local_timezone
-            from celestron_nexstar.api.location.observer import get_observer_location
 
             location = get_observer_location()
             local_tz = get_local_timezone(location.latitude, location.longitude) or UTC

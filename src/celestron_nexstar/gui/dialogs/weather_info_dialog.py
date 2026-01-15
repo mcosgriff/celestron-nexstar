@@ -495,7 +495,6 @@ class WeatherInfoDialog(QDialog):
         try:
             from celestron_nexstar.api.location.observer import get_observer_location
             from celestron_nexstar.api.location.weather import (
-                calculate_seeing_conditions,
                 calculate_seeing_conditions_v2,
                 fetch_weather,
             )

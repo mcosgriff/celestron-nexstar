@@ -13,7 +13,16 @@ from threading import Semaphore
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QActionGroup, QCursor, QFontMetrics, QGuiApplication, QIcon, QMouseEvent
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QCursor,
+    QFontMetrics,
+    QGuiApplication,
+    QIcon,
+    QKeySequence,
+    QMouseEvent,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -3371,9 +3380,7 @@ class MainWindow(QMainWindow):
 
         obj_type_str = table.property("object_type")
         is_asterism_table = obj_type_str == "asterism"
-        positions_cache = (
-            self._asterism_positions_cache if is_asterism_table else self._constellation_positions_cache
-        )
+        positions_cache = self._asterism_positions_cache if is_asterism_table else self._constellation_positions_cache
 
         name_col = 0
         alt_col = 1
@@ -3384,8 +3391,8 @@ class MainWindow(QMainWindow):
         # Now populate table with all data (initially with 0 counts, will update when async count completes)
         visible_star_counts: dict[str, int] = dict.fromkeys(sorted_names, 0)
 
-        from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
         from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+        from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
 
         conditions = None
         location = None
@@ -3598,6 +3605,13 @@ class MainWindow(QMainWindow):
         self.filter_clear_button.clicked.connect(lambda: self.filter_textbox.clear())  # type: ignore[arg-type]
         toolbar.addWidget(self.filter_clear_button)
 
+        # Fit columns button
+        fit_icon = self._create_icon("fit-columns", ["view-column", "table"])
+        self.fit_columns_action = toolbar.addAction(fit_icon, "Fit Columns")
+        self.fit_columns_action.setToolTip("FIT COLUMNS")
+        self.fit_columns_action.setStatusTip("Auto-size columns for current table")
+        self.fit_columns_action.triggered.connect(self._on_fit_columns)
+
         # Spacer
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -3625,6 +3639,17 @@ class MainWindow(QMainWindow):
         self.info_action.setEnabled(False)  # Disabled until selection
         self.info_action.triggered.connect(self._on_info_clicked)
 
+        # Shortcuts
+        self.filter_focus_action = QAction(self)
+        self.filter_focus_action.setShortcut(QKeySequence.Find)
+        self.filter_focus_action.triggered.connect(self._focus_filter)
+        self.addAction(self.filter_focus_action)
+
+        self.filter_clear_action = QAction(self)
+        self.filter_clear_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.filter_clear_action.triggered.connect(self._clear_filter)
+        self.addAction(self.filter_clear_action)
+
     def _on_table_selection_changed(self) -> None:
         """Handle table selection change - enable/disable info button."""
         # Get current table
@@ -3633,6 +3658,24 @@ class MainWindow(QMainWindow):
             selected_rows = current_table.selectionModel().selectedRows()
             # Enable if exactly 1 row is selected
             self.info_action.setEnabled(len(selected_rows) == 1)
+
+    def _focus_filter(self) -> None:
+        """Focus the filter input and select existing text."""
+        self.filter_textbox.setFocus()
+        self.filter_textbox.selectAll()
+
+    def _clear_filter(self) -> None:
+        """Clear filter text."""
+        self.filter_textbox.clear()
+
+    def _on_fit_columns(self) -> None:
+        """Auto-size columns for the current table."""
+        table = self._get_current_table()
+        if table is None:
+            return
+        autosize_table_columns(table, stretch_last=False)
+        table.resizeColumnsToContents()
+        table.setProperty("initial_resize_done", True)
 
     def _get_current_table(self) -> QTableWidget | None:
         """Get the currently visible table widget."""
@@ -4958,7 +5001,13 @@ class MainWindow(QMainWindow):
 
     def _on_checklist(self) -> None:
         """Handle checklist button click."""
-        # TODO: Open checklist window
+        try:
+            from celestron_nexstar.gui.dialogs.preflight_checklist_dialog import PreflightChecklistDialog
+
+            dialog = PreflightChecklistDialog(self, telescope=self.telescope)
+            dialog.exec()
+        except Exception as exc:
+            logger.error(f"Failed to open checklist dialog: {exc}", exc_info=True)
         pass
 
     def _on_time_slots(self) -> None:

@@ -1823,9 +1823,7 @@ class SettingsDialog(QDialog):
             html_content.append(
                 f"<p style='margin-bottom: 10px;'><span style='color: {colors['header']}; font-size: 14pt; font-weight: bold;'>Observer Location</span></p>"
             )
-            html_content.append(
-                f"<p style='color: {colors['text_dim']};'>Saved locations: {len(locations)}</p>"
-            )
+            html_content.append(f"<p style='color: {colors['text_dim']};'>Saved locations: {len(locations)}</p>")
 
             html_content.append(
                 "<table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; margin-bottom: 15px;'>"
