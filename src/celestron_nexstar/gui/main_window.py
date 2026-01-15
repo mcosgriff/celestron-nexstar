@@ -350,8 +350,8 @@ class ObjectsLoaderThread(QThread):
                         conditions.timestamp,
                         min_altitude_deg=20.0,
                     )
-                # Convert to list of constellation names for display
-                objects = [const[0].name for const in constellations]  # const[0] is the Constellation object
+                # Keep full tuples (Constellation, alt, az) for table positioning
+                objects = constellations
             elif obj_type == CelestialObjectType.ASTERISM:
                 # Load visible asterisms
                 # Use lower threshold (0°) to show all asterisms above horizon,
@@ -1299,6 +1299,8 @@ class MainWindow(QMainWindow):
         # Can be list[RecommendedObject] or list[str] for constellations/asterisms
         self._objects_cache: dict[str, list[RecommendedObject] | list[str]] = {}
         self._asterism_objects_cache: dict[str, Any] = {}  # Cache asterism objects for member_stars access
+        self._constellation_positions_cache: dict[str, tuple[float, float]] = {}
+        self._asterism_positions_cache: dict[str, tuple[float, float]] = {}
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
@@ -2396,13 +2398,13 @@ class MainWindow(QMainWindow):
     def _create_objects_table(self, obj_type: CelestialObjectType) -> QTableWidget:
         """Create a table widget displaying objects of the specified type."""
         table = QTableWidget()
-        # For constellation and asterism tabs, show name list with favorites
+        # For constellation and asterism tabs, show name list with viewing position + favorites
         if obj_type == CelestialObjectType.CONSTELLATION:
-            table.setColumnCount(3)
-            table.setHorizontalHeaderLabels(["Constellation", "Visible Stars", "Favorite"])
+            table.setColumnCount(5)
+            table.setHorizontalHeaderLabels(["Constellation", "Alt", "Az Dir", "Visible Stars", "Favorite"])
         elif obj_type == CelestialObjectType.ASTERISM:
-            table.setColumnCount(3)
-            table.setHorizontalHeaderLabels(["Asterism", "Visible Stars", "Favorite"])
+            table.setColumnCount(5)
+            table.setHorizontalHeaderLabels(["Asterism", "Alt", "Az Dir", "Visible Stars", "Favorite"])
         # For star tab, add a Constellation and Asterism column
         elif obj_type == CelestialObjectType.STAR:
             table.setColumnCount(13)
@@ -2637,9 +2639,19 @@ class MainWindow(QMainWindow):
         # Populate table (must be done on main thread)
         if objects:
             if obj_type_str == "constellation":
-                # Cache the names for constellations
-                self._objects_cache[obj_type_str] = objects  # type: ignore[assignment]
-                self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
+                if isinstance(objects, list) and objects and isinstance(objects[0], tuple):
+                    constellation_names = [constellation[0].name for constellation in objects]  # type: ignore[index,union-attr]
+                    self._objects_cache[obj_type_str] = constellation_names  # type: ignore[assignment]
+                    self._constellation_positions_cache = {
+                        constellation[0].name: (float(constellation[1]), float(constellation[2]))
+                        for constellation in objects  # type: ignore[index,union-attr]
+                    }
+                    self._populate_constellation_table(table, constellation_names)  # type: ignore[arg-type]
+                else:
+                    # Cache the names for constellations
+                    self._objects_cache[obj_type_str] = objects  # type: ignore[assignment]
+                    self._constellation_positions_cache = {}
+                    self._populate_constellation_table(table, objects)  # type: ignore[arg-type]
             elif obj_type_str == "asterism":
                 # For asterisms, objects is list of tuples (Asterism, alt, az)
                 # Extract just the names for the table population and cache
@@ -2647,14 +2659,19 @@ class MainWindow(QMainWindow):
                     asterism_names = [asterism[0].name for asterism in objects]  # type: ignore[index,union-attr]
                     # Store names in cache (for refresh operations)
                     self._objects_cache[obj_type_str] = asterism_names  # type: ignore[assignment]
-                    self._populate_constellation_table(table, asterism_names)  # type: ignore[arg-type]
                     # Store full objects in separate cache for member_stars access
                     self._asterism_objects_cache = {asterism[0].name: asterism[0] for asterism in objects}  # type: ignore[index,union-attr]
+                    self._asterism_positions_cache = {
+                        asterism[0].name: (float(asterism[1]), float(asterism[2]))
+                        for asterism in objects  # type: ignore[index,union-attr]
+                    }
+                    self._populate_constellation_table(table, asterism_names)  # type: ignore[arg-type]
                 else:
                     asterism_names = []
                     self._objects_cache[obj_type_str] = asterism_names
                     self._populate_constellation_table(table, asterism_names)
                     self._asterism_objects_cache = {}
+                    self._asterism_positions_cache = {}
             else:
                 # Cache the data (even if empty, to indicate data was loaded)
                 self._objects_cache[obj_type_str] = objects
@@ -2836,8 +2853,9 @@ class MainWindow(QMainWindow):
             alt_text = f"{current_alt:.0f}°"
             table.setItem(row, alt_col, QTableWidgetItem(alt_text))
 
-            # Azimuth direction
-            az_text = azimuth_to_compass_8point(current_az)
+            # Azimuth direction (degrees + compass)
+            az_norm = current_az % 360
+            az_text = f"{az_norm:.0f}° ({azimuth_to_compass_8point(az_norm)})"
             table.setItem(row, az_col, QTableWidgetItem(az_text))
 
             # Visibility indicator
@@ -3351,46 +3369,104 @@ class MainWindow(QMainWindow):
             # If batch check fails, fall back to all False
             favorite_statuses = [False] * len(sorted_names)
 
-        # Check if this is a constellation table (has 3 columns) or asterism table (has 3 columns now)
-        is_constellation_table = table.columnCount() == 3
         obj_type_str = table.property("object_type")
         is_asterism_table = obj_type_str == "asterism"
+        positions_cache = (
+            self._asterism_positions_cache if is_asterism_table else self._constellation_positions_cache
+        )
+
+        name_col = 0
+        alt_col = 1
+        az_col = 2
+        visible_col = 3
+        fav_col = 4
 
         # Now populate table with all data (initially with 0 counts, will update when async count completes)
         visible_star_counts: dict[str, int] = dict.fromkeys(sorted_names, 0)
+
+        from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+        from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+
+        conditions = None
+        location = None
+        if is_asterism_table and not positions_cache:
+            try:
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+                location = get_observer_location()
+                planner = ObservationPlanner()
+                conditions = planner.get_tonight_conditions()
+            except Exception:
+                conditions = None
+                location = None
 
         for row, constellation_name in enumerate(sorted_names):
             # Constellation name (no star indicator - we have a dedicated favorites column)
             name_item = QTableWidgetItem(constellation_name)
             # Store object name in item data for context menu
             name_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
-            table.setItem(row, 0, name_item)
+            table.setItem(row, name_col, name_item)
 
-            if is_constellation_table:
-                # Initially set to 0, will be updated when async count completes
-                visible_count = visible_star_counts.get(constellation_name, 0)
-                stars_item = QTableWidgetItem(str(visible_count))
-                stars_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                # Store count as numeric value for proper sorting
-                stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
-                table.setItem(row, 1, stars_item)
+            alt_text = "—"
+            az_text = "—"
+            position = positions_cache.get(constellation_name)
+            if position is None and is_asterism_table and conditions and location:
+                asterism = self._asterism_objects_cache.get(constellation_name)
+                if asterism is not None:
+                    try:
+                        az_val, alt_val = ra_dec_to_alt_az(
+                            asterism.ra_hours,
+                            asterism.dec_degrees,
+                            location.latitude,
+                            location.longitude,
+                            conditions.timestamp,
+                        )
+                        positions_cache[constellation_name] = (alt_val, az_val)
+                    except Exception:
+                        position = None
+            if position is not None:
+                alt_val, az_val = position
+                az_norm = az_val % 360
+                alt_text = f"{alt_val:.0f}°"
+                az_text = f"{az_norm:.0f}° ({azimuth_to_compass_8point(az_norm)})"
 
-                # Favorite (check/X icon) - use pre-fetched result
-                is_fav = favorite_statuses[row]
-                favorite_item = self._create_favorite_item(is_fav)
-                # Store object name in item data for context menu
-                favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
-                # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
-                # DisplayRole is empty string so no text shows
-                favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
-                table.setItem(row, 2, favorite_item)
+            alt_item = QTableWidgetItem(alt_text)
+            alt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if position is not None:
+                alt_item.setData(Qt.ItemDataRole.UserRole, position[0])
+            table.setItem(row, alt_col, alt_item)
+
+            az_item = QTableWidgetItem(az_text)
+            az_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if position is not None:
+                az_item.setData(Qt.ItemDataRole.UserRole, position[1] % 360)
+            table.setItem(row, az_col, az_item)
+
+            # Initially set to 0, will be updated when async count completes
+            visible_count = visible_star_counts.get(constellation_name, 0)
+            stars_item = QTableWidgetItem(str(visible_count))
+            stars_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            # Store count as numeric value for proper sorting
+            stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
+            table.setItem(row, visible_col, stars_item)
+
+            # Favorite (check/X icon) - use pre-fetched result
+            is_fav = favorite_statuses[row]
+            favorite_item = self._create_favorite_item(is_fav)
+            # Store object name in item data for context menu
+            favorite_item.setData(Qt.ItemDataRole.UserRole, constellation_name)
+            # Store sort value in a custom role (UserRole + 1) for sorting: 1 = favorite, 0 = not
+            # DisplayRole is empty string so no text shows
+            favorite_item.setData(Qt.ItemDataRole.UserRole + 1, 1 if is_fav else 0)
+            table.setItem(row, fav_col, favorite_item)
 
         # Re-enable sorting after populating
         table.setSortingEnabled(True)
 
         # Start background thread to count visible stars (non-blocking)
         # BUT: Defer this during "load all" to prevent blocking other table loads
-        if is_constellation_table:
+        if obj_type_str in ("constellation", "asterism"):
             if self._loading_all:
                 # Defer visibility count until after "load all" completes
                 if table not in self._deferred_visibility_tables:
@@ -3450,7 +3526,7 @@ class MainWindow(QMainWindow):
                     if name_item:
                         constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
                         if constellation_name == name:
-                            stars_item = table.item(row, 1)
+                            stars_item = table.item(row, visible_col)
                             if stars_item:
                                 old_value = stars_item.text()
                                 stars_item.setText(str(count))
@@ -3481,9 +3557,9 @@ class MainWindow(QMainWindow):
         # Set column resize modes and minimum widths
         obj_type_str = table.property("object_type")
         if obj_type_str == "constellation":
-            header_labels = ["Constellation", "Visible Stars", "Favorite"]
+            header_labels = ["Constellation", "Alt", "Az Dir", "Visible Stars", "Favorite"]
         elif obj_type_str == "asterism":
-            header_labels = ["Asterism", "Visible Stars", "Favorite"]
+            header_labels = ["Asterism", "Alt", "Az Dir", "Visible Stars", "Favorite"]
         else:
             header_labels = ["Constellation", "Visible Stars", "Favorite"]  # Fallback
 
@@ -3494,7 +3570,7 @@ class MainWindow(QMainWindow):
         # Set all columns to Interactive mode and minimum widths
         for col in range(table.columnCount()):
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-            header.setMinimumSectionSize(min_widths[col])
+            header.setMinimumSectionSize(min_widths[min(col, len(min_widths) - 1)])
 
     def _create_table_toolbar(self) -> None:
         """Create toolbar for table controls in the top toolbar area."""
@@ -3758,7 +3834,7 @@ class MainWindow(QMainWindow):
                             if name_item:
                                 constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
                                 if constellation_name == name:
-                                    stars_item = table.item(row, 1)
+                                    stars_item = table.item(row, 3)
                                     if stars_item:
                                         stars_item.setText(str(count))
                                         stars_item.setData(Qt.ItemDataRole.UserRole, count)

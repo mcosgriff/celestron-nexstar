@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class VisibleAsterismStarsWorker(QThread):
     """Background worker to compute visible stars for an asterism."""
 
-    stars_ready = Signal(list)  # Emits list of star display names
+    stars_ready = Signal(list)  # Emits list of star info dicts
     error = Signal(str)
 
     def __init__(self, asterism_name: str) -> None:
@@ -35,7 +35,7 @@ class VisibleAsterismStarsWorker(QThread):
             from celestron_nexstar.api.observation.visibility import assess_visibility
 
             db = get_database()
-            visible_star_names: list[str] = []
+            visible_stars: list[dict[str, Any]] = []
 
             location = get_observer_location()
             bortle_to_sky_brightness = {
@@ -79,9 +79,16 @@ class VisibleAsterismStarsWorker(QThread):
                     dt=conditions.timestamp,
                 )
                 if vis_info.is_visible:
-                    visible_star_names.append(resolved_obj.common_name or resolved_obj.name)
+                    visible_stars.append(
+                        {
+                            "name": resolved_obj.common_name or resolved_obj.name,
+                            "altitude": vis_info.altitude_deg,
+                            "azimuth": vis_info.azimuth_deg,
+                        }
+                    )
 
-            self.stars_ready.emit(sorted(set(visible_star_names)))
+            visible_stars.sort(key=lambda item: str(item.get("name", "")).lower())
+            self.stars_ready.emit(visible_stars)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -142,6 +149,7 @@ class AsterismInfoDialog(QDialog):
 
         self.asterism_name = asterism_name
         self._vis_worker: VisibleAsterismStarsWorker | None = None
+        self._asterism: Any | None = None
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -217,6 +225,7 @@ class AsterismInfoDialog(QDialog):
                     f"<p style='color: {colors['error']};'><b>Error:</b> Asterism '{self.asterism_name}' not found</p>"
                 )
                 return
+            self._asterism = asterism
 
             # Build HTML content
             html_parts = []
@@ -675,6 +684,44 @@ class AsterismInfoDialog(QDialog):
                 f"</p>"
             )
 
+            # Current viewing position
+            try:
+                from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+                from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+
+                location = get_observer_location()
+                planner = ObservationPlanner()
+                conditions = planner.get_tonight_conditions()
+                az, alt = ra_dec_to_alt_az(
+                    asterism.ra_hours,
+                    asterism.dec_degrees,
+                    location.latitude,
+                    location.longitude,
+                    conditions.timestamp,
+                )
+                direction = azimuth_to_compass_8point(az)
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                    "Current Viewing Position:</p>"
+                )
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Altitude: {alt:.1f}°<br>"
+                    f"Azimuth: {az:.1f}° ({direction})"
+                    f"</p>"
+                )
+            except Exception:
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                    "Current Viewing Position:</p>"
+                )
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>"
+                    "Altitude/Azimuth not available.</p>"
+                )
+
             # Properties section
             html_parts.append(
                 f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Properties:</p>"
@@ -823,16 +870,61 @@ class AsterismInfoDialog(QDialog):
         super().closeEvent(event)
 
     @Slot(list)
-    def _on_visible_stars_ready(self, star_names: list[str]) -> None:
+    def _on_visible_stars_ready(self, star_data: list[dict[str, Any]]) -> None:
         """Update the placeholder with visible stars table."""
         try:
             colors = self._get_theme_colors()
             border_color = colors["text_dim"]
             header_bg = "#fff4d6" if not self._is_dark_theme() else "#4a3d1a"
 
-            if star_names:
+            if star_data:
+                from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+
                 rows = []
-                for star_name in star_names:
+                # Add asterism center position as a reference row
+                center_alt_text = "—"
+                center_az_text = "—"
+                try:
+                    from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+                    from celestron_nexstar.api.location.observer import get_observer_location
+                    from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+                    if self._asterism is not None:
+                        location = get_observer_location()
+                        planner = ObservationPlanner()
+                        conditions = planner.get_tonight_conditions()
+                        center_az, center_alt = ra_dec_to_alt_az(
+                            self._asterism.ra_hours,
+                            self._asterism.dec_degrees,
+                            location.latitude,
+                            location.longitude,
+                            conditions.timestamp,
+                        )
+                        center_alt_text = f"{center_alt:.0f}°"
+                        center_az_text = f"{center_az:.0f}° ({azimuth_to_compass_8point(center_az)})"
+                except Exception:
+                    pass
+
+                rows.append(
+                    f"<tr>"
+                    f"<td style='padding: 5px; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>"
+                    f"{self.asterism_name} center</td>"
+                    f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>—</td>"
+                    f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>{center_alt_text}</td>"
+                    f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>{center_az_text}</td>"
+                    f"</tr>"
+                )
+
+                for star_info in star_data:
+                    star_name = str(star_info.get("name", ""))
+                    alt = star_info.get("altitude")
+                    az = star_info.get("azimuth")
+                    alt_text = f"{alt:.0f}°" if isinstance(alt, (int, float)) else "—"
+                    if isinstance(az, (int, float)):
+                        az_text = f"{az:.0f}° ({azimuth_to_compass_8point(az)})"
+                    else:
+                        az_text = "—"
+
                     encoded = star_name.replace('"', "&quot;").replace("'", "&#39;")
                     info_link = (
                         f'<a href="starinfo://{encoded}" style="text-decoration: none; '
@@ -842,6 +934,8 @@ class AsterismInfoDialog(QDialog):
                         f"<tr>"
                         f"<td style='padding: 5px; border-bottom: 1px solid {border_color};'>{star_name}</td>"
                         f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{alt_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{az_text}</td>"
                         f"</tr>"
                     )
                 table_html = (
@@ -849,6 +943,8 @@ class AsterismInfoDialog(QDialog):
                     f"<tr style='background-color: {header_bg};'>"
                     "<th style='padding: 8px; text-align: left; border-bottom: 2px solid #ffc107;'>Star Name</th>"
                     "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
+                    "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Alt</th>"
+                    "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Az</th>"
                     "</tr>" + "".join(rows) + "</table>"
                 )
             else:

@@ -509,7 +509,7 @@ class StarVisibilityWorkerThread(QThread):
 
                     # Calculate altitude/azimuth
                     try:
-                        alt, az = ra_dec_to_alt_az(  # noqa: RUF059
+                        az, alt = ra_dec_to_alt_az(  # noqa: RUF059
                             star.ra_hours,
                             star.dec_degrees,
                             location.latitude,
@@ -517,7 +517,7 @@ class StarVisibilityWorkerThread(QThread):
                             conditions.timestamp,
                         )
                     except Exception:
-                        alt, _az = 0.0, 0.0
+                        alt, az = 0.0, 0.0
 
                     # Use the same visibility probability calculation as the stars table
                     visibility_prob_result = planner._calculate_visibility_probability(star, conditions, vis_info)
@@ -533,6 +533,7 @@ class StarVisibilityWorkerThread(QThread):
                             "obj": star,
                             "apparent_magnitude": star.magnitude,
                             "altitude": alt,
+                            "azimuth": az,
                             "visibility_probability": visibility_probability,
                             "vis_info": vis_info,
                         }
@@ -911,6 +912,45 @@ class ConstellationInfoDialog(QDialog):
                 f"</p>"
             )
 
+            # Current viewing position section
+            try:
+                from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+                from celestron_nexstar.api.location.observer import get_observer_location
+                from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+                from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+
+                location = get_observer_location()
+                planner = ObservationPlanner()
+                conditions = planner.get_tonight_conditions()
+                az, alt = ra_dec_to_alt_az(
+                    constellation_data["ra_hours"],
+                    constellation_data["dec_degrees"],
+                    location.latitude,
+                    location.longitude,
+                    conditions.timestamp,
+                )
+                direction = azimuth_to_compass_8point(az)
+                alt_text = self._format_altitude_user_friendly(alt)
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                    "Current Viewing Position:</p>"
+                )
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px;'>"
+                    f"Altitude: {alt_text}<br>"
+                    f"Azimuth: {az:.1f}° ({direction})"
+                    f"</p>"
+                )
+            except Exception:
+                html_parts.append(
+                    f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>"
+                    "Current Viewing Position:</p>"
+                )
+                html_parts.append(
+                    f"<p style='margin-left: 20px; margin-top: 5px; margin-bottom: 5px; color: {colors['text_dim']};'>"
+                    "Altitude/Azimuth not available.</p>"
+                )
+
             # Properties section
             html_parts.append(
                 f"<p style='font-weight: bold; color: {colors['header']}; margin-top: 15px; margin-bottom: 5px;'>Properties:</p>"
@@ -975,8 +1015,46 @@ class ConstellationInfoDialog(QDialog):
                         "<th style='padding: 8px; text-align: center; border-bottom: 2px solid #ffc107;'>Info</th>"
                         "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Mag</th>"
                         "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Alt</th>"
+                        "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Az</th>"
                         "<th style='padding: 8px; text-align: right; border-bottom: 2px solid #ffc107;'>Chance</th>"
                         "</tr>"
+                    )
+
+                    from celestron_nexstar.api.telescope.compass import azimuth_to_compass_8point
+
+                    # Add constellation center position as a reference row
+                    center_alt_text = "—"
+                    center_az_text = "—"
+                    try:
+                        from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
+                        from celestron_nexstar.api.location.observer import get_observer_location
+                        from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
+
+                        location = get_observer_location()
+                        planner = ObservationPlanner()
+                        conditions = planner.get_tonight_conditions()
+                        center_az, center_alt = ra_dec_to_alt_az(
+                            constellation_data["ra_hours"],
+                            constellation_data["dec_degrees"],
+                            location.latitude,
+                            location.longitude,
+                            conditions.timestamp,
+                        )
+                        center_alt_text = f"{center_alt:.0f}°"
+                        center_az_text = f"{center_az:.0f}° ({azimuth_to_compass_8point(center_az)})"
+                    except Exception:
+                        pass
+
+                    html_parts.append(
+                        f"<tr>"
+                        f"<td style='padding: 5px; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>"
+                        f"{constellation_data['name']} center</td>"
+                        f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>—</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>—</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>{center_alt_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>{center_az_text}</td>"
+                        f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; color: {colors['text_dim']};'>—</td>"
+                        f"</tr>"
                     )
 
                     for star_info in star_data[:50]:  # Limit to top 50 stars
@@ -986,6 +1064,11 @@ class ConstellationInfoDialog(QDialog):
                         # Add user-friendly altitude description
                         alt_deg = star_info["altitude"]
                         alt_text = f"{alt_deg:.0f}°"
+                        az_deg = star_info.get("azimuth")
+                        if az_deg is None:
+                            az_text = "—"
+                        else:
+                            az_text = f"{az_deg:.0f}° ({azimuth_to_compass_8point(az_deg)})"
                         prob_text = f"{star_info['visibility_probability']:.0%}"
 
                         # Color code by visibility probability
@@ -1011,6 +1094,7 @@ class ConstellationInfoDialog(QDialog):
                             f"<td style='padding: 5px; text-align: center; border-bottom: 1px solid {border_color};'>{info_link}</td>"
                             f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>{mag_text}{mag_explanation}</td>"
                             f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; font-size: 0.9em;'>{alt_text}</td>"
+                            f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color}; font-size: 0.9em;'>{az_text}</td>"
                             f"<td style='padding: 5px; text-align: right; border-bottom: 1px solid {border_color};'>"
                             f"<span style='color: {prob_color};'>{prob_text}</span></td>"
                             f"</tr>"

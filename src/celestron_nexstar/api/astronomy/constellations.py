@@ -192,7 +192,7 @@ async def get_visible_constellations(
     constellations = await get_prominent_constellations(db_session)
     for constellation in constellations:
         # Calculate altitude and azimuth
-        alt, az = ra_dec_to_alt_az(
+        az, alt = ra_dec_to_alt_az(
             constellation.ra_hours,
             constellation.dec_degrees,
             latitude,
@@ -260,7 +260,7 @@ async def get_visible_asterisms(
     asterisms = await get_famous_asterisms(db_session)
     for asterism in asterisms:
         # Calculate altitude and azimuth
-        alt, az = ra_dec_to_alt_az(
+        az, alt = ra_dec_to_alt_az(
             asterism.ra_hours,
             asterism.dec_degrees,
             latitude,
