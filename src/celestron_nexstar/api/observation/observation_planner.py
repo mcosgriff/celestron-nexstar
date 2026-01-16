@@ -488,6 +488,7 @@ class ObservationPlanner:
         max_results: int = 20,
         best_for_seeing: bool = False,
         constellation: str | None = None,
+        min_altitude_deg: float = 20.0,
     ) -> list[RecommendedObject]:
         """
         Get recommended objects to observe tonight.
@@ -497,6 +498,7 @@ class ObservationPlanner:
             target_types: Types of targets to include (default: all)
             max_results: Maximum number of recommendations
             best_for_seeing: Filter to only objects ideal for current seeing conditions
+            min_altitude_deg: Minimum altitude threshold for visibility filtering
 
         Returns:
             List of recommended objects, sorted by priority
@@ -636,7 +638,7 @@ class ObservationPlanner:
         visible_pairs = filter_visible_objects(
             other_objects,
             config=config,
-            min_altitude_deg=20.0,
+            min_altitude_deg=min_altitude_deg,
             observer_lat=conditions.latitude,
             observer_lon=conditions.longitude,
             dt=conditions.timestamp,
@@ -671,7 +673,7 @@ class ObservationPlanner:
                 moon_obj,
                 config=config,
                 sky_brightness=sky_brightness,
-                min_altitude_deg=20.0,
+                min_altitude_deg=min_altitude_deg,
                 observer_lat=conditions.latitude,
                 observer_lon=conditions.longitude,
                 dt=conditions.timestamp,

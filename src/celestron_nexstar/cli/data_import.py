@@ -3172,44 +3172,75 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                     found_names: set[str] = set()
                                     found_models: list[StarModel] = []
                                     with db.get_session() as session:
+                                        # Search for stars within 2 arcminutes of each point
+                                        # (asterism lines connect stars, so stars should be very close)
+                                        search_radius_deg = 2.0 / 60.0  # 2 arcminutes in degrees
+
+                                        # Safe prefilter: build a coarse RA/Dec box around all points.
+                                        # This limits DB work without excluding real matches.
+                                        ra_hours_points: list[float] = []
+                                        dec_points: list[float] = []
                                         for lon_deg, lat_deg in points:
-                                            # Convert lon back to RA hours
-                                            point_ra_hours = CoordinateConverter.ra_degrees_to_hours(lon_deg)
-                                            point_dec_degrees = lat_deg
+                                            ra_hours_points.append(CoordinateConverter.ra_degrees_to_hours(lon_deg))
+                                            dec_points.append(float(lat_deg))
 
-                                            # Search for stars within 2 arcminutes of this point
-                                            # (asterism lines connect stars, so stars should be very close)
-                                            search_radius_deg = 2.0 / 60.0  # 2 arcminutes in degrees
-                                            ra_range_hours = search_radius_deg / 15.0
-                                            ra_min = (point_ra_hours - ra_range_hours) % 24.0
-                                            ra_max = (point_ra_hours + ra_range_hours) % 24.0
-                                            dec_min = max(-90.0, point_dec_degrees - search_radius_deg)
-                                            dec_max = min(90.0, point_dec_degrees + search_radius_deg)
+                                        if not ra_hours_points or not dec_points:
+                                            return found_names, found_models
 
-                                            # Query stars in bounding box
+                                        dec_min = max(-90.0, min(dec_points) - search_radius_deg)
+                                        dec_max = min(90.0, max(dec_points) + search_radius_deg)
+
+                                        import math
+
+                                        # Find smallest circular interval that contains all RA points.
+                                        ra_hours_norm = [h % 24.0 for h in ra_hours_points]
+                                        ra_hours_norm.sort()
+                                        largest_gap = -1.0
+                                        gap_start_index = 0
+                                        for i in range(len(ra_hours_norm)):
+                                            j = (i + 1) % len(ra_hours_norm)
+                                            a = ra_hours_norm[i]
+                                            b = ra_hours_norm[j] if j != 0 else ra_hours_norm[0] + 24.0
+                                            gap = b - a
+                                            if gap > largest_gap:
+                                                largest_gap = gap
+                                                gap_start_index = i
+
+                                        # Interval is complement of the largest gap.
+                                        interval_start = ra_hours_norm[(gap_start_index + 1) % len(ra_hours_norm)]
+                                        interval_end = ra_hours_norm[gap_start_index]
+                                        interval_span = 24.0 - largest_gap
+
+                                        cos_vals = [abs(math.cos(math.radians(d))) for d in dec_points]
+                                        min_cos = min(cos_vals) if cos_vals else 1.0
+
+                                        use_full_ra = min_cos < 1e-6 or interval_span >= 23.0
+                                        if use_full_ra:
+                                            # Near poles or extremely wide span: use full RA, only dec filter.
+                                            stmt = select(StarModel).where(
+                                                StarModel.dec_degrees.between(dec_min, dec_max)
+                                            )
+                                        else:
+                                            ra_margin_hours = search_radius_deg / (15.0 * min_cos)
+                                            ra_min = (interval_start - ra_margin_hours) % 24.0
+                                            ra_max = (interval_end + ra_margin_hours) % 24.0
                                             if ra_min <= ra_max:
-                                                stmt = (
-                                                    select(StarModel)
-                                                    .where(
-                                                        StarModel.ra_hours.between(ra_min, ra_max),
-                                                        StarModel.dec_degrees.between(dec_min, dec_max),
-                                                    )
-                                                    .limit(10)
+                                                stmt = select(StarModel).where(
+                                                    StarModel.ra_hours.between(ra_min, ra_max),
+                                                    StarModel.dec_degrees.between(dec_min, dec_max),
                                                 )
                                             else:
-                                                stmt = (
-                                                    select(StarModel)
-                                                    .where(
-                                                        (StarModel.ra_hours >= ra_min) | (StarModel.ra_hours <= ra_max),
-                                                        StarModel.dec_degrees.between(dec_min, dec_max),
-                                                    )
-                                                    .limit(10)
+                                                stmt = select(StarModel).where(
+                                                    (StarModel.ra_hours >= ra_min) | (StarModel.ra_hours <= ra_max),
+                                                    StarModel.dec_degrees.between(dec_min, dec_max),
                                                 )
 
-                                            result = session.execute(stmt)
-                                            star_models = result.scalars().all()
+                                        star_models = session.execute(stmt).scalars().all()
 
-                                            # Check angular separation and find closest star
+                                        # Check angular separation and find closest star per point
+                                        for point_ra_hours, point_dec_degrees in zip(ra_hours_points, dec_points):
+                                            closest_star = None
+                                            closest_sep_arcmin = None
                                             for star_model in star_models:
                                                 separation_deg = angular_separation(
                                                     point_ra_hours,
@@ -3218,17 +3249,16 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                                     star_model.dec_degrees,
                                                 )
                                                 separation_arcmin = separation_deg * 60.0
-
-                                                # If within 2 arcminutes, consider it part of the asterism
                                                 if separation_arcmin <= 2.0:
-                                                    # Prefer common name, fallback to name
-                                                    # Use name even if it's a catalog identifier (better than nothing)
-                                                    star_name = star_model.common_name or star_model.name
-                                                    if star_name and star_name not in found_names:
-                                                        found_names.add(star_name)
-                                                        found_models.append(star_model)
-                                                        # Only add the first star found at this point (closest match)
-                                                        break
+                                                    if closest_sep_arcmin is None or separation_arcmin < closest_sep_arcmin:
+                                                        closest_sep_arcmin = separation_arcmin
+                                                        closest_star = star_model
+
+                                            if closest_star is not None:
+                                                star_name = closest_star.common_name or closest_star.name
+                                                if star_name and star_name not in found_names:
+                                                    found_names.add(star_name)
+                                                    found_models.append(closest_star)
 
                                     return found_names, found_models
 

@@ -1580,7 +1580,7 @@ def fetch_weather_for_charts(
 def fetch_weather(
     location: ObserverLocation,
     force_refresh: bool = False,
-    max_cache_age: timedelta | None = timedelta(hours=2),
+    max_cache_age: timedelta | None = timedelta(minutes=30),
 ) -> WeatherData:
     """
     Fetch current weather data for the observer location.
@@ -1644,6 +1644,10 @@ def fetch_weather(
                             fetched_at = fetched_at.replace(tzinfo=UTC)
                         elif fetched_at.tzinfo != UTC:
                             fetched_at = fetched_at.astimezone(UTC)
+                        # Only use cached "current" weather if it was fetched during this hour.
+                        # This prevents using earlier forecast data for the current hour.
+                        if fetched_at < current_hour_start:
+                            continue
                         if (now - fetched_at) > max_cache_age:
                             continue
                     return candidate

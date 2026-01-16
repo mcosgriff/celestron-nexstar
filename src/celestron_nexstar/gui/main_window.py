@@ -24,6 +24,9 @@ from PySide6.QtGui import (
     QMouseEvent,
 )
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -33,6 +36,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QSizeGrip,
     QSizePolicy,
+    QSpinBox,
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
@@ -130,7 +134,7 @@ def _get_verbose_type_name(object_subtype: str | None) -> str:
 class VisibilityCountThread(QThread):
     """Worker thread to count visible stars for constellations/asterisms in the background."""
 
-    count_ready = Signal(str, int)  # type: ignore[type-arg,misc]  # Emits (name, count) for each item
+    count_ready = Signal(str, int, int)  # type: ignore[type-arg,misc]  # Emits (name, visible, total)
     counts_complete = Signal()  # type: ignore[type-arg,misc]  # Emits when all counts are done
 
     def __init__(
@@ -204,12 +208,13 @@ class VisibilityCountThread(QThread):
 
                 if self.is_asterism:
 
-                    def _count_asterism(name: str) -> tuple[str, int]:
+                    def _count_asterism(name: str) -> tuple[str, int, int]:
                         if self.isInterruptionRequested():
-                            return name, 0
+                            return name, 0, 0
                         asterism = self.asterism_objects.get(name)
                         if not asterism or not asterism.member_stars:
-                            return name, 0
+                            return name, 0, 0
+                        total_count = len(asterism.member_stars)
                         visible_count = 0
                         for star_name in asterism.member_stars:
                             # Limit concurrent database operations
@@ -239,7 +244,7 @@ class VisibilityCountThread(QThread):
                                     visible_count += 1
                             except Exception:
                                 continue
-                        return name, visible_count
+                        return name, visible_count, total_count
 
                     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="vis-asterism") as executor:
                         futures = {executor.submit(_count_asterism, name): name for name in self.constellation_names}
@@ -247,18 +252,36 @@ class VisibilityCountThread(QThread):
                             if self.isInterruptionRequested():
                                 break
                             try:
-                                name, count = future.result()
-                                self.count_ready.emit(name, count)
+                                name, visible_count, total_count = future.result()
+                                self.count_ready.emit(name, visible_count, total_count)
                             except Exception:
                                 continue
                 else:
 
-                    def _count_constellation(name: str) -> tuple[str, int]:
+                    def _count_constellation(name: str) -> tuple[str, int, int]:
                         if self.isInterruptionRequested():
-                            return name, 0
+                            return name, 0, 0
                         # Limit concurrent database operations
                         with db_semaphore:
-                            stars = db.filter_objects(object_type="star", constellation=name, limit=50)
+                            stars = db.filter_objects(object_type="star", constellation=name, limit=100)
+                        total_count = len(stars)
+                        try:
+                            from sqlalchemy import func, select
+
+                            from celestron_nexstar.api.database.models import ConstellationModel, StarModel
+
+                            with db.get_session() as session:
+                                const_id = session.scalar(
+                                    select(ConstellationModel.id)
+                                    .where(ConstellationModel.name.ilike(name))
+                                    .limit(1)
+                                )
+                                if const_id is not None:
+                                    total_count = session.scalar(
+                                        select(func.count(StarModel.id)).where(StarModel.constellation_id == const_id)
+                                    ) or 0
+                        except Exception:
+                            pass
                         visible_count = 0
                         for star in stars:
                             try:
@@ -283,7 +306,7 @@ class VisibilityCountThread(QThread):
                                     visible_count += 1
                             except Exception:
                                 continue
-                        return name, visible_count
+                        return name, visible_count, total_count
 
                     with ThreadPoolExecutor(
                         max_workers=max_workers, thread_name_prefix="vis-constellation"
@@ -295,8 +318,8 @@ class VisibilityCountThread(QThread):
                             if self.isInterruptionRequested():
                                 break
                             try:
-                                name, count = future.result()
-                                self.count_ready.emit(name, count)
+                                name, visible_count, total_count = future.result()
+                                self.count_ready.emit(name, visible_count, total_count)
                             except Exception:
                                 continue
 
@@ -320,20 +343,30 @@ class ObjectsLoaderThread(QThread):
     data_loaded = Signal(object, object)  # type: ignore[type-arg,misc]  # Emits (obj_type_str, objects_list)
     progress_update = Signal(str, int, int)  # type: ignore[type-arg,misc]  # Emits (obj_type_str, processed, total)
 
-    def __init__(self, obj_type_str: str) -> None:
+    def __init__(
+        self,
+        obj_type_str: str,
+        visible_only: bool = True,
+        min_altitude_deg: float = 20.0,
+    ) -> None:
         """Initialize the loader thread."""
         super().__init__()
         self.obj_type_str = obj_type_str
+        self.visible_only = visible_only
+        self.min_altitude_deg = min_altitude_deg
 
     def run(self) -> None:
         """Load objects data in background thread."""
         logger.debug(f"ObjectsLoaderThread.run() started for {self.obj_type_str}")
         try:
             from celestron_nexstar.api.astronomy.constellations import (
+                get_famous_asterisms_sync,
+                get_prominent_constellations_sync,
                 get_visible_asterisms_sync,
                 get_visible_constellations_sync,
             )
             from celestron_nexstar.api.core.enums import CelestialObjectType
+            from celestron_nexstar.api.core.utils import ra_dec_to_alt_az
             from celestron_nexstar.api.database.database import get_database
             from celestron_nexstar.api.observation.observation_planner import ObservationPlanner
 
@@ -343,38 +376,60 @@ class ObjectsLoaderThread(QThread):
             logger.debug(f"{self.obj_type_str}: Getting tonight conditions...")
             conditions = planner.get_tonight_conditions()
             logger.debug(f"{self.obj_type_str}: Got conditions, proceeding with load...")
+            min_altitude_deg = self.min_altitude_deg if self.visible_only else 0.0
             # Different object types produce different payload shapes (names vs tuples vs planner objects).
             # The downstream Qt signal accepts `object`, so keep this untyped here.
             objects: object
 
             # Special handling for constellation type: show constellations
             if obj_type == CelestialObjectType.CONSTELLATION:
-                # Load visible constellations
                 db = get_database()
                 with db.get_session() as session:
-                    constellations = get_visible_constellations_sync(
-                        session,
-                        conditions.latitude,
-                        conditions.longitude,
-                        conditions.timestamp,
-                        min_altitude_deg=20.0,
-                    )
+                    if self.visible_only:
+                        constellations = get_visible_constellations_sync(
+                            session,
+                            conditions.latitude,
+                            conditions.longitude,
+                            conditions.timestamp,
+                            min_altitude_deg=min_altitude_deg,
+                        )
+                    else:
+                        all_constellations = get_prominent_constellations_sync(session)
+                        constellations = []
+                        for constellation in all_constellations:
+                            az, alt = ra_dec_to_alt_az(
+                                constellation.ra_hours,
+                                constellation.dec_degrees,
+                                conditions.latitude,
+                                conditions.longitude,
+                                conditions.timestamp,
+                            )
+                            constellations.append((constellation, alt, az))
                 # Keep full tuples (Constellation, alt, az) for table positioning
                 objects = constellations
             elif obj_type == CelestialObjectType.ASTERISM:
-                # Load visible asterisms
-                # Use lower threshold (0°) to show all asterisms above horizon,
-                # since asterisms are educational/reference items and circumpolar
-                # ones like Big Dipper should always be visible
                 db = get_database()
                 with db.get_session() as session:
-                    asterisms = get_visible_asterisms_sync(
-                        session,
-                        conditions.latitude,
-                        conditions.longitude,
-                        conditions.timestamp,
-                        min_altitude_deg=0.0,
-                    )
+                    if self.visible_only:
+                        asterisms = get_visible_asterisms_sync(
+                            session,
+                            conditions.latitude,
+                            conditions.longitude,
+                            conditions.timestamp,
+                            min_altitude_deg=min_altitude_deg,
+                        )
+                    else:
+                        all_asterisms = get_famous_asterisms_sync(session)
+                        asterisms = []
+                        for asterism in all_asterisms:
+                            az, alt = ra_dec_to_alt_az(
+                                asterism.ra_hours,
+                                asterism.dec_degrees,
+                                conditions.latitude,
+                                conditions.longitude,
+                                conditions.timestamp,
+                            )
+                            asterisms.append((asterism, alt, az))
                 # Store full asterism objects (tuples of (Asterism, alt, az)) so we can access member_stars
                 objects = asterisms  # Keep full objects for asterisms
             elif obj_type == CelestialObjectType.VARIABLE_STAR:
@@ -505,11 +560,15 @@ class ObjectsLoaderThread(QThread):
                             obj,
                             config=config,
                             sky_brightness=sky_brightness,
-                            min_altitude_deg=20.0,
+                            min_altitude_deg=min_altitude_deg,
                             observer_lat=location.latitude,
                             observer_lon=location.longitude,
                             dt=conditions.timestamp,
                         )
+                        if self.visible_only and (
+                            vis_info.altitude_deg is None or vis_info.altitude_deg < min_altitude_deg
+                        ):
+                            continue
 
                         visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
                         if isinstance(visibility_prob_result, tuple):
@@ -597,11 +656,15 @@ class ObjectsLoaderThread(QThread):
                             obj,
                             config=config,
                             sky_brightness=sky_brightness,
-                            min_altitude_deg=20.0,
+                            min_altitude_deg=min_altitude_deg,
                             observer_lat=location.latitude,
                             observer_lon=location.longitude,
                             dt=conditions.timestamp,
                         )
+                        if self.visible_only and (
+                            vis_info.altitude_deg is None or vis_info.altitude_deg < min_altitude_deg
+                        ):
+                            continue
 
                         visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
                         if isinstance(visibility_prob_result, tuple):
@@ -727,11 +790,15 @@ class ObjectsLoaderThread(QThread):
                             obj,
                             config=config,
                             sky_brightness=sky_brightness,
-                            min_altitude_deg=20.0,
+                            min_altitude_deg=min_altitude_deg,
                             observer_lat=location.latitude,
                             observer_lon=location.longitude,
                             dt=conditions.timestamp,
                         )
+                        if self.visible_only and (
+                            vis_info.altitude_deg is None or vis_info.altitude_deg < min_altitude_deg
+                        ):
+                            continue
 
                         visibility_prob_result = planner._calculate_visibility_probability(obj, conditions, vis_info)
                         if isinstance(visibility_prob_result, tuple):
@@ -776,7 +843,7 @@ class ObjectsLoaderThread(QThread):
                 ):
                     # Start with visible recommendations
                     objects = planner.get_recommended_objects(
-                        conditions, obj_type, max_results=150, best_for_seeing=False
+                        conditions, obj_type, max_results=150, best_for_seeing=False, min_altitude_deg=min_altitude_deg
                     )
 
                     # Augment with bright DSOs even if currently below horizon so marquee targets still show.
@@ -936,6 +1003,8 @@ class ObjectsLoaderThread(QThread):
                                     try:
                                         result = future.result()
                                         if result:
+                                            if self.visible_only and result["altitude"] < min_altitude_deg:
+                                                continue
                                             # Convert result dict back to RecommendedObject
                                             from datetime import datetime
 
@@ -975,13 +1044,13 @@ class ObjectsLoaderThread(QThread):
                         objects = augmented[:200]
                     except Exception:
                         objects = planner.get_recommended_objects(
-                            conditions, obj_type, max_results=150, best_for_seeing=False
+                            conditions, obj_type, max_results=150, best_for_seeing=False, min_altitude_deg=min_altitude_deg
                         )
                 else:
                     # Get recommended objects for this type
                     logger.debug(f"{self.obj_type_str}: Getting recommended objects (else branch)...")
                     objects = planner.get_recommended_objects(
-                        conditions, obj_type, max_results=100, best_for_seeing=False
+                        conditions, obj_type, max_results=100, best_for_seeing=False, min_altitude_deg=min_altitude_deg
                     )
                     logger.debug(
                         f"{self.obj_type_str}: Got {len(objects) if objects else 0} recommended objects (else branch)"
@@ -1310,6 +1379,8 @@ class MainWindow(QMainWindow):
         self._asterism_objects_cache: dict[str, Any] = {}  # Cache asterism objects for member_stars access
         self._constellation_positions_cache: dict[str, tuple[float, float]] = {}
         self._asterism_positions_cache: dict[str, tuple[float, float]] = {}
+        self._visibility_filter_visible_only = True
+        self._visibility_filter_min_altitude = 20.0
 
         # Track loading threads to prevent duplicate loads
         self._loading_threads: dict[str, ObjectsLoaderThread] = {}
@@ -2409,11 +2480,13 @@ class MainWindow(QMainWindow):
         table = QTableWidget()
         # For constellation and asterism tabs, show name list with viewing position + favorites
         if obj_type == CelestialObjectType.CONSTELLATION:
-            table.setColumnCount(5)
-            table.setHorizontalHeaderLabels(["Constellation", "Alt", "Az Dir", "Visible Stars", "Favorite"])
+            table.setColumnCount(6)
+            table.setHorizontalHeaderLabels(
+                ["Constellation", "Alt", "Az Dir", "Visible Stars", "Total Stars", "Favorite"]
+            )
         elif obj_type == CelestialObjectType.ASTERISM:
-            table.setColumnCount(5)
-            table.setHorizontalHeaderLabels(["Asterism", "Alt", "Az Dir", "Visible Stars", "Favorite"])
+            table.setColumnCount(6)
+            table.setHorizontalHeaderLabels(["Asterism", "Alt", "Az Dir", "Visible Stars", "Total Stars", "Favorite"])
         # For star tab, add a Constellation and Asterism column
         elif obj_type == CelestialObjectType.STAR:
             table.setColumnCount(13)
@@ -2596,7 +2669,14 @@ class MainWindow(QMainWindow):
             progress.show()
 
         # Create and start worker thread
-        thread = ObjectsLoaderThread(obj_type_str)
+        visible_only = self._visibility_filter_visible_only
+        min_altitude_deg = self._visibility_filter_min_altitude
+
+        thread = ObjectsLoaderThread(
+            obj_type_str,
+            visible_only=visible_only,
+            min_altitude_deg=min_altitude_deg,
+        )
 
         # Use a proper closure to capture table and progress - don't use lambda with loop variables
         def on_data_loaded(obj_type: str, objs: object) -> None:
@@ -3386,7 +3466,8 @@ class MainWindow(QMainWindow):
         alt_col = 1
         az_col = 2
         visible_col = 3
-        fav_col = 4
+        total_col = 4
+        fav_col = 5
 
         # Now populate table with all data (initially with 0 counts, will update when async count completes)
         visible_star_counts: dict[str, int] = dict.fromkeys(sorted_names, 0)
@@ -3458,6 +3539,11 @@ class MainWindow(QMainWindow):
             stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
             table.setItem(row, visible_col, stars_item)
 
+            total_item = QTableWidgetItem("0")
+            total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            total_item.setData(Qt.ItemDataRole.UserRole, 0)
+            table.setItem(row, total_col, total_item)
+
             # Favorite (check/X icon) - use pre-fetched result
             is_fav = favorite_statuses[row]
             favorite_item = self._create_favorite_item(is_fav)
@@ -3525,22 +3611,26 @@ class MainWindow(QMainWindow):
             # Store thread reference to prevent garbage collection
             self._visibility_threads[table] = visibility_thread
 
-            def update_count(name: str, count: int) -> None:
-                """Update a single row in the table with visibility count."""
+            def update_count(name: str, visible_count: int, total_count: int) -> None:
+                """Update a single row in the table with visibility and total counts."""
                 # Find the row with this name
                 for row in range(table.rowCount()):
                     name_item = table.item(row, 0)
                     if name_item:
                         constellation_name = name_item.data(Qt.ItemDataRole.UserRole)
                         if constellation_name == name:
-                            stars_item = table.item(row, visible_col)
-                            if stars_item:
-                                old_value = stars_item.text()
-                                stars_item.setText(str(count))
-                                stars_item.setData(Qt.ItemDataRole.UserRole, count)
-                                print(f"DEBUG: Updated {name} from '{old_value}' to {count}")
-                                logger.debug(f"Updated {name} visibility count to {count}")
-                                break
+                            visible_item = table.item(row, visible_col)
+                            if visible_item:
+                                old_value = visible_item.text()
+                                visible_item.setText(str(visible_count))
+                                visible_item.setData(Qt.ItemDataRole.UserRole, visible_count)
+                                print(f"DEBUG: Updated {name} from '{old_value}' to {visible_count}")
+                                logger.debug(f"Updated {name} visibility count to {visible_count}")
+                            total_item = table.item(row, total_col)
+                            if total_item:
+                                total_item.setText(str(total_count))
+                                total_item.setData(Qt.ItemDataRole.UserRole, total_count)
+                            break
 
             def cleanup_thread() -> None:
                 """Clean up thread reference when finished."""
@@ -3564,9 +3654,9 @@ class MainWindow(QMainWindow):
         # Set column resize modes and minimum widths
         obj_type_str = table.property("object_type")
         if obj_type_str == "constellation":
-            header_labels = ["Constellation", "Alt", "Az Dir", "Visible Stars", "Favorite"]
+            header_labels = ["Constellation", "Alt", "Az Dir", "Visible Stars", "Total Stars", "Favorite"]
         elif obj_type_str == "asterism":
-            header_labels = ["Asterism", "Alt", "Az Dir", "Visible Stars", "Favorite"]
+            header_labels = ["Asterism", "Alt", "Az Dir", "Visible Stars", "Total Stars", "Favorite"]
         else:
             header_labels = ["Constellation", "Visible Stars", "Favorite"]  # Fallback
 
@@ -3604,6 +3694,13 @@ class MainWindow(QMainWindow):
         self.filter_clear_button.setIcon(self._create_icon("close-circle", ["edit-clear", "window-close", "close"]))
         self.filter_clear_button.clicked.connect(lambda: self.filter_textbox.clear())  # type: ignore[arg-type]
         toolbar.addWidget(self.filter_clear_button)
+
+        # Table filters button
+        filter_icon = self._create_icon("view-filter", ["view-filter", "filter", "edit-find"])
+        self.table_filter_action = toolbar.addAction(filter_icon, "Filters")
+        self.table_filter_action.setToolTip("FILTERS")
+        self.table_filter_action.setStatusTip("Configure visibility filters for object lists")
+        self.table_filter_action.triggered.connect(self._on_table_filter_clicked)
 
         # Fit columns button
         fit_icon = self._create_icon("fit-columns", ["view-column", "table"])
@@ -3667,6 +3764,124 @@ class MainWindow(QMainWindow):
     def _clear_filter(self) -> None:
         """Clear filter text."""
         self.filter_textbox.clear()
+
+    def _on_table_filter_clicked(self) -> None:
+        """Show filter options for object list visibility."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Visibility Filters")
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        visible_only_checkbox = QCheckBox("Only show objects above altitude (deg)")
+        visible_only_checkbox.setChecked(self._visibility_filter_visible_only)
+
+        altitude_spin = QSpinBox()
+        altitude_spin.setRange(0, 90)
+        altitude_spin.setValue(int(self._visibility_filter_min_altitude))
+        altitude_spin.setEnabled(visible_only_checkbox.isChecked())
+
+        def _toggle_altitude(enabled: bool) -> None:
+            altitude_spin.setEnabled(enabled)
+
+        visible_only_checkbox.toggled.connect(_toggle_altitude)
+
+        layout.addWidget(visible_only_checkbox)
+        layout.addWidget(altitude_spin)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_visible_only = visible_only_checkbox.isChecked()
+        new_min_altitude = float(altitude_spin.value())
+
+        self._apply_visibility_filter_settings(new_visible_only, new_min_altitude)
+
+    def _apply_visibility_filter_settings(self, visible_only: bool, min_altitude_deg: float) -> None:
+        """Apply visibility filter settings and refresh affected tabs."""
+        if (
+            visible_only == self._visibility_filter_visible_only
+            and min_altitude_deg == self._visibility_filter_min_altitude
+        ):
+            return
+
+        self._visibility_filter_visible_only = visible_only
+        self._visibility_filter_min_altitude = min_altitude_deg
+
+        # Stop active loader threads to avoid QThread destruction while running.
+        for obj_type_str, thread in list(self._loading_threads.items()):
+            if thread.isRunning():
+                thread.requestInterruption()
+                with contextlib.suppress(Exception):
+                    thread.data_loaded.disconnect()
+                with contextlib.suppress(Exception):
+                    thread.progress_update.disconnect()
+                with contextlib.suppress(Exception):
+                    thread.finished.disconnect()
+
+                if thread not in self._stopping_threads:
+                    self._stopping_threads.append(thread)
+
+                def _finalize_loader_thread(t: QThread = thread) -> None:
+                    try:
+                        if t in self._stopping_threads:
+                            self._stopping_threads.remove(t)
+                        t.deleteLater()
+                    except Exception:
+                        pass
+
+                thread.finished.connect(_finalize_loader_thread, Qt.ConnectionType.QueuedConnection)
+            else:
+                thread.deleteLater()
+            del self._loading_threads[obj_type_str]
+
+        # Stop active visibility threads (constellation/asterism counts).
+        for table, vis_thread in list(self._visibility_threads.items()):
+            if vis_thread.isRunning():
+                vis_thread.requestInterruption()
+                with contextlib.suppress(Exception):
+                    vis_thread.count_ready.disconnect()
+                with contextlib.suppress(Exception):
+                    vis_thread.counts_complete.disconnect()
+                with contextlib.suppress(Exception):
+                    vis_thread.finished.disconnect()
+
+                if vis_thread not in self._stopping_threads:
+                    self._stopping_threads.append(vis_thread)
+
+                def _finalize_vis_thread(t: QThread = vis_thread) -> None:
+                    try:
+                        if t in self._stopping_threads:
+                            self._stopping_threads.remove(t)
+                        t.deleteLater()
+                    except Exception:
+                        pass
+
+                vis_thread.finished.connect(_finalize_vis_thread, Qt.ConnectionType.QueuedConnection)
+            else:
+                vis_thread.deleteLater()
+            del self._visibility_threads[table]
+
+        # Clear caches so reload uses the new filter settings.
+        self._objects_cache.clear()
+        self._constellation_positions_cache.clear()
+        self._asterism_positions_cache.clear()
+        self._asterism_objects_cache.clear()
+
+        if not hasattr(self, "tab_widget"):
+            return
+
+        current_table = self._get_current_table()
+        for i in range(self.tab_widget.count()):
+            widget = self.tab_widget.widget(i)
+            if isinstance(widget, QTableWidget):
+                widget.setRowCount(0)
+                self._load_objects_table(widget, show_progress=(widget is current_table))
 
     def _on_fit_columns(self) -> None:
         """Auto-size columns for the current table."""
@@ -3870,8 +4085,13 @@ class MainWindow(QMainWindow):
                     self._visibility_threads[deferred_table] = visibility_thread
 
                     # Capture deferred_table in closure using default parameter to avoid loop variable binding issue
-                    def update_count(name: str, count: int, table: QTableWidget = deferred_table) -> None:
-                        """Update a single row in the table with visibility count."""
+                    def update_count(
+                        name: str,
+                        visible_count: int,
+                        total_count: int,
+                        table: QTableWidget = deferred_table,
+                    ) -> None:
+                        """Update a single row in the table with visibility and total counts."""
                         for row in range(table.rowCount()):
                             name_item = table.item(row, 0)
                             if name_item:
@@ -3879,9 +4099,13 @@ class MainWindow(QMainWindow):
                                 if constellation_name == name:
                                     stars_item = table.item(row, 3)
                                     if stars_item:
-                                        stars_item.setText(str(count))
-                                        stars_item.setData(Qt.ItemDataRole.UserRole, count)
-                                        break
+                                        stars_item.setText(str(visible_count))
+                                        stars_item.setData(Qt.ItemDataRole.UserRole, visible_count)
+                                    total_item = table.item(row, 4)
+                                    if total_item:
+                                        total_item.setText(str(total_count))
+                                        total_item.setData(Qt.ItemDataRole.UserRole, total_count)
+                                    break
 
                     # Capture deferred_table in closure using default parameter
                     def cleanup_thread(table: QTableWidget = deferred_table) -> None:
