@@ -2667,6 +2667,7 @@ class MainWindow(QMainWindow):
         if show_progress:
             progress = self._create_progress_dialog(f"Loading {obj_type_str.replace('_', ' ').title()} objects...")
             progress.show()
+            table.setProperty("loading_progress_dialog", progress)
 
         # Create and start worker thread
         visible_only = self._visibility_filter_visible_only
@@ -2695,6 +2696,10 @@ class MainWindow(QMainWindow):
         def cleanup_thread() -> None:
             if obj_type_str in self._loading_threads:
                 del self._loading_threads[obj_type_str]
+            if progress is not None and progress.isVisible():
+                progress.close()
+            if progress is not None:
+                table.setProperty("loading_progress_dialog", None)
             thread.deleteLater()
 
         thread.finished.connect(cleanup_thread, Qt.ConnectionType.QueuedConnection)
@@ -2715,6 +2720,8 @@ class MainWindow(QMainWindow):
         # Close loading dialog if it was shown
         if progress is not None and progress.isVisible():
             progress.close()
+        if progress is not None:
+            table.setProperty("loading_progress_dialog", None)
 
         # Remove thread from tracking
         if obj_type_str in self._loading_threads:
@@ -3880,6 +3887,10 @@ class MainWindow(QMainWindow):
         for i in range(self.tab_widget.count()):
             widget = self.tab_widget.widget(i)
             if isinstance(widget, QTableWidget):
+                progress = widget.property("loading_progress_dialog")
+                if progress is not None and hasattr(progress, "isVisible") and progress.isVisible():
+                    progress.close()
+                widget.setProperty("loading_progress_dialog", None)
                 widget.setRowCount(0)
                 self._load_objects_table(widget, show_progress=(widget is current_table))
 
