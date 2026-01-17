@@ -34,10 +34,12 @@ __all__ = [
     "clear_observer_location",
     "detect_location_automatically",
     "enrich_location_with_elevation_feet",
+    "enrich_location_with_radar_site",
     "geocode_location",
     "geocode_location_batch",
     "get_active_observer_location_id",
     "get_observer_location",
+    "lookup_radar_site_code",
     "list_observer_locations",
     "set_active_observer_location",
     "set_observer_location",
@@ -56,6 +58,7 @@ class ObserverLocation:
     longitude: float  # Degrees east (negative for west)
     elevation: float = 0.0  # Elevation above sea level (unitless, stored as-is)
     name: str | None = None  # Optional location name
+    radar_site_code: str | None = None  # Optional NEXRAD radar site code
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ def _model_to_entry(model: ObserverLocationModel) -> ObserverLocationEntry:
         longitude=model.longitude,
         elevation=model.elevation,
         name=model.name,
+        radar_site_code=model.radar_site_code,
     )
     return ObserverLocationEntry(id=model.id, location=location)
 
@@ -137,6 +141,7 @@ def save_location(location: ObserverLocation) -> None:
             active.latitude = location.latitude
             active.longitude = location.longitude
             active.elevation = location.elevation
+            active.radar_site_code = location.radar_site_code
             session.commit()
         else:
             active = ObserverLocationModel(
@@ -144,6 +149,7 @@ def save_location(location: ObserverLocation) -> None:
                 latitude=location.latitude,
                 longitude=location.longitude,
                 elevation=location.elevation,
+                radar_site_code=location.radar_site_code,
                 is_active=True,
             )
             session.add(active)
@@ -174,6 +180,7 @@ def load_location(ask_for_auto_detect: bool = False) -> ObserverLocation:
                     longitude=active.longitude,
                     elevation=active.elevation,
                     name=active.name,
+                    radar_site_code=active.radar_site_code,
                 )
                 global _current_location_id
                 _current_location_id = active.id
@@ -334,6 +341,7 @@ def set_active_observer_location(location_id: str, save: bool = True) -> Observe
             longitude=location.longitude,
             elevation=location.elevation,
             name=location.name,
+            radar_site_code=location.radar_site_code,
         )
         global _current_location, _current_location_id
         _current_location = active_location
@@ -351,6 +359,7 @@ def add_observer_location(location: ObserverLocation, set_active: bool = True) -
             latitude=location.latitude,
             longitude=location.longitude,
             elevation=location.elevation,
+            radar_site_code=location.radar_site_code,
             is_active=set_active,
         )
         session.add(model)
@@ -379,6 +388,7 @@ def update_observer_location(
         model.latitude = location.latitude
         model.longitude = location.longitude
         model.elevation = location.elevation
+        model.radar_site_code = location.radar_site_code
         if set_active:
             session.execute(update(ObserverLocationModel).values(is_active=False))
             model.is_active = True
@@ -452,6 +462,7 @@ def geocode_location(query: str) -> ObserverLocation:
             longitude=longitude,
             elevation=0.0,  # Elevation can be enriched via Open-Elevation
             name=address,
+            radar_site_code=None,
         )
 
     except (GeocodingError, LocationNotFoundError):
@@ -540,6 +551,7 @@ def _get_location_from_ip() -> ObserverLocation | None:
             longitude=longitude,
             elevation=0.0,  # IP geolocation doesn't provide elevation
             name=name,
+            radar_site_code=None,
         )
 
     except (
@@ -610,6 +622,7 @@ def _get_location_from_system() -> ObserverLocation | None:
                     longitude=float(longitude),
                     elevation=0.0,
                     name="System location",
+                    radar_site_code=None,
                 )
             except dbus.exceptions.DBusException:
                 # Location not available yet or permission denied
@@ -641,6 +654,7 @@ def _get_location_from_system() -> ObserverLocation | None:
                     longitude=float(location.coordinate().longitude),
                     elevation=float(location.altitude()) if location.altitude() else 0.0,
                     name="System location",
+                    radar_site_code=None,
                 )
         except ImportError:
             logger.debug("PyObjC not available for system location services")
@@ -668,6 +682,7 @@ def _get_location_from_system() -> ObserverLocation | None:
                 longitude=location.coordinate.longitude,
                 elevation=location.coordinate.altitude if location.coordinate.altitude else 0.0,
                 name="System location",
+                radar_site_code=None,
             )
         except ImportError:
             logger.debug("winrt not available for Windows location services")
@@ -704,13 +719,13 @@ def detect_location_automatically() -> ObserverLocation:
     location = _get_location_from_system()
     if location:
         logger.info("Detected location from system services")
-        return location
+        return enrich_location_with_radar_site(location)
 
     # Fall back to IP-based geolocation
     location = _get_location_from_ip()
     if location:
         logger.info("Detected location from IP address")
-        return location
+        return enrich_location_with_radar_site(location)
 
     raise LocationNotSetError("Could not automatically detect location. Please set it manually.")
 
@@ -758,6 +773,54 @@ def enrich_location_with_elevation_feet(location: ObserverLocation) -> ObserverL
             longitude=location.longitude,
             elevation=elev_ft,
             name=location.name,
+            radar_site_code=location.radar_site_code,
         )
     except Exception:
         return location
+
+
+def lookup_radar_site_code(latitude: float, longitude: float) -> str | None:
+    """
+    Look up the nearest NEXRAD radar site code for a location using the NWS points API.
+
+    Returns a radar site code like "KFTG", or None if unavailable.
+    """
+    try:
+        import requests
+
+        url = f"https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}"
+        headers = {
+            "User-Agent": "celestron-nexstar-cli",
+            "Accept": "application/geo+json",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            logger.debug(f"NWS points API returned HTTP {response.status_code}")
+            return None
+        data = response.json()
+        properties = data.get("properties", {})
+        radar_site = properties.get("radarStation")
+        if isinstance(radar_site, str) and radar_site.strip():
+            return radar_site.strip().upper()
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to lookup radar site code: {e}")
+        return None
+
+
+def enrich_location_with_radar_site(location: ObserverLocation) -> ObserverLocation:
+    """
+    Return a copy of `location` with radar_site_code populated when available.
+
+    If lookup fails, returns the original location unchanged.
+    """
+    radar_site = lookup_radar_site_code(location.latitude, location.longitude)
+    if not radar_site:
+        return location
+    return ObserverLocation(
+        latitude=location.latitude,
+        longitude=location.longitude,
+        elevation=location.elevation,
+        name=location.name,
+        radar_site_code=radar_site,
+    )

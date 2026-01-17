@@ -21,6 +21,7 @@ from celestron_nexstar.api.location.observer import (
     detect_location_automatically,
     geocode_location,
     get_observer_location,
+    lookup_radar_site_code,
     set_observer_location,
 )
 from celestron_nexstar.cli.utils.output import console, print_error, print_info, print_json, print_success
@@ -143,6 +144,7 @@ def set_observer(
     longitude: float | None = typer.Option(None, "--lon", help="Longitude in degrees (-180 to +180)"),
     elevation: float = typer.Option(0.0, "--elev", help="Elevation in feet above sea level"),
     name: str | None = typer.Option(None, "--name", help="Optional location name"),
+    radar_site: str | None = typer.Option(None, "--radar-site", help="Optional radar site code (e.g., KFTG)"),
 ) -> None:
     """
     Set CLI observer location for planetary position calculations.
@@ -170,6 +172,24 @@ def set_observer(
         if location:
             print_info(f"Geocoding location: {location}")
             observer_loc = geocode_location(location)
+            if radar_site:
+                observer_loc = ObserverLocation(
+                    latitude=observer_loc.latitude,
+                    longitude=observer_loc.longitude,
+                    elevation=observer_loc.elevation,
+                    name=observer_loc.name,
+                    radar_site_code=radar_site.strip().upper(),
+                )
+            else:
+                radar_code = lookup_radar_site_code(observer_loc.latitude, observer_loc.longitude)
+                if radar_code:
+                    observer_loc = ObserverLocation(
+                        latitude=observer_loc.latitude,
+                        longitude=observer_loc.longitude,
+                        elevation=observer_loc.elevation,
+                        name=observer_loc.name,
+                        radar_site_code=radar_code,
+                    )
             print_success(f"Found: {observer_loc.name}")
 
         # Option 2: Use explicit coordinates
@@ -181,7 +201,13 @@ def set_observer(
                 print_error("Longitude must be between -180 and +180 degrees")
                 raise typer.Exit(code=1) from None
 
-            observer_loc = ObserverLocation(latitude=latitude, longitude=longitude, elevation=elevation, name=name)
+            observer_loc = ObserverLocation(
+                latitude=latitude,
+                longitude=longitude,
+                elevation=elevation,
+                name=name,
+                radar_site_code=radar_site.strip().upper() if radar_site else None,
+            )
         else:
             print_error("Must provide either a location query or --lat and --lon")
             print_info("Examples:")
@@ -207,6 +233,8 @@ def set_observer(
         table.add_row("Longitude", f"{abs(observer_loc.longitude):.4f}°{lon_dir}")
         if observer_loc.elevation:
             table.add_row("Elevation", f"{observer_loc.elevation:.0f} ft")
+        if observer_loc.radar_site_code:
+            table.add_row("Radar Site", observer_loc.radar_site_code)
 
         console.print(table)
         print_info("This location will be used for planetary position calculations")

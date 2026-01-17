@@ -36,6 +36,9 @@ class UserConfig:
     # Takes effect on restart.
     protocol_log_location: str = "both"
 
+    # Default minimum altitude for visibility checks (degrees).
+    min_altitude_deg: float = 20.0
+
 
 def get_user_config_path() -> Path:
     """Return the path to the user config JSON file, ensuring its directory exists."""
@@ -58,12 +61,19 @@ def load_user_config() -> UserConfig:
 
         use_memory_db = bool(raw.get("use_memory_db", False))
         protocol_log_location = str(raw.get("protocol_log_location", "both"))
+        min_altitude_deg = float(raw.get("min_altitude_deg", 20.0))
 
         # Validate protocol_log_location
         if protocol_log_location not in ("main", "telescope", "both"):
             protocol_log_location = "both"
+        if min_altitude_deg < 0 or min_altitude_deg > 90:
+            min_altitude_deg = 20.0
 
-        return UserConfig(use_memory_db=use_memory_db, protocol_log_location=protocol_log_location)
+        return UserConfig(
+            use_memory_db=use_memory_db,
+            protocol_log_location=protocol_log_location,
+            min_altitude_deg=min_altitude_deg,
+        )
     except Exception as e:
         logger.warning(f"Failed to load user config from {path}: {e}")
         return UserConfig()

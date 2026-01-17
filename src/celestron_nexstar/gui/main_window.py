@@ -1434,6 +1434,7 @@ class MainWindow(QMainWindow):
         from celestron_nexstar.api.config.user_config import load_user_config
 
         user_config = load_user_config()
+        self._visibility_filter_min_altitude = float(user_config.min_altitude_deg)
         if user_config.protocol_log_location in ("main", "both"):
             self.log_panel = CollapsibleLogPanel()
             self.log_panel.header.hide()  # Hide the header since we'll use a toolbar button
@@ -1584,6 +1585,9 @@ class MainWindow(QMainWindow):
         progress = QProgressDialog(label_text, "Cancel", 0, 0, parent)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setCancelButton(None)  # Disable cancel button
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+        progress.setMinimumDuration(250)
 
         # Remove title bar by setting window flags
         flags = progress.windowFlags()
@@ -2696,8 +2700,9 @@ class MainWindow(QMainWindow):
         def cleanup_thread() -> None:
             if obj_type_str in self._loading_threads:
                 del self._loading_threads[obj_type_str]
-            if progress is not None and progress.isVisible():
+            if progress is not None:
                 progress.close()
+                progress.deleteLater()
             if progress is not None:
                 table.setProperty("loading_progress_dialog", None)
             thread.deleteLater()
@@ -2718,8 +2723,9 @@ class MainWindow(QMainWindow):
     ) -> None:
         """Handle objects data loaded signal from worker thread."""
         # Close loading dialog if it was shown
-        if progress is not None and progress.isVisible():
+        if progress is not None:
             progress.close()
+            progress.deleteLater()
         if progress is not None:
             table.setProperty("loading_progress_dialog", None)
 
@@ -3888,8 +3894,11 @@ class MainWindow(QMainWindow):
             widget = self.tab_widget.widget(i)
             if isinstance(widget, QTableWidget):
                 progress = widget.property("loading_progress_dialog")
-                if progress is not None and hasattr(progress, "isVisible") and progress.isVisible():
-                    progress.close()
+                if progress is not None:
+                    if hasattr(progress, "close"):
+                        progress.close()
+                    if hasattr(progress, "deleteLater"):
+                        progress.deleteLater()
                 widget.setProperty("loading_progress_dialog", None)
                 widget.setRowCount(0)
                 self._load_objects_table(widget, show_progress=(widget is current_table))

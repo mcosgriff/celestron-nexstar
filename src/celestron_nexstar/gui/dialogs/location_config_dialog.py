@@ -33,6 +33,7 @@ from celestron_nexstar.api.location.observer import (
     add_observer_location,
     detect_location_automatically,
     enrich_location_with_elevation_feet,
+    enrich_location_with_radar_site,
     geocode_location,
     get_observer_location,
 )
@@ -54,6 +55,7 @@ class _DetectLocationThread(QThread):
         try:
             loc = detect_location_automatically()
             loc = enrich_location_with_elevation_feet(loc)
+            loc = enrich_location_with_radar_site(loc)
             self.location_ready.emit(_ResolvedLocation(loc))
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -71,6 +73,7 @@ class _GeocodeLocationThread(QThread):
         try:
             loc = geocode_location(self._query)
             loc = enrich_location_with_elevation_feet(loc)
+            loc = enrich_location_with_radar_site(loc)
             self.location_ready.emit(_ResolvedLocation(loc))
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -125,6 +128,8 @@ class LocationConfigDialog(QDialog):
             self.elev_spin.setValue(max(0.0, float(current.elevation or 0.0)))
             if current.name:
                 self.name_edit.setText(current.name)
+            if current.radar_site_code:
+                self.radar_site_edit.setText(current.radar_site_code)
         except Exception:
             pass
 
@@ -186,7 +191,7 @@ class LocationConfigDialog(QDialog):
         w = QWidget()
         layout = QVBoxLayout(w)
 
-        info = QLabel("Manually enter coordinates.")
+        info = QLabel("Manually enter coordinates (optional radar site code).")
         info.setWordWrap(True)
         layout.addWidget(info)
 
@@ -220,6 +225,11 @@ class LocationConfigDialog(QDialog):
         self.name_edit.textChanged.connect(self._on_manual_changed)
         form.addRow("Name:", self.name_edit)
 
+        self.radar_site_edit = QLineEdit()
+        self.radar_site_edit.setPlaceholderText("Optional radar site code (e.g. KFTG)")
+        self.radar_site_edit.textChanged.connect(self._on_manual_changed)
+        form.addRow("Radar Site:", self.radar_site_edit)
+
         layout.addLayout(form)
         layout.addStretch()
         return w
@@ -232,6 +242,7 @@ class LocationConfigDialog(QDialog):
         self.lon_spin.setEnabled(not busy)
         self.elev_spin.setEnabled(not busy)
         self.name_edit.setEnabled(not busy)
+        self.radar_site_edit.setEnabled(not busy)
         self.button_box.button(QDialogButtonBox.StandardButton.Save).setEnabled(not busy)
 
     def _update_preview(self, location: ObserverLocation | None) -> None:
@@ -247,6 +258,8 @@ class LocationConfigDialog(QDialog):
         msg = f"Selected: {name}\nCoordinates: {abs(location.latitude):.4f}°{lat_dir}, {abs(location.longitude):.4f}°{lon_dir}"
         if location.elevation:
             msg += f"\nElevation: {location.elevation:.0f} ft"
+        if location.radar_site_code:
+            msg += f"\nRadar: {location.radar_site_code}"
 
         # Update whichever tab is active; also store as pending save value
         self.auto_status.setText(msg)
@@ -288,6 +301,7 @@ class LocationConfigDialog(QDialog):
             longitude=float(self.lon_spin.value()),
             elevation=float(self.elev_spin.value()),
             name=self.name_edit.text().strip() or None,
+            radar_site_code=self.radar_site_edit.text().strip().upper() or None,
         )
         self._pending_location = loc
 

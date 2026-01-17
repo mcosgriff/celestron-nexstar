@@ -6,11 +6,16 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QObject, QThread, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QThread, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
+    QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -66,7 +71,52 @@ class _WeatherLoadThread(QThread):
 
             weather = fetch_weather(location, force_refresh=self._force_refresh)
             forecasts = fetch_weather_for_charts(location, future_hours=24, force_refresh=self._force_refresh)
+            if not self._force_refresh:
+                now = datetime.now(UTC)
+                window_start = now - timedelta(hours=6)
+                window_end = now + timedelta(hours=6)
+                has_window = any(
+                    window_start
+                    <= (f.timestamp.replace(tzinfo=UTC) if getattr(f.timestamp, "tzinfo", None) is None else f.timestamp)
+                    <= window_end
+                    for f in (forecasts or [])
+                )
+                if not has_window:
+                    forecasts = fetch_weather_for_charts(location, future_hours=24, force_refresh=True)
             self.loaded.emit(location, weather, forecasts)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class _RadarLoadThread(QThread):
+    loaded = Signal(object, object)
+    error = Signal(str)
+
+    def __init__(self, radar_site_code: str) -> None:
+        super().__init__()
+        self._radar_site_code = radar_site_code
+
+    def run(self) -> None:
+        try:
+            import requests
+
+            base_code = self._radar_site_code.strip().upper()
+            if not base_code:
+                self.error.emit("No radar site code configured.")
+                return
+
+            reflectivity_url = f"https://radar.weather.gov/ridge/standard/{base_code}_0.gif"
+            velocity_url = f"https://radar.weather.gov/ridge/standard/base_velocity/{base_code}_0.gif"
+
+            headers = {"User-Agent": "celestron-nexstar-gui"}
+            reflectivity_resp = requests.get(reflectivity_url, headers=headers, timeout=15)
+            velocity_resp = requests.get(velocity_url, headers=headers, timeout=15)
+
+            if reflectivity_resp.status_code != 200 or velocity_resp.status_code != 200:
+                self.error.emit("Radar image not available for this site.")
+                return
+
+            self.loaded.emit(reflectivity_resp.content, velocity_resp.content)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -163,6 +213,49 @@ class WeatherInfoDialog(QDialog):
         charts_layout.addWidget(self.charts_scroll_area)
         self.tab_widget.addTab(charts_tab, "Charts")
 
+        # Create "Radar" tab
+        radar_tab = QWidget()
+        radar_layout = QVBoxLayout(radar_tab)
+
+        self.radar_scroll_area = QScrollArea()
+        self.radar_scroll_area.setWidgetResizable(True)
+        self.radar_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.radar_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        self.radar_widget = QWidget()
+        radar_widget_layout = QVBoxLayout(self.radar_widget)
+        radar_widget_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.radar_status = QLabel("Radar images load based on your configured radar site.")
+        self.radar_status.setWordWrap(True)
+        radar_widget_layout.addWidget(self.radar_status)
+
+        reflectivity_header = QLabel("Reflectivity")
+        reflectivity_header.setStyleSheet("font-weight: bold;")
+        radar_widget_layout.addWidget(reflectivity_header)
+
+        self.radar_reflectivity_label = QLabel("Loading radar...")
+        self.radar_reflectivity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.radar_reflectivity_label.setScaledContents(False)
+        self.radar_reflectivity_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        radar_widget_layout.addWidget(self.radar_reflectivity_label)
+
+        velocity_header = QLabel("Velocity")
+        velocity_header.setStyleSheet("font-weight: bold;")
+        radar_widget_layout.addWidget(velocity_header)
+
+        self.radar_velocity_label = QLabel("Loading radar...")
+        self.radar_velocity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.radar_velocity_label.setScaledContents(False)
+        self.radar_velocity_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        radar_widget_layout.addWidget(self.radar_velocity_label)
+
+        radar_widget_layout.addStretch()
+
+        self.radar_scroll_area.setWidget(self.radar_widget)
+        radar_layout.addWidget(self.radar_scroll_area)
+        self.tab_widget.addTab(radar_tab, "Radar")
+
         # Add button box
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         refresh_button = QPushButton("Refresh")
@@ -174,7 +267,9 @@ class WeatherInfoDialog(QDialog):
         layout.addWidget(button_box)
 
         self._weather_thread: _WeatherLoadThread | None = None
+        self._radar_thread: _RadarLoadThread | None = None
         self._start_weather_load(force_refresh=False)
+        self._start_radar_load()
 
     def _is_dark_theme(self) -> bool:
         """Detect if the current theme is dark mode."""
@@ -224,6 +319,7 @@ class WeatherInfoDialog(QDialog):
         QCoreApplication.processEvents()
 
         self._start_weather_load(force_refresh=True)
+        self._start_radar_load()
         QCoreApplication.processEvents()
 
     def _start_weather_load(self, force_refresh: bool) -> None:
@@ -250,6 +346,76 @@ class WeatherInfoDialog(QDialog):
 
     def _clear_weather_thread(self) -> None:
         self._weather_thread = None
+
+    def _start_radar_load(self) -> None:
+        if self._radar_thread:
+            try:
+                if self._radar_thread.isRunning():
+                    return
+            except RuntimeError:
+                self._radar_thread = None
+
+        try:
+            from celestron_nexstar.api.location.observer import get_observer_location
+
+            location = get_observer_location()
+        except Exception:
+            location = None
+
+        radar_site = location.radar_site_code if location else None
+        if not radar_site:
+            self._set_radar_status("No radar site configured for this location.")
+            self._radar_clear_images()
+            return
+
+        self._set_radar_status(f"Radar site: {radar_site}")
+        self.radar_reflectivity_label.setText("Loading radar...")
+        self.radar_reflectivity_label.setPixmap(QPixmap())
+        self.radar_velocity_label.setText("Loading radar...")
+        self.radar_velocity_label.setPixmap(QPixmap())
+        thread = _RadarLoadThread(radar_site_code=radar_site)
+        self._radar_thread = thread
+        thread.loaded.connect(self._on_radar_loaded)
+        thread.error.connect(self._on_radar_error)
+        thread.finished.connect(lambda: setattr(self, "_radar_thread", None))
+        thread.start()
+
+    def _on_radar_loaded(self, reflectivity: object, velocity: object) -> None:
+        try:
+            if isinstance(reflectivity, (bytes, bytearray)):
+                pixmap = QPixmap()
+                if pixmap.loadFromData(reflectivity):
+                    self.radar_reflectivity_label.setPixmap(pixmap)
+                    self.radar_reflectivity_label.adjustSize()
+                else:
+                    self.radar_reflectivity_label.setText("Failed to load reflectivity image.")
+            else:
+                self.radar_reflectivity_label.setText("No reflectivity image available.")
+
+            if isinstance(velocity, (bytes, bytearray)):
+                pixmap = QPixmap()
+                if pixmap.loadFromData(velocity):
+                    self.radar_velocity_label.setPixmap(pixmap)
+                    self.radar_velocity_label.adjustSize()
+                else:
+                    self.radar_velocity_label.setText("Failed to load velocity image.")
+            else:
+                self.radar_velocity_label.setText("No velocity image available.")
+        except Exception as exc:
+            self._on_radar_error(str(exc))
+
+    def _on_radar_error(self, message: str) -> None:
+        self._set_radar_status(f"Radar unavailable: {message}")
+        self._radar_clear_images()
+
+    def _set_radar_status(self, message: str) -> None:
+        self.radar_status.setText(message)
+
+    def _radar_clear_images(self) -> None:
+        self.radar_reflectivity_label.setText("Radar image unavailable.")
+        self.radar_reflectivity_label.setPixmap(QPixmap())
+        self.radar_velocity_label.setText("Radar image unavailable.")
+        self.radar_velocity_label.setPixmap(QPixmap())
 
     def _on_weather_loaded(self, location: object, weather: object, forecasts: object) -> None:
         try:

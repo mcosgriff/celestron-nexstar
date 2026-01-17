@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -187,6 +188,13 @@ class SettingsDialog(QDialog):
         protocol_log_combo.setToolTip("Choose where to display telescope protocol commands/responses")
         self.user_config_protocol_log_location = protocol_log_combo
         form.addRow("Protocol Log:", protocol_log_combo)
+
+        min_altitude_spin = QSpinBox()
+        min_altitude_spin.setRange(0, 90)
+        min_altitude_spin.setSuffix("°")
+        min_altitude_spin.setToolTip("Default minimum altitude for visibility checks")
+        self.user_config_min_altitude = min_altitude_spin
+        form.addRow("Min Altitude:", min_altitude_spin)
 
         layout.addLayout(form)
 
@@ -938,6 +946,8 @@ class SettingsDialog(QDialog):
                     combo.setCurrentIndex(i)
                     break
 
+            self.user_config_min_altitude.setValue(int(cfg.min_altitude_deg))
+
             # Communicate effective value (env var overrides)
             env_val = os.getenv("CELESTRON_USE_MEMORY_DB")
             if env_val is not None:
@@ -968,6 +978,7 @@ class SettingsDialog(QDialog):
             cfg = UserConfig(
                 use_memory_db=bool(self.user_config_use_memory_db.isChecked()),
                 protocol_log_location=protocol_log_location,
+                min_altitude_deg=float(self.user_config_min_altitude.value()),
             )
             save_user_config(cfg)
             self.user_config_status_label.setText(
@@ -1846,6 +1857,10 @@ class SettingsDialog(QDialog):
             html_content.append(
                 f"<tr><td style='color: {colors['text']};'>Elevation</td><td style='color: {colors['text']};'>{location.elevation:.0f} ft above sea level</td></tr>"
             )
+            if location.radar_site_code:
+                html_content.append(
+                    f"<tr><td style='color: {colors['text']};'>Radar Site</td><td style='color: {colors['text']};'>{location.radar_site_code}</td></tr>"
+                )
             html_content.append("</table>")
 
             html_content.append(

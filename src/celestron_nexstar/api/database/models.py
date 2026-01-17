@@ -644,6 +644,7 @@ class ObserverLocationModel(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     elevation: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    radar_site_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
     created_at: Mapped[datetime] = mapped_column(
