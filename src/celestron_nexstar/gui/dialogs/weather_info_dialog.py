@@ -11,7 +11,6 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QHBoxLayout,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -77,7 +76,9 @@ class _WeatherLoadThread(QThread):
                 window_end = now + timedelta(hours=6)
                 has_window = any(
                     window_start
-                    <= (f.timestamp.replace(tzinfo=UTC) if getattr(f.timestamp, "tzinfo", None) is None else f.timestamp)
+                    <= (
+                        f.timestamp.replace(tzinfo=UTC) if getattr(f.timestamp, "tzinfo", None) is None else f.timestamp
+                    )
                     <= window_end
                     for f in (forecasts or [])
                 )
@@ -191,8 +192,6 @@ class WeatherInfoDialog(QDialog):
         self.tab_widget.addTab(advanced_tab, "Advanced")
 
         # Create "Charts" tab with scroll area
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QScrollArea
 
         charts_tab = QWidget()
         charts_layout = QVBoxLayout(charts_tab)
@@ -299,7 +298,7 @@ class WeatherInfoDialog(QDialog):
 
     def _refresh_weather(self) -> None:
         """Force-refresh weather data from the API and update the dialog."""
-        from PySide6.QtCore import QCoreApplication, Qt
+        from PySide6.QtCore import QCoreApplication
         from PySide6.QtWidgets import QProgressDialog
 
         if self._refresh_progress is not None:

@@ -3238,7 +3238,9 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                         star_models = session.execute(stmt).scalars().all()
 
                                         # Check angular separation and find closest star per point
-                                        for point_ra_hours, point_dec_degrees in zip(ra_hours_points, dec_points):
+                                        for point_ra_hours, point_dec_degrees in zip(
+                                            ra_hours_points, dec_points, strict=False
+                                        ):
                                             closest_star = None
                                             closest_sep_arcmin = None
                                             for star_model in star_models:
@@ -3249,10 +3251,11 @@ def import_celestial_asterisms(geojson_path: Path, mag_limit: float = 15.0, verb
                                                     star_model.dec_degrees,
                                                 )
                                                 separation_arcmin = separation_deg * 60.0
-                                                if separation_arcmin <= 2.0:
-                                                    if closest_sep_arcmin is None or separation_arcmin < closest_sep_arcmin:
-                                                        closest_sep_arcmin = separation_arcmin
-                                                        closest_star = star_model
+                                                if separation_arcmin <= 2.0 and (
+                                                    closest_sep_arcmin is None or separation_arcmin < closest_sep_arcmin
+                                                ):
+                                                    closest_sep_arcmin = separation_arcmin
+                                                    closest_star = star_model
 
                                             if closest_star is not None:
                                                 star_name = closest_star.common_name or closest_star.name

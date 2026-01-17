@@ -272,14 +272,17 @@ class VisibilityCountThread(QThread):
 
                             with db.get_session() as session:
                                 const_id = session.scalar(
-                                    select(ConstellationModel.id)
-                                    .where(ConstellationModel.name.ilike(name))
-                                    .limit(1)
+                                    select(ConstellationModel.id).where(ConstellationModel.name.ilike(name)).limit(1)
                                 )
                                 if const_id is not None:
-                                    total_count = session.scalar(
-                                        select(func.count(StarModel.id)).where(StarModel.constellation_id == const_id)
-                                    ) or 0
+                                    total_count = (
+                                        session.scalar(
+                                            select(func.count(StarModel.id)).where(
+                                                StarModel.constellation_id == const_id
+                                            )
+                                        )
+                                        or 0
+                                    )
                         except Exception:
                             pass
                         visible_count = 0
@@ -1044,7 +1047,11 @@ class ObjectsLoaderThread(QThread):
                         objects = augmented[:200]
                     except Exception:
                         objects = planner.get_recommended_objects(
-                            conditions, obj_type, max_results=150, best_for_seeing=False, min_altitude_deg=min_altitude_deg
+                            conditions,
+                            obj_type,
+                            max_results=150,
+                            best_for_seeing=False,
+                            min_altitude_deg=min_altitude_deg,
                         )
                 else:
                     # Get recommended objects for this type
